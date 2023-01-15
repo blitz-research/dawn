@@ -673,3 +673,5 @@ endif()
 if (TINT_BUILD_REMOTE_COMPILE)
   add_subdirectory(tools/src/cmd/remote-compile)
 endif()
+
+add_subdirectory(dawn_static)
