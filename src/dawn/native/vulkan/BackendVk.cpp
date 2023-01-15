@@ -316,9 +316,10 @@ MaybeError VulkanInstance::Initialize(const InstanceBase* instance,
 
     if (xrConfig.enabled) {
         VkPhysicalDevice device;
-        if (xrConfig.GetVkPhysicalDevice(mInstance, &device) == VK_SUCCESS) {
-            mPhysicalDevices.push_back(device);
+        if (xrConfig.GetVkPhysicalDevice(mInstance, &device) != VK_SUCCESS) {
+            return DAWN_INTERNAL_ERROR("Failed to get VkPhysicalDevice from OpenXR ");
         }
+        mPhysicalDevices.push_back(device);
     } else {
         DAWN_TRY_ASSIGN(mPhysicalDevices, GatherPhysicalDevices(mInstance, mFunctions));
     }

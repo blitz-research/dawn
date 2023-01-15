@@ -27,8 +27,6 @@ namespace dawn::native::vulkan {
 
 class VulkanInstance;
 
-struct OpenXRConfig;
-
 class Adapter : public AdapterBase {
   public:
     Adapter(InstanceBase* instance,
