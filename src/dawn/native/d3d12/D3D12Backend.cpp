@@ -36,6 +36,16 @@ ComPtr<ID3D12Device> GetD3D12Device(WGPUDevice device) {
     return ToBackend(FromAPI(device))->GetD3D12Device();
 }
 
+DAWN_NATIVE_EXPORT ComPtr<ID3D12CommandQueue> GetD3D12CommandQueue(WGPUDevice device) {
+    return ToBackend(FromAPI(device))->GetCommandQueue();
+}
+
+DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor, ID3D12Resource* d3dTexture) {
+    auto texture = Texture::CreateExternalImage(ToBackend(FromAPI(device)), FromAPI(descriptor), d3dTexture, {}, {}, true, true);
+    if(texture.IsSuccess()) return ToAPI(texture.AcquireSuccess().Detach());
+    return nullptr;
+}
+
 DawnSwapChainImplementation CreateNativeSwapChainImpl(WGPUDevice device, HWND window) {
     Device* backendDevice = ToBackend(FromAPI(device));
 

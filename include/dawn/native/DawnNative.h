@@ -36,6 +36,10 @@ namespace dawn::native {
 class InstanceBase;
 class AdapterBase;
 
+struct DAWN_NATIVE_EXPORT OpenXRConfigBase {
+    bool enabled  = true;
+};
+
 // An optional parameter of Adapter::CreateDevice() to send additional information when creating
 // a Device. For example, we can use it to enable a workaround, optimization or feature.
 struct DAWN_NATIVE_EXPORT DawnDeviceDescriptor {
@@ -266,6 +270,10 @@ DAWN_NATIVE_EXPORT uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer);
 
 DAWN_NATIVE_EXPORT bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a,
                                                                WGPUBindGroupLayout b);
+
+DAWN_NATIVE_EXPORT WGPUAdapter GetWGPUAdapter(WGPUDevice device);
+
+DAWN_NATIVE_EXPORT WGPUBackendType GetWGPUBackendType(WGPUAdapter adapter);
 
 }  // namespace dawn::native
 

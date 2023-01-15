@@ -36,6 +36,12 @@ class Device;
 class ExternalImageDXGIImpl;
 
 DAWN_NATIVE_EXPORT Microsoft::WRL::ComPtr<ID3D12Device> GetD3D12Device(WGPUDevice device);
+
+DAWN_NATIVE_EXPORT Microsoft::WRL::ComPtr<ID3D12CommandQueue> GetD3D12CommandQueue(WGPUDevice device);
+
+DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor,
+                                                 ID3D12Resource* d3dTexture);
+
 DAWN_NATIVE_EXPORT DawnSwapChainImplementation CreateNativeSwapChainImpl(WGPUDevice device,
                                                                          HWND window);
 DAWN_NATIVE_EXPORT WGPUTextureFormat

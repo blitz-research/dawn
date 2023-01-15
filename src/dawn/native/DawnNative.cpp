@@ -317,8 +317,16 @@ uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer) {
 }
 
 bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a, WGPUBindGroupLayout b) {
-    bool excludePipelineCompatibiltyToken = true;
-    return FromAPI(a)->IsLayoutEqual(FromAPI(b), excludePipelineCompatibiltyToken);
+    bool excludePipelineCompatibilityToken = true;
+    return FromAPI(a)->IsLayoutEqual(FromAPI(b), excludePipelineCompatibilityToken);
+}
+
+WGPUAdapter GetWGPUAdapter(WGPUDevice device) {
+    return ToAPI(FromAPI(device)->GetAdapter());
+}
+
+WGPUBackendType GetWGPUBackendType(WGPUAdapter adapter) {
+    return ToAPI(FromAPI(adapter)->GetBackendType());
 }
 
 }  // namespace dawn::native

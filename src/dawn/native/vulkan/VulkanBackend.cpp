@@ -22,6 +22,7 @@
 #include "dawn/native/VulkanBackend.h"
 
 #include "dawn/common/SwapChainUtils.h"
+#include "dawn/native/vulkan/AdapterVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/NativeSwapChainImplVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
@@ -33,15 +34,39 @@ VkInstance GetInstance(WGPUDevice device) {
     return backendDevice->GetVkInstance();
 }
 
-DAWN_NATIVE_EXPORT PFN_vkVoidFunction GetInstanceProcAddr(WGPUDevice device, const char* pName) {
+VkPhysicalDevice GetVkPhysicalDevice(WGPUDevice device) {
+    Device* backendDevice = ToBackend(FromAPI(device));
+    return ToBackend(backendDevice->GetAdapter())->GetPhysicalDevice();
+}
+
+VkDevice GetVkDevice(WGPUDevice device) {
+    Device* backendDevice = ToBackend(FromAPI(device));
+    return backendDevice->GetVkDevice();
+}
+
+uint32_t GetGraphicsQueueFamily(WGPUDevice device) {
+    Device* backendDevice = ToBackend(FromAPI(device));
+    return backendDevice->GetGraphicsQueueFamily();
+}
+
+WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
+                                       const WGPUTextureDescriptor* descriptor,
+                                       VkImage_T* image) {
+    Device* backendDevice = ToBackend(FromAPI(device));
+    auto texture = Texture::CreateForSwapChain(backendDevice, FromAPI(descriptor),
+                                               VkImage::CreateFromHandle(image));
+    return ToAPI(texture.Detach());
+}
+
+PFN_vkVoidFunction GetInstanceProcAddr(WGPUDevice device, const char* pName) {
     Device* backendDevice = ToBackend(FromAPI(device));
     return (*backendDevice->fn.GetInstanceProcAddr)(backendDevice->GetVkInstance(), pName);
 }
 
 // Explicitly export this function because it uses the "native" type for surfaces while the
 // header as seen in this file uses the wrapped type.
-DAWN_NATIVE_EXPORT DawnSwapChainImplementation
-CreateNativeSwapChainImpl(WGPUDevice device, ::VkSurfaceKHR surfaceNative) {
+DawnSwapChainImplementation CreateNativeSwapChainImpl(WGPUDevice device,
+                                                      ::VkSurfaceKHR surfaceNative) {
     Device* backendDevice = ToBackend(FromAPI(device));
     VkSurfaceKHR surface = VkSurfaceKHR::CreateFromHandle(surfaceNative);
 

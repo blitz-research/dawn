@@ -21,15 +21,20 @@
 #include "dawn/common/vulkan_platform.h"
 #include "dawn/native/vulkan/VulkanInfo.h"
 
+#include "dawn/native/VulkanBackend.h"
+
 namespace dawn::native::vulkan {
 
 class VulkanInstance;
+
+struct OpenXRConfig;
 
 class Adapter : public AdapterBase {
   public:
     Adapter(InstanceBase* instance,
             VulkanInstance* vulkanInstance,
-            VkPhysicalDevice physicalDevice);
+            VkPhysicalDevice physicalDevice,
+            const OpenXRConfig& config);
     ~Adapter() override;
 
     // AdapterBase Implementation
@@ -38,6 +43,7 @@ class Adapter : public AdapterBase {
     const VulkanDeviceInfo& GetDeviceInfo() const;
     VkPhysicalDevice GetPhysicalDevice() const;
     VulkanInstance* GetVulkanInstance() const;
+    const OpenXRConfig& GetOpenXRConfig() const;
 
     bool IsDepthStencilFormatSupported(VkFormat format);
 
@@ -59,6 +65,7 @@ class Adapter : public AdapterBase {
     VkPhysicalDevice mPhysicalDevice;
     Ref<VulkanInstance> mVulkanInstance;
     VulkanDeviceInfo mDeviceInfo = {};
+    OpenXRConfig mOpenXRConfig;
 };
 
 }  // namespace dawn::native::vulkan
