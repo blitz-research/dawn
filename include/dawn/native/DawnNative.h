@@ -37,7 +37,7 @@ class InstanceBase;
 class AdapterBase;
 
 struct DAWN_NATIVE_EXPORT OpenXRConfigBase {
-    bool enabled  = true;
+    bool enabled  = false;
 };
 
 // An optional parameter of Adapter::CreateDevice() to send additional information when creating
