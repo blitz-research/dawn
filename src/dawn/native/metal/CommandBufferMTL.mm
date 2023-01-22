@@ -28,7 +28,6 @@
 #include "dawn/native/metal/QuerySetMTL.h"
 #include "dawn/native/metal/RenderPipelineMTL.h"
 #include "dawn/native/metal/SamplerMTL.h"
-#include "dawn/native/metal/StagingBufferMTL.h"
 #include "dawn/native/metal/TextureMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
 
@@ -170,6 +169,7 @@ NSRef<MTLComputePassDescriptor> CreateMTLComputePassDescriptor(BeginComputePassC
 }
 
 NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
+    const Device* device,
     BeginRenderPassCmd* renderPass,
     bool useCounterSamplingAtStageBoundary) {
     // Note that this creates a descriptor that's autoreleased so we don't use AcquireNSRef
@@ -497,6 +497,7 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
             switch (bindingInfo.bindingType) {
                 case BindingInfoType::Buffer: {
                     const BufferBinding& binding = group->GetBindingAsBufferBinding(bindingIndex);
+                    ToBackend(binding.buffer)->TrackUsage();
                     const id<MTLBuffer> buffer = ToBackend(binding.buffer)->GetMTLBuffer();
                     NSUInteger offset = binding.offset;
 
@@ -592,6 +593,7 @@ class VertexBufferTracker {
         : mLengthTracker(lengthTracker) {}
 
     void OnSetVertexBuffer(VertexBufferSlot slot, Buffer* buffer, uint64_t offset) {
+        buffer->TrackUsage();
         mVertexBuffers[slot] = buffer->GetMTLBuffer();
         mVertexBufferOffsets[slot] = offset;
 
@@ -800,11 +802,11 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 commandContext->EndBlit();
 
                 LazyClearRenderPassAttachments(cmd);
+                Device* device = ToBackend(GetDevice());
                 NSRef<MTLRenderPassDescriptor> descriptor = CreateMTLRenderPassDescriptor(
-                    cmd, ToBackend(GetDevice())->UseCounterSamplingAtStageBoundary());
+                    device, cmd, device->UseCounterSamplingAtStageBoundary());
                 DAWN_TRY(EncodeMetalRenderPass(
-                    ToBackend(GetDevice()), commandContext, descriptor.Get(), cmd->width,
-                    cmd->height,
+                    device, commandContext, descriptor.Get(), cmd->width, cmd->height,
                     [this](id<MTLRenderCommandEncoder> encoder, BeginRenderPassCmd* cmd)
                         -> MaybeError { return this->EncodeRenderPass(encoder, cmd); },
                     cmd));
@@ -820,10 +822,13 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     break;
                 }
 
-                ToBackend(copy->source)->EnsureDataInitialized(commandContext);
-                ToBackend(copy->destination)
-                    ->EnsureDataInitializedAsDestination(commandContext, copy->destinationOffset,
-                                                         copy->size);
+                auto srcBuffer = ToBackend(copy->source);
+                srcBuffer->EnsureDataInitialized(commandContext);
+                srcBuffer->TrackUsage();
+                auto dstBuffer = ToBackend(copy->destination);
+                dstBuffer->EnsureDataInitializedAsDestination(commandContext,
+                                                              copy->destinationOffset, copy->size);
+                dstBuffer->TrackUsage();
 
                 [commandContext->EnsureBlit()
                        copyFromBuffer:ToBackend(copy->source)->GetMTLBuffer()
@@ -850,6 +855,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 buffer->EnsureDataInitialized(commandContext);
                 EnsureDestinationTextureInitialized(commandContext, texture, dst, copySize);
 
+                buffer->TrackUsage();
                 texture->SynchronizeTextureBeforeUse(commandContext);
                 RecordCopyBufferToTexture(commandContext, buffer->GetMTLBuffer(), buffer->GetSize(),
                                           src.offset, src.bytesPerRow, src.rowsPerImage, texture,
@@ -875,6 +881,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                 texture->SynchronizeTextureBeforeUse(commandContext);
                 texture->EnsureSubresourceContentInitialized(
                     commandContext, GetSubresourcesAffectedByCopy(src, copySize));
+                buffer->TrackUsage();
 
                 TextureBufferCopySplit splitCopies = ComputeTextureBufferCopySplit(
                     texture, src.mipLevel, src.origin, copySize, buffer->GetSize(), dst.offset,
@@ -1029,6 +1036,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     commandContext, cmd->offset, cmd->size);
 
                 if (!clearedToZero) {
+                    dstBuffer->TrackUsage();
                     [commandContext->EnsureBlit() fillBuffer:dstBuffer->GetMTLBuffer()
                                                        range:NSMakeRange(cmd->offset, cmd->size)
                                                        value:0u];
@@ -1046,6 +1054,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     commandContext, cmd->destinationOffset, cmd->queryCount * sizeof(uint64_t));
 
                 if (querySet->GetQueryType() == wgpu::QueryType::Occlusion) {
+                    destination->TrackUsage();
                     [commandContext->EnsureBlit()
                            copyFromBuffer:querySet->GetVisibilityBuffer()
                              sourceOffset:NSUInteger(cmd->firstQuery * sizeof(uint64_t))
@@ -1054,6 +1063,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                                      size:NSUInteger(cmd->queryCount * sizeof(uint64_t))];
                 } else {
                     if (@available(macos 10.15, iOS 14.0, *)) {
+                        destination->TrackUsage();
                         [commandContext->EnsureBlit()
                               resolveCounters:querySet->GetCounterSampleBuffer()
                                       inRange:NSMakeRange(cmd->firstQuery, cmd->queryCount)
@@ -1143,8 +1153,9 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
 
                 dstBuffer->EnsureDataInitializedAsDestination(commandContext, offset, size);
 
+                dstBuffer->TrackUsage();
                 [commandContext->EnsureBlit()
-                       copyFromBuffer:ToBackend(uploadHandle.stagingBuffer)->GetBufferHandle()
+                       copyFromBuffer:ToBackend(uploadHandle.stagingBuffer)->GetMTLBuffer()
                          sourceOffset:uploadHandle.startOffset
                              toBuffer:dstBuffer->GetMTLBuffer()
                     destinationOffset:offset
@@ -1246,6 +1257,7 @@ MaybeError CommandBuffer::EncodeComputePass(CommandRecordingContext* commandCont
                 storageBufferLengths.Apply(encoder, lastPipeline);
 
                 Buffer* buffer = ToBackend(dispatch->indirectBuffer.Get());
+                buffer->TrackUsage();
                 id<MTLBuffer> indirectBuffer = buffer->GetMTLBuffer();
                 [encoder
                     dispatchThreadgroupsWithIndirectBuffer:indirectBuffer
@@ -1423,6 +1435,7 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                 storageBufferLengths.Apply(encoder, lastPipeline, enableVertexPulling);
 
                 Buffer* buffer = ToBackend(draw->indirectBuffer.Get());
+                buffer->TrackUsage();
                 id<MTLBuffer> indirectBuffer = buffer->GetMTLBuffer();
                 [encoder drawPrimitives:lastPipeline->GetMTLPrimitiveTopology()
                           indirectBuffer:indirectBuffer
@@ -1440,6 +1453,7 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
                 Buffer* buffer = ToBackend(draw->indirectBuffer.Get());
                 ASSERT(buffer != nullptr);
 
+                buffer->TrackUsage();
                 id<MTLBuffer> indirectBuffer = buffer->GetMTLBuffer();
                 [encoder drawIndexedPrimitives:lastPipeline->GetMTLPrimitiveTopology()
                                      indexType:indexBufferType
@@ -1519,6 +1533,7 @@ MaybeError CommandBuffer::EncodeRenderPass(id<MTLRenderCommandEncoder> encoder,
             case Command::SetIndexBuffer: {
                 SetIndexBufferCmd* cmd = iter->NextCommand<SetIndexBufferCmd>();
                 auto b = ToBackend(cmd->buffer.Get());
+                b->TrackUsage();
                 indexBuffer = b->GetMTLBuffer();
                 indexBufferBaseOffset = cmd->offset;
                 indexBufferType = MTLIndexFormat(cmd->format);

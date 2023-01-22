@@ -88,7 +88,7 @@ class ErrorBuffer final : public BufferBase {
         UNREACHABLE();
     }
 
-    void* GetMappedPointerImpl() override { return mFakeMappedData.get(); }
+    void* GetMappedPointer() override { return mFakeMappedData.get(); }
 
     void UnmapImpl() override { mFakeMappedData.reset(); }
 
@@ -132,6 +132,46 @@ MaybeError ValidateBufferDescriptor(DeviceBase* device, const BufferDescriptor* 
     }
 
     return {};
+}
+
+// BufferBase::PendingMappingCallback
+
+BufferBase::PendingMappingCallback::PendingMappingCallback()
+    : callback(nullptr), userdata(nullptr) {}
+
+// Ensure to call the callback.
+BufferBase::PendingMappingCallback::~PendingMappingCallback() {
+    ASSERT(callback == nullptr);
+    ASSERT(userdata == nullptr);
+}
+
+BufferBase::PendingMappingCallback::PendingMappingCallback(
+    BufferBase::PendingMappingCallback&& other) {
+    this->callback = std::move(other.callback);
+    this->userdata = std::move(other.userdata);
+    this->status = other.status;
+    other.callback = nullptr;
+    other.userdata = nullptr;
+}
+
+BufferBase::PendingMappingCallback& BufferBase::PendingMappingCallback::operator=(
+    PendingMappingCallback&& other) {
+    if (&other != this) {
+        this->callback = std::move(other.callback);
+        this->userdata = std::move(other.userdata);
+        this->status = other.status;
+        other.callback = nullptr;
+        other.userdata = nullptr;
+    }
+    return *this;
+}
+
+void BufferBase::PendingMappingCallback::Call() {
+    if (callback != nullptr) {
+        callback(status, userdata);
+        callback = nullptr;
+        userdata = nullptr;
+    }
 }
 
 // Buffer
@@ -192,16 +232,20 @@ BufferBase::~BufferBase() {
 }
 
 void BufferBase::DestroyImpl() {
+    PendingMappingCallback toCall;
+
     if (mState == BufferState::Mapped || mState == BufferState::PendingMap) {
-        UnmapInternal(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
+        toCall = UnmapInternal(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
     } else if (mState == BufferState::MappedAtCreation) {
         if (mStagingBuffer != nullptr) {
-            mStagingBuffer.reset();
+            mStagingBuffer = nullptr;
         } else if (mSize != 0) {
-            UnmapInternal(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
+            toCall = UnmapInternal(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
         }
     }
+
     mState = BufferState::Destroyed;
+    toCall.Call();
 }
 
 // static
@@ -259,7 +303,7 @@ MaybeError BufferBase::MapAtCreation() {
     size_t size;
     if (mSize == 0) {
         return {};
-    } else if (mStagingBuffer) {
+    } else if (mStagingBuffer != nullptr) {
         // If there is a staging buffer for initialization, clear its contents directly.
         // It should be exactly as large as the buffer allocation.
         ptr = mStagingBuffer->GetMappedPointer();
@@ -267,7 +311,7 @@ MaybeError BufferBase::MapAtCreation() {
         ASSERT(size == GetAllocatedSize());
     } else {
         // Otherwise, the buffer is directly mappable on the CPU.
-        ptr = GetMappedPointerImpl();
+        ptr = GetMappedPointer();
         size = GetAllocatedSize();
     }
 
@@ -302,7 +346,14 @@ MaybeError BufferBase::MapAtCreationInternal() {
             // is initialized.
             // TODO(crbug.com/dawn/828): Suballocate and reuse memory from a larger staging
             // buffer so we don't create many small buffers.
-            DAWN_TRY_ASSIGN(mStagingBuffer, GetDevice()->CreateStagingBuffer(GetAllocatedSize()));
+            BufferDescriptor stagingBufferDesc = {};
+            stagingBufferDesc.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapWrite;
+            stagingBufferDesc.size = Align(GetAllocatedSize(), 4);
+            stagingBufferDesc.mappedAtCreation = true;
+            stagingBufferDesc.label = "Dawn_MappedAtCreationStaging";
+
+            IgnoreLazyClearCountScope scope(GetDevice());
+            DAWN_TRY_ASSIGN(mStagingBuffer, GetDevice()->CreateBuffer(&stagingBufferDesc));
         }
     }
 
@@ -330,22 +381,31 @@ MaybeError BufferBase::ValidateCanUseOnQueueNow() const {
     UNREACHABLE();
 }
 
-void BufferBase::CallMapCallback(MapRequestID mapID, WGPUBufferMapAsyncStatus status) {
+// Store the callback to be called in an intermediate struct that bubbles up the call stack
+// and is called by the top most function at the very end. It helps to make sure that
+// all code paths ensure that nothing happens after the callback.
+BufferBase::PendingMappingCallback BufferBase::WillCallMappingCallback(
+    MapRequestID mapID,
+    WGPUBufferMapAsyncStatus status) {
     ASSERT(!IsError());
-    if (mMapCallback != nullptr && mapID == mLastMapID) {
-        // Tag the callback as fired before firing it, otherwise it could fire a second time if
-        // for example buffer.Unmap() is called inside the application-provided callback.
-        WGPUBufferMapCallback callback = mMapCallback;
-        mMapCallback = nullptr;
+    PendingMappingCallback toCall;
 
+    if (mMapCallback != nullptr && mapID == mLastMapID) {
+        toCall.callback = std::move(mMapCallback);
+        toCall.userdata = std::move(mMapUserdata);
         if (GetDevice()->IsLost()) {
-            callback(WGPUBufferMapAsyncStatus_DeviceLost, mMapUserdata);
+            toCall.status = WGPUBufferMapAsyncStatus_DeviceLost;
         } else {
-            callback(status, mMapUserdata);
+            toCall.status = status;
         }
 
-        mMapUserdata = 0;
+        // Tag the callback as fired before firing it, otherwise it could fire a second time if
+        // for example buffer.Unmap() is called inside the application-provided callback.
+        mMapCallback = nullptr;
+        mMapUserdata = nullptr;
     }
+
+    return toCall;
 }
 
 void BufferBase::APIMapAsync(wgpu::MapMode mode,
@@ -389,14 +449,18 @@ void BufferBase::APIMapAsync(wgpu::MapMode mode,
     mState = BufferState::PendingMap;
 
     if (GetDevice()->ConsumedError(MapAsyncImpl(mode, offset, size))) {
-        CallMapCallback(mLastMapID, WGPUBufferMapAsyncStatus_DeviceLost);
+        WillCallMappingCallback(mLastMapID, WGPUBufferMapAsyncStatus_DeviceLost).Call();
         return;
     }
     std::unique_ptr<MapRequestTask> request =
         std::make_unique<MapRequestTask>(GetDevice()->GetPlatform(), this, mLastMapID);
     TRACE_EVENT1(GetDevice()->GetPlatform(), General, "Buffer::APIMapAsync", "serial",
-                 uint64_t(GetDevice()->GetPendingCommandSerial()));
-    GetDevice()->GetQueue()->TrackTask(std::move(request));
+                 uint64_t(mLastUsageSerial));
+    if (mLastUsageSerial != kMaxExecutionSerial) {
+        GetDevice()->GetQueue()->TrackTask(std::move(request), mLastUsageSerial);
+    } else {
+        GetDevice()->GetQueue()->TrackTaskAfterEventualFlush(std::move(request));
+    }
 }
 
 void* BufferBase::APIGetMappedRange(size_t offset, size_t size) {
@@ -418,7 +482,7 @@ void* BufferBase::GetMappedRange(size_t offset, size_t size, bool writable) {
     if (mSize == 0) {
         return reinterpret_cast<uint8_t*>(intptr_t(0xCAFED00D));
     }
-    uint8_t* start = static_cast<uint8_t*>(GetMappedPointerImpl());
+    uint8_t* start = static_cast<uint8_t*>(GetMappedPointer());
     return start == nullptr ? nullptr : start + offset;
 }
 
@@ -431,7 +495,7 @@ uint64_t BufferBase::APIGetSize() const {
 }
 
 MaybeError BufferBase::CopyFromStagingBuffer() {
-    ASSERT(mStagingBuffer);
+    ASSERT(mStagingBuffer != nullptr);
     if (mSize == 0) {
         // Staging buffer is not created if zero size.
         ASSERT(mStagingBuffer == nullptr);
@@ -439,7 +503,7 @@ MaybeError BufferBase::CopyFromStagingBuffer() {
     }
 
     DAWN_TRY(
-        GetDevice()->CopyFromStagingToBuffer(mStagingBuffer.get(), 0, this, 0, GetAllocatedSize()));
+        GetDevice()->CopyFromStagingToBuffer(mStagingBuffer.Get(), 0, this, 0, GetAllocatedSize()));
 
     DynamicUploader* uploader = GetDevice()->GetDynamicUploader();
     uploader->ReleaseStagingBuffer(std::move(mStagingBuffer));
@@ -458,12 +522,15 @@ void BufferBase::Unmap() {
     if (mState == BufferState::Destroyed) {
         return;
     }
-    UnmapInternal(WGPUBufferMapAsyncStatus_UnmappedBeforeCallback);
+    UnmapInternal(WGPUBufferMapAsyncStatus_UnmappedBeforeCallback).Call();
 }
 
-void BufferBase::UnmapInternal(WGPUBufferMapAsyncStatus callbackStatus) {
+BufferBase::PendingMappingCallback BufferBase::UnmapInternal(
+    WGPUBufferMapAsyncStatus callbackStatus) {
+    PendingMappingCallback toCall;
+
     if (mState == BufferState::PendingMap) {
-        CallMapCallback(mLastMapID, callbackStatus);
+        toCall = WillCallMappingCallback(mLastMapID, callbackStatus);
         UnmapImpl();
     } else if (mState == BufferState::Mapped) {
         UnmapImpl();
@@ -476,6 +543,7 @@ void BufferBase::UnmapInternal(WGPUBufferMapAsyncStatus callbackStatus) {
     }
 
     mState = BufferState::Unmapped;
+    return toCall;
 }
 
 MaybeError BufferBase::ValidateMapAsync(wgpu::MapMode mode,
@@ -577,11 +645,12 @@ MaybeError BufferBase::ValidateUnmap() const {
 }
 
 void BufferBase::OnMapRequestCompleted(MapRequestID mapID, WGPUBufferMapAsyncStatus status) {
+    PendingMappingCallback toCall = WillCallMappingCallback(mapID, status);
     if (mapID == mLastMapID && status == WGPUBufferMapAsyncStatus_Success &&
         mState == BufferState::PendingMap) {
         mState = BufferState::Mapped;
     }
-    CallMapCallback(mapID, status);
+    toCall.Call();
 }
 
 bool BufferBase::NeedsInitialization() const {
@@ -594,6 +663,11 @@ bool BufferBase::IsDataInitialized() const {
 
 void BufferBase::SetIsDataInitialized() {
     mIsDataInitialized = true;
+}
+
+void BufferBase::SetLastUsageSerial(ExecutionSerial serial) {
+    ASSERT(serial >= mLastUsageSerial);
+    mLastUsageSerial = serial;
 }
 
 bool BufferBase::IsFullBufferRange(uint64_t offset, uint64_t size) const {

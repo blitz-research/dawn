@@ -16,7 +16,6 @@
 
 #include <algorithm>
 
-#include "src/tint/ast/access.h"
 #include "src/tint/ast/alias.h"
 #include "src/tint/ast/array.h"
 #include "src/tint/ast/atomic.h"
@@ -51,6 +50,8 @@
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/switch_statement.h"
+#include "src/tint/type/access.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/math.h"
 #include "src/tint/utils/scoped_assignment.h"
 #include "src/tint/writer/float_to_string.h"
@@ -349,9 +350,9 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
     return true;
 }
 
-bool GeneratorImpl::EmitImageFormat(std::ostream& out, const ast::TexelFormat fmt) {
+bool GeneratorImpl::EmitImageFormat(std::ostream& out, const type::TexelFormat fmt) {
     switch (fmt) {
-        case ast::TexelFormat::kUndefined:
+        case type::TexelFormat::kUndefined:
             diagnostics_.add_error(diag::System::Writer, "unknown image format");
             return false;
         default:
@@ -360,15 +361,15 @@ bool GeneratorImpl::EmitImageFormat(std::ostream& out, const ast::TexelFormat fm
     return true;
 }
 
-bool GeneratorImpl::EmitAccess(std::ostream& out, const ast::Access access) {
+bool GeneratorImpl::EmitAccess(std::ostream& out, const type::Access access) {
     switch (access) {
-        case ast::Access::kRead:
+        case type::Access::kRead:
             out << "read";
             return true;
-        case ast::Access::kWrite:
+        case type::Access::kWrite:
             out << "write";
             return true;
-        case ast::Access::kReadWrite:
+        case type::Access::kReadWrite:
             out << "read_write";
             return true;
         default:
@@ -438,7 +439,7 @@ bool GeneratorImpl::EmitType(std::ostream& out, const ast::Type* ty) {
             if (!EmitType(out, ptr->type)) {
                 return false;
             }
-            if (ptr->access != ast::Access::kUndefined) {
+            if (ptr->access != type::Access::kUndefined) {
                 out << ", ";
                 if (!EmitAccess(out, ptr->access)) {
                     return false;
@@ -500,22 +501,22 @@ bool GeneratorImpl::EmitType(std::ostream& out, const ast::Type* ty) {
             }
 
             switch (texture->dim) {
-                case ast::TextureDimension::k1d:
+                case type::TextureDimension::k1d:
                     out << "1d";
                     break;
-                case ast::TextureDimension::k2d:
+                case type::TextureDimension::k2d:
                     out << "2d";
                     break;
-                case ast::TextureDimension::k2dArray:
+                case type::TextureDimension::k2dArray:
                     out << "2d_array";
                     break;
-                case ast::TextureDimension::k3d:
+                case type::TextureDimension::k3d:
                     out << "3d";
                     break;
-                case ast::TextureDimension::kCube:
+                case type::TextureDimension::kCube:
                     out << "cube";
                     break;
-                case ast::TextureDimension::kCubeArray:
+                case type::TextureDimension::kCubeArray:
                     out << "cube_array";
                     break;
                 default:
@@ -668,9 +669,9 @@ bool GeneratorImpl::EmitVariable(std::ostream& out, const ast::Variable* v) {
             out << "var";
             auto address_space = var->declared_address_space;
             auto ac = var->declared_access;
-            if (address_space != ast::AddressSpace::kNone || ac != ast::Access::kUndefined) {
+            if (address_space != type::AddressSpace::kNone || ac != type::Access::kUndefined) {
                 out << "<" << address_space;
-                if (ac != ast::Access::kUndefined) {
+                if (ac != type::Access::kUndefined) {
                     out << ", ";
                     if (!EmitAccess(out, ac)) {
                         return false;

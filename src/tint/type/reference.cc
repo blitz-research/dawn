@@ -21,14 +21,14 @@ TINT_INSTANTIATE_TYPEINFO(tint::type::Reference);
 
 namespace tint::type {
 
-Reference::Reference(const Type* subtype, ast::AddressSpace address_space, ast::Access access)
+Reference::Reference(const Type* subtype, type::AddressSpace address_space, type::Access access)
     : Base(utils::Hash(TypeInfo::Of<Reference>().full_hashcode, address_space, subtype, access),
            type::Flags{}),
       subtype_(subtype),
       address_space_(address_space),
       access_(access) {
     TINT_ASSERT(Type, !subtype->Is<Reference>());
-    TINT_ASSERT(Type, access != ast::Access::kUndefined);
+    TINT_ASSERT(Type, access != type::Access::kUndefined);
 }
 
 bool Reference::Equals(const UniqueNode& other) const {
@@ -42,7 +42,7 @@ bool Reference::Equals(const UniqueNode& other) const {
 std::string Reference::FriendlyName(const SymbolTable& symbols) const {
     std::ostringstream out;
     out << "ref<";
-    if (address_space_ != ast::AddressSpace::kNone) {
+    if (address_space_ != AddressSpace::kNone) {
         out << address_space_ << ", ";
     }
     out << subtype_->FriendlyName(symbols) << ", " << access_;

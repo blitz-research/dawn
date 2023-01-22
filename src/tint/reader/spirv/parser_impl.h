@@ -25,7 +25,6 @@
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/hashmap.h"
 
-#if TINT_BUILD_SPV_READER
 TINT_BEGIN_DISABLE_WARNING(NEWLINE_EOF);
 TINT_BEGIN_DISABLE_WARNING(OLD_STYLE_CAST);
 TINT_BEGIN_DISABLE_WARNING(SIGN_CONVERSION);
@@ -35,7 +34,6 @@ TINT_END_DISABLE_WARNING(WEAK_VTABLES);
 TINT_END_DISABLE_WARNING(SIGN_CONVERSION);
 TINT_END_DISABLE_WARNING(OLD_STYLE_CAST);
 TINT_END_DISABLE_WARNING(NEWLINE_EOF);
-#endif
 
 #include "src/tint/program_builder.h"
 #include "src/tint/reader/reader.h"
@@ -425,14 +423,14 @@ class ParserImpl : Reader {
     /// Creates an AST 'var' node for a SPIR-V ID, including any attached decorations, unless it's
     /// an ignorable builtin variable.
     /// @param id the SPIR-V result ID
-    /// @param address_space the address space, which cannot be ast::AddressSpace::kNone
+    /// @param address_space the address space, which cannot be type::AddressSpace::kNone
     /// @param storage_type the storage type of the variable
     /// @param initializer the variable initializer
     /// @param decorations the variable decorations
     /// @returns a new Variable node, or null in the ignorable variable case and
     /// in the error case
     ast::Var* MakeVar(uint32_t id,
-                      ast::AddressSpace address_space,
+                      type::AddressSpace address_space,
                       const Type* storage_type,
                       const ast::Expression* initializer,
                       AttributeList decorations);
@@ -674,19 +672,19 @@ class ParserImpl : Reader {
     /// format.
     /// @param format image texel format
     /// @returns the component type, one of f32, i32, u32
-    const Type* GetComponentTypeForFormat(ast::TexelFormat format);
+    const Type* GetComponentTypeForFormat(type::TexelFormat format);
 
     /// Returns the number of channels in the given image format.
     /// @param format image texel format
     /// @returns the number of channels in the format
-    unsigned GetChannelCountForFormat(ast::TexelFormat format);
+    unsigned GetChannelCountForFormat(type::TexelFormat format);
 
     /// Returns the texel type corresponding to the given image format.
     /// This the WGSL type used for the texel parameter to textureStore.
     /// It's always a 4-element vector.
     /// @param format image texel format
     /// @returns the texel format
-    const Type* GetTexelTypeForFormat(ast::TexelFormat format);
+    const Type* GetTexelTypeForFormat(type::TexelFormat format);
 
     /// Returns the SPIR-V instruction with the given ID, or nullptr.
     /// @param id the SPIR-V result ID

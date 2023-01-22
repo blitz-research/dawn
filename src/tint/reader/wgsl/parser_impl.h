@@ -22,11 +22,12 @@
 #include <utility>
 #include <vector>
 
-#include "src/tint/ast/access.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/reader/wgsl/parser_impl_detail.h"
 #include "src/tint/reader/wgsl/token.h"
+#include "src/tint/type/access.h"
 #include "src/tint/type/storage_texture.h"
+#include "src/tint/type/texture_dimension.h"
 
 namespace tint::ast {
 class BreakStatement;
@@ -283,8 +284,8 @@ class ParserImpl {
         /// @param type_in variable type
         VarDeclInfo(Source source_in,
                     std::string name_in,
-                    ast::AddressSpace address_space_in,
-                    ast::Access access_in,
+                    type::AddressSpace address_space_in,
+                    type::Access access_in,
                     const ast::Type* type_in);
         /// Destructor
         ~VarDeclInfo();
@@ -294,9 +295,9 @@ class ParserImpl {
         /// Variable name
         std::string name;
         /// Variable address space
-        ast::AddressSpace address_space = ast::AddressSpace::kNone;
+        type::AddressSpace address_space = type::AddressSpace::kNone;
         /// Variable access control
-        ast::Access access = ast::Access::kUndefined;
+        type::Access access = type::Access::kUndefined;
         /// Variable type
         const ast::Type* type = nullptr;
     };
@@ -304,9 +305,9 @@ class ParserImpl {
     /// VariableQualifier contains the parsed information for a variable qualifier
     struct VariableQualifier {
         /// The variable's address space
-        ast::AddressSpace address_space = ast::AddressSpace::kNone;
+        type::AddressSpace address_space = type::AddressSpace::kNone;
         /// The variable's access control
-        ast::Access access = ast::Access::kUndefined;
+        type::Access access = type::Access::kUndefined;
     };
 
     /// MatrixDimensions contains the column and row information for a matrix
@@ -460,8 +461,8 @@ class ParserImpl {
     Maybe<const ast::Type*> type_specifier();
     /// Parses an `address_space` grammar element, erroring on parse failure.
     /// @param use a description of what was being parsed if an error was raised.
-    /// @returns the address space or ast::AddressSpace::kNone if none matched
-    Expect<ast::AddressSpace> expect_address_space(std::string_view use);
+    /// @returns the address space or type::AddressSpace::kNone if none matched
+    Expect<type::AddressSpace> expect_address_space(std::string_view use);
     /// Parses a `struct_decl` grammar element.
     /// @returns the struct type or nullptr on error
     Maybe<const ast::Struct*> struct_decl();
@@ -486,14 +487,14 @@ class ParserImpl {
     /// Parses a `multisampled_texture_type` grammar element
     /// @returns returns the multisample texture dimension or kNone if none
     /// matched.
-    Maybe<const ast::TextureDimension> multisampled_texture_type();
+    Maybe<const type::TextureDimension> multisampled_texture_type();
     /// Parses a `sampled_texture_type` grammar element
     /// @returns returns the sample texture dimension or kNone if none matched.
-    Maybe<const ast::TextureDimension> sampled_texture_type();
+    Maybe<const type::TextureDimension> sampled_texture_type();
     /// Parses a `storage_texture_type` grammar element
     /// @returns returns the storage texture dimension.
     /// Returns kNone if none matched.
-    Maybe<const ast::TextureDimension> storage_texture_type();
+    Maybe<const type::TextureDimension> storage_texture_type();
     /// Parses a `depth_texture_type` grammar element
     /// @returns the parsed Type or nullptr if none matched.
     Maybe<const ast::Type*> depth_texture_type();
@@ -503,7 +504,7 @@ class ParserImpl {
     /// Parses a `texel_format` grammar element
     /// @param use a description of what was being parsed if an error was raised
     /// @returns returns the texel format or kNone if none matched.
-    Expect<ast::TexelFormat> expect_texel_format(std::string_view use);
+    Expect<type::TexelFormat> expect_texel_format(std::string_view use);
     /// Parses a `static_assert_statement` grammar element
     /// @returns returns the static assert, if it matched.
     Maybe<const ast::StaticAssert*> static_assert_statement();
@@ -524,7 +525,7 @@ class ParserImpl {
     /// match a valid access control.
     /// @param use a description of what was being parsed if an error was raised
     /// @returns the parsed access control.
-    Expect<ast::Access> expect_access_mode(std::string_view use);
+    Expect<type::Access> expect_access_mode(std::string_view use);
     /// Parses an interpolation sample name identifier, erroring if the next token does not match a
     /// valid sample name.
     /// @returns the parsed sample name.

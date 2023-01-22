@@ -36,10 +36,10 @@ class Buffer final : public BufferBase {
     // `commands`.
     // TODO(crbug.com/dawn/851): coalesce barriers and do them early when possible.
     void TransitionUsageNow(CommandRecordingContext* recordingContext, wgpu::BufferUsage usage);
-    bool TransitionUsageAndGetResourceBarrier(wgpu::BufferUsage usage,
-                                              VkBufferMemoryBarrier* barrier,
-                                              VkPipelineStageFlags* srcStages,
-                                              VkPipelineStageFlags* dstStages);
+    bool TrackUsageAndGetResourceBarrier(wgpu::BufferUsage usage,
+                                         VkBufferMemoryBarrier* barrier,
+                                         VkPipelineStageFlags* srcStages,
+                                         VkPipelineStageFlags* dstStages);
 
     // All the Ensure methods return true if the buffer was initialized to zero.
     bool EnsureDataInitialized(CommandRecordingContext* recordingContext);
@@ -68,7 +68,7 @@ class Buffer final : public BufferBase {
     void DestroyImpl() override;
     bool IsCPUWritableAtCreation() const override;
     MaybeError MapAtCreationImpl() override;
-    void* GetMappedPointerImpl() override;
+    void* GetMappedPointer() override;
 
     VkBuffer mHandle = VK_NULL_HANDLE;
     ResourceMemoryAllocation mMemoryAllocation;

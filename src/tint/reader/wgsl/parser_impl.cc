@@ -43,6 +43,7 @@
 #include "src/tint/type/external_texture.h"
 #include "src/tint/type/multisampled_texture.h"
 #include "src/tint/type/sampled_texture.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/reverse.h"
 #include "src/tint/utils/string.h"
 
@@ -212,8 +213,8 @@ ParserImpl::VarDeclInfo::VarDeclInfo(const VarDeclInfo&) = default;
 
 ParserImpl::VarDeclInfo::VarDeclInfo(Source source_in,
                                      std::string name_in,
-                                     ast::AddressSpace address_space_in,
-                                     ast::Access access_in,
+                                     type::AddressSpace address_space_in,
+                                     type::Access access_in,
                                      const ast::Type* type_in)
     : source(std::move(source_in)),
       name(std::move(name_in)),
@@ -753,7 +754,7 @@ Maybe<const ast::Type*> ParserImpl::texture_and_sampler_types() {
     auto storage = storage_texture_type();
     if (storage.matched) {
         const char* use = "storage texture type";
-        using StorageTextureInfo = std::pair<tint::ast::TexelFormat, tint::ast::Access>;
+        using StorageTextureInfo = std::pair<tint::type::TexelFormat, tint::type::Access>;
         auto params = expect_lt_gt_block(use, [&]() -> Expect<StorageTextureInfo> {
             auto format = expect_texel_format(use);
             if (format.errored) {
@@ -806,29 +807,29 @@ Maybe<const ast::Type*> ParserImpl::sampler_type() {
 //  | TEXTURE_SAMPLED_3D
 //  | TEXTURE_SAMPLED_CUBE
 //  | TEXTURE_SAMPLED_CUBE_ARRAY
-Maybe<const ast::TextureDimension> ParserImpl::sampled_texture_type() {
+Maybe<const type::TextureDimension> ParserImpl::sampled_texture_type() {
     if (match(Token::Type::kTextureSampled1d)) {
-        return ast::TextureDimension::k1d;
+        return type::TextureDimension::k1d;
     }
 
     if (match(Token::Type::kTextureSampled2d)) {
-        return ast::TextureDimension::k2d;
+        return type::TextureDimension::k2d;
     }
 
     if (match(Token::Type::kTextureSampled2dArray)) {
-        return ast::TextureDimension::k2dArray;
+        return type::TextureDimension::k2dArray;
     }
 
     if (match(Token::Type::kTextureSampled3d)) {
-        return ast::TextureDimension::k3d;
+        return type::TextureDimension::k3d;
     }
 
     if (match(Token::Type::kTextureSampledCube)) {
-        return ast::TextureDimension::kCube;
+        return type::TextureDimension::kCube;
     }
 
     if (match(Token::Type::kTextureSampledCubeArray)) {
-        return ast::TextureDimension::kCubeArray;
+        return type::TextureDimension::kCubeArray;
     }
 
     return Failure::kNoMatch;
@@ -847,9 +848,9 @@ Maybe<const ast::Type*> ParserImpl::external_texture() {
 
 // multisampled_texture_type
 //  : TEXTURE_MULTISAMPLED_2D
-Maybe<const ast::TextureDimension> ParserImpl::multisampled_texture_type() {
+Maybe<const type::TextureDimension> ParserImpl::multisampled_texture_type() {
     if (match(Token::Type::kTextureMultisampled2d)) {
-        return ast::TextureDimension::k2d;
+        return type::TextureDimension::k2d;
     }
 
     return Failure::kNoMatch;
@@ -860,18 +861,18 @@ Maybe<const ast::TextureDimension> ParserImpl::multisampled_texture_type() {
 //  | TEXTURE_STORAGE_2D
 //  | TEXTURE_STORAGE_2D_ARRAY
 //  | TEXTURE_STORAGE_3D
-Maybe<const ast::TextureDimension> ParserImpl::storage_texture_type() {
+Maybe<const type::TextureDimension> ParserImpl::storage_texture_type() {
     if (match(Token::Type::kTextureStorage1d)) {
-        return ast::TextureDimension::k1d;
+        return type::TextureDimension::k1d;
     }
     if (match(Token::Type::kTextureStorage2d)) {
-        return ast::TextureDimension::k2d;
+        return type::TextureDimension::k2d;
     }
     if (match(Token::Type::kTextureStorage2dArray)) {
-        return ast::TextureDimension::k2dArray;
+        return type::TextureDimension::k2dArray;
     }
     if (match(Token::Type::kTextureStorage3d)) {
-        return ast::TextureDimension::k3d;
+        return type::TextureDimension::k3d;
     }
 
     return Failure::kNoMatch;
@@ -886,19 +887,19 @@ Maybe<const ast::TextureDimension> ParserImpl::storage_texture_type() {
 Maybe<const ast::Type*> ParserImpl::depth_texture_type() {
     Source source;
     if (match(Token::Type::kTextureDepth2d, &source)) {
-        return builder_.ty.depth_texture(source, ast::TextureDimension::k2d);
+        return builder_.ty.depth_texture(source, type::TextureDimension::k2d);
     }
     if (match(Token::Type::kTextureDepth2dArray, &source)) {
-        return builder_.ty.depth_texture(source, ast::TextureDimension::k2dArray);
+        return builder_.ty.depth_texture(source, type::TextureDimension::k2dArray);
     }
     if (match(Token::Type::kTextureDepthCube, &source)) {
-        return builder_.ty.depth_texture(source, ast::TextureDimension::kCube);
+        return builder_.ty.depth_texture(source, type::TextureDimension::kCube);
     }
     if (match(Token::Type::kTextureDepthCubeArray, &source)) {
-        return builder_.ty.depth_texture(source, ast::TextureDimension::kCubeArray);
+        return builder_.ty.depth_texture(source, type::TextureDimension::kCubeArray);
     }
     if (match(Token::Type::kTextureDepthMultisampled2d, &source)) {
-        return builder_.ty.depth_multisampled_texture(source, ast::TextureDimension::k2d);
+        return builder_.ty.depth_multisampled_texture(source, type::TextureDimension::k2d);
     }
     return Failure::kNoMatch;
 }
@@ -920,8 +921,8 @@ Maybe<const ast::Type*> ParserImpl::depth_texture_type() {
 //  | 'rgba32uint'
 //  | 'rgba32sint'
 //  | 'rgba32float'
-Expect<ast::TexelFormat> ParserImpl::expect_texel_format(std::string_view use) {
-    return expect_enum("texel format", ast::ParseTexelFormat, ast::kTexelFormatStrings, use);
+Expect<type::TexelFormat> ParserImpl::expect_texel_format(std::string_view use) {
+    return expect_enum("texel format", type::ParseTexelFormat, type::kTexelFormatStrings, use);
 }
 
 Expect<ParserImpl::TypedIdentifier> ParserImpl::expect_ident_with_optional_type_specifier(
@@ -970,8 +971,8 @@ Expect<ParserImpl::TypedIdentifier> ParserImpl::expect_ident_with_type_specifier
 //   : 'read'
 //   | 'write'
 //   | 'read_write'
-Expect<ast::Access> ParserImpl::expect_access_mode(std::string_view use) {
-    return expect_enum("access control", ast::ParseAccess, ast::kAccessStrings, use);
+Expect<type::Access> ParserImpl::expect_access_mode(std::string_view use) {
+    return expect_enum("access control", type::ParseAccess, type::kAccessStrings, use);
 }
 
 // variable_qualifier
@@ -995,7 +996,7 @@ Maybe<ParserImpl::VariableQualifier> ParserImpl::variable_qualifier() {
             }
             return VariableQualifier{sc.value, ac.value};
         }
-        return Expect<VariableQualifier>{VariableQualifier{sc.value, ast::Access::kUndefined},
+        return Expect<VariableQualifier>{VariableQualifier{sc.value, type::Access::kUndefined},
                                          source};
     });
 
@@ -1250,8 +1251,8 @@ Expect<const ast::Type*> ParserImpl::expect_type(std::string_view use) {
 Expect<const ast::Type*> ParserImpl::expect_type_specifier_pointer(const Source& s) {
     const char* use = "ptr declaration";
 
-    auto address_space = ast::AddressSpace::kNone;
-    auto access = ast::Access::kUndefined;
+    auto address_space = type::AddressSpace::kNone;
+    auto access = type::Access::kUndefined;
 
     auto subtype = expect_lt_gt_block(use, [&]() -> Expect<const ast::Type*> {
         auto sc = expect_address_space(use);
@@ -1371,8 +1372,8 @@ Expect<const ast::Type*> ParserImpl::expect_type_specifier_matrix(const Source& 
 //   | 'storage'
 //
 // Note, we also parse `push_constant` from the experimental extension
-Expect<ast::AddressSpace> ParserImpl::expect_address_space(std::string_view use) {
-    return expect_enum("address space", ast::ParseAddressSpace, ast::kAddressSpaceStrings, use);
+Expect<type::AddressSpace> ParserImpl::expect_address_space(std::string_view use) {
+    return expect_enum("address space", type::ParseAddressSpace, type::kAddressSpaceStrings, use);
 }
 
 // struct_decl

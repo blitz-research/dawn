@@ -31,7 +31,6 @@
 #include "dawn/native/metal/RenderPipelineMTL.h"
 #include "dawn/native/metal/SamplerMTL.h"
 #include "dawn/native/metal/ShaderModuleMTL.h"
-#include "dawn/native/metal/StagingBufferMTL.h"
 #include "dawn/native/metal/SwapChainMTL.h"
 #include "dawn/native/metal/TextureMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
@@ -260,6 +259,10 @@ void Device::InitTogglesFromDriver() {
 
 #if DAWN_PLATFORM_IS(MACOS)
     if (gpu_info::IsIntel(vendorId)) {
+        SetToggle(Toggle::UseTempTextureInStencilTextureToBufferCopy, true);
+        SetToggle(Toggle::MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
+                  true);
+
         if ([NSProcessInfo.processInfo
                 isOperatingSystemAtLeastVersion:NSOperatingSystemVersion{12, 0, 0}]) {
             ForceSetToggle(Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget, true);
@@ -463,13 +466,7 @@ void Device::ExportLastSignaledEvent(ExternalImageMTLSharedEventDescriptor* desc
     desc->signaledValue = static_cast<uint64_t>(GetLastSubmittedCommandSerial());
 }
 
-ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
-    std::unique_ptr<StagingBufferBase> stagingBuffer = std::make_unique<StagingBuffer>(size, this);
-    DAWN_TRY(stagingBuffer->Initialize());
-    return std::move(stagingBuffer);
-}
-
-MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
@@ -482,12 +479,13 @@ MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
         ->EnsureDataInitializedAsDestination(
             GetPendingCommandContext(DeviceBase::SubmitMode::Passive), destinationOffset, size);
 
-    id<MTLBuffer> uploadBuffer = ToBackend(source)->GetBufferHandle();
-    id<MTLBuffer> buffer = ToBackend(destination)->GetMTLBuffer();
+    id<MTLBuffer> uploadBuffer = ToBackend(source)->GetMTLBuffer();
+    Buffer* buffer = ToBackend(destination);
+    buffer->TrackUsage();
     [GetPendingCommandContext(DeviceBase::SubmitMode::Passive)->EnsureBlit()
            copyFromBuffer:uploadBuffer
              sourceOffset:sourceOffset
-                 toBuffer:buffer
+                 toBuffer:buffer->GetMTLBuffer()
         destinationOffset:destinationOffset
                      size:size];
     return {};
@@ -496,7 +494,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
 // In Metal we don't write from the CPU to the texture directly which can be done using the
 // replaceRegion function, because the function requires a non-private storage mode and Dawn
 // sets the private storage mode by default for all textures except IOSurfaces on macOS.
-MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureDataLayout& dataLayout,
                                                 TextureCopy* dst,
                                                 const Extent3D& copySizePixels) {
@@ -506,7 +504,7 @@ MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
                                         texture, *dst, copySizePixels);
 
     RecordCopyBufferToTexture(GetPendingCommandContext(DeviceBase::SubmitMode::Passive),
-                              ToBackend(source)->GetBufferHandle(), source->GetSize(),
+                              ToBackend(source)->GetMTLBuffer(), source->GetSize(),
                               dataLayout.offset, dataLayout.bytesPerRow, dataLayout.rowsPerImage,
                               texture, dst->mipLevel, dst->origin, dst->aspect, copySizePixels);
     return {};
