@@ -14,31 +14,32 @@
 
 #include "src/tint/writer/wgsl/test_helper.h"
 
-using namespace tint::number_suffixes;  // NOLINT
-
 namespace tint::writer::wgsl {
 namespace {
 
 using WgslGeneratorImplTest = TestHelper;
 
-TEST_F(WgslGeneratorImplTest, Emit_GlobalStaticAssert) {
-    GlobalStaticAssert(true);
+TEST_F(WgslGeneratorImplTest, Emit_DiagnosticDirective) {
+    DiagnosticDirective(ast::DiagnosticSeverity::kError, Expr("chromium_unreachable_code"));
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
-    EXPECT_EQ(gen.result(), R"(static_assert true;
+    ASSERT_TRUE(gen.Generate());
+    EXPECT_EQ(gen.result(), R"(diagnostic(error, chromium_unreachable_code);
+
 )");
 }
 
-TEST_F(WgslGeneratorImplTest, Emit_FunctionStaticAssert) {
-    Func("f", utils::Empty, ty.void_(), utils::Vector{StaticAssert(true)});
+TEST_F(WgslGeneratorImplTest, Emit_DiagnosticAttribute) {
+    auto* attr =
+        DiagnosticAttribute(ast::DiagnosticSeverity::kError, Expr("chromium_unreachable_code"));
+    Func("foo", {}, ty.void_(), {}, utils::Vector{attr});
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
-    EXPECT_EQ(gen.result(), R"(fn f() {
-  static_assert true;
+    ASSERT_TRUE(gen.Generate());
+    EXPECT_EQ(gen.result(), R"(@diagnostic(error, chromium_unreachable_code)
+fn foo() {
 }
 )");
 }

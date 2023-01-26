@@ -37,9 +37,12 @@
 #include "src/tint/ast/case_statement.h"
 #include "src/tint/ast/compound_assignment_statement.h"
 #include "src/tint/ast/const.h"
+#include "src/tint/ast/const_assert.h"
 #include "src/tint/ast/continue_statement.h"
 #include "src/tint/ast/depth_multisampled_texture.h"
 #include "src/tint/ast/depth_texture.h"
+#include "src/tint/ast/diagnostic_attribute.h"
+#include "src/tint/ast/diagnostic_control.h"
 #include "src/tint/ast/disable_validation_attribute.h"
 #include "src/tint/ast/discard_statement.h"
 #include "src/tint/ast/enable.h"
@@ -71,7 +74,6 @@
 #include "src/tint/ast/sampled_texture.h"
 #include "src/tint/ast/sampler.h"
 #include "src/tint/ast/stage_attribute.h"
-#include "src/tint/ast/static_assert.h"
 #include "src/tint/ast/storage_texture.h"
 #include "src/tint/ast/stride_attribute.h"
 #include "src/tint/ast/struct_member_align_attribute.h"
@@ -1000,14 +1002,14 @@ class ProgramBuilder {
 
         /// @param kind the kind of sampler
         /// @returns the sampler
-        const ast::Sampler* sampler(ast::SamplerKind kind) const {
+        const ast::Sampler* sampler(type::SamplerKind kind) const {
             return builder->create<ast::Sampler>(kind);
         }
 
         /// @param source the Source of the node
         /// @param kind the kind of sampler
         /// @returns the sampler
-        const ast::Sampler* sampler(const Source& source, ast::SamplerKind kind) const {
+        const ast::Sampler* sampler(const Source& source, type::SamplerKind kind) const {
             return builder->create<ast::Sampler>(source, kind);
         }
 
@@ -1925,38 +1927,38 @@ class ProgramBuilder {
 
     /// @param source the source information
     /// @param condition the assertion condition
-    /// @returns a new `ast::StaticAssert`, which is automatically registered as a global statement
+    /// @returns a new `ast::ConstAssert`, which is automatically registered as a global statement
     /// with the ast::Module.
     template <typename EXPR>
-    const ast::StaticAssert* GlobalStaticAssert(const Source& source, EXPR&& condition) {
-        auto* sa = StaticAssert(source, std::forward<EXPR>(condition));
-        AST().AddStaticAssert(sa);
+    const ast::ConstAssert* GlobalConstAssert(const Source& source, EXPR&& condition) {
+        auto* sa = ConstAssert(source, std::forward<EXPR>(condition));
+        AST().AddConstAssert(sa);
         return sa;
     }
 
     /// @param condition the assertion condition
-    /// @returns a new `ast::StaticAssert`, which is automatically registered as a global statement
+    /// @returns a new `ast::ConstAssert`, which is automatically registered as a global statement
     /// with the ast::Module.
     template <typename EXPR, typename = DisableIfSource<EXPR>>
-    const ast::StaticAssert* GlobalStaticAssert(EXPR&& condition) {
-        auto* sa = StaticAssert(std::forward<EXPR>(condition));
-        AST().AddStaticAssert(sa);
+    const ast::ConstAssert* GlobalConstAssert(EXPR&& condition) {
+        auto* sa = ConstAssert(std::forward<EXPR>(condition));
+        AST().AddConstAssert(sa);
         return sa;
     }
 
     /// @param source the source information
     /// @param condition the assertion condition
-    /// @returns a new `ast::StaticAssert` with the given assertion condition
+    /// @returns a new `ast::ConstAssert` with the given assertion condition
     template <typename EXPR>
-    const ast::StaticAssert* StaticAssert(const Source& source, EXPR&& condition) {
-        return create<ast::StaticAssert>(source, Expr(std::forward<EXPR>(condition)));
+    const ast::ConstAssert* ConstAssert(const Source& source, EXPR&& condition) {
+        return create<ast::ConstAssert>(source, Expr(std::forward<EXPR>(condition)));
     }
 
     /// @param condition the assertion condition
-    /// @returns a new `ast::StaticAssert` with the given assertion condition
+    /// @returns a new `ast::ConstAssert` with the given assertion condition
     template <typename EXPR, typename = DisableIfSource<EXPR>>
-    const ast::StaticAssert* StaticAssert(EXPR&& condition) {
-        return create<ast::StaticAssert>(Expr(std::forward<EXPR>(condition)));
+    const ast::ConstAssert* ConstAssert(EXPR&& condition) {
+        return create<ast::ConstAssert>(Expr(std::forward<EXPR>(condition)));
     }
 
     /// @param source the source information
@@ -3218,6 +3220,74 @@ class ProgramBuilder {
     const ast::DisableValidationAttribute* Disable(ast::DisabledValidation validation) {
         return ASTNodes().Create<ast::DisableValidationAttribute>(ID(), AllocateNodeID(),
                                                                   validation);
+    }
+
+    /// Creates an ast::DiagnosticAttribute
+    /// @param source the source information
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic attribute pointer
+    const ast::DiagnosticAttribute* DiagnosticAttribute(
+        const Source& source,
+        ast::DiagnosticSeverity severity,
+        const ast::IdentifierExpression* rule_name) {
+        return create<ast::DiagnosticAttribute>(source,
+                                                DiagnosticControl(source, severity, rule_name));
+    }
+
+    /// Creates an ast::DiagnosticAttribute
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic attribute pointer
+    const ast::DiagnosticAttribute* DiagnosticAttribute(
+        ast::DiagnosticSeverity severity,
+        const ast::IdentifierExpression* rule_name) {
+        return create<ast::DiagnosticAttribute>(source_,
+                                                DiagnosticControl(source_, severity, rule_name));
+    }
+
+    /// Creates an ast::DiagnosticControl
+    /// @param source the source information
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic control pointer
+    const ast::DiagnosticControl* DiagnosticControl(const Source& source,
+                                                    ast::DiagnosticSeverity severity,
+                                                    const ast::IdentifierExpression* rule_name) {
+        return create<ast::DiagnosticControl>(source, severity, rule_name);
+    }
+
+    /// Creates an ast::DiagnosticControl
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic control pointer
+    const ast::DiagnosticControl* DiagnosticControl(ast::DiagnosticSeverity severity,
+                                                    const ast::IdentifierExpression* rule_name) {
+        return create<ast::DiagnosticControl>(source_, severity, rule_name);
+    }
+
+    /// Add a global diagnostic control to the module.
+    /// @param source the source information
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic control pointer
+    const ast::DiagnosticControl* DiagnosticDirective(const Source& source,
+                                                      ast::DiagnosticSeverity severity,
+                                                      const ast::IdentifierExpression* rule_name) {
+        auto* control = DiagnosticControl(source, severity, rule_name);
+        AST().AddDiagnosticControl(control);
+        return control;
+    }
+
+    /// Add a global diagnostic control to the module.
+    /// @param severity the diagnostic severity control
+    /// @param rule_name the diagnostic rule name
+    /// @returns the diagnostic control pointer
+    const ast::DiagnosticControl* DiagnosticDirective(ast::DiagnosticSeverity severity,
+                                                      const ast::IdentifierExpression* rule_name) {
+        auto* control = DiagnosticControl(source_, severity, rule_name);
+        AST().AddDiagnosticControl(control);
+        return control;
     }
 
     /// Sets the current builder source to `src`

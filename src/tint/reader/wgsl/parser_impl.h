@@ -402,6 +402,9 @@ class ParserImpl {
     /// @param has_parsed_decl flag indicating if the parser has consumed a global declaration.
     /// @return true on parse success, otherwise an error or no-match.
     Maybe<Void> global_directive(bool has_parsed_decl);
+    /// Parses the `diagnostic_directive` grammar element, erroring on parse failure.
+    /// @return true on parse success, otherwise an error or no-match.
+    Maybe<Void> diagnostic_directive();
     /// Parses the `enable_directive` grammar element, erroring on parse failure.
     /// @return true on parse success, otherwise an error or no-match.
     Maybe<Void> enable_directive();
@@ -505,9 +508,9 @@ class ParserImpl {
     /// @param use a description of what was being parsed if an error was raised
     /// @returns returns the texel format or kNone if none matched.
     Expect<type::TexelFormat> expect_texel_format(std::string_view use);
-    /// Parses a `static_assert_statement` grammar element
-    /// @returns returns the static assert, if it matched.
-    Maybe<const ast::StaticAssert*> static_assert_statement();
+    /// Parses a `const_assert_statement` grammar element
+    /// @returns returns the const assert, if it matched.
+    Maybe<const ast::ConstAssert*> const_assert_statement();
     /// Parses a `function_header` grammar element
     /// @returns the parsed function header
     Maybe<FunctionHeader> function_header();
@@ -702,6 +705,12 @@ class ParserImpl {
     /// @see #attribute for the full list of attributes this method parses.
     /// @return the parsed attribute, or nullptr on error.
     Expect<const ast::Attribute*> expect_attribute();
+    /// Parses a severity_control_name grammar element.
+    /// @return the parsed severity control name, or nullptr on error.
+    Expect<ast::DiagnosticSeverity> expect_severity_control_name();
+    /// Parses a diagnostic_control grammar element.
+    /// @return the parsed diagnostic control, or nullptr on error.
+    Expect<const ast::DiagnosticControl*> expect_diagnostic_control();
 
     /// Splits a peekable token into to parts filling in the peekable fields.
     /// @param lhs the token to set in the current position
@@ -799,6 +808,16 @@ class ParserImpl {
     /// an Expect with error state.
     template <typename F, typename T = ReturnType<F>>
     T expect_lt_gt_block(std::string_view use, F&& body);
+    /// A convenience function that calls `expect_block` passing
+    /// `Token::Type::kTemplateArgsLeft` and `Token::Type::kTemplateArgsRight` for the `start` and
+    /// `end` arguments, respectively.
+    /// @param use a description of what was being parsed if an error was raised
+    /// @param body a function or lambda that is called to parse the lexical block body, with the
+    /// signature: `Expect<Result>()` or `Maybe<Result>()`.
+    /// @return the value returned by `body` if no errors are raised, otherwise an Expect with error
+    /// state.
+    template <typename F, typename T = ReturnType<F>>
+    T expect_template_arg_block(std::string_view use, F&& body);
 
     /// sync() calls the function `func`, and attempts to resynchronize the
     /// parser to the next found resynchronization token if `func` fails. If the

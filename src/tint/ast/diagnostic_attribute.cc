@@ -1,4 +1,4 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2023 The Tint Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,29 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ast/static_assert.h"
+#include "src/tint/ast/diagnostic_attribute.h"
+
+#include <string>
 
 #include "src/tint/program_builder.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ast::StaticAssert);
+TINT_INSTANTIATE_TYPEINFO(tint::ast::DiagnosticAttribute);
 
 namespace tint::ast {
 
-StaticAssert::StaticAssert(ProgramID pid, NodeID nid, const Source& src, const Expression* cond)
-    : Base(pid, nid, src), condition(cond) {
-    TINT_ASSERT(AST, cond);
-    TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, cond, program_id);
+DiagnosticAttribute::DiagnosticAttribute(ProgramID pid,
+                                         NodeID nid,
+                                         const Source& src,
+                                         const ast::DiagnosticControl* dc)
+    : Base(pid, nid, src), control(dc) {}
+
+DiagnosticAttribute::~DiagnosticAttribute() = default;
+
+std::string DiagnosticAttribute::Name() const {
+    return "diagnostic";
 }
 
-StaticAssert::StaticAssert(StaticAssert&&) = default;
-
-StaticAssert::~StaticAssert() = default;
-
-const StaticAssert* StaticAssert::Clone(CloneContext* ctx) const {
+const DiagnosticAttribute* DiagnosticAttribute::Clone(CloneContext* ctx) const {
     // Clone arguments outside of create() call to have deterministic ordering
     auto src = ctx->Clone(source);
-    auto* cond = ctx->Clone(condition);
-    return ctx->dst->create<StaticAssert>(src, cond);
+    auto dc = ctx->Clone(control);
+    return ctx->dst->create<DiagnosticAttribute>(src, dc);
 }
 
 }  // namespace tint::ast

@@ -52,7 +52,12 @@ class GeneratorImpl : public TextGenerator {
     /// @returns true on successful generation; false otherwise
     bool Generate();
 
-    /// Handles generating a enable directive
+    /// Handles generating a diagnostic control
+    /// @param out the output of the expression stream
+    /// @param diagnostic the diagnostic control node
+    /// @returns true if the diagnostic control was emitted
+    bool EmitDiagnosticControl(std::ostream& out, const ast::DiagnosticControl* diagnostic);
+    /// Handles generating an enable directive
     /// @param enable the enable node
     /// @returns true if the enable directive was emitted
     bool EmitEnable(const ast::Enable* enable);
@@ -165,10 +170,10 @@ class GeneratorImpl : public TextGenerator {
     /// @param stmt the statement to emit
     /// @returns true if the statement was successfully emitted
     bool EmitReturn(const ast::ReturnStatement* stmt);
-    /// Handles static assertion statements
+    /// Handles const assertion statements
     /// @param stmt the statement to emit
     /// @returns true if the statement was successfully emitted
-    bool EmitStaticAssert(const ast::StaticAssert* stmt);
+    bool EmitConstAssert(const ast::ConstAssert* stmt);
     /// Handles statement
     /// @param stmt the statement to emit
     /// @returns true if the statement was emitted

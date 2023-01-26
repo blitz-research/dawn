@@ -63,18 +63,28 @@ GeneratorImpl::GeneratorImpl(const Program* program) : TextGenerator(program) {}
 GeneratorImpl::~GeneratorImpl() = default;
 
 bool GeneratorImpl::Generate() {
-    // Generate enable directives before any other global declarations.
+    // Generate directives before any other global declarations.
+    bool has_directives = false;
     for (auto enable : program_->AST().Enables()) {
         if (!EmitEnable(enable)) {
             return false;
         }
+        has_directives = true;
     }
-    if (!program_->AST().Enables().IsEmpty()) {
+    for (auto diagnostic : program_->AST().DiagnosticControls()) {
+        auto out = line();
+        if (!EmitDiagnosticControl(out, diagnostic)) {
+            return false;
+        }
+        out << ";";
+        has_directives = true;
+    }
+    if (has_directives) {
         line();
     }
     // Generate global declarations in the order they appear in the module.
     for (auto* decl : program_->AST().GlobalDeclarations()) {
-        if (decl->Is<ast::Enable>()) {
+        if (decl->IsAnyOf<ast::DiagnosticControl, ast::Enable>()) {
             continue;
         }
         if (!Switch(
@@ -82,7 +92,7 @@ bool GeneratorImpl::Generate() {
                 [&](const ast::TypeDecl* td) { return EmitTypeDecl(td); },
                 [&](const ast::Function* func) { return EmitFunction(func); },
                 [&](const ast::Variable* var) { return EmitVariable(line(), var); },
-                [&](const ast::StaticAssert* sa) { return EmitStaticAssert(sa); },
+                [&](const ast::ConstAssert* ca) { return EmitConstAssert(ca); },
                 [&](Default) {
                     TINT_UNREACHABLE(Writer, diagnostics_);
                     return false;
@@ -97,6 +107,13 @@ bool GeneratorImpl::Generate() {
     return true;
 }
 
+bool GeneratorImpl::EmitDiagnosticControl(std::ostream& out,
+                                          const ast::DiagnosticControl* diagnostic) {
+    out << "diagnostic(" << diagnostic->severity << ", "
+        << program_->Symbols().NameFor(diagnostic->rule_name->symbol) << ")";
+    return true;
+}
+
 bool GeneratorImpl::EmitEnable(const ast::Enable* enable) {
     auto out = line();
     out << "enable " << enable->extension << ";";
@@ -108,7 +125,7 @@ bool GeneratorImpl::EmitTypeDecl(const ast::TypeDecl* ty) {
         ty,
         [&](const ast::Alias* alias) {  //
             auto out = line();
-            out << "type " << program_->Symbols().NameFor(alias->name) << " = ";
+            out << "alias " << program_->Symbols().NameFor(alias->name) << " = ";
             if (!EmitType(out, alias->type)) {
                 return false;
             }
@@ -780,6 +797,9 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
                 out << "builtin(" << builtin->builtin << ")";
                 return true;
             },
+            [&](const ast::DiagnosticAttribute* diagnostic) {
+                return EmitDiagnosticControl(out, diagnostic->control);
+            },
             [&](const ast::InterpolateAttribute* interpolate) {
                 out << "interpolate(" << interpolate->type;
                 if (interpolate->sampling != ast::InterpolationSampling::kUndefined) {
@@ -992,7 +1012,7 @@ bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
         [&](const ast::ForLoopStatement* l) { return EmitForLoop(l); },
         [&](const ast::WhileStatement* l) { return EmitWhile(l); },
         [&](const ast::ReturnStatement* r) { return EmitReturn(r); },
-        [&](const ast::StaticAssert* s) { return EmitStaticAssert(s); },
+        [&](const ast::ConstAssert* c) { return EmitConstAssert(c); },
         [&](const ast::SwitchStatement* s) { return EmitSwitch(s); },
         [&](const ast::VariableDeclStatement* v) { return EmitVariable(line(), v->variable); },
         [&](Default) {
@@ -1299,7 +1319,7 @@ bool GeneratorImpl::EmitReturn(const ast::ReturnStatement* stmt) {
     return true;
 }
 
-bool GeneratorImpl::EmitStaticAssert(const ast::StaticAssert* stmt) {
+bool GeneratorImpl::EmitConstAssert(const ast::ConstAssert* stmt) {
     auto out = line();
     out << "static_assert ";
     if (!EmitExpression(out, stmt->condition)) {

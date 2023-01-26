@@ -1,5 +1,16 @@
 # Tint changes during Origin Trial
 
+## Changes for M111
+
+### Breaking changes
+
+* You may need to add parentheses to less-than or greater-than binary expressions that now parse as template lists. For example `a(b<c, d>e)` will need parentheses around `b<c` or `d>e`. [tint:1810](crbug.com/tint/1810).
+
+## Deprecated Features
+
+* The keyword to alias a type has been renamed from `type` to `alias`. [tint:1812](crbug.com/tint/1812)
+* `static_assert` has been renamed to `const_assert`. [tint:1807](crbug.com/tint/1807)
+
 ## Changes for M110
 
 ### Breaking changes

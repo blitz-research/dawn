@@ -136,9 +136,20 @@ bool Resolver::Resolve() {
         return false;
     }
 
-    // Create the semantic module
-    builder_->Sem().SetModule(builder_->create<sem::Module>(
-        std::move(dependencies_.ordered_globals), std::move(enabled_extensions_)));
+    // Create the semantic module.
+    auto* mod = builder_->create<sem::Module>(std::move(dependencies_.ordered_globals),
+                                              std::move(enabled_extensions_));
+    ApplyDiagnosticSeverities(mod);
+    builder_->Sem().SetModule(mod);
+
+    if (result) {
+        // Run the uniformity analysis, which requires a complete semantic module.
+        if (!enabled_extensions_.Contains(ast::Extension::kChromiumDisableUniformityAnalysis)) {
+            if (!AnalyzeUniformity(builder_, dependencies_)) {
+                return false;
+            }
+        }
+    }
 
     return result;
 }
@@ -151,11 +162,12 @@ bool Resolver::ResolveInternal() {
         Mark(decl);
         if (!Switch<bool>(
                 decl,  //
+                [&](const ast::DiagnosticControl* dc) { return DiagnosticControl(dc); },
                 [&](const ast::Enable* e) { return Enable(e); },
                 [&](const ast::TypeDecl* td) { return TypeDecl(td); },
                 [&](const ast::Function* func) { return Function(func); },
                 [&](const ast::Variable* var) { return GlobalVariable(var); },
-                [&](const ast::StaticAssert* sa) { return StaticAssert(sa); },
+                [&](const ast::ConstAssert* ca) { return ConstAssert(ca); },
                 [&](Default) {
                     TINT_UNREACHABLE(Resolver, diagnostics_)
                         << "unhandled global declaration: " << decl->TypeInfo().name;
@@ -177,14 +189,6 @@ bool Resolver::ResolveInternal() {
 
     if (!validator_.PushConstants(entry_points_)) {
         return false;
-    }
-
-    if (!enabled_extensions_.Contains(ast::Extension::kChromiumDisableUniformityAnalysis)) {
-        if (!AnalyzeUniformity(builder_, dependencies_)) {
-            if (kUniformityFailuresAsError) {
-                return false;
-            }
-        }
     }
 
     bool result = true;
@@ -936,8 +940,8 @@ sem::GlobalVariable* Resolver::GlobalVariable(const ast::Variable* v) {
     return sem;
 }
 
-sem::Statement* Resolver::StaticAssert(const ast::StaticAssert* assertion) {
-    ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "static assertion"};
+sem::Statement* Resolver::ConstAssert(const ast::ConstAssert* assertion) {
+    ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "const assertion"};
     TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
     auto* expr = Expression(assertion->condition);
     if (!expr) {
@@ -946,12 +950,12 @@ sem::Statement* Resolver::StaticAssert(const ast::StaticAssert* assertion) {
     auto* cond = expr->ConstantValue();
     if (auto* ty = cond->Type(); !ty->Is<type::Bool>()) {
         AddError(
-            "static assertion condition must be a bool, got '" + builder_->FriendlyName(ty) + "'",
+            "const assertion condition must be a bool, got '" + builder_->FriendlyName(ty) + "'",
             assertion->condition->source);
         return nullptr;
     }
     if (!cond->ValueAs<bool>()) {
-        AddError("static assertion failed", assertion->source);
+        AddError("const assertion failed", assertion->source);
         return nullptr;
     }
     auto* sem =
@@ -964,6 +968,21 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     uint32_t parameter_index = 0;
     utils::Hashmap<Symbol, Source, 8> parameter_names;
     utils::Vector<sem::Parameter*, 8> parameters;
+
+    validator_.DiagnosticFilters().Push();
+    TINT_DEFER(validator_.DiagnosticFilters().Pop());
+    for (auto* attr : decl->attributes) {
+        Mark(attr);
+        if (auto* dc = attr->As<ast::DiagnosticAttribute>()) {
+            Mark(dc->control);
+            if (!DiagnosticControl(dc->control)) {
+                return nullptr;
+            }
+        }
+    }
+    if (!validator_.NoDuplicateAttributes(decl->attributes)) {
+        return nullptr;
+    }
 
     // Resolve all the parameters
     for (auto* param : decl->params) {
@@ -1031,9 +1050,6 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
             return_location = value.Get();
         }
     }
-    if (!validator_.NoDuplicateAttributes(decl->attributes)) {
-        return nullptr;
-    }
 
     if (auto* str = return_type->As<sem::Struct>()) {
         if (!ApplyAddressSpaceUsageToType(type::AddressSpace::kNone, str, decl->source)) {
@@ -1060,6 +1076,7 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
 
     auto* func =
         builder_->create<sem::Function>(decl, return_type, return_location, std::move(parameters));
+    ApplyDiagnosticSeverities(func);
     builder_->Sem().Add(decl, func);
 
     TINT_SCOPED_ASSIGNMENT(current_function_, func);
@@ -1093,10 +1110,6 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
             func->Behaviors().Remove(sem::Behavior::kReturn);
             func->Behaviors().Add(sem::Behavior::kNext);
         }
-    }
-
-    for (auto* attr : decl->attributes) {
-        Mark(attr);
     }
 
     if (!validator_.NoDuplicateAttributes(decl->return_type_attributes)) {
@@ -1258,7 +1271,7 @@ sem::Statement* Resolver::Statement(const ast::Statement* stmt) {
         [&](const ast::IncrementDecrementStatement* i) { return IncrementDecrementStatement(i); },
         [&](const ast::ReturnStatement* r) { return ReturnStatement(r); },
         [&](const ast::VariableDeclStatement* v) { return VariableDeclStatement(v); },
-        [&](const ast::StaticAssert* sa) { return StaticAssert(sa); },
+        [&](const ast::ConstAssert* sa) { return ConstAssert(sa); },
 
         // Error cases
         [&](const ast::CaseStatement*) {
@@ -3050,6 +3063,21 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
     return sem;
 }
 
+bool Resolver::DiagnosticControl(const ast::DiagnosticControl* control) {
+    Mark(control->rule_name);
+    auto rule_name = builder_->Symbols().NameFor(control->rule_name->symbol);
+    auto rule = ast::ParseDiagnosticRule(rule_name);
+    if (rule != ast::DiagnosticRule::kUndefined) {
+        validator_.DiagnosticFilters().Set(rule, control->severity);
+    } else {
+        std::ostringstream ss;
+        ss << "unrecognized diagnostic rule '" << rule_name << "'\n";
+        utils::SuggestAlternatives(rule_name, ast::kDiagnosticRuleStrings, ss);
+        AddWarning(ss.str(), control->rule_name->source);
+    }
+    return true;
+}
+
 bool Resolver::Enable(const ast::Enable* enable) {
     enabled_extensions_.Add(enable->extension);
     return true;
@@ -3857,6 +3885,13 @@ bool Resolver::Mark(const ast::Node* node) {
                                      << "At: " << node->source << "\n"
                                      << "Pointer: " << node;
     return false;
+}
+
+template <typename NODE>
+void Resolver::ApplyDiagnosticSeverities(NODE* node) {
+    for (auto itr : validator_.DiagnosticFilters().Top()) {
+        node->SetDiagnosticSeverity(itr.key, itr.value);
+    }
 }
 
 void Resolver::AddError(const std::string& msg, const Source& source) const {
