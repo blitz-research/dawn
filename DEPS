@@ -19,7 +19,7 @@ vars = {
   'dawn_gn_version': 'git_revision:bd99dbf98cbdefe18a4128189665c5761263bcfb',
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
-  'dawn_ninja_version': 'version:2@1.8.2.chromium.3',
+  'dawn_ninja_version': 'version:2@1.11.1.chromium.6',
   'dawn_go_version': 'version:2@1.18.4',
 
   'node_darwin_arm64_sha': '31859fc1fa0994a95f44f09c367d6ff63607cfde',
@@ -132,17 +132,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@c9094ca6b3e31454056432b6ab4f9bec06665c9b',
+    'url': '{chromium_git}/angle/angle@ce8ce6f81eff8a84e2ea59930cb995b1107181e2',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@aae98adc2222dcada4aa952cccad48ab08e34004',
+    'url': '{swiftshader_git}/SwiftShader@d25c7a174ad717bae315403dd00695feb2a6cc16',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@ba538cd033e45b017a96eacb2e32e6229ff283d5',
+    'url': '{chromium_git}/vulkan-deps@b71220d79bb1192aaca5aa4a3eba3df868745e35',
     'condition': 'dawn_standalone',
   },
 

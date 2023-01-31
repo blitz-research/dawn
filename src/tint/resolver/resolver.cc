@@ -183,6 +183,10 @@ bool Resolver::ResolveInternal() {
 
     SetShadows();
 
+    if (!validator_.DiagnosticControls(builder_->AST().DiagnosticControls(), "directive")) {
+        return false;
+    }
+
     if (!validator_.PipelineStages(entry_points_)) {
         return false;
     }
@@ -2772,16 +2776,6 @@ sem::Expression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* e
                 if (m->Name() == symbol) {
                     member = m;
                     break;
-                }
-            }
-
-            // TODO(crbug.com/tint/1757): Remove
-            if (utils::HasPrefix(builder_->Symbols().NameFor(str->Name()), "__frexp_result")) {
-                if (builder_->Symbols().NameFor(symbol) == "sig") {
-                    AddWarning(
-                        "use of deprecated language feature: 'sig' has been renamed to 'fract'",
-                        expr->member->source);
-                    member = str->Members()[0];
                 }
             }
 
