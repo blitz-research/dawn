@@ -116,5 +116,5 @@ function(bundle_static_library tgt_name bundled_tgt_name)
 endfunction()
 
 add_library(dawn_static_deps STATIC ${DAWN_PLACEHOLDER_FILE})
-target_link_libraries(dawn_static_deps PUBLIC dawn_native dawn_proc)
+target_link_libraries(dawn_static_deps PUBLIC dawn_native dawn_proc dawncpp)
 bundle_static_library(dawn_static_deps dawn_static)
