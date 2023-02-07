@@ -18,7 +18,7 @@
 
 #include "src/tint/demangler.h"
 #include "src/tint/resolver/resolver.h"
-#include "src/tint/sem/expression.h"
+#include "src/tint/sem/value_expression.h"
 
 namespace tint {
 namespace {
@@ -118,7 +118,7 @@ bool Program::IsValid() const {
 }
 
 const type::Type* Program::TypeOf(const ast::Expression* expr) const {
-    auto* sem = Sem().Get(expr);
+    auto* sem = Sem().GetVal(expr);
     return sem ? sem->Type() : nullptr;
 }
 

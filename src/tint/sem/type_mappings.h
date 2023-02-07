@@ -22,13 +22,19 @@ namespace tint {
 class CastableBase;
 }  // namespace tint
 namespace tint::ast {
+class AccessorExpression;
 class Array;
+class BinaryExpression;
+class BitcastExpression;
+class CallExpression;
 class Expression;
 class ForLoopStatement;
 class Function;
 class IfStatement;
+class LiteralExpression;
 class Node;
 class Override;
+class PhonyExpression;
 class Statement;
 class Struct;
 class StructMember;
@@ -37,18 +43,20 @@ class Type;
 class TypeDecl;
 class Variable;
 class WhileStatement;
+class UnaryOpExpression;
 }  // namespace tint::ast
 namespace tint::sem {
 class Expression;
 class ForLoopStatement;
 class Function;
+class GlobalVariable;
 class IfStatement;
 class Node;
-class GlobalVariable;
 class Statement;
 class Struct;
 class StructMember;
 class SwitchStatement;
+class ValueExpression;
 class Variable;
 class WhileStatement;
 }  // namespace tint::sem
@@ -66,7 +74,6 @@ namespace tint::sem {
 struct TypeMappings {
     //! @cond Doxygen_Suppress
     type::Array* operator()(ast::Array*);
-    Expression* operator()(ast::Expression*);
     ForLoopStatement* operator()(ast::ForLoopStatement*);
     Function* operator()(ast::Function*);
     IfStatement* operator()(ast::IfStatement*);
@@ -78,16 +85,24 @@ struct TypeMappings {
     SwitchStatement* operator()(ast::SwitchStatement*);
     type::Type* operator()(ast::Type*);
     type::Type* operator()(ast::TypeDecl*);
+    Expression* operator()(ast::Expression*);
+    ValueExpression* operator()(ast::AccessorExpression*);
+    ValueExpression* operator()(ast::CallExpression*);
+    ValueExpression* operator()(ast::BinaryExpression*);
+    ValueExpression* operator()(ast::BitcastExpression*);
+    ValueExpression* operator()(ast::LiteralExpression*);
+    ValueExpression* operator()(ast::PhonyExpression*);
+    ValueExpression* operator()(ast::UnaryOpExpression*);
     Variable* operator()(ast::Variable*);
     WhileStatement* operator()(ast::WhileStatement*);
     //! @endcond
 };
 
 /// SemanticNodeTypeFor resolves to the appropriate sem::Node type for the
-/// AST or type node `AST_OR_TYPE`.
-template <typename AST_OR_TYPE>
+/// AST node `AST`.
+template <typename AST>
 using SemanticNodeTypeFor =
-    typename std::remove_pointer<decltype(TypeMappings()(std::declval<AST_OR_TYPE*>()))>::type;
+    typename std::remove_pointer<decltype(TypeMappings()(std::declval<AST*>()))>::type;
 
 }  // namespace tint::sem
 

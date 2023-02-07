@@ -123,7 +123,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                 }
 
                 // Skip writes to invocation-private address spaces.
-                auto* ref = sem.Get(assign->lhs)->Type()->As<type::Reference>();
+                auto* ref = sem.GetVal(assign->lhs)->Type()->As<type::Reference>();
                 switch (ref->AddressSpace()) {
                     case type::AddressSpace::kStorage:
                         // Need to mask these.
@@ -187,7 +187,7 @@ Transform::ApplyResult DemoteToHelper::Apply(const Program* src, const DataMap&,
                             // Declare a struct to hold the result values.
                             auto* result_struct = sem_call->Type()->As<sem::Struct>();
                             auto* atomic_ty = result_struct->Members()[0]->Type();
-                            result_ty = b.ty.type_name(
+                            result_ty = b.ty(
                                 utils::GetOrCreate(atomic_cmpxchg_result_types, atomic_ty, [&]() {
                                     auto name = b.Sym();
                                     b.Structure(

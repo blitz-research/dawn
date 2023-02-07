@@ -98,7 +98,7 @@ static utils::Vector<const ast::Attribute*, 2> createAttributes(const Source& so
             return {builder.Builtin(source, ast::BuiltinValue::kPosition)};
         case AttributeKind::kDiagnostic:
             return {builder.DiagnosticAttribute(source, ast::DiagnosticSeverity::kInfo,
-                                                builder.Expr("chromium_unreachable_code"))};
+                                                "chromium_unreachable_code")};
         case AttributeKind::kGroup:
             return {builder.Group(source, 1_a)};
         case AttributeKind::kId:
@@ -300,7 +300,7 @@ TEST_P(VertexShaderParameterAttributeTest, IsValid) {
     auto* p = Param("a", ty.vec4<f32>(), attrs);
     Func("vertex_main", utils::Vector{p}, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
@@ -349,7 +349,7 @@ TEST_P(ComputeShaderReturnTypeAttributeTest, IsValid) {
     auto& params = GetParam();
     Func("main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>(), 1_f)),
+             Return(Call(ty.vec4<f32>(), 1_f)),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -400,8 +400,7 @@ TEST_P(FragmentShaderReturnTypeAttributeTest, IsValid) {
     auto& params = GetParam();
     auto attrs = createAttributes(Source{{12, 34}}, *this, params.kind);
     attrs.Push(Location(Source{{34, 56}}, 2_a));
-    Func("frag_main", utils::Empty, ty.vec4<f32>(),
-         utils::Vector{Return(Construct(ty.vec4<f32>()))},
+    Func("frag_main", utils::Empty, ty.vec4<f32>(), utils::Vector{Return(Call(ty.vec4<f32>()))},
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          },
@@ -458,7 +457,7 @@ TEST_P(VertexShaderReturnTypeAttributeTest, IsValid) {
     }
     Func("vertex_main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
@@ -1030,6 +1029,104 @@ TEST_F(OverrideAttributeTest, DuplicateAttribute) {
 12:34 note: first attribute declared here)");
 }
 
+namespace BlockStatementTests {
+class BlockStatementTest : public TestWithParams {
+  protected:
+    void Check() {
+        if (GetParam().should_pass) {
+            EXPECT_TRUE(r()->Resolve()) << r()->error();
+        } else {
+            EXPECT_FALSE(r()->Resolve());
+            EXPECT_EQ(r()->error(), "error: attribute is not valid for block statements");
+        }
+    }
+};
+TEST_P(BlockStatementTest, CompoundStatement) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             Block(utils::Vector{Return()}, createAttributes({}, *this, GetParam().kind)),
+         });
+    Check();
+}
+TEST_P(BlockStatementTest, FunctionBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             Block(utils::Vector{Return()}),
+         },
+         utils::Empty, utils::Empty, createAttributes({}, *this, GetParam().kind));
+    Check();
+}
+TEST_P(BlockStatementTest, IfStatementBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             If(Expr(true),
+                Block(utils::Vector{Return()}, createAttributes({}, *this, GetParam().kind))),
+         });
+    Check();
+}
+TEST_P(BlockStatementTest, ElseStatementBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             If(Expr(true), Block(utils::Vector{Return()}),
+                Else(Block(utils::Vector{Return()}, createAttributes({}, *this, GetParam().kind)))),
+         });
+    Check();
+}
+TEST_P(BlockStatementTest, ForStatementBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             For(nullptr, Expr(true), nullptr,
+                 Block(utils::Vector{Break()}, createAttributes({}, *this, GetParam().kind))),
+         });
+    Check();
+}
+TEST_P(BlockStatementTest, WhileStatementBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             While(Expr(true),
+                   Block(utils::Vector{Break()}, createAttributes({}, *this, GetParam().kind))),
+         });
+    Check();
+}
+TEST_P(BlockStatementTest, CaseStatementBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             Switch(1_a,
+                    Case(CaseSelector(1_a), Block(utils::Vector{Break()},
+                                                  createAttributes({}, *this, GetParam().kind))),
+                    DefaultCase(Block({}))),
+         });
+    Check();
+}
+TEST_P(BlockStatementTest, DefaultStatementBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             Switch(1_a, Case(CaseSelector(1_a), Block()),
+                    DefaultCase(Block(utils::Vector{Break()},
+                                      createAttributes({}, *this, GetParam().kind)))),
+         });
+    Check();
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         BlockStatementTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+}  // namespace BlockStatementTests
+
 }  // namespace
 }  // namespace AttributeTests
 
@@ -1285,7 +1382,7 @@ TEST_F(InvariantAttributeTests, InvariantWithPosition) {
                         });
     Func("main", utils::Vector{param}, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1304,7 +1401,7 @@ TEST_F(InvariantAttributeTests, InvariantWithoutPosition) {
                         });
     Func("main", utils::Vector{param}, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -1531,7 +1628,7 @@ TEST_F(InterpolateTest, VertexOutput_Integer_MissingFlatInterpolation) {
         });
     Func("main", utils::Empty, ty.Of(s),
          utils::Vector{
-             Return(Construct(ty.Of(s))),
+             Return(Call(ty.Of(s))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
@@ -1567,7 +1664,7 @@ TEST_F(InterpolateTest, MissingLocationAttribute_Parameter) {
 TEST_F(InterpolateTest, MissingLocationAttribute_ReturnType) {
     Func("main", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kVertex),
@@ -1627,7 +1724,7 @@ TEST_F(GroupAndBindingTest, Const_AInt) {
 
 TEST_F(GroupAndBindingTest, Binding_NonConstant) {
     GlobalVar("val", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()),
-              Binding(Construct(ty.u32(), Call(Source{{12, 34}}, "dpdx", 1_a))), Group(1_i));
+              Binding(Call<u32>(Call(Source{{12, 34}}, "dpdx", 1_a))), Group(1_i));
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
@@ -1661,7 +1758,7 @@ TEST_F(GroupAndBindingTest, Binding_AFloat) {
 
 TEST_F(GroupAndBindingTest, Group_NonConstant) {
     GlobalVar("val", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Binding(2_u),
-              Group(Construct(ty.u32(), Call(Source{{12, 34}}, "dpdx", 1_a))));
+              Group(Call<u32>(Call(Source{{12, 34}}, "dpdx", 1_a))));
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
@@ -1711,8 +1808,7 @@ TEST_F(IdTest, Const_AInt) {
 }
 
 TEST_F(IdTest, NonConstant) {
-    Override("val", ty.f32(),
-             utils::Vector{Id(Construct(ty.u32(), Call(Source{{12, 34}}, "dpdx", 1_a)))});
+    Override("val", ty.f32(), utils::Vector{Id(Call<u32>(Call(Source{{12, 34}}, "dpdx", 1_a)))});
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
         r()->error(),
@@ -1798,7 +1894,7 @@ TEST_P(LocationTest, Const_AInt) {
 }
 
 TEST_P(LocationTest, NonConstant) {
-    Build(Construct(ty.u32(), Call(Source{{12, 34}}, "dpdx", 1_a)));
+    Build(Call<u32>(Call(Source{{12, 34}}, "dpdx", 1_a)));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
         r()->error(),

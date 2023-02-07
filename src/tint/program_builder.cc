@@ -19,7 +19,7 @@
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/debug.h"
 #include "src/tint/demangler.h"
-#include "src/tint/sem/expression.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/utils/compiler_macros.h"
 
@@ -97,7 +97,7 @@ void ProgramBuilder::AssertNotMoved() const {
 }
 
 const type::Type* ProgramBuilder::TypeOf(const ast::Expression* expr) const {
-    auto* sem = Sem().Get(expr);
+    auto* sem = Sem().GetVal(expr);
     return sem ? sem->Type() : nullptr;
 }
 
@@ -128,7 +128,7 @@ std::string ProgramBuilder::FriendlyName(std::nullptr_t) const {
 }
 
 const ast::TypeName* ProgramBuilder::TypesBuilder::Of(const ast::TypeDecl* decl) const {
-    return type_name(decl->name);
+    return (*this)(decl->name);
 }
 
 ProgramBuilder::TypesBuilder::TypesBuilder(ProgramBuilder* pb) : builder(pb) {}

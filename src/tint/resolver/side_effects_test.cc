@@ -16,9 +16,9 @@
 
 #include "gtest/gtest.h"
 #include "src/tint/resolver/resolver_test_helper.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/vector.h"
 
@@ -82,7 +82,7 @@ TEST_F(SideEffectsTest, VariableUser) {
     WrapInFunction(var, expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
-    auto* sem = Sem().Get(expr);
+    auto* sem = Sem().GetVal(expr);
     ASSERT_NE(sem, nullptr);
     EXPECT_TRUE(sem->UnwrapLoad()->Is<sem::VariableUser>());
     EXPECT_FALSE(sem->HasSideEffects());
@@ -370,7 +370,7 @@ TEST_F(SideEffectsTest, Call_Function) {
 
 TEST_F(SideEffectsTest, Call_TypeConversion_NoSE) {
     auto* var = Decl(Var("a", ty.i32()));
-    auto* expr = Construct(ty.f32(), "a");
+    auto* expr = Call<f32>("a");
     WrapInFunction(var, expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -382,7 +382,7 @@ TEST_F(SideEffectsTest, Call_TypeConversion_NoSE) {
 
 TEST_F(SideEffectsTest, Call_TypeConversion_SE) {
     MakeSideEffectFunc<i32>("se");
-    auto* expr = Construct(ty.f32(), Call("se"));
+    auto* expr = Call<f32>(Call("se"));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -394,7 +394,7 @@ TEST_F(SideEffectsTest, Call_TypeConversion_SE) {
 
 TEST_F(SideEffectsTest, Call_TypeInitializer_NoSE) {
     auto* var = Decl(Var("a", ty.f32()));
-    auto* expr = Construct(ty.f32(), "a");
+    auto* expr = Call<f32>("a");
     WrapInFunction(var, expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -406,7 +406,7 @@ TEST_F(SideEffectsTest, Call_TypeInitializer_NoSE) {
 
 TEST_F(SideEffectsTest, Call_TypeInitializer_SE) {
     MakeSideEffectFunc<f32>("se");
-    auto* expr = Construct(ty.f32(), Call("se"));
+    auto* expr = Call<f32>(Call("se"));
     WrapInFunction(expr);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();

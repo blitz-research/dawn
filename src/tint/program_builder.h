@@ -43,6 +43,7 @@
 #include "src/tint/ast/depth_texture.h"
 #include "src/tint/ast/diagnostic_attribute.h"
 #include "src/tint/ast/diagnostic_control.h"
+#include "src/tint/ast/diagnostic_directive.h"
 #include "src/tint/ast/disable_validation_attribute.h"
 #include "src/tint/ast/discard_statement.h"
 #include "src/tint/ast/enable.h"
@@ -54,6 +55,7 @@
 #include "src/tint/ast/for_loop_statement.h"
 #include "src/tint/ast/i32.h"
 #include "src/tint/ast/id_attribute.h"
+#include "src/tint/ast/identifier.h"
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ast/increment_decrement_statement.h"
 #include "src/tint/ast/index_accessor_expression.h"
@@ -80,6 +82,7 @@
 #include "src/tint/ast/struct_member_offset_attribute.h"
 #include "src/tint/ast/struct_member_size_attribute.h"
 #include "src/tint/ast/switch_statement.h"
+#include "src/tint/ast/templated_identifier.h"
 #include "src/tint/ast/type_name.h"
 #include "src/tint/ast/u32.h"
 #include "src/tint/ast/unary_op_expression.h"
@@ -160,12 +163,29 @@ struct CanWrapInStatement;
 /// To construct a Program, populate the builder and then `std::move` it to a
 /// Program.
 class ProgramBuilder {
-    /// A helper used to disable overloads if the first type in `TYPES` is a
-    /// Source. Used to avoid ambiguities in overloads that take a Source as the
-    /// first parameter and those that perfectly-forward the first argument.
+    /// Evaluates to true if T is a Source
+    template <typename T>
+    static constexpr const bool IsSource = std::is_same_v<T, Source>;
+
+    /// Evaluates to true if T is a Number or bool.
+    template <typename T>
+    static constexpr const bool IsScalar =
+        std::is_integral_v<UnwrapNumber<T>> || std::is_floating_point_v<UnwrapNumber<T>> ||
+        std::is_same_v<T, bool>;
+
+    /// A helper used to disable overloads if the first type in `TYPES` is a Source. Used to avoid
+    /// ambiguities in overloads that take a Source as the first parameter and those that
+    /// perfectly-forward the first argument.
     template <typename... TYPES>
     using DisableIfSource =
-        traits::EnableIfIsNotType<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>, Source>;
+        traits::EnableIf<!IsSource<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>>;
+
+    /// A helper used to disable overloads if the first type in `TYPES` is a scalar type. Used to
+    /// avoid ambiguities in overloads that take a scalar as the first parameter and those that
+    /// perfectly-forward the first argument.
+    template <typename... TYPES>
+    using DisableIfScalar =
+        traits::EnableIf<!IsScalar<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>>;
 
     /// A helper used to disable overloads if the first type in `TYPES` is a utils::Vector,
     /// utils::VectorRef or utils::VectorRef.
@@ -203,9 +223,7 @@ class ProgramBuilder {
         template <typename... ARGS>
         explicit LetOptions(ARGS&&... args) {
             static constexpr bool has_init =
-                (traits::IsTypeOrDerived<std::remove_pointer_t<std::remove_reference_t<ARGS>>,
-                                         ast::Expression> ||
-                 ...);
+                (traits::IsTypeOrDerived<traits::PtrElTy<ARGS>, ast::Expression> || ...);
             static_assert(has_init, "Let() must be constructed with an initializer expression");
             (Set(std::forward<ARGS>(args)), ...);
         }
@@ -228,9 +246,7 @@ class ProgramBuilder {
         template <typename... ARGS>
         explicit ConstOptions(ARGS&&... args) {
             static constexpr bool has_init =
-                (traits::IsTypeOrDerived<std::remove_pointer_t<std::remove_reference_t<ARGS>>,
-                                         ast::Expression> ||
-                 ...);
+                (traits::IsTypeOrDerived<traits::PtrElTy<ARGS>, ast::Expression> || ...);
             static_assert(has_init, "Const() must be constructed with an initializer expression");
             (Set(std::forward<ARGS>(args)), ...);
         }
@@ -903,19 +919,23 @@ class ProgramBuilder {
 
         /// Creates a type name
         /// @param name the name
+        /// @param args the optional template arguments
         /// @returns the type name
-        template <typename NAME>
-        const ast::TypeName* type_name(NAME&& name) const {
-            return builder->create<ast::TypeName>(builder->Sym(std::forward<NAME>(name)));
+        template <typename NAME, typename... ARGS, typename _ = DisableIfSource<NAME>>
+        const ast::TypeName* operator()(NAME&& name, ARGS&&... args) const {
+            return builder->create<ast::TypeName>(
+                builder->Ident(std::forward<NAME>(name), std::forward<ARGS>(args)...));
         }
 
         /// Creates a type name
         /// @param source the Source of the node
         /// @param name the name
+        /// @param args the optional template arguments
         /// @returns the type name
-        template <typename NAME>
-        const ast::TypeName* type_name(const Source& source, NAME&& name) const {
-            return builder->create<ast::TypeName>(source, builder->Sym(std::forward<NAME>(name)));
+        template <typename NAME, typename... ARGS>
+        const ast::TypeName* operator()(const Source& source, NAME&& name, ARGS&&... args) const {
+            return builder->create<ast::TypeName>(
+                source, builder->Ident(std::forward<NAME>(name), std::forward<ARGS>(args)...));
         }
 
         /// Creates an alias type
@@ -1147,6 +1167,35 @@ class ProgramBuilder {
     /// @return `sym`
     Symbol Sym(Symbol sym) { return sym; }
 
+    /// @param source the source information
+    /// @param identifier the identifier symbol
+    /// @param args optional templated identifier arguments
+    /// @return an ast::Identifier with the given symbol
+    template <typename IDENTIFIER, typename... ARGS>
+    const auto* Ident(const Source& source, IDENTIFIER&& identifier, ARGS&&... args) {
+        Symbol sym = Sym(std::forward<IDENTIFIER>(identifier));
+        if constexpr (sizeof...(args) > 0) {
+            return create<ast::TemplatedIdentifier>(source, sym,
+                                                    ExprList(std::forward<ARGS>(args)...));
+        } else {
+            return create<ast::Identifier>(source, sym);
+        }
+    }
+
+    /// @param identifier the identifier symbol
+    /// @param args optional templated identifier arguments
+    /// @return an ast::Identifier with the given symbol
+    template <typename IDENTIFIER, typename... ARGS, typename = DisableIfSource<IDENTIFIER>>
+    const auto* Ident(IDENTIFIER&& identifier, ARGS&&... args) {
+        if constexpr (traits::IsTypeOrDerived<traits::PtrElTy<IDENTIFIER>, ast::Identifier>) {
+            static_assert(sizeof...(args) == 0);
+            return identifier;  // Pass-through
+        } else {
+            return Ident(source_, std::forward<IDENTIFIER>(identifier),
+                         std::forward<ARGS>(args)...);
+        }
+    }
+
     /// @param expr the expression
     /// @return expr
     template <typename T>
@@ -1162,52 +1211,62 @@ class ProgramBuilder {
     /// @param symbol the identifier symbol
     /// @return an ast::IdentifierExpression with the given symbol
     const ast::IdentifierExpression* Expr(const Source& source, Symbol symbol) {
-        return create<ast::IdentifierExpression>(source, symbol);
+        return create<ast::IdentifierExpression>(source, Ident(source, symbol));
     }
 
     /// @param symbol the identifier symbol
     /// @return an ast::IdentifierExpression with the given symbol
     const ast::IdentifierExpression* Expr(Symbol symbol) {
-        return create<ast::IdentifierExpression>(symbol);
-    }
-
-    /// @param source the source information
-    /// @param variable the AST variable
-    /// @return an ast::IdentifierExpression with the variable's symbol
-    const ast::IdentifierExpression* Expr(const Source& source, const ast::Variable* variable) {
-        return create<ast::IdentifierExpression>(source, variable->symbol);
-    }
-
-    /// @param variable the AST variable
-    /// @return an ast::IdentifierExpression with the variable's symbol
-    const ast::IdentifierExpression* Expr(const ast::Variable* variable) {
-        return create<ast::IdentifierExpression>(variable->symbol);
+        return create<ast::IdentifierExpression>(Ident(symbol));
     }
 
     /// @param source the source information
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
     const ast::IdentifierExpression* Expr(const Source& source, const char* name) {
-        return create<ast::IdentifierExpression>(source, Symbols().Register(name));
+        return create<ast::IdentifierExpression>(source, Ident(source, name));
     }
 
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
     const ast::IdentifierExpression* Expr(const char* name) {
-        return create<ast::IdentifierExpression>(Symbols().Register(name));
+        return create<ast::IdentifierExpression>(Ident(name));
     }
 
     /// @param source the source information
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
     const ast::IdentifierExpression* Expr(const Source& source, const std::string& name) {
-        return create<ast::IdentifierExpression>(source, Symbols().Register(name));
+        return create<ast::IdentifierExpression>(source, Ident(source, name));
     }
 
     /// @param name the identifier name
     /// @return an ast::IdentifierExpression with the given name
     const ast::IdentifierExpression* Expr(const std::string& name) {
-        return create<ast::IdentifierExpression>(Symbols().Register(name));
+        return create<ast::IdentifierExpression>(Ident(name));
+    }
+
+    /// @param source the source information
+    /// @param variable the AST variable
+    /// @return an ast::IdentifierExpression with the variable's symbol
+    const ast::IdentifierExpression* Expr(const Source& source, const ast::Variable* variable) {
+        return create<ast::IdentifierExpression>(source, Ident(source, variable->symbol));
+    }
+
+    /// @param variable the AST variable
+    /// @return an ast::IdentifierExpression with the variable's symbol
+    const ast::IdentifierExpression* Expr(const ast::Variable* variable) {
+        return create<ast::IdentifierExpression>(Ident(variable->symbol));
+    }
+
+    /// @param ident the identifier
+    /// @return an ast::IdentifierExpression with the given identifier
+    template <typename IDENTIFIER, typename = traits::EnableIfIsType<IDENTIFIER, ast::Identifier>>
+    const ast::IdentifierExpression* Expr(const IDENTIFIER* ident) {
+        static_assert(!traits::IsType<IDENTIFIER, ast::TemplatedIdentifier>,
+                      "it is currently invalid for a templated identifier expression to be used as "
+                      "an identifier expression, as this should parse as an ast::TypeName");
+        return create<ast::IdentifierExpression>(ident);
     }
 
     /// @param source the source information
@@ -1362,35 +1421,6 @@ class ProgramBuilder {
         return list;
     }
 
-    /// @param args the arguments for the type constructor
-    /// @return an `ast::CallExpression` of type `ty`, with the values
-    /// of `args` converted to `ast::Expression`s using `Expr()`
-    template <typename T, typename... ARGS>
-    const ast::CallExpression* Construct(ARGS&&... args) {
-        return Construct(ty.Of<T>(), std::forward<ARGS>(args)...);
-    }
-
-    /// @param type the type to construct
-    /// @param args the arguments for the constructor
-    /// @return an `ast::CallExpression` of `type` constructed with the
-    /// values `args`.
-    template <typename... ARGS>
-    const ast::CallExpression* Construct(const ast::Type* type, ARGS&&... args) {
-        return Construct(source_, type, std::forward<ARGS>(args)...);
-    }
-
-    /// @param source the source information
-    /// @param type the type to construct
-    /// @param args the arguments for the constructor
-    /// @return an `ast::CallExpression` of `type` constructed with the
-    /// values `args`.
-    template <typename... ARGS>
-    const ast::CallExpression* Construct(const Source& source,
-                                         const ast::Type* type,
-                                         ARGS&&... args) {
-        return create<ast::CallExpression>(source, type, ExprList(std::forward<ARGS>(args)...));
-    }
-
     /// @param expr the expression for the bitcast
     /// @return an `ast::BitcastExpression` of type `ty`, with the values of
     /// `expr` converted to `ast::Expression`s using `Expr()`
@@ -1427,7 +1457,7 @@ class ProgramBuilder {
     /// type `type`, constructed with the values `args`.
     template <typename... ARGS>
     const ast::CallExpression* vec(const ast::Type* type, uint32_t size, ARGS&&... args) {
-        return Construct(ty.vec(type, size), std::forward<ARGS>(args)...);
+        return Call(ty.vec(type, size), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the vector initializer
@@ -1435,7 +1465,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* vec2(ARGS&&... args) {
-        return Construct(ty.vec2<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.vec2<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the vector source
@@ -1444,7 +1474,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* vec2(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.vec2<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.vec2<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the vector initializer
@@ -1452,7 +1482,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* vec3(ARGS&&... args) {
-        return Construct(ty.vec3<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.vec3<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the vector source
@@ -1461,7 +1491,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* vec3(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.vec3<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.vec3<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the vector initializer
@@ -1469,7 +1499,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* vec4(ARGS&&... args) {
-        return Construct(ty.vec4<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.vec4<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the vector source
@@ -1478,7 +1508,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* vec4(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.vec4<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.vec4<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1486,7 +1516,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat2x2(ARGS&&... args) {
-        return Construct(ty.mat2x2<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat2x2<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1495,7 +1525,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat2x2(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat2x2<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat2x2<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1503,7 +1533,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat2x3(ARGS&&... args) {
-        return Construct(ty.mat2x3<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat2x3<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1512,7 +1542,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat2x3(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat2x3<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat2x3<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1520,7 +1550,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat2x4(ARGS&&... args) {
-        return Construct(ty.mat2x4<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat2x4<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1529,7 +1559,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat2x4(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat2x4<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat2x4<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1537,7 +1567,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat3x2(ARGS&&... args) {
-        return Construct(ty.mat3x2<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat3x2<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1546,7 +1576,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat3x2(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat3x2<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat3x2<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1554,7 +1584,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat3x3(ARGS&&... args) {
-        return Construct(ty.mat3x3<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat3x3<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1563,7 +1593,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat3x3(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat3x3<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat3x3<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1571,7 +1601,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat3x4(ARGS&&... args) {
-        return Construct(ty.mat3x4<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat3x4<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1580,7 +1610,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat3x4(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat3x4<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat3x4<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1588,7 +1618,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat4x2(ARGS&&... args) {
-        return Construct(ty.mat4x2<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat4x2<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1597,7 +1627,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat4x2(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat4x2<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat4x2<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1605,7 +1635,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat4x3(ARGS&&... args) {
-        return Construct(ty.mat4x3<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat4x3<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1614,7 +1644,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat4x3(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat4x3<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat4x3<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the matrix initializer
@@ -1622,7 +1652,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS, typename _ = DisableIfSource<ARGS...>>
     const ast::CallExpression* mat4x4(ARGS&&... args) {
-        return Construct(ty.mat4x4<T>(), std::forward<ARGS>(args)...);
+        return Call(ty.mat4x4<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the matrix source
@@ -1631,7 +1661,7 @@ class ProgramBuilder {
     /// `T`, constructed with the values `args`.
     template <typename T, typename... ARGS>
     const ast::CallExpression* mat4x4(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.mat4x4<T>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.mat4x4<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param args the arguments for the array initializer
@@ -1639,7 +1669,7 @@ class ProgramBuilder {
     /// `T` and size `N`, constructed with the values `args`.
     template <typename T, int N, typename... ARGS>
     const ast::CallExpression* array(ARGS&&... args) {
-        return Construct(ty.array<T, N>(), std::forward<ARGS>(args)...);
+        return Call(ty.array<T, N>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the array source
@@ -1648,7 +1678,7 @@ class ProgramBuilder {
     /// `T` and size `N`, constructed with the values `args`.
     template <typename T, int N, typename... ARGS>
     const ast::CallExpression* array(const Source& source, ARGS&&... args) {
-        return Construct(source, ty.array<T, N>(), std::forward<ARGS>(args)...);
+        return Call(source, ty.array<T, N>(), std::forward<ARGS>(args)...);
     }
 
     /// @param subtype the array element type
@@ -1658,7 +1688,7 @@ class ProgramBuilder {
     /// `subtype`, constructed with the values `args`.
     template <typename EXPR, typename... ARGS>
     const ast::CallExpression* array(const ast::Type* subtype, EXPR&& n, ARGS&&... args) {
-        return Construct(ty.array(subtype, std::forward<EXPR>(n)), std::forward<ARGS>(args)...);
+        return Call(ty.array(subtype, std::forward<EXPR>(n)), std::forward<ARGS>(args)...);
     }
 
     /// @param source the array source
@@ -1672,8 +1702,7 @@ class ProgramBuilder {
                                      const ast::Type* subtype,
                                      EXPR&& n,
                                      ARGS&&... args) {
-        return Construct(source, ty.array(subtype, std::forward<EXPR>(n)),
-                         std::forward<ARGS>(args)...);
+        return Call(source, ty.array(subtype, std::forward<EXPR>(n)), std::forward<ARGS>(args)...);
     }
 
     /// Adds the extension to the list of enable directives at the top of the module.
@@ -2031,24 +2060,41 @@ class ProgramBuilder {
                                               Expr(std::forward<EXPR>(expr)));
     }
 
-    /// @param source the source information
-    /// @param func the function name
+    /// @param target the call target
     /// @param args the function call arguments
     /// @returns a `ast::CallExpression` to the function `func`, with the
     /// arguments of `args` converted to `ast::Expression`s using `Expr()`.
-    template <typename NAME, typename... ARGS>
-    const ast::CallExpression* Call(const Source& source, NAME&& func, ARGS&&... args) {
-        return create<ast::CallExpression>(source, Expr(func),
-                                           ExprList(std::forward<ARGS>(args)...));
+    template <typename TARGET,
+              typename... ARGS,
+              typename = DisableIfSource<TARGET>,
+              typename = DisableIfScalar<TARGET>>
+    const ast::CallExpression* Call(TARGET&& target, ARGS&&... args) {
+        return Call(source_, std::forward<TARGET>(target), std::forward<ARGS>(args)...);
     }
 
-    /// @param func the function name
+    /// @param source the source information
+    /// @param target the call target. Can be an ast::Type or ast::Identifier, or string-like.
     /// @param args the function call arguments
-    /// @returns a `ast::CallExpression` to the function `func`, with the
-    /// arguments of `args` converted to `ast::Expression`s using `Expr()`.
-    template <typename NAME, typename... ARGS, typename = DisableIfSource<NAME>>
-    const ast::CallExpression* Call(NAME&& func, ARGS&&... args) {
-        return create<ast::CallExpression>(Expr(func), ExprList(std::forward<ARGS>(args)...));
+    /// @returns a `ast::CallExpression` to the target @p target, with the arguments of @p args
+    /// converted to `ast::Expression`s using Expr().
+    template <typename TARGET, typename... ARGS, typename = DisableIfScalar<TARGET>>
+    const ast::CallExpression* Call(const Source& source, TARGET&& target, ARGS&&... args) {
+        if constexpr (traits::IsTypeOrDerived<traits::PtrElTy<TARGET>, ast::Type>) {
+            return create<ast::CallExpression>(source, target,
+                                               ExprList(std::forward<ARGS>(args)...));
+
+        } else {
+            return create<ast::CallExpression>(source, Ident(target),
+                                               ExprList(std::forward<ARGS>(args)...));
+        }
+    }
+
+    /// @param args the arguments for the type constructor
+    /// @return an `ast::CallExpression` of type `ty`, with the values
+    /// of `args` converted to `ast::Expression`s using `Expr()`
+    template <typename T, typename... ARGS, typename = DisableIfSource<ARGS...>>
+    const ast::CallExpression* Call(ARGS&&... args) {
+        return Call(ty.Of<T>(), std::forward<ARGS>(args)...);
     }
 
     /// @param source the source information
@@ -2325,43 +2371,46 @@ class ProgramBuilder {
     }
 
     /// @param source the source information
-    /// @param obj the object for the index accessor expression
-    /// @param idx the index argument for the index accessor expression
-    /// @returns a `ast::IndexAccessorExpression` that indexes `arr` with `idx`
-    template <typename OBJ, typename IDX>
-    const ast::IndexAccessorExpression* IndexAccessor(const Source& source, OBJ&& obj, IDX&& idx) {
-        return create<ast::IndexAccessorExpression>(source, Expr(std::forward<OBJ>(obj)),
-                                                    Expr(std::forward<IDX>(idx)));
+    /// @param object the object for the index accessor expression
+    /// @param index the index argument for the index accessor expression
+    /// @returns a `ast::IndexAccessorExpression` that indexes @p object with @p index
+    template <typename OBJECT, typename INDEX>
+    const ast::IndexAccessorExpression* IndexAccessor(const Source& source,
+                                                      OBJECT&& object,
+                                                      INDEX&& index) {
+        return create<ast::IndexAccessorExpression>(source, Expr(std::forward<OBJECT>(object)),
+                                                    Expr(std::forward<INDEX>(index)));
     }
 
-    /// @param obj the object for the index accessor expression
-    /// @param idx the index argument for the index accessor expression
-    /// @returns a `ast::IndexAccessorExpression` that indexes `arr` with `idx`
-    template <typename OBJ, typename IDX>
-    const ast::IndexAccessorExpression* IndexAccessor(OBJ&& obj, IDX&& idx) {
-        return create<ast::IndexAccessorExpression>(Expr(std::forward<OBJ>(obj)),
-                                                    Expr(std::forward<IDX>(idx)));
+    /// @param object the object for the index accessor expression
+    /// @param index the index argument for the index accessor expression
+    /// @returns a `ast::IndexAccessorExpression` that indexes @p object with @p index
+    template <typename OBJECT, typename INDEX>
+    const ast::IndexAccessorExpression* IndexAccessor(OBJECT&& object, INDEX&& index) {
+        return create<ast::IndexAccessorExpression>(Expr(std::forward<OBJECT>(object)),
+                                                    Expr(std::forward<INDEX>(index)));
     }
 
     /// @param source the source information
-    /// @param obj the object for the member accessor expression
-    /// @param idx the index argument for the member accessor expression
-    /// @returns a `ast::MemberAccessorExpression` that indexes `obj` with `idx`
-    template <typename OBJ, typename IDX>
+    /// @param object the object for the member accessor expression
+    /// @param member the member argument for the member accessor expression
+    /// @returns a `ast::MemberAccessorExpression` that indexes @p object with @p member
+    template <typename OBJECT, typename MEMBER>
     const ast::MemberAccessorExpression* MemberAccessor(const Source& source,
-                                                        OBJ&& obj,
-                                                        IDX&& idx) {
-        return create<ast::MemberAccessorExpression>(source, Expr(std::forward<OBJ>(obj)),
-                                                     Expr(std::forward<IDX>(idx)));
+                                                        OBJECT&& object,
+                                                        MEMBER&& member) {
+        static_assert(!traits::IsType<traits::PtrElTy<MEMBER>, ast::TemplatedIdentifier>,
+                      "it is currently invalid for a structure to hold a templated member");
+        return create<ast::MemberAccessorExpression>(source, Expr(std::forward<OBJECT>(object)),
+                                                     Ident(std::forward<MEMBER>(member)));
     }
 
-    /// @param obj the object for the member accessor expression
-    /// @param idx the index argument for the member accessor expression
-    /// @returns a `ast::MemberAccessorExpression` that indexes `obj` with `idx`
-    template <typename OBJ, typename IDX>
-    const ast::MemberAccessorExpression* MemberAccessor(OBJ&& obj, IDX&& idx) {
-        return create<ast::MemberAccessorExpression>(Expr(std::forward<OBJ>(obj)),
-                                                     Expr(std::forward<IDX>(idx)));
+    /// @param object the object for the member accessor expression
+    /// @param member the member argument for the member accessor expression
+    /// @returns a `ast::MemberAccessorExpression` that indexes @p object with @p member
+    template <typename OBJECT, typename MEMBER>
+    const ast::MemberAccessorExpression* MemberAccessor(OBJECT&& object, MEMBER&& member) {
+        return MemberAccessor(source_, std::forward<OBJECT>(object), std::forward<MEMBER>(member));
     }
 
     /// Creates a ast::StructMemberOffsetAttribute
@@ -2456,7 +2505,8 @@ class ProgramBuilder {
     /// @param type the function return type
     /// @param body the function body
     /// @param attributes the optional function attributes
-    /// @param return_type_attributes the optional function return type
+    /// @param return_type_attributes the optional function return type attributes
+    /// @param body_attributes the optional function body attributes
     /// attributes
     /// @returns the function pointer
     template <typename NAME>
@@ -2467,11 +2517,12 @@ class ProgramBuilder {
         const ast::Type* type,
         utils::VectorRef<const ast::Statement*> body,
         utils::VectorRef<const ast::Attribute*> attributes = utils::Empty,
-        utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty) {
-        auto* func =
-            create<ast::Function>(source, Sym(std::forward<NAME>(name)), std::move(params), type,
-                                  create<ast::BlockStatement>(std::move(body)),
-                                  std::move(attributes), std::move(return_type_attributes));
+        utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty,
+        utils::VectorRef<const ast::Attribute*> body_attributes = utils::Empty) {
+        auto* func = create<ast::Function>(
+            source, Sym(std::forward<NAME>(name)), std::move(params), type,
+            create<ast::BlockStatement>(std::move(body), std::move(body_attributes)),
+            std::move(attributes), std::move(return_type_attributes));
         AST().AddFunction(func);
         return func;
     }
@@ -2482,7 +2533,8 @@ class ProgramBuilder {
     /// @param type the function return type
     /// @param body the function body
     /// @param attributes the optional function attributes
-    /// @param return_type_attributes the optional function return type
+    /// @param return_type_attributes the optional function return type attributes
+    /// @param body_attributes the optional function body attributes
     /// attributes
     /// @returns the function pointer
     template <typename NAME>
@@ -2492,11 +2544,12 @@ class ProgramBuilder {
         const ast::Type* type,
         utils::VectorRef<const ast::Statement*> body,
         utils::VectorRef<const ast::Attribute*> attributes = utils::Empty,
-        utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty) {
-        auto* func =
-            create<ast::Function>(Sym(std::forward<NAME>(name)), std::move(params), type,
-                                  create<ast::BlockStatement>(std::move(body)),
-                                  std::move(attributes), std::move(return_type_attributes));
+        utils::VectorRef<const ast::Attribute*> return_type_attributes = utils::Empty,
+        utils::VectorRef<const ast::Attribute*> body_attributes = utils::Empty) {
+        auto* func = create<ast::Function>(
+            Sym(std::forward<NAME>(name)), std::move(params), type,
+            create<ast::BlockStatement>(std::move(body), std::move(body_attributes)),
+            std::move(attributes), std::move(return_type_attributes));
         AST().AddFunction(func);
         return func;
     }
@@ -2676,23 +2729,50 @@ class ProgramBuilder {
     /// @param source the source information for the block
     /// @param statements statements of block
     /// @returns the block statement pointer
-    template <typename... Statements>
-    const ast::BlockStatement* Block(const Source& source, Statements&&... statements) {
+    template <typename... STATEMENTS, typename = DisableIfVectorLike<STATEMENTS...>>
+    const ast::BlockStatement* Block(const Source& source, STATEMENTS&&... statements) {
         return create<ast::BlockStatement>(
-            source, utils::Vector<const ast::Statement*, sizeof...(statements)>{
-                        std::forward<Statements>(statements)...,
-                    });
+            source,
+            utils::Vector<const ast::Statement*, sizeof...(statements)>{
+                std::forward<STATEMENTS>(statements)...,
+            },
+            utils::Empty);
     }
 
     /// Creates a ast::BlockStatement with input statements
     /// @param statements statements of block
     /// @returns the block statement pointer
-    template <typename... STATEMENTS, typename = DisableIfSource<STATEMENTS...>>
+    template <typename... STATEMENTS,
+              typename = DisableIfSource<STATEMENTS...>,
+              typename = DisableIfVectorLike<STATEMENTS...>>
     const ast::BlockStatement* Block(STATEMENTS&&... statements) {
         return create<ast::BlockStatement>(
             utils::Vector<const ast::Statement*, sizeof...(statements)>{
                 std::forward<STATEMENTS>(statements)...,
-            });
+            },
+            utils::Empty);
+    }
+
+    /// Creates a ast::BlockStatement with input statements and attributes
+    /// @param source the source information for the block
+    /// @param statements statements of block
+    /// @param attributes the attributes
+    /// @returns the block statement pointer
+    const ast::BlockStatement* Block(
+        const Source& source,
+        utils::VectorRef<const ast::Statement*> statements,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::BlockStatement>(source, std::move(statements), std::move(attributes));
+    }
+
+    /// Creates a ast::BlockStatement with input statements and attributes
+    /// @param statements statements of block
+    /// @param attributes the attributes
+    /// @returns the block statement pointer
+    const ast::BlockStatement* Block(
+        utils::VectorRef<const ast::Statement*> statements,
+        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
+        return create<ast::BlockStatement>(std::move(statements), std::move(attributes));
     }
 
     /// A wrapper type for the Else statement used to create If statements.
@@ -3227,67 +3307,53 @@ class ProgramBuilder {
     /// @param severity the diagnostic severity control
     /// @param rule_name the diagnostic rule name
     /// @returns the diagnostic attribute pointer
-    const ast::DiagnosticAttribute* DiagnosticAttribute(
-        const Source& source,
-        ast::DiagnosticSeverity severity,
-        const ast::IdentifierExpression* rule_name) {
-        return create<ast::DiagnosticAttribute>(source,
-                                                DiagnosticControl(source, severity, rule_name));
+    template <typename NAME>
+    const ast::DiagnosticAttribute* DiagnosticAttribute(const Source& source,
+                                                        ast::DiagnosticSeverity severity,
+                                                        NAME&& rule_name) {
+        static_assert(!traits::IsType<traits::PtrElTy<NAME>, ast::TemplatedIdentifier>,
+                      "it is invalid for a diagnostic rule name to be templated");
+        return create<ast::DiagnosticAttribute>(
+            source, ast::DiagnosticControl(severity, Ident(std::forward<NAME>(rule_name))));
     }
 
     /// Creates an ast::DiagnosticAttribute
     /// @param severity the diagnostic severity control
     /// @param rule_name the diagnostic rule name
     /// @returns the diagnostic attribute pointer
-    const ast::DiagnosticAttribute* DiagnosticAttribute(
-        ast::DiagnosticSeverity severity,
-        const ast::IdentifierExpression* rule_name) {
-        return create<ast::DiagnosticAttribute>(source_,
-                                                DiagnosticControl(source_, severity, rule_name));
+    template <typename NAME>
+    const ast::DiagnosticAttribute* DiagnosticAttribute(ast::DiagnosticSeverity severity,
+                                                        NAME&& rule_name) {
+        return create<ast::DiagnosticAttribute>(
+            source_, ast::DiagnosticControl(severity, Ident(std::forward<NAME>(rule_name))));
     }
 
-    /// Creates an ast::DiagnosticControl
+    /// Add a diagnostic directive to the module.
     /// @param source the source information
     /// @param severity the diagnostic severity control
     /// @param rule_name the diagnostic rule name
-    /// @returns the diagnostic control pointer
-    const ast::DiagnosticControl* DiagnosticControl(const Source& source,
-                                                    ast::DiagnosticSeverity severity,
-                                                    const ast::IdentifierExpression* rule_name) {
-        return create<ast::DiagnosticControl>(source, severity, rule_name);
+    /// @returns the diagnostic directive pointer
+    template <typename NAME>
+    const ast::DiagnosticDirective* DiagnosticDirective(const Source& source,
+                                                        ast::DiagnosticSeverity severity,
+                                                        NAME&& rule_name) {
+        auto* directive = create<ast::DiagnosticDirective>(
+            source, ast::DiagnosticControl(severity, Ident(std::forward<NAME>(rule_name))));
+        AST().AddDiagnosticDirective(directive);
+        return directive;
     }
 
-    /// Creates an ast::DiagnosticControl
+    /// Add a diagnostic directive to the module.
     /// @param severity the diagnostic severity control
     /// @param rule_name the diagnostic rule name
-    /// @returns the diagnostic control pointer
-    const ast::DiagnosticControl* DiagnosticControl(ast::DiagnosticSeverity severity,
-                                                    const ast::IdentifierExpression* rule_name) {
-        return create<ast::DiagnosticControl>(source_, severity, rule_name);
-    }
-
-    /// Add a global diagnostic control to the module.
-    /// @param source the source information
-    /// @param severity the diagnostic severity control
-    /// @param rule_name the diagnostic rule name
-    /// @returns the diagnostic control pointer
-    const ast::DiagnosticControl* DiagnosticDirective(const Source& source,
-                                                      ast::DiagnosticSeverity severity,
-                                                      const ast::IdentifierExpression* rule_name) {
-        auto* control = DiagnosticControl(source, severity, rule_name);
-        AST().AddDiagnosticControl(control);
-        return control;
-    }
-
-    /// Add a global diagnostic control to the module.
-    /// @param severity the diagnostic severity control
-    /// @param rule_name the diagnostic rule name
-    /// @returns the diagnostic control pointer
-    const ast::DiagnosticControl* DiagnosticDirective(ast::DiagnosticSeverity severity,
-                                                      const ast::IdentifierExpression* rule_name) {
-        auto* control = DiagnosticControl(source_, severity, rule_name);
-        AST().AddDiagnosticControl(control);
-        return control;
+    /// @returns the diagnostic directive pointer
+    template <typename NAME>
+    const ast::DiagnosticDirective* DiagnosticDirective(ast::DiagnosticSeverity severity,
+                                                        NAME&& rule_name) {
+        auto* directive = create<ast::DiagnosticDirective>(
+            source_, ast::DiagnosticControl(severity, Ident(std::forward<NAME>(rule_name))));
+        AST().AddDiagnosticDirective(directive);
+        return directive;
     }
 
     /// Sets the current builder source to `src`

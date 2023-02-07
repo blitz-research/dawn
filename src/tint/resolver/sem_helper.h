@@ -34,11 +34,13 @@ class SemHelper {
     ~SemHelper();
 
     /// Get is a helper for obtaining the semantic node for the given AST node.
+    /// Raises an ICE and returns `nullptr` if there is no semantic node associated with the AST
+    /// node.
     /// @param ast the ast node to get the sem for
-    /// @returns the sem node for the provided |ast|
-    template <typename SEM = sem::Info::InferFromAST, typename AST_OR_TYPE = CastableBase>
-    auto* Get(const AST_OR_TYPE* ast) const {
-        using T = sem::Info::GetResultType<SEM, AST_OR_TYPE>;
+    /// @returns the sem node for @p ast
+    template <typename SEM = sem::Info::InferFromAST, typename AST = ast::Node>
+    auto* Get(const AST* ast) const {
+        using T = sem::Info::GetResultType<SEM, AST>;
         auto* sem = builder_->Sem().Get(ast);
         if (TINT_UNLIKELY(!sem)) {
             TINT_ICE(Resolver, builder_->Diagnostics())
@@ -49,13 +51,41 @@ class SemHelper {
         return const_cast<T*>(As<T>(sem));
     }
 
+    /// GetVal is a helper for obtaining the semantic sem::ValueExpression for the given AST node.
+    /// Raises an error diagnostic and returns `nullptr` if the semantic node is not a
+    /// sem::ValueExpression.
+    /// @param ast the ast node to get the sem for
+    /// @returns the sem node for @p ast
+    template <typename AST = ast::Node>
+    auto* GetVal(const AST* ast) const {
+        if constexpr (traits::IsTypeOrDerived<sem::SemanticNodeTypeFor<AST>,
+                                              sem::ValueExpression>) {
+            return Get(ast);
+        } else {
+            if (auto* sem = Get(ast); TINT_LIKELY(sem)) {
+                auto* val = sem->template As<sem::ValueExpression>();
+                if (TINT_LIKELY(val)) {
+                    return val;
+                }
+                // TODO(crbug.com/tint/1810): Improve error
+                builder_->Diagnostics().add_error(diag::System::Resolver,
+                                                  "required value expression, got something else",
+                                                  ast->source);
+            }
+            return static_cast<sem::ValueExpression*>(nullptr);
+        }
+    }
+
     /// @returns the resolved symbol (function, type or variable) for the given ast::Identifier or
     /// ast::TypeName cast to the given semantic type.
     /// @param node the node to retrieve
-    template <typename SEM = CastableBase>
-    SEM* ResolvedSymbol(const ast::Node* node) const {
-        auto resolved = dependencies_.resolved_symbols.Find(node);
-        return resolved ? const_cast<SEM*>(builder_->Sem().Get<SEM>(*resolved)) : nullptr;
+    template <typename SEM = sem::Info::InferFromAST>
+    sem::Info::GetResultType<SEM, ast::Node>* ResolvedSymbol(const ast::Node* node) const {
+        if (auto resolved = dependencies_.resolved_symbols.Find(node)) {
+            auto* sem = builder_->Sem().Get<SEM>(*resolved);
+            return const_cast<sem::Info::GetResultType<SEM, ast::Node>*>(sem);
+        }
+        return nullptr;
     }
 
     /// @returns the resolved type of the ast::Expression `expr`

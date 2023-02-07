@@ -185,7 +185,7 @@ TEST_F(ResolverFunctionValidationTest, DiscardCalledDirectlyFromVertexEntryPoint
     Func(Source{{1, 2}}, "func", utils::Empty, ty.vec4<f32>(),
          utils::Vector{
              Discard(Source{{12, 34}}),
-             Return(Construct(ty.vec4<f32>())),
+             Return(Call(ty.vec4<f32>())),
          },
          utils::Vector{Stage(ast::PipelineStage::kVertex)},
          utils::Vector{Builtin(ast::BuiltinValue::kPosition)});
@@ -533,7 +533,7 @@ TEST_F(ResolverFunctionValidationTest, WorkgroupSize_Cast) {
     auto* func = Func("main", utils::Empty, ty.void_(), utils::Empty,
                       utils::Vector{
                           Stage(ast::PipelineStage::kCompute),
-                          WorkgroupSize(Construct(Source{{12, 34}}, ty.i32(), 5_a)),
+                          WorkgroupSize(Call(Source{{12, 34}}, ty.i32(), 5_a)),
                       });
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
@@ -788,7 +788,7 @@ TEST_F(ResolverFunctionValidationTest, WorkgroupSize_Const_NestedZeroValueInitia
     // const x = i32(i32(i32()));
     // @compute @workgroup_size(x)
     // fn main() {}
-    GlobalConst("x", ty.i32(), Construct(ty.i32(), Construct(ty.i32(), Construct(ty.i32()))));
+    GlobalConst("x", ty.i32(), Call<i32>(Call<i32>(Call<i32>())));
     Func("main", utils::Empty, ty.void_(), utils::Empty,
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -894,7 +894,7 @@ TEST_F(ResolverFunctionValidationTest, WorkgroupSize_InvalidExpr_x) {
     Func("main", utils::Empty, ty.void_(), utils::Empty,
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
-             WorkgroupSize(Construct(Source{{12, 34}}, ty.i32(), "x")),
+             WorkgroupSize(Call(Source{{12, 34}}, ty.i32(), "x")),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -910,7 +910,7 @@ TEST_F(ResolverFunctionValidationTest, WorkgroupSize_InvalidExpr_y) {
     Func("main", utils::Empty, ty.void_(), utils::Empty,
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
-             WorkgroupSize(Construct(Source{{12, 34}}, ty.i32(), "x")),
+             WorkgroupSize(Call(Source{{12, 34}}, ty.i32(), "x")),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -926,7 +926,7 @@ TEST_F(ResolverFunctionValidationTest, WorkgroupSize_InvalidExpr_z) {
     Func("main", utils::Empty, ty.void_(), utils::Empty,
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
-             WorkgroupSize(Construct(Source{{12, 34}}, ty.i32(), "x")),
+             WorkgroupSize(Call(Source{{12, 34}}, ty.i32(), "x")),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -963,7 +963,7 @@ TEST_F(ResolverFunctionValidationTest, ReturnIsConstructible_StructOfAtomic) {
     Structure("S", utils::Vector{
                        Member("m", ty.atomic(ty.i32())),
                    });
-    auto* ret_type = ty.type_name(Source{{12, 34}}, "S");
+    auto* ret_type = ty(Source{{12, 34}}, "S");
     Func("f", utils::Empty, ret_type, utils::Empty);
 
     EXPECT_FALSE(r()->Resolve());
@@ -982,7 +982,7 @@ TEST_F(ResolverFunctionValidationTest, ParameterStoreType_NonAtomicFree) {
     Structure("S", utils::Vector{
                        Member("m", ty.atomic(ty.i32())),
                    });
-    auto* ret_type = ty.type_name(Source{{12, 34}}, "S");
+    auto* ret_type = ty(Source{{12, 34}}, "S");
     auto* bar = Param("bar", ret_type);
     Func("f", utils::Vector{bar}, ty.void_(), utils::Empty);
 
@@ -994,7 +994,7 @@ TEST_F(ResolverFunctionValidationTest, ParameterSotreType_AtomicFree) {
     Structure("S", utils::Vector{
                        Member("m", ty.i32()),
                    });
-    auto* ret_type = ty.type_name(Source{{12, 34}}, "S");
+    auto* ret_type = ty(Source{{12, 34}}, "S");
     auto* bar = Param(Source{{12, 34}}, "bar", ret_type);
     Func("f", utils::Vector{bar}, ty.void_(), utils::Empty);
 

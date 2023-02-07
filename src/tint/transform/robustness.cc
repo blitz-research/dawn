@@ -21,9 +21,9 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/block_statement.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/type/reference.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Robustness);
@@ -79,7 +79,7 @@ struct Robustness::State {
         auto idx = [&]() -> const ast::Expression* {
             auto* i = ctx.Clone(expr->index);
             if (sem->Index()->Type()->is_signed_integer_scalar()) {
-                return b.Construct(b.ty.u32(), i);  // u32(idx)
+                return b.Call<u32>(i);  // u32(idx)
             }
             return i;
         };
@@ -191,15 +191,15 @@ struct Robustness::State {
         auto scalar_or_vec = [&](const ast::Expression* scalar,
                                  uint32_t width) -> const ast::Expression* {
             if (width > 1) {
-                return b.Construct(b.ty.vec(nullptr, width), scalar);
+                return b.Call(b.ty.vec(nullptr, width), scalar);
             }
             return scalar;
         };
         auto cast_to_signed = [&](const ast::Expression* val, uint32_t width) {
-            return b.Construct(scalar_or_vec_ty(b.ty.i32(), width), val);
+            return b.Call(scalar_or_vec_ty(b.ty.i32(), width), val);
         };
         auto cast_to_unsigned = [&](const ast::Expression* val, uint32_t width) {
-            return b.Construct(scalar_or_vec_ty(b.ty.u32(), width), val);
+            return b.Call(scalar_or_vec_ty(b.ty.u32(), width), val);
         };
 
         // If the level is provided, then we need to clamp this. As the level is

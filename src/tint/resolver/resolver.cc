@@ -74,6 +74,7 @@
 #include "src/tint/type/abstract_int.h"
 #include "src/tint/type/array.h"
 #include "src/tint/type/atomic.h"
+#include "src/tint/type/builtin.h"
 #include "src/tint/type/depth_multisampled_texture.h"
 #include "src/tint/type/depth_texture.h"
 #include "src/tint/type/multisampled_texture.h"
@@ -81,7 +82,6 @@
 #include "src/tint/type/reference.h"
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/sampler.h"
-#include "src/tint/type/short_name.h"
 #include "src/tint/type/storage_texture.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/defer.h"
@@ -158,11 +158,15 @@ bool Resolver::ResolveInternal() {
     Mark(&builder_->AST());
 
     // Process all module-scope declarations in dependency order.
+    utils::Vector<const ast::DiagnosticControl*, 4> diagnostic_controls;
     for (auto* decl : dependencies_.ordered_globals) {
         Mark(decl);
         if (!Switch<bool>(
                 decl,  //
-                [&](const ast::DiagnosticControl* dc) { return DiagnosticControl(dc); },
+                [&](const ast::DiagnosticDirective* d) {
+                    diagnostic_controls.Push(&d->control);
+                    return DiagnosticControl(d->control);
+                },
                 [&](const ast::Enable* e) { return Enable(e); },
                 [&](const ast::TypeDecl* td) { return TypeDecl(td); },
                 [&](const ast::Function* func) { return Function(func); },
@@ -183,7 +187,7 @@ bool Resolver::ResolveInternal() {
 
     SetShadows();
 
-    if (!validator_.DiagnosticControls(builder_->AST().DiagnosticControls(), "directive")) {
+    if (!validator_.DiagnosticControls(diagnostic_controls, "directive")) {
         return false;
     }
 
@@ -318,8 +322,22 @@ type::Type* Resolver::Type(const ast::Type* ty) {
             return nullptr;
         },
         [&](const ast::ExternalTexture*) { return builder_->create<type::ExternalTexture>(); },
-        [&](Default) {
-            auto* resolved = sem_.ResolvedSymbol(ty);
+        [&](const ast::TypeName* t) -> type::Type* {
+            Mark(t->name);
+
+            if (t->name->Is<ast::TemplatedIdentifier>()) {
+                TINT_UNREACHABLE(Resolver, builder_->Diagnostics()) << "TODO(crbug.com/tint/1810)";
+            }
+
+            auto* resolved = sem_.ResolvedSymbol(t);
+            if (resolved == nullptr) {
+                if (IsBuiltin(t->name->symbol)) {
+                    auto name = builder_->Symbols().NameFor(t->name->symbol);
+                    AddError("cannot use builtin '" + name + "' as type", ty->source);
+                    return nullptr;
+                }
+                return BuiltinType(t->name->symbol, t->source);
+            }
             return Switch(
                 resolved,  //
                 [&](type::Type* type) { return type; },
@@ -336,20 +354,17 @@ type::Type* Resolver::Type(const ast::Type* ty) {
                     return nullptr;
                 },
                 [&](Default) -> type::Type* {
-                    if (auto* tn = ty->As<ast::TypeName>()) {
-                        if (IsBuiltin(tn->name)) {
-                            auto name = builder_->Symbols().NameFor(tn->name);
-                            AddError("cannot use builtin '" + name + "' as type", ty->source);
-                            return nullptr;
-                        }
-                        return ShortName(tn->name, tn->source);
-                    }
                     TINT_UNREACHABLE(Resolver, diagnostics_)
                         << "Unhandled resolved type '"
                         << (resolved ? resolved->TypeInfo().name : "<null>")
                         << "' resolved from ast::Type '" << ty->TypeInfo().name << "'";
                     return nullptr;
                 });
+        },
+        [&](Default) {
+            TINT_UNREACHABLE(Resolver, diagnostics_)
+                << "Unhandled type: '" << ty->TypeInfo().name << "'";
+            return nullptr;
         });
 
     if (s) {
@@ -438,7 +453,7 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
         }
     }
 
-    const sem::Expression* rhs = nullptr;
+    const sem::ValueExpression* rhs = nullptr;
 
     // Does the variable have an initializer?
     if (v->initializer) {
@@ -530,7 +545,7 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
         return nullptr;
     }
 
-    const sem::Expression* rhs = nullptr;
+    const sem::ValueExpression* rhs = nullptr;
     {
         ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "const initializer"};
         TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
@@ -588,7 +603,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
         }
     }
 
-    const sem::Expression* rhs = nullptr;
+    const sem::ValueExpression* rhs = nullptr;
 
     // Does the variable have a initializer?
     if (var->initializer) {
@@ -866,9 +881,11 @@ bool Resolver::AllocateOverridableConstantIds() {
             continue;
         }
 
+        auto* sem = sem_.Get(override);
+
         OverrideId id;
         if (ast::HasAttribute<ast::IdAttribute>(override->attributes)) {
-            id = builder_->Sem().Get<sem::GlobalVariable>(override)->OverrideId();
+            id = sem->OverrideId();
         } else {
             // No ID was specified, so allocate the next available ID.
             while (!ids_exhausted && override_ids_.Contains(next_id)) {
@@ -884,7 +901,6 @@ bool Resolver::AllocateOverridableConstantIds() {
             increment_next_id();
         }
 
-        auto* sem = sem_.Get<sem::GlobalVariable>(override);
         const_cast<sem::GlobalVariable*>(sem)->SetOverrideId(id);
     }
     return true;
@@ -978,7 +994,6 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     for (auto* attr : decl->attributes) {
         Mark(attr);
         if (auto* dc = attr->As<ast::DiagnosticAttribute>()) {
-            Mark(dc->control);
             if (!DiagnosticControl(dc->control)) {
                 return nullptr;
             }
@@ -1150,7 +1165,7 @@ bool Resolver::WorkgroupSize(const ast::Function* func) {
     }
 
     auto values = attr->Values();
-    utils::Vector<const sem::Expression*, 3> args;
+    utils::Vector<const sem::ValueExpression*, 3> args;
     utils::Vector<const type::Type*, 3> arg_tys;
 
     constexpr const char* kErrBadExpr =
@@ -1303,7 +1318,7 @@ sem::CaseStatement* Resolver::CaseStatement(const ast::CaseStatement* stmt, cons
             if (!sel->IsDefault()) {
                 // The sem statement was created in the switch when attempting to determine the
                 // common type.
-                auto* materialized = Materialize(sem_.Get(sel->expr), ty);
+                auto* materialized = Materialize(sem_.GetVal(sel->expr), ty);
                 if (!materialized) {
                     return false;
                 }
@@ -1501,7 +1516,7 @@ sem::WhileStatement* Resolver::WhileStatement(const ast::WhileStatement* stmt) {
     });
 }
 
-sem::Expression* Resolver::Expression(const ast::Expression* root) {
+sem::ValueExpression* Resolver::Expression(const ast::Expression* root) {
     utils::Vector<const ast::Expression*, 64> sorted;
     constexpr size_t kMaxExpressionDepth = 512U;
     bool failed = false;
@@ -1536,30 +1551,34 @@ sem::Expression* Resolver::Expression(const ast::Expression* root) {
     for (auto* expr : utils::Reverse(sorted)) {
         auto* sem_expr = Switch(
             expr,
-            [&](const ast::IndexAccessorExpression* array) -> sem::Expression* {
+            [&](const ast::IndexAccessorExpression* array) -> sem::ValueExpression* {
                 return IndexAccessor(array);
             },
-            [&](const ast::BinaryExpression* bin_op) -> sem::Expression* { return Binary(bin_op); },
-            [&](const ast::BitcastExpression* bitcast) -> sem::Expression* {
+            [&](const ast::BinaryExpression* bin_op) -> sem::ValueExpression* {
+                return Binary(bin_op);
+            },
+            [&](const ast::BitcastExpression* bitcast) -> sem::ValueExpression* {
                 return Bitcast(bitcast);
             },
-            [&](const ast::CallExpression* call) -> sem::Expression* { return Call(call); },
-            [&](const ast::IdentifierExpression* ident) -> sem::Expression* {
+            [&](const ast::CallExpression* call) -> sem::ValueExpression* { return Call(call); },
+            [&](const ast::IdentifierExpression* ident) -> sem::ValueExpression* {
                 return Identifier(ident);
             },
-            [&](const ast::LiteralExpression* literal) -> sem::Expression* {
+            [&](const ast::LiteralExpression* literal) -> sem::ValueExpression* {
                 return Literal(literal);
             },
-            [&](const ast::MemberAccessorExpression* member) -> sem::Expression* {
+            [&](const ast::MemberAccessorExpression* member) -> sem::ValueExpression* {
                 return MemberAccessor(member);
             },
-            [&](const ast::UnaryOpExpression* unary) -> sem::Expression* { return UnaryOp(unary); },
-            [&](const ast::PhonyExpression*) -> sem::Expression* {
-                return builder_->create<sem::Expression>(expr, builder_->create<type::Void>(),
-                                                         sem::EvaluationStage::kRuntime,
-                                                         current_statement_,
-                                                         /* constant_value */ nullptr,
-                                                         /* has_side_effects */ false);
+            [&](const ast::UnaryOpExpression* unary) -> sem::ValueExpression* {
+                return UnaryOp(unary);
+            },
+            [&](const ast::PhonyExpression*) -> sem::ValueExpression* {
+                return builder_->create<sem::ValueExpression>(expr, builder_->create<type::Void>(),
+                                                              sem::EvaluationStage::kRuntime,
+                                                              current_statement_,
+                                                              /* constant_value */ nullptr,
+                                                              /* has_side_effects */ false);
             },
             [&](Default) {
                 TINT_ICE(Resolver, diagnostics_)
@@ -1607,7 +1626,7 @@ sem::Expression* Resolver::Expression(const ast::Expression* root) {
     return nullptr;
 }
 
-void Resolver::RegisterStore(const sem::Expression* expr) {
+void Resolver::RegisterStore(const sem::ValueExpression* expr) {
     auto& info = alias_analysis_infos_[current_function_];
     Switch(
         expr->RootIdentifier(),
@@ -1629,11 +1648,11 @@ bool Resolver::AliasAnalysis(const sem::Call* call) {
 
     // Helper to generate an aliasing error diagnostic.
     struct Alias {
-        const sem::Expression* expr;          // the "other expression"
+        const sem::ValueExpression* expr;     // the "other expression"
         enum { Argument, ModuleScope } type;  // the type of the "other" expression
         std::string access;                   // the access performed for the "other" expression
     };
-    auto make_error = [&](const sem::Expression* arg, Alias&& var) {
+    auto make_error = [&](const sem::ValueExpression* arg, Alias&& var) {
         // TODO(crbug.com/tint/1675): Switch to error and return false after deprecation period.
         AddWarning("invalid aliased pointer argument", arg->Declaration()->source);
         switch (var.type) {
@@ -1658,8 +1677,8 @@ bool Resolver::AliasAnalysis(const sem::Call* call) {
     auto& caller_info = alias_analysis_infos_[current_function_];
 
     // Track the set of root identifiers that are read and written by arguments passed in this call.
-    std::unordered_map<const sem::Variable*, const sem::Expression*> arg_reads;
-    std::unordered_map<const sem::Variable*, const sem::Expression*> arg_writes;
+    std::unordered_map<const sem::Variable*, const sem::ValueExpression*> arg_reads;
+    std::unordered_map<const sem::Variable*, const sem::ValueExpression*> arg_writes;
     for (size_t i = 0; i < args.Length(); i++) {
         auto* arg = args[i];
         if (!arg->Type()->Is<type::Pointer>()) {
@@ -1773,7 +1792,7 @@ const type::Type* Resolver::ConcreteType(const type::Type* ty,
         });
 }
 
-const sem::Expression* Resolver::Load(const sem::Expression* expr) {
+const sem::ValueExpression* Resolver::Load(const sem::ValueExpression* expr) {
     if (!expr) {
         // Allow for Load(Expression(blah)), where failures pass through Load()
         return nullptr;
@@ -1800,8 +1819,8 @@ const sem::Expression* Resolver::Load(const sem::Expression* expr) {
     return load;
 }
 
-const sem::Expression* Resolver::Materialize(const sem::Expression* expr,
-                                             const type::Type* target_type /* = nullptr */) {
+const sem::ValueExpression* Resolver::Materialize(const sem::ValueExpression* expr,
+                                                  const type::Type* target_type /* = nullptr */) {
     if (!expr) {
         // Allow for Materialize(Expression(blah)), where failures pass through Materialize()
         return nullptr;
@@ -1851,7 +1870,7 @@ const sem::Expression* Resolver::Materialize(const sem::Expression* expr,
 }
 
 template <size_t N>
-bool Resolver::MaybeMaterializeAndLoadArguments(utils::Vector<const sem::Expression*, N>& args,
+bool Resolver::MaybeMaterializeAndLoadArguments(utils::Vector<const sem::ValueExpression*, N>& args,
                                                 const sem::CallTarget* target) {
     for (size_t i = 0, n = std::min(args.Length(), target->Parameters().Length()); i < n; i++) {
         const auto* param_ty = target->Parameters()[i]->Type();
@@ -1891,7 +1910,7 @@ bool Resolver::Convert(const constant::Value*& c,
 
 template <size_t N>
 utils::Result<utils::Vector<const constant::Value*, N>> Resolver::ConvertArguments(
-    const utils::Vector<const sem::Expression*, N>& args,
+    const utils::Vector<const sem::ValueExpression*, N>& args,
     const sem::CallTarget* target) {
     auto const_args = utils::Transform(args, [](auto* arg) { return arg->ConstantValue(); });
     for (size_t i = 0, n = std::min(args.Length(), target->Parameters().Length()); i < n; i++) {
@@ -1903,12 +1922,12 @@ utils::Result<utils::Vector<const constant::Value*, N>> Resolver::ConvertArgumen
     return const_args;
 }
 
-sem::Expression* Resolver::IndexAccessor(const ast::IndexAccessorExpression* expr) {
-    auto* idx = Load(Materialize(sem_.Get(expr->index)));
+sem::ValueExpression* Resolver::IndexAccessor(const ast::IndexAccessorExpression* expr) {
+    auto* idx = Load(Materialize(sem_.GetVal(expr->index)));
     if (!idx) {
         return nullptr;
     }
-    const auto* obj = sem_.Get(expr->object);
+    const auto* obj = sem_.GetVal(expr->object);
     if (idx->Stage() != sem::EvaluationStage::kConstant) {
         // If the index is non-constant, then the resulting expression is non-constant, so we'll
         // have to materialize the object. For example, consider:
@@ -1952,7 +1971,7 @@ sem::Expression* Resolver::IndexAccessor(const ast::IndexAccessorExpression* exp
     if (stage == sem::EvaluationStage::kConstant && skip_const_eval_.Contains(expr)) {
         stage = sem::EvaluationStage::kNotEvaluated;
     } else {
-        if (auto r = const_eval_.Index(obj, idx)) {
+        if (auto r = const_eval_.Index(ty, obj, idx)) {
             val = r.Get();
         } else {
             return nullptr;
@@ -1966,8 +1985,8 @@ sem::Expression* Resolver::IndexAccessor(const ast::IndexAccessorExpression* exp
     return sem;
 }
 
-sem::Expression* Resolver::Bitcast(const ast::BitcastExpression* expr) {
-    auto* inner = Load(Materialize(sem_.Get(expr->expr)));
+sem::ValueExpression* Resolver::Bitcast(const ast::BitcastExpression* expr) {
+    auto* inner = Load(Materialize(sem_.GetVal(expr->expr)));
     if (!inner) {
         return nullptr;
     }
@@ -1993,8 +2012,8 @@ sem::Expression* Resolver::Bitcast(const ast::BitcastExpression* expr) {
         }
     }
 
-    auto* sem = builder_->create<sem::Expression>(expr, ty, stage, current_statement_,
-                                                  std::move(value), inner->HasSideEffects());
+    auto* sem = builder_->create<sem::ValueExpression>(expr, ty, stage, current_statement_,
+                                                       std::move(value), inner->HasSideEffects());
     sem->Behaviors() = inner->Behaviors();
     return sem;
 }
@@ -2007,12 +2026,12 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     // * A type conversion.
 
     // Resolve all of the arguments, their types and the set of behaviors.
-    utils::Vector<const sem::Expression*, 8> args;
+    utils::Vector<const sem::ValueExpression*, 8> args;
     args.Reserve(expr->args.Length());
     auto args_stage = sem::EvaluationStage::kConstant;
     sem::Behaviors arg_behaviors;
     for (size_t i = 0; i < expr->args.Length(); i++) {
-        auto* arg = sem_.Get(expr->args[i]);
+        auto* arg = sem_.GetVal(expr->args[i]);
         if (!arg) {
             return nullptr;
         }
@@ -2080,8 +2099,8 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                 // Constant evaluation failed.
                 // Can happen for expressions that will fail validation (later).
                 // Use the kRuntime EvaluationStage, as kConstant will trigger an assertion in
-                // the sem::Expression initializer, which checks that kConstant is paired with a
-                // constant value.
+                // the sem::ValueExpression initializer, which checks that kConstant is paired with
+                // a constant value.
                 stage = sem::EvaluationStage::kRuntime;
             }
         }
@@ -2313,7 +2332,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                     builtin_type != sem::BuiltinType::kNone) {
                     return BuiltinCall(expr, builtin_type, args);
                 }
-                if (auto* alias = ShortName(ident->symbol, ident->source)) {
+                if (auto* alias = BuiltinType(ident->symbol, ident->source)) {
                     return ty_init_or_conv(alias);
                 }
                 return nullptr;
@@ -2330,7 +2349,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
 template <size_t N>
 sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
                                  sem::BuiltinType builtin_type,
-                                 utils::Vector<const sem::Expression*, N>& args) {
+                                 utils::Vector<const sem::ValueExpression*, N>& args) {
     auto arg_stage = sem::EvaluationStage::kConstant;
     for (auto* arg : args) {
         arg_stage = sem::EarliestStage(arg_stage, arg->Stage());
@@ -2417,92 +2436,93 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
     return call;
 }
 
-type::Type* Resolver::ShortName(Symbol sym, const Source& source) const {
+type::Type* Resolver::BuiltinType(Symbol sym, const Source& source) const {
     auto name = builder_->Symbols().NameFor(sym);
     auto& b = *builder_;
     auto vec_f32 = [&](uint32_t n) { return b.create<type::Vector>(b.create<type::F32>(), n); };
     auto vec_f16 = [&](uint32_t n) { return b.create<type::Vector>(b.create<type::F16>(), n); };
 
-    switch (type::ParseShortName(name)) {
-        case type::ShortName::kMat2X2F:
+    switch (type::ParseBuiltin(name)) {
+        case type::Builtin::kMat2X2F:
             return b.create<type::Matrix>(vec_f32(2u), 2u);
-        case type::ShortName::kMat2X3F:
+        case type::Builtin::kMat2X3F:
             return b.create<type::Matrix>(vec_f32(3u), 2u);
-        case type::ShortName::kMat2X4F:
+        case type::Builtin::kMat2X4F:
             return b.create<type::Matrix>(vec_f32(4u), 2u);
-        case type::ShortName::kMat3X2F:
+        case type::Builtin::kMat3X2F:
             return b.create<type::Matrix>(vec_f32(2u), 3u);
-        case type::ShortName::kMat3X3F:
+        case type::Builtin::kMat3X3F:
             return b.create<type::Matrix>(vec_f32(3u), 3u);
-        case type::ShortName::kMat3X4F:
+        case type::Builtin::kMat3X4F:
             return b.create<type::Matrix>(vec_f32(4u), 3u);
-        case type::ShortName::kMat4X2F:
+        case type::Builtin::kMat4X2F:
             return b.create<type::Matrix>(vec_f32(2u), 4u);
-        case type::ShortName::kMat4X3F:
+        case type::Builtin::kMat4X3F:
             return b.create<type::Matrix>(vec_f32(3u), 4u);
-        case type::ShortName::kMat4X4F:
+        case type::Builtin::kMat4X4F:
             return b.create<type::Matrix>(vec_f32(4u), 4u);
-        case type::ShortName::kMat2X2H:
+        case type::Builtin::kMat2X2H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(2u), 2u)
                                                       : nullptr;
-        case type::ShortName::kMat2X3H:
+        case type::Builtin::kMat2X3H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(3u), 2u)
                                                       : nullptr;
-        case type::ShortName::kMat2X4H:
+        case type::Builtin::kMat2X4H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(4u), 2u)
                                                       : nullptr;
-        case type::ShortName::kMat3X2H:
+        case type::Builtin::kMat3X2H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(2u), 3u)
                                                       : nullptr;
-        case type::ShortName::kMat3X3H:
+        case type::Builtin::kMat3X3H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(3u), 3u)
                                                       : nullptr;
-        case type::ShortName::kMat3X4H:
+        case type::Builtin::kMat3X4H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(4u), 3u)
                                                       : nullptr;
-        case type::ShortName::kMat4X2H:
+        case type::Builtin::kMat4X2H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(2u), 4u)
                                                       : nullptr;
-        case type::ShortName::kMat4X3H:
+        case type::Builtin::kMat4X3H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(3u), 4u)
                                                       : nullptr;
-        case type::ShortName::kMat4X4H:
+        case type::Builtin::kMat4X4H:
             return validator_.CheckF16Enabled(source) ? b.create<type::Matrix>(vec_f16(4u), 4u)
                                                       : nullptr;
-        case type::ShortName::kVec2F:
+        case type::Builtin::kVec2F:
             return vec_f32(2u);
-        case type::ShortName::kVec3F:
+        case type::Builtin::kVec3F:
             return vec_f32(3u);
-        case type::ShortName::kVec4F:
+        case type::Builtin::kVec4F:
             return vec_f32(4u);
-        case type::ShortName::kVec2H:
+        case type::Builtin::kVec2H:
             return validator_.CheckF16Enabled(source) ? vec_f16(2u) : nullptr;
-        case type::ShortName::kVec3H:
+        case type::Builtin::kVec3H:
             return validator_.CheckF16Enabled(source) ? vec_f16(3u) : nullptr;
-        case type::ShortName::kVec4H:
+        case type::Builtin::kVec4H:
             return validator_.CheckF16Enabled(source) ? vec_f16(4u) : nullptr;
-        case type::ShortName::kVec2I:
+        case type::Builtin::kVec2I:
             return b.create<type::Vector>(b.create<type::I32>(), 2u);
-        case type::ShortName::kVec3I:
+        case type::Builtin::kVec3I:
             return b.create<type::Vector>(b.create<type::I32>(), 3u);
-        case type::ShortName::kVec4I:
+        case type::Builtin::kVec4I:
             return b.create<type::Vector>(b.create<type::I32>(), 4u);
-        case type::ShortName::kVec2U:
+        case type::Builtin::kVec2U:
             return b.create<type::Vector>(b.create<type::U32>(), 2u);
-        case type::ShortName::kVec3U:
+        case type::Builtin::kVec3U:
             return b.create<type::Vector>(b.create<type::U32>(), 3u);
-        case type::ShortName::kVec4U:
+        case type::Builtin::kVec4U:
             return b.create<type::Vector>(b.create<type::U32>(), 4u);
-        case type::ShortName::kUndefined:
+        case type::Builtin::kUndefined:
             break;
     }
 
-    TINT_ICE(Resolver, diagnostics_) << source << " unhandled type short name '" << name << "'";
+    TINT_ICE(Resolver, diagnostics_) << source << " unhandled builtin type '" << name << "'";
     return nullptr;
 }
 
-void Resolver::CollectTextureSamplerPairs(const sem::Builtin* builtin,
-                                          utils::VectorRef<const sem::Expression*> args) const {
+void Resolver::CollectTextureSamplerPairs(
+    const sem::Builtin* builtin,
+    utils::VectorRef<const sem::ValueExpression*> args) const {
     // Collect a texture/sampler pair for this builtin.
     const auto& signature = builtin->Signature();
     int texture_index = signature.IndexOf(sem::ParameterUsage::kTexture);
@@ -2528,7 +2548,7 @@ void Resolver::CollectTextureSamplerPairs(const sem::Builtin* builtin,
 template <size_t N>
 sem::Call* Resolver::FunctionCall(const ast::CallExpression* expr,
                                   sem::Function* target,
-                                  utils::Vector<const sem::Expression*, N>& args,
+                                  utils::Vector<const sem::ValueExpression*, N>& args,
                                   sem::Behaviors arg_behaviors) {
     auto sym = expr->target.name->symbol;
     auto name = builder_->Symbols().NameFor(sym);
@@ -2578,8 +2598,9 @@ sem::Call* Resolver::FunctionCall(const ast::CallExpression* expr,
     return call;
 }
 
-void Resolver::CollectTextureSamplerPairs(sem::Function* func,
-                                          utils::VectorRef<const sem::Expression*> args) const {
+void Resolver::CollectTextureSamplerPairs(
+    sem::Function* func,
+    utils::VectorRef<const sem::ValueExpression*> args) const {
     // Map all texture/sampler pairs from the target function to the
     // current function. These can only be global or parameter
     // variables. Resolve any parameter variables to the corresponding
@@ -2601,7 +2622,7 @@ void Resolver::CollectTextureSamplerPairs(sem::Function* func,
     }
 }
 
-sem::Expression* Resolver::Literal(const ast::LiteralExpression* literal) {
+sem::ValueExpression* Resolver::Literal(const ast::LiteralExpression* literal) {
     auto* ty = Switch(
         literal,
         [&](const ast::IntLiteralExpression* i) -> type::Type* {
@@ -2655,12 +2676,14 @@ sem::Expression* Resolver::Literal(const ast::LiteralExpression* literal) {
             return nullptr;
         }
     }
-    return builder_->create<sem::Expression>(literal, ty, stage, current_statement_, std::move(val),
-                                             /* has_side_effects */ false);
+    return builder_->create<sem::ValueExpression>(literal, ty, stage, current_statement_,
+                                                  std::move(val),
+                                                  /* has_side_effects */ false);
 }
 
-sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
-    auto symbol = expr->symbol;
+sem::ValueExpression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
+    Mark(expr->identifier);
+    auto symbol = expr->identifier->symbol;
     auto* sem_resolved = sem_.ResolvedSymbol<sem::Node>(expr);
     if (auto* variable = As<sem::Variable>(sem_resolved)) {
         auto* user = builder_->create<sem::VariableUser>(expr, current_statement_, variable);
@@ -2741,7 +2764,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
     }
 
     if (sem_.ResolvedSymbol<type::Type>(expr) ||
-        type::ParseShortName(builder_->Symbols().NameFor(symbol)) != type::ShortName::kUndefined) {
+        type::ParseBuiltin(builder_->Symbols().NameFor(symbol)) != type::Builtin::kUndefined) {
         AddError("missing '(' for type initializer or cast", expr->source.End());
         return nullptr;
     }
@@ -2754,21 +2777,26 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
     return nullptr;
 }
 
-sem::Expression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* expr) {
-    auto* structure = sem_.TypeOf(expr->structure);
+sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* expr) {
+    auto* structure = sem_.TypeOf(expr->object);
     auto* storage_ty = structure->UnwrapRef();
-    auto* object = sem_.Get(expr->structure);
+    auto* object = sem_.GetVal(expr->object);
+    if (!object) {
+        return nullptr;
+    }
+
     auto* root_ident = object->RootIdentifier();
 
     const type::Type* ty = nullptr;
 
     // Object may be a side-effecting expression (e.g. function call).
-    bool has_side_effects = object && object->HasSideEffects();
+    bool has_side_effects = object->HasSideEffects();
+
+    Mark(expr->member);
 
     return Switch(
         storage_ty,  //
-        [&](const sem::Struct* str) -> sem::Expression* {
-            Mark(expr->member);
+        [&](const sem::Struct* str) -> sem::ValueExpression* {
             auto symbol = expr->member->symbol;
 
             const sem::StructMember* member = nullptr;
@@ -2801,8 +2829,7 @@ sem::Expression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* e
                                                              has_side_effects, root_ident);
         },
 
-        [&](const type::Vector* vec) -> sem::Expression* {
-            Mark(expr->member);
+        [&](const type::Vector* vec) -> sem::ValueExpression* {
             std::string s = builder_->Symbols().NameFor(expr->member->symbol);
             auto size = s.size();
             utils::Vector<uint32_t, 4> swizzle;
@@ -2853,7 +2880,7 @@ sem::Expression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* e
                 return nullptr;
             }
 
-            const sem::Expression* obj_expr = object;
+            const sem::ValueExpression* obj_expr = object;
             if (size == 1) {
                 // A single element swizzle is just the type of the vector.
                 ty = vec->type();
@@ -2885,9 +2912,9 @@ sem::Expression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* e
         });
 }
 
-sem::Expression* Resolver::Binary(const ast::BinaryExpression* expr) {
-    const auto* lhs = sem_.Get(expr->lhs);
-    const auto* rhs = sem_.Get(expr->rhs);
+sem::ValueExpression* Resolver::Binary(const ast::BinaryExpression* expr) {
+    const auto* lhs = sem_.GetVal(expr->lhs);
+    const auto* rhs = sem_.GetVal(expr->rhs);
     auto* lhs_ty = lhs->Type()->UnwrapRef();
     auto* rhs_ty = rhs->Type()->UnwrapRef();
 
@@ -2955,15 +2982,15 @@ sem::Expression* Resolver::Binary(const ast::BinaryExpression* expr) {
     }
 
     bool has_side_effects = lhs->HasSideEffects() || rhs->HasSideEffects();
-    auto* sem = builder_->create<sem::Expression>(expr, op.result, stage, current_statement_, value,
-                                                  has_side_effects);
+    auto* sem = builder_->create<sem::ValueExpression>(expr, op.result, stage, current_statement_,
+                                                       value, has_side_effects);
     sem->Behaviors() = lhs->Behaviors() + rhs->Behaviors();
 
     return sem;
 }
 
-sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
-    const auto* expr = sem_.Get(unary->expr);
+sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
+    const auto* expr = sem_.GetVal(unary->expr);
     auto* expr_ty = expr->Type();
     if (!expr_ty) {
         return nullptr;
@@ -2986,7 +3013,7 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
                 auto* array = unary->expr->As<ast::IndexAccessorExpression>();
                 auto* member = unary->expr->As<ast::MemberAccessorExpression>();
                 if ((array && sem_.TypeOf(array->object)->UnwrapRef()->Is<type::Vector>()) ||
-                    (member && sem_.TypeOf(member->structure)->UnwrapRef()->Is<type::Vector>())) {
+                    (member && sem_.TypeOf(member->object)->UnwrapRef()->Is<type::Vector>())) {
                     AddError("cannot take the address of a vector component", unary->expr->source);
                     return nullptr;
                 }
@@ -3051,23 +3078,24 @@ sem::Expression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
         }
     }
 
-    auto* sem = builder_->create<sem::Expression>(unary, ty, stage, current_statement_, value,
-                                                  expr->HasSideEffects(), root_ident);
+    auto* sem = builder_->create<sem::ValueExpression>(unary, ty, stage, current_statement_, value,
+                                                       expr->HasSideEffects(), root_ident);
     sem->Behaviors() = expr->Behaviors();
     return sem;
 }
 
-bool Resolver::DiagnosticControl(const ast::DiagnosticControl* control) {
-    Mark(control->rule_name);
-    auto rule_name = builder_->Symbols().NameFor(control->rule_name->symbol);
+bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
+    Mark(control.rule_name);
+
+    auto rule_name = builder_->Symbols().NameFor(control.rule_name->symbol);
     auto rule = ast::ParseDiagnosticRule(rule_name);
     if (rule != ast::DiagnosticRule::kUndefined) {
-        validator_.DiagnosticFilters().Set(rule, control->severity);
+        validator_.DiagnosticFilters().Set(rule, control.severity);
     } else {
         std::ostringstream ss;
         ss << "unrecognized diagnostic rule '" << rule_name << "'\n";
         utils::SuggestAlternatives(rule_name, ast::kDiagnosticRuleStrings, ss);
-        AddWarning(ss.str(), control->rule_name->source);
+        AddWarning(ss.str(), control.rule_name->source);
     }
     return true;
 }
@@ -3844,6 +3872,42 @@ SEM* Resolver::StatementScope(const ast::Statement* ast, SEM* sem, F&& callback)
     builder_->Sem().Add(ast, sem);
 
     auto* as_compound = As<sem::CompoundStatement, CastFlags::kDontErrorOnImpossibleCast>(sem);
+
+    // Helper to handle attributes that are supported on certain types of statement.
+    auto handle_attributes = [&](auto* stmt, sem::Statement* sem_stmt, const char* use) {
+        for (auto* attr : stmt->attributes) {
+            Mark(attr);
+            if (auto* dc = attr->template As<ast::DiagnosticAttribute>()) {
+                if (!DiagnosticControl(dc->control)) {
+                    return false;
+                }
+            } else {
+                std::ostringstream ss;
+                ss << "attribute is not valid for " << use;
+                AddError(ss.str(), attr->source);
+                return false;
+            }
+        }
+        if (!validator_.NoDuplicateAttributes(stmt->attributes)) {
+            return false;
+        }
+        ApplyDiagnosticSeverities(sem_stmt);
+        return true;
+    };
+
+    // Handle attributes, if necessary.
+    // Some statements can take diagnostic filtering attributes, so push a new diagnostic filter
+    // scope to capture them.
+    validator_.DiagnosticFilters().Push();
+    TINT_DEFER(validator_.DiagnosticFilters().Pop());
+    if (!Switch(
+            ast,  //
+            [&](const ast::BlockStatement* block) {
+                return handle_attributes(block, sem, "block statements");
+            },
+            [&](Default) { return true; })) {
+        return nullptr;
+    }
 
     TINT_SCOPED_ASSIGNMENT(current_statement_, sem);
     TINT_SCOPED_ASSIGNMENT(current_compound_statement_,

@@ -49,6 +49,8 @@ target_sources(dawn_native PRIVATE
     "BindingInfo.h"
     "BlitBufferToDepthStencil.cpp"
     "BlitBufferToDepthStencil.h"
+    "BlitDepthToDepth.cpp"
+    "BlitDepthToDepth.h"
     "Blob.cpp"
     "Blob.h"
     "BlobCache.cpp"
@@ -398,6 +400,7 @@ if (DAWN_ENABLE_NULL)
 endif()
 
 if (DAWN_ENABLE_OPENGL OR DAWN_ENABLE_VULKAN)
+    target_compile_definitions(dawn_native PRIVATE "DAWN_ENABLE_SPIRV_VALIDATION")
     target_sources(dawn_native PRIVATE
         "SpirvValidation.cpp"
         "SpirvValidation.h"

@@ -14,7 +14,7 @@
 
 #include "src/tint/resolver/sem_helper.h"
 
-#include "src/tint/sem/expression.h"
+#include "src/tint/sem/value_expression.h"
 
 namespace tint::resolver {
 
@@ -32,7 +32,7 @@ std::string SemHelper::RawTypeNameOf(const type::Type* ty) const {
 }
 
 type::Type* SemHelper::TypeOf(const ast::Expression* expr) const {
-    auto* sem = Get(expr);
+    auto* sem = GetVal(expr);
     return sem ? const_cast<type::Type*>(sem->Type()) : nullptr;
 }
 

@@ -547,7 +547,7 @@ TEST_F(InspectorGetEntryPointTest, MultipleEntryPointsInOutSharedStruct) {
                                                    });
     Func("foo", utils::Empty, ty.Of(interface),
          utils::Vector{
-             Return(Construct(ty.Of(interface))),
+             Return(Call(ty.Of(interface))),
          },
          utils::Vector{
              Stage(ast::PipelineStage::kFragment),
@@ -885,7 +885,7 @@ TEST_F(InspectorGetEntryPointTest, OverrideReferencedByArraySizeViaAlias) {
     Alias("MyArray", ty.array(ty.f32(), Mul(2_a, Expr("bar"))));
     Override("zoo", ty.u32());
     Alias("MyArrayUnused", ty.array(ty.f32(), Mul(2_a, Expr("zoo"))));
-    GlobalVar("v", type::AddressSpace::kWorkgroup, ty.type_name("MyArray"));
+    GlobalVar("v", type::AddressSpace::kWorkgroup, ty("MyArray"));
     Func("ep", utils::Empty, ty.void_(),
          utils::Vector{
              Assign(Phony(), IndexAccessor("v", 0_a)),
@@ -1076,7 +1076,7 @@ TEST_F(InspectorGetEntryPointTest, InputSampleMaskStructReferenced) {
 
     Func("ep_func",
          utils::Vector{
-             Param("in_var", ty.type_name("in_struct"), utils::Empty),
+             Param("in_var", ty("in_struct"), utils::Empty),
          },
          ty.void_(),
          utils::Vector{
@@ -1124,9 +1124,9 @@ TEST_F(InspectorGetEntryPointTest, OutputSampleMaskStructReferenced) {
                                        utils::Vector{Builtin(ast::BuiltinValue::kSampleMask)}),
                             });
 
-    Func("ep_func", utils::Empty, ty.type_name("out_struct"),
+    Func("ep_func", utils::Empty, ty("out_struct"),
          utils::Vector{
-             Decl(Var("out_var", ty.type_name("out_struct"))),
+             Decl(Var("out_var", ty("out_struct"))),
              Return("out_var"),
          },
          utils::Vector{
@@ -1170,7 +1170,7 @@ TEST_F(InspectorGetEntryPointTest, InputPositionStructReferenced) {
 
     Func("ep_func",
          utils::Vector{
-             Param("in_var", ty.type_name("in_struct"), utils::Empty),
+             Param("in_var", ty("in_struct"), utils::Empty),
          },
          ty.void_(),
          utils::Vector{
@@ -1217,7 +1217,7 @@ TEST_F(InspectorGetEntryPointTest, FrontFacingStructReferenced) {
 
     Func("ep_func",
          utils::Vector{
-             Param("in_var", ty.type_name("in_struct"), utils::Empty),
+             Param("in_var", ty("in_struct"), utils::Empty),
          },
          ty.void_(),
          utils::Vector{
@@ -1264,7 +1264,7 @@ TEST_F(InspectorGetEntryPointTest, SampleIndexStructReferenced) {
 
     Func("ep_func",
          utils::Vector{
-             Param("in_var", ty.type_name("in_struct"), utils::Empty),
+             Param("in_var", ty("in_struct"), utils::Empty),
          },
          ty.void_(),
          utils::Vector{
@@ -1310,7 +1310,7 @@ TEST_F(InspectorGetEntryPointTest, NumWorkgroupsStructReferenced) {
 
     Func("ep_func",
          utils::Vector{
-             Param("in_var", ty.type_name("in_struct"), utils::Empty),
+             Param("in_var", ty("in_struct"), utils::Empty),
          },
          ty.void_(),
          utils::Vector{
@@ -1352,9 +1352,9 @@ TEST_F(InspectorGetEntryPointTest, FragDepthStructReferenced) {
                                        utils::Vector{Builtin(ast::BuiltinValue::kFragDepth)}),
                             });
 
-    Func("ep_func", utils::Empty, ty.type_name("out_struct"),
+    Func("ep_func", utils::Empty, ty("out_struct"),
          utils::Vector{
-             Decl(Var("out_var", ty.type_name("out_struct"))),
+             Decl(Var("out_var", ty("out_struct"))),
              Return("out_var"),
          },
          utils::Vector{
@@ -1376,7 +1376,7 @@ TEST_F(InspectorGetEntryPointTest, ImplicitInterpolate) {
 
     Func("ep_func",
          utils::Vector{
-             Param("in_var", ty.type_name("in_struct"), utils::Empty),
+             Param("in_var", ty("in_struct"), utils::Empty),
          },
          ty.void_(),
          utils::Vector{
@@ -1407,7 +1407,7 @@ TEST_P(InspectorGetEntryPointInterpolateTest, Test) {
 
     Func("ep_func",
          utils::Vector{
-             Param("in_var", ty.type_name("in_struct"), utils::Empty),
+             Param("in_var", ty("in_struct"), utils::Empty),
          },
          ty.void_(),
          utils::Vector{
@@ -1628,16 +1628,16 @@ TEST_F(InspectorGetConstantNameToIdMapTest, WithAndWithoutIds) {
     EXPECT_EQ(result["v300"].value, 300u);
 
     ASSERT_TRUE(result.count("a"));
-    ASSERT_TRUE(program_->Sem().Get<sem::GlobalVariable>(a));
-    EXPECT_EQ(result["a"], program_->Sem().Get<sem::GlobalVariable>(a)->OverrideId());
+    ASSERT_TRUE(program_->Sem().Get(a));
+    EXPECT_EQ(result["a"], program_->Sem().Get(a)->OverrideId());
 
     ASSERT_TRUE(result.count("b"));
-    ASSERT_TRUE(program_->Sem().Get<sem::GlobalVariable>(b));
-    EXPECT_EQ(result["b"], program_->Sem().Get<sem::GlobalVariable>(b)->OverrideId());
+    ASSERT_TRUE(program_->Sem().Get(b));
+    EXPECT_EQ(result["b"], program_->Sem().Get(b)->OverrideId());
 
     ASSERT_TRUE(result.count("c"));
-    ASSERT_TRUE(program_->Sem().Get<sem::GlobalVariable>(c));
-    EXPECT_EQ(result["c"], program_->Sem().Get<sem::GlobalVariable>(c)->OverrideId());
+    ASSERT_TRUE(program_->Sem().Get(c));
+    EXPECT_EQ(result["c"], program_->Sem().Get(c)->OverrideId());
 }
 
 TEST_F(InspectorGetStorageSizeTest, Empty) {

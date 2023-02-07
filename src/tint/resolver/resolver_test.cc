@@ -499,7 +499,7 @@ TEST_F(ResolverTest, ArraySize_NamedOverride) {
     auto* ref = TypeOf(a)->As<type::Reference>();
     ASSERT_NE(ref, nullptr);
     auto* ary = ref->StoreType()->As<type::Array>();
-    auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
+    auto* sem_override = Sem().Get(override);
     ASSERT_NE(sem_override, nullptr);
     EXPECT_EQ(ary->Count(), create<sem::NamedOverrideArrayCount>(sem_override));
 }
@@ -524,7 +524,7 @@ TEST_F(ResolverTest, ArraySize_NamedOverride_Equivalence) {
     ASSERT_NE(ref_b, nullptr);
     auto* ary_b = ref_b->StoreType()->As<type::Array>();
 
-    auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
+    auto* sem_override = Sem().Get(override);
     ASSERT_NE(sem_override, nullptr);
     EXPECT_EQ(ary_a->Count(), create<sem::NamedOverrideArrayCount>(sem_override));
     EXPECT_EQ(ary_b->Count(), create<sem::NamedOverrideArrayCount>(sem_override));
@@ -544,7 +544,7 @@ TEST_F(ResolverTest, ArraySize_UnnamedOverride) {
     auto* ref = TypeOf(a)->As<type::Reference>();
     ASSERT_NE(ref, nullptr);
     auto* ary = ref->StoreType()->As<type::Array>();
-    auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
+    auto* sem_override = Sem().Get(override);
     ASSERT_NE(sem_override, nullptr);
     EXPECT_EQ(ary->Count(), create<sem::UnnamedOverrideArrayCount>(Sem().Get(cnt)));
 }
@@ -571,7 +571,7 @@ TEST_F(ResolverTest, ArraySize_UnamedOverride_Equivalence) {
     ASSERT_NE(ref_b, nullptr);
     auto* ary_b = ref_b->StoreType()->As<type::Array>();
 
-    auto* sem_override = Sem().Get<sem::GlobalVariable>(override);
+    auto* sem_override = Sem().Get(override);
     ASSERT_NE(sem_override, nullptr);
     EXPECT_EQ(ary_a->Count(), create<sem::UnnamedOverrideArrayCount>(Sem().Get(a_cnt)));
     EXPECT_EQ(ary_b->Count(), create<sem::UnnamedOverrideArrayCount>(Sem().Get(b_cnt)));
@@ -644,7 +644,7 @@ TEST_F(ResolverTest, Expr_Call_Builtin) {
 TEST_F(ResolverTest, Expr_Cast) {
     GlobalVar("name", ty.f32(), type::AddressSpace::kPrivate);
 
-    auto* cast = Construct(ty.f32(), "name");
+    auto* cast = Call<f32>("name");
     WrapInFunction(cast);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -715,7 +715,7 @@ TEST_F(ResolverTest, Expr_Identifier_GlobalVariable) {
 }
 
 TEST_F(ResolverTest, Expr_Identifier_GlobalConst) {
-    auto* my_var = GlobalConst("my_var", ty.f32(), Construct(ty.f32()));
+    auto* my_var = GlobalConst("my_var", ty.f32(), Call<f32>());
 
     auto* ident = Expr("my_var");
     WrapInFunction(ident);
@@ -731,7 +731,7 @@ TEST_F(ResolverTest, Expr_Identifier_GlobalConst) {
 
 TEST_F(ResolverTest, Expr_Identifier_FunctionVariable_Const) {
     auto* my_var_a = Expr("my_var");
-    auto* var = Let("my_var", ty.f32(), Construct(ty.f32()));
+    auto* var = Let("my_var", ty.f32(), Call<f32>());
     auto* decl = Decl(Var("b", ty.f32(), my_var_a));
 
     Func("my_func", utils::Empty, ty.void_(),
@@ -755,7 +755,7 @@ TEST_F(ResolverTest, IndexAccessor_Dynamic_Ref_F32) {
     // var idx : f32 = f32();
     // var f : f32 = a[idx];
     auto* a = Var("a", ty.array<bool, 10>(), array<bool, 10>());
-    auto* idx = Var("idx", ty.f32(), Construct(ty.f32()));
+    auto* idx = Var("idx", ty.f32(), Call<f32>());
     auto* f = Var("f", ty.f32(), IndexAccessor("a", Expr(Source{{12, 34}}, idx)));
     Func("my_func", utils::Empty, ty.void_(),
          utils::Vector{
@@ -1034,7 +1034,7 @@ TEST_F(ResolverTest, Function_NotRegisterFunctionVariable) {
 TEST_F(ResolverTest, Function_NotRegisterFunctionConstant) {
     auto* func = Func("my_func", utils::Empty, ty.void_(),
                       utils::Vector{
-                          Decl(Let("var", ty.f32(), Construct(ty.f32()))),
+                          Decl(Let("var", ty.f32(), Call<f32>())),
                       });
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1145,10 +1145,8 @@ TEST_F(ResolverTest, Function_WorkgroupSize_ViaConst_NestedInitializer) {
     // const height = i32(i32(i32(4i)));
     // @compute @workgroup_size(width, height)
     // fn main() {}
-    GlobalConst("width", ty.i32(),
-                Construct(ty.i32(), Construct(ty.i32(), Construct(ty.i32(), 8_i))));
-    GlobalConst("height", ty.i32(),
-                Construct(ty.i32(), Construct(ty.i32(), Construct(ty.i32(), 4_i))));
+    GlobalConst("width", ty.i32(), Call<i32>(Call<i32>(Call<i32>(8_i))));
+    GlobalConst("height", ty.i32(), Call<i32>(Call<i32>(Call<i32>(4_i))));
     auto* func = Func("main", utils::Empty, ty.void_(), utils::Empty,
                       utils::Vector{
                           Stage(ast::PipelineStage::kCompute),
@@ -1253,7 +1251,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Struct) {
     auto* sma = Sem().Get(mem)->UnwrapLoad()->As<sem::StructMemberAccess>();
     ASSERT_NE(sma, nullptr);
     EXPECT_TRUE(sma->Member()->Type()->Is<type::F32>());
-    EXPECT_EQ(sma->Object()->Declaration(), mem->structure);
+    EXPECT_EQ(sma->Object()->Declaration(), mem->object);
     EXPECT_EQ(sma->Member()->Index(), 1u);
     EXPECT_EQ(sma->Member()->Declaration()->symbol, Symbols().Get("second_member"));
 }
@@ -1273,7 +1271,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Struct_Alias) {
     EXPECT_TRUE(TypeOf(mem)->Is<type::F32>());
     auto* sma = Sem().Get(mem)->UnwrapLoad()->As<sem::StructMemberAccess>();
     ASSERT_NE(sma, nullptr);
-    EXPECT_EQ(sma->Object()->Declaration(), mem->structure);
+    EXPECT_EQ(sma->Object()->Declaration(), mem->object);
     EXPECT_TRUE(sma->Member()->Type()->Is<type::F32>());
     EXPECT_EQ(sma->Member()->Index(), 1u);
 }
@@ -1292,7 +1290,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle) {
     EXPECT_EQ(TypeOf(mem)->As<type::Vector>()->Width(), 4u);
     auto* sma = Sem().Get(mem)->As<sem::Swizzle>();
     ASSERT_NE(sma, nullptr);
-    EXPECT_EQ(sma->Object()->Declaration(), mem->structure);
+    EXPECT_EQ(sma->Object()->Declaration(), mem->object);
     EXPECT_THAT(sma->Indices(), ElementsAre(0, 2, 1, 3));
 }
 
@@ -1308,7 +1306,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle_SingleElement) {
     ASSERT_TRUE(TypeOf(mem)->Is<type::F32>());
     auto* sma = Sem().Get(mem)->UnwrapLoad()->As<sem::Swizzle>();
     ASSERT_NE(sma, nullptr);
-    EXPECT_EQ(sma->Object()->Declaration(), mem->structure);
+    EXPECT_EQ(sma->Object()->Declaration(), mem->object);
     EXPECT_THAT(sma->Indices(), ElementsAre(2));
 }
 
@@ -1896,7 +1894,7 @@ TEST_F(ResolverTest, AddressSpace_SetForTexture) {
 }
 
 TEST_F(ResolverTest, AddressSpace_DoesNotSetOnConst) {
-    auto* var = Let("var", ty.i32(), Construct(ty.i32()));
+    auto* var = Let("var", ty.i32(), Call<i32>());
     auto* stmt = Decl(var);
     Func("func", utils::Empty, ty.void_(), utils::Vector{stmt});
 
@@ -2074,11 +2072,11 @@ TEST_F(ResolverTest, ASTNodeNotReached) {
     EXPECT_FATAL_FAILURE(
         {
             ProgramBuilder b;
-            b.Expr("expr");
+            b.Ident("ident");
             Resolver(&b).Resolve();
         },
-        "internal compiler error: AST node 'tint::ast::IdentifierExpression' was not reached by "
-        "the resolver");
+        "internal compiler error: AST node 'tint::ast::Identifier' was not reached by the "
+        "resolver");
 }
 
 TEST_F(ResolverTest, ASTNodeReachedTwice) {

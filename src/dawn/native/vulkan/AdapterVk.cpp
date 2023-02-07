@@ -146,10 +146,7 @@ MaybeError Adapter::InitializeImpl() {
             break;
     }
 
-    return {};
-}
-
-MaybeError Adapter::InitializeSupportedFeaturesImpl() {
+    // Check for essential Vulkan extensions and features
     // Needed for viewport Y-flip.
     if (!mDeviceInfo.HasExt(DeviceExt::Maintenance1)) {
         return DAWN_INTERNAL_ERROR("Vulkan 1.1 or Vulkan 1.0 with KHR_Maintenance1 required.");
@@ -188,6 +185,10 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
         return DAWN_INTERNAL_ERROR("Vulkan sampleRateShading feature required.");
     }
 
+    return {};
+}
+
+void Adapter::InitializeSupportedFeaturesImpl() {
     // Initialize supported extensions
     if (mDeviceInfo.features.textureCompressionBC == VK_TRUE) {
         mSupportedFeatures.EnableFeature(Feature::TextureCompressionBC);
@@ -260,8 +261,6 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
     // features.
     mSupportedFeatures.EnableFeature(Feature::MultiPlanarFormats);
 #endif
-
-    return {};
 }
 
 MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {

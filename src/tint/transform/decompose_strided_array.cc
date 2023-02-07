@@ -20,9 +20,9 @@
 
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/map.h"
@@ -87,7 +87,7 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
                     return name;
                 });
                 auto* count = ctx.Clone(ast->count);
-                return b.ty.array(b.ty.type_name(el_ty), count);
+                return b.ty.array(b.ty(el_ty), count);
             }
             if (ast::GetAttribute<ast::StrideAttribute>(ast->attributes)) {
                 // Strip the @stride attribute
@@ -150,7 +150,7 @@ Transform::ApplyResult DecomposeStridedArray::Apply(const Program* src,
                             args = ctx.Clone(expr->args);
                         }
 
-                        return target.type ? b.Construct(target.type, std::move(args))
+                        return target.type ? b.Call(target.type, std::move(args))
                                            : b.Call(target.name, std::move(args));
                     }
                 }

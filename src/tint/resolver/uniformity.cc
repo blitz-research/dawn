@@ -474,6 +474,8 @@ class UniformityGraph {
 
         // If "Value_return" exists, look at which nodes are reachable from it.
         if (current_function_->value_return) {
+            current_function_->ResetVisited();
+
             utils::UniqueVector<Node*, 4> reachable;
             Traverse(current_function_->value_return, &reachable);
             if (reachable.Contains(current_function_->may_be_non_uniform)) {
@@ -1090,8 +1092,7 @@ class UniformityGraph {
                         auto* init = sem_.Get(decl->variable->initializer);
                         if (auto* unary_init = init->Declaration()->As<ast::UnaryOpExpression>()) {
                             auto* e = UnwrapIndirectAndAddressOfChain(unary_init);
-                            if (e->IsAnyOf<ast::IndexAccessorExpression,
-                                           ast::MemberAccessorExpression>()) {
+                            if (e->Is<ast::AccessorExpression>()) {
                                 current_function_->partial_ptrs.Add(sem_var);
                             }
                         }
@@ -1140,9 +1141,11 @@ class UniformityGraph {
             return true;
         };
 
-        auto* var_user = sem_.Get(ident)->Unwrap()->As<sem::VariableUser>();
+        auto* node = CreateNode({NameFor(ident->identifier), "_ident_expr"}, ident);
+        auto* sem_ident = sem_.GetVal(ident);
+        TINT_ASSERT(Resolver, sem_ident);
+        auto* var_user = sem_ident->Unwrap()->As<sem::VariableUser>();
         auto* sem = var_user->Variable();
-        auto* node = CreateNode({NameFor(ident), "_ident_expr"}, ident);
         return Switch(
             sem,
 
@@ -1309,7 +1312,7 @@ class UniformityGraph {
             [&](const ast::LiteralExpression*) { return std::make_pair(cf, cf); },
 
             [&](const ast::MemberAccessorExpression* m) {
-                return ProcessExpression(cf, m->structure, load_rule);
+                return ProcessExpression(cf, m->object, load_rule);
             },
 
             [&](const ast::UnaryOpExpression* u) {
@@ -1339,9 +1342,7 @@ class UniformityGraph {
                 return true;
             }
         } else {
-            TINT_ASSERT(
-                Resolver,
-                (e->IsAnyOf<ast::IndexAccessorExpression, ast::MemberAccessorExpression>()));
+            TINT_ASSERT(Resolver, e->Is<ast::IndexAccessorExpression>());
             return true;
         }
         return false;
@@ -1358,12 +1359,12 @@ class UniformityGraph {
             expr,
 
             [&](const ast::IdentifierExpression* i) {
-                auto* sem = sem_.Get(i)->UnwrapLoad()->As<sem::VariableUser>();
+                auto* sem = sem_.GetVal(i)->UnwrapLoad()->As<sem::VariableUser>();
                 if (sem->Variable()->Is<sem::GlobalVariable>()) {
                     return std::make_pair(cf, current_function_->may_be_non_uniform);
                 } else if (auto* local = sem->Variable()->As<sem::LocalVariable>()) {
                     // Create a new value node for this variable.
-                    auto* value = CreateNode({NameFor(i), "_lvalue"});
+                    auto* value = CreateNode({NameFor(i->identifier), "_lvalue"});
                     auto* old_value = current_function_->variables.Set(local, value);
 
                     // If i is part of an expression that is a partial reference to a variable (e.g.
@@ -1392,7 +1393,7 @@ class UniformityGraph {
             },
 
             [&](const ast::MemberAccessorExpression* m) {
-                return ProcessLValueExpression(cf, m->structure, /*is_partial_reference*/ true);
+                return ProcessLValueExpression(cf, m->object, /*is_partial_reference*/ true);
             },
 
             [&](const ast::UnaryOpExpression* u) {
@@ -1453,7 +1454,7 @@ class UniformityGraph {
 
             // For pointer arguments, create an additional node to represent the contents of that
             // pointer prior to the function call.
-            auto* sem_arg = sem_.Get(call->args[i]);
+            auto* sem_arg = sem_.GetVal(call->args[i]);
             if (sem_arg->Type()->Is<type::Pointer>()) {
                 auto* arg_contents =
                     CreateNode({name, "_ptrarg_", std::to_string(i), "_contents"}, call);
@@ -1512,8 +1513,8 @@ class UniformityGraph {
                         sem_.DiagnosticSeverity(call, ast::DiagnosticRule::kDerivativeUniformity);
                     if (severity != ast::DiagnosticSeverity::kOff) {
                         callsite_tag = {CallSiteTag::CallSiteRequiredToBeUniform, severity};
-                        function_tag = ReturnValueMayBeNonUniform;
                     }
+                    function_tag = ReturnValueMayBeNonUniform;
                 } else if (builtin->IsAtomic()) {
                     callsite_tag = {CallSiteTag::CallSiteNoRestriction};
                     function_tag = ReturnValueMayBeNonUniform;
@@ -1582,7 +1583,7 @@ class UniformityGraph {
 
                 // Capture the effects of other call parameters on the contents of this parameter
                 // after the call returns.
-                auto* sem_arg = sem_.Get(call->args[i]);
+                auto* sem_arg = sem_.GetVal(call->args[i]);
                 if (sem_arg->Type()->Is<type::Pointer>()) {
                     auto* ptr_result =
                         CreateNode({name, "_ptrarg_", std::to_string(i), "_result"}, call);
@@ -1763,14 +1764,14 @@ class UniformityGraph {
         Switch(
             non_uniform_source->ast,
             [&](const ast::IdentifierExpression* ident) {
-                auto* var = sem_.Get(ident)->UnwrapLoad()->As<sem::VariableUser>()->Variable();
+                auto* var = sem_.GetVal(ident)->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                 std::ostringstream ss;
                 if (auto* param = var->As<sem::Parameter>()) {
                     auto* func = param->Owner()->As<sem::Function>();
-                    ss << param_type(param) << "'" << NameFor(ident) << "' of '"
+                    ss << param_type(param) << "'" << NameFor(ident->identifier) << "' of '"
                        << NameFor(func->Declaration()) << "' may be non-uniform";
                 } else {
-                    ss << "reading from " << var_type(var) << "'" << NameFor(ident)
+                    ss << "reading from " << var_type(var) << "'" << NameFor(ident->identifier)
                        << "' may result in a non-uniform value";
                 }
                 diagnostics_.add_note(diag::System::Resolver, ss.str(), ident->source);
@@ -1793,7 +1794,7 @@ class UniformityGraph {
                     }
                     case Node::kFunctionCallArgumentContents: {
                         auto* arg = c->args[non_uniform_source->arg_index];
-                        auto* var = sem_.Get(arg)->RootIdentifier();
+                        auto* var = sem_.GetVal(arg)->RootIdentifier();
                         std::ostringstream ss;
                         ss << "reading from " << var_type(var) << "'" << NameFor(var->Declaration())
                            << "' may result in a non-uniform value";

@@ -19,8 +19,8 @@
 #include <vector>
 
 #include "src/tint/program_builder.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/member_accessor_expression.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/map.h"
@@ -150,7 +150,7 @@ Transform::ApplyResult DecomposeStridedMatrix::Apply(const Program* src,
                            },
                            array(),
                            utils::Vector{
-                               b.Return(b.Construct(array(), columns)),
+                               b.Return(b.Call(array(), columns)),
                            });
                     return name;
                 });
@@ -189,7 +189,7 @@ Transform::ApplyResult DecomposeStridedMatrix::Apply(const Program* src,
                            },
                            matrix(),
                            utils::Vector{
-                               b.Return(b.Construct(matrix(), columns)),
+                               b.Return(b.Call(matrix(), columns)),
                            });
                     return name;
                 });

@@ -24,7 +24,7 @@
 #include "src/tint/sem/type_conversion.h"
 #include "src/tint/sem/type_initializer.h"
 #include "src/tint/text/unicode.h"
-#include "src/tint/type/short_name.h"
+#include "src/tint/type/builtin.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Renamer);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Renamer::Data);
@@ -1262,15 +1262,13 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
     CloneContext ctx{&b, src, /* auto_clone_symbols */ false};
 
     // Identifiers that need to keep their symbols preserved.
-    utils::Hashset<const ast::IdentifierExpression*, 8> preserved_identifiers;
-    // Type names that need to keep their symbols preserved.
-    utils::Hashset<const ast::TypeName*, 8> preserved_type_names;
+    utils::Hashset<const ast::Identifier*, 8> preserved_identifiers;
 
     auto is_type_short_name = [&](const Symbol& symbol) {
         auto name = src->Symbols().NameFor(symbol);
-        if (type::ParseShortName(name) != type::ShortName::kUndefined) {
-            // Identifier *looks* like a builtin short-name, but check the using actually
-            // shadowing a short-name with a type alias.
+        if (type::ParseBuiltin(name) != type::Builtin::kUndefined) {
+            // Identifier *looks* like a builtin type, but check that the builtin type isn't being
+            // shadowed with a user declared type.
             for (auto* decl : src->AST().TypeDecls()) {
                 if (decl->name == symbol) {
                     return false;
@@ -1288,7 +1286,7 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
                 auto* sem = src->Sem().Get(accessor)->UnwrapLoad();
                 if (sem->Is<sem::Swizzle>()) {
                     preserved_identifiers.Add(accessor->member);
-                } else if (auto* str_expr = src->Sem().Get(accessor->structure)) {
+                } else if (auto* str_expr = src->Sem().GetVal(accessor->object)) {
                     if (auto* ty = str_expr->Type()->UnwrapRef()->As<sem::Struct>()) {
                         if (ty->Declaration() == nullptr) {  // Builtin structure
                             preserved_identifiers.Add(accessor->member);
@@ -1313,12 +1311,15 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
                         });
                 }
             },
-            [&](const ast::DiagnosticControl* diagnostic) {
-                preserved_identifiers.Add(diagnostic->rule_name);
+            [&](const ast::DiagnosticAttribute* diagnostic) {
+                preserved_identifiers.Add(diagnostic->control.rule_name);
+            },
+            [&](const ast::DiagnosticDirective* diagnostic) {
+                preserved_identifiers.Add(diagnostic->control.rule_name);
             },
             [&](const ast::TypeName* type_name) {
-                if (is_type_short_name(type_name->name)) {
-                    preserved_type_names.Add(type_name);
+                if (is_type_short_name(type_name->name->symbol)) {
+                    preserved_identifiers.Add(type_name->name);
                 }
             });
     }
@@ -1376,22 +1377,12 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
         return sym_out;
     });
 
-    ctx.ReplaceAll([&](const ast::IdentifierExpression* ident) -> const ast::IdentifierExpression* {
+    ctx.ReplaceAll([&](const ast::Identifier* ident) -> const ast::Identifier* {
         if (preserved_identifiers.Contains(ident)) {
             auto sym_in = ident->symbol;
             auto str = src->Symbols().NameFor(sym_in);
             auto sym_out = b.Symbols().Register(str);
-            return ctx.dst->create<ast::IdentifierExpression>(ctx.Clone(ident->source), sym_out);
-        }
-        return nullptr;  // Clone ident. Uses the symbol remapping above.
-    });
-
-    ctx.ReplaceAll([&](const ast::TypeName* type_name) -> const ast::TypeName* {
-        if (preserved_type_names.Contains(type_name)) {
-            auto sym_in = type_name->name;
-            auto str = src->Symbols().NameFor(sym_in);
-            auto sym_out = b.Symbols().Register(str);
-            return ctx.dst->create<ast::TypeName>(ctx.Clone(type_name->source), sym_out);
+            return ctx.dst->create<ast::Identifier>(ctx.Clone(ident->source), sym_out);
         }
         return nullptr;  // Clone ident. Uses the symbol remapping above.
     });

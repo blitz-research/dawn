@@ -19,8 +19,8 @@
 
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/call.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/type/abstract_numeric.h"
 #include "src/tint/utils/map.h"
 
@@ -102,7 +102,7 @@ Transform::ApplyResult VectorizeScalarMatrixInitializers::Apply(const Program* s
                 columns.Push(b.vec(CreateASTTypeFor(ctx, mat_type->type()), mat_type->rows(),
                                    std::move(row_values)));
             }
-            return b.Construct(CreateASTTypeFor(ctx, mat_type), columns);
+            return b.Call(CreateASTTypeFor(ctx, mat_type), columns);
         };
 
         if (args.Length() == 1) {
