@@ -134,7 +134,7 @@ TEST_P(ResolverInferredTypeParamTest, LocalVar_Pass) {
 INSTANTIATE_TEST_SUITE_P(ResolverTest, ResolverInferredTypeParamTest, testing::ValuesIn(all_cases));
 
 TEST_F(ResolverInferredTypeTest, InferArray_Pass) {
-    auto* type = ty.array(ty.u32(), 10_u);
+    auto* type = ty.array<u32, 10>();
     auto* expected_type = create<type::Array>(
         create<type::U32>(), create<type::ConstantArrayCount>(10u), 4u, 4u * 10u, 4u, 4u);
 
@@ -151,8 +151,8 @@ TEST_F(ResolverInferredTypeTest, InferStruct_Pass) {
     auto* str = Structure("S", utils::Vector{member});
 
     auto* expected_type = create<sem::Struct>(
-        str, str->source, str->name,
-        utils::Vector{create<sem::StructMember>(member, member->source, member->symbol,
+        str, str->source, str->name->symbol,
+        utils::Vector{create<sem::StructMember>(member, member->source, member->name->symbol,
                                                 create<type::I32>(), 0u, 0u, 0u, 4u, std::nullopt)},
         0u, 4u, 4u);
 

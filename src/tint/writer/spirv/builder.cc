@@ -311,7 +311,7 @@ uint32_t Builder::LookupVariableID(const sem::Variable* var) {
     auto it = var_to_id_.find(var);
     if (it == var_to_id_.end()) {
         error_ = "unable to find ID for variable: " +
-                 builder_.Symbols().NameFor(var->Declaration()->symbol);
+                 builder_.Symbols().NameFor(var->Declaration()->name->symbol);
         return 0;
     }
     return it->second;
@@ -500,7 +500,7 @@ bool Builder::GenerateEntryPoint(const ast::Function* func, uint32_t id) {
     }
 
     OperandList operands = {Operand(stage), Operand(id),
-                            Operand(builder_.Symbols().NameFor(func->symbol))};
+                            Operand(builder_.Symbols().NameFor(func->name->symbol))};
 
     auto* func_sem = builder_.Sem().Get(func);
     for (const auto* var : func_sem->TransitivelyReferencedGlobals()) {
@@ -514,7 +514,7 @@ bool Builder::GenerateEntryPoint(const ast::Function* func, uint32_t id) {
         uint32_t var_id = LookupVariableID(var);
         if (var_id == 0) {
             error_ = "unable to find ID for global variable: " +
-                     builder_.Symbols().NameFor(var->Declaration()->symbol);
+                     builder_.Symbols().NameFor(var->Declaration()->name->symbol);
             return false;
         }
 
@@ -602,7 +602,7 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
     auto func_id = std::get<uint32_t>(func_op);
 
     push_debug(spv::Op::OpName,
-               {Operand(func_id), Operand(builder_.Symbols().NameFor(func_ast->symbol))});
+               {Operand(func_id), Operand(builder_.Symbols().NameFor(func_ast->name->symbol))});
 
     auto ret_id = GenerateTypeIfNeeded(func->ReturnType());
     if (ret_id == 0) {
@@ -626,9 +626,9 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
             return false;
         }
 
-        push_debug(
-            spv::Op::OpName,
-            {Operand(param_id), Operand(builder_.Symbols().NameFor(param->Declaration()->symbol))});
+        push_debug(spv::Op::OpName,
+                   {Operand(param_id),
+                    Operand(builder_.Symbols().NameFor(param->Declaration()->name->symbol))});
         params.push_back(
             Instruction{spv::Op::OpFunctionParameter, {Operand(param_type_id), param_op}});
 
@@ -661,7 +661,7 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
         }
     }
 
-    func_symbol_to_id_[func_ast->symbol] = func_id;
+    func_symbol_to_id_[func_ast->name->symbol] = func_id;
 
     return true;
 }
@@ -725,7 +725,8 @@ bool Builder::GenerateFunctionVariable(const ast::Variable* v) {
         return false;
     }
 
-    push_debug(spv::Op::OpName, {Operand(var_id), Operand(builder_.Symbols().NameFor(v->symbol))});
+    push_debug(spv::Op::OpName,
+               {Operand(var_id), Operand(builder_.Symbols().NameFor(v->name->symbol))});
 
     // TODO(dsinclair) We could detect if the initializer is fully const and emit
     // an initializer value for the variable instead of doing the OpLoad.
@@ -785,7 +786,8 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
         return false;
     }
 
-    push_debug(spv::Op::OpName, {Operand(var_id), Operand(builder_.Symbols().NameFor(v->symbol))});
+    push_debug(spv::Op::OpName,
+               {Operand(var_id), Operand(builder_.Symbols().NameFor(v->name->symbol))});
 
     OperandList ops = {Operand(type_id), result, U32Operand(ConvertAddressSpace(sc))};
 

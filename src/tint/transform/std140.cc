@@ -335,7 +335,7 @@ struct Std140::State {
                     // Create a new forked structure, and insert it just under the original
                     // structure.
                     auto name = b.Symbols().New(sym.NameFor(str->Name()) + "_std140");
-                    auto* std140 = b.create<ast::Struct>(name, std::move(members),
+                    auto* std140 = b.create<ast::Struct>(b.Ident(name), std::move(members),
                                                          ctx.Clone(str->Declaration()->attributes));
                     ctx.InsertAfter(src->AST().GlobalDeclarations(), global, std140);
                     std140_structs.Add(str, name);
@@ -384,7 +384,7 @@ struct Std140::State {
             bool unique = true;
             for (auto* member : str->members) {
                 // The member name must be unique over the entire set of `count` suffixed names.
-                if (strings.Contains(sym.NameFor(member->symbol))) {
+                if (strings.Contains(sym.NameFor(member->name->symbol))) {
                     unique = false;
                     break;
                 }
@@ -420,7 +420,8 @@ struct Std140::State {
                         b.Structure(name, members);
                         return Std140Matrix{
                             name,
-                            utils::Transform(members, [&](auto* member) { return member->symbol; }),
+                            utils::Transform(members,
+                                             [&](auto* member) { return member->name->symbol; }),
                         };
                     });
                     return b.ty(std140_mat.name);
@@ -528,7 +529,7 @@ struct Std140::State {
                     }
                     TINT_ICE(Transform, b.Diagnostics())
                         << "unexpected variable found walking access chain: "
-                        << sym.NameFor(user->Variable()->Declaration()->symbol);
+                        << sym.NameFor(user->Variable()->Declaration()->name->symbol);
                     return Action::kError;
                 },
                 [&](const sem::StructMemberAccess* a) {
@@ -704,7 +705,7 @@ struct Std140::State {
                             auto* mat_ty = CreateASTTypeFor(ctx, member->Type());
                             auto mat_args =
                                 utils::Transform(*col_members, [&](const ast::StructMember* m) {
-                                    return b.MemberAccessor(param, m->symbol);
+                                    return b.MemberAccessor(param, m->name->symbol);
                                 });
                             args.Push(b.Call(mat_ty, std::move(mat_args)));
                         } else {
@@ -838,7 +839,7 @@ struct Std140::State {
             auto mat_member_idx = std::get<u32>(chain.indices[std140_mat_idx]);
             auto* mat_member = str->Members()[mat_member_idx];
             auto mat_columns = *std140_mat_members.Get(mat_member);
-            expr = b.MemberAccessor(expr, mat_columns[column_idx]->symbol);
+            expr = b.MemberAccessor(expr, mat_columns[column_idx]->name->symbol);
             ty = mat_member->Type()->As<type::Matrix>()->ColumnType();
         } else {
             // Non-structure-member matrix. The columns are decomposed into a new, bespoke std140
@@ -878,7 +879,9 @@ struct Std140::State {
         });
         // Method for generating dynamic index expressions.
         // These are passed in as arguments to the function.
-        auto dynamic_index = [&](size_t idx) { return b.Expr(dynamic_index_params[idx]->symbol); };
+        auto dynamic_index = [&](size_t idx) {
+            return b.Expr(dynamic_index_params[idx]->name->symbol);
+        };
 
         // Fetch the access chain indices of the matrix access and the parameter index that
         // holds the matrix column index.
@@ -921,7 +924,7 @@ struct Std140::State {
                             std::to_string(column_param_idx);
                 }
                 auto mat_columns = *std140_mat_members.Get(mat_member);
-                expr = b.MemberAccessor(expr, mat_columns[column_idx]->symbol);
+                expr = b.MemberAccessor(expr, mat_columns[column_idx]->name->symbol);
                 ty = mat_member->Type()->As<type::Matrix>()->ColumnType();
             } else {
                 // Non-structure-member matrix. The columns are decomposed into a new, bespoke
@@ -986,7 +989,9 @@ struct Std140::State {
         });
         // Method for generating dynamic index expressions.
         // These are passed in as arguments to the function.
-        auto dynamic_index = [&](size_t idx) { return b.Expr(dynamic_index_params[idx]->symbol); };
+        auto dynamic_index = [&](size_t idx) {
+            return b.Expr(dynamic_index_params[idx]->name->symbol);
+        };
 
         const ast::Expression* expr = nullptr;
         const type::Type* ty = nullptr;
@@ -1015,7 +1020,7 @@ struct Std140::State {
             auto* mat_member = str->Members()[mat_member_idx];
             auto mat_columns = *std140_mat_members.Get(mat_member);
             columns = utils::Transform(mat_columns, [&](auto* column_member) {
-                return b.MemberAccessor(b.Deref(let), column_member->symbol);
+                return b.MemberAccessor(b.Deref(let), column_member->name->symbol);
             });
             ty = mat_member->Type();
             name += "_" + sym.NameFor(mat_member->Name());
@@ -1072,8 +1077,9 @@ struct Std140::State {
         auto& access = chain.indices[index];
 
         if (std::get_if<UniformVariable>(&access)) {
-            const auto* expr = b.Expr(ctx.Clone(chain.var->Declaration()->symbol));
-            const auto name = src->Symbols().NameFor(chain.var->Declaration()->symbol);
+            const auto symbol = chain.var->Declaration()->name->symbol;
+            const auto* expr = b.Expr(ctx.Clone(symbol));
+            const auto name = src->Symbols().NameFor(symbol);
             ty = chain.var->Type()->UnwrapRef();
             return {expr, ty, name};
         }

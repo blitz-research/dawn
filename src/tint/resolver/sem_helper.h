@@ -20,6 +20,7 @@
 #include "src/tint/diagnostic/diagnostic.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/resolver/dependency_graph.h"
+#include "src/tint/sem/builtin_enum_expression.h"
 #include "src/tint/utils/map.h"
 
 namespace tint::resolver {
@@ -29,8 +30,7 @@ class SemHelper {
   public:
     /// Constructor
     /// @param builder the program builder
-    /// @param dependencies the program dependency graph
-    explicit SemHelper(ProgramBuilder* builder, DependencyGraph& dependencies);
+    explicit SemHelper(ProgramBuilder* builder);
     ~SemHelper();
 
     /// Get is a helper for obtaining the semantic node for the given AST node.
@@ -58,53 +58,84 @@ class SemHelper {
     /// @returns the sem node for @p ast
     template <typename AST = ast::Node>
     auto* GetVal(const AST* ast) const {
-        if constexpr (traits::IsTypeOrDerived<sem::SemanticNodeTypeFor<AST>,
-                                              sem::ValueExpression>) {
-            return Get(ast);
-        } else {
-            if (auto* sem = Get(ast); TINT_LIKELY(sem)) {
-                auto* val = sem->template As<sem::ValueExpression>();
-                if (TINT_LIKELY(val)) {
-                    return val;
-                }
-                // TODO(crbug.com/tint/1810): Improve error
-                builder_->Diagnostics().add_error(diag::System::Resolver,
-                                                  "required value expression, got something else",
-                                                  ast->source);
-            }
-            return static_cast<sem::ValueExpression*>(nullptr);
-        }
+        return AsValue(Get(ast));
     }
 
-    /// @returns the resolved symbol (function, type or variable) for the given ast::Identifier or
-    /// ast::TypeName cast to the given semantic type.
-    /// @param node the node to retrieve
-    template <typename SEM = sem::Info::InferFromAST>
-    sem::Info::GetResultType<SEM, ast::Node>* ResolvedSymbol(const ast::Node* node) const {
-        if (auto resolved = dependencies_.resolved_symbols.Find(node)) {
-            auto* sem = builder_->Sem().Get<SEM>(*resolved);
-            return const_cast<sem::Info::GetResultType<SEM, ast::Node>*>(sem);
+    /// @param expr the semantic node
+    /// @returns nullptr if @p expr is nullptr, or @p expr cast to sem::ValueExpression if the cast
+    /// is successful, otherwise an error diagnostic is raised.
+    sem::ValueExpression* AsValue(sem::Expression* expr) const {
+        if (TINT_LIKELY(expr)) {
+            if (auto* val = expr->As<sem::ValueExpression>(); TINT_LIKELY(val)) {
+                return val;
+            }
+            ErrorExpectedValueExpr(expr);
         }
         return nullptr;
     }
 
-    /// @returns the resolved type of the ast::Expression `expr`
+    /// @param expr the semantic node
+    /// @returns nullptr if @p expr is nullptr, or @p expr cast to
+    /// sem::BuiltinEnumExpression<type::TexelFormat> if the cast is successful, otherwise an error
+    /// diagnostic is raised.
+    sem::BuiltinEnumExpression<type::TexelFormat>* AsTexelFormat(sem::Expression* expr) const {
+        if (TINT_LIKELY(expr)) {
+            if (auto* val = expr->As<sem::BuiltinEnumExpression<type::TexelFormat>>();
+                TINT_LIKELY(val)) {
+                return val;
+            }
+            ErrorUnexpectedExprKind(expr, "texel format");
+        }
+        return nullptr;
+    }
+
+    /// @param expr the semantic node
+    /// @returns nullptr if @p expr is nullptr, or @p expr cast to
+    /// sem::BuiltinEnumExpression<type::Access> if the cast is successful, otherwise an error
+    /// diagnostic is raised.
+    sem::BuiltinEnumExpression<type::Access>* AsAccess(sem::Expression* expr) const {
+        if (TINT_LIKELY(expr)) {
+            if (auto* val = expr->As<sem::BuiltinEnumExpression<type::Access>>();
+                TINT_LIKELY(val)) {
+                return val;
+            }
+            ErrorUnexpectedExprKind(expr, "access");
+        }
+        return nullptr;
+    }
+
+    /// @returns the resolved type of the ast::Expression @p expr
     /// @param expr the expression
     type::Type* TypeOf(const ast::Expression* expr) const;
 
-    /// @returns the type name of the given semantic type, unwrapping
-    /// references.
+    /// @returns the type name of the given semantic type, unwrapping references.
     /// @param ty the type to look up
     std::string TypeNameOf(const type::Type* ty) const;
 
-    /// @returns the type name of the given semantic type, without unwrapping
-    /// references.
+    /// @returns the type name of the given semantic type, without unwrapping references.
     /// @param ty the type to look up
     std::string RawTypeNameOf(const type::Type* ty) const;
 
+    /// Raises an error diagnostic that the expression @p got was expected to be a
+    /// sem::ValueExpression, but the expression evaluated to something different.
+    /// @param expr the expression
+    void ErrorExpectedValueExpr(const sem::Expression* expr) const;
+
   private:
+    /// Raises an error diagnostic that the expression @p got was not of the kind @p wanted.
+    /// @param expr the expression
+    void ErrorUnexpectedExprKind(const sem::Expression* expr, std::string_view wanted) const;
+
+    /// Adds the given error message to the diagnostics
+    void AddError(const std::string& msg, const Source& source) const;
+
+    /// Adds the given warning message to the diagnostics
+    void AddWarning(const std::string& msg, const Source& source) const;
+
+    /// Adds the given note message to the diagnostics
+    void AddNote(const std::string& msg, const Source& source) const;
+
     ProgramBuilder* builder_;
-    DependencyGraph& dependencies_;
 };
 
 }  // namespace tint::resolver

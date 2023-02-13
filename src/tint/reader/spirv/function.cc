@@ -955,9 +955,8 @@ bool FunctionEmitter::Emit() {
             return false;
         }
 
-        builder_.AST().AddFunction(create<ast::Function>(
-            decl.source, builder_.Symbols().Register(decl.name), std::move(decl.params),
-            decl.return_type->Build(builder_), body, std::move(decl.attributes), utils::Empty));
+        builder_.Func(decl.source, decl.name, std::move(decl.params),
+                      decl.return_type->Build(builder_), body, std::move(decl.attributes));
     }
 
     if (ep_info_ && !ep_info_->inner_name.empty()) {
@@ -1104,8 +1103,7 @@ bool FunctionEmitter::EmitPipelineInput(std::string var_name,
             if (is_builtin && (tip_type != forced_param_type)) {
                 // The parameter will have the WGSL type, but we need bitcast to
                 // the variable store type.
-                param_value =
-                    create<ast::BitcastExpression>(tip_type->Build(builder_), param_value);
+                param_value = builder_.Bitcast(tip_type->Build(builder_), param_value);
             }
 
             statements->Push(builder_.Assign(store_dest, param_value));
@@ -1240,8 +1238,7 @@ bool FunctionEmitter::EmitPipelineOutput(std::string var_name,
             if (is_builtin && (tip_type != forced_member_type)) {
                 // The member will have the WGSL type, but we need bitcast to
                 // the variable store type.
-                load_source = create<ast::BitcastExpression>(forced_member_type->Build(builder_),
-                                                             load_source);
+                load_source = builder_.Bitcast(forced_member_type->Build(builder_), load_source);
             }
             return_exprs->Push(load_source);
 
@@ -1386,18 +1383,17 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
             return_type = ty_.Void()->Build(builder_);
         } else {
             // Create and register the result type.
-            auto* str =
-                create<ast::Struct>(Source{}, return_struct_sym, return_members, AttributeList{});
+            auto* str = create<ast::Struct>(Source{}, builder_.Ident(return_struct_sym),
+                                            return_members, AttributeList{});
             parser_impl_.AddTypeDecl(return_struct_sym, str);
             return_type = builder_.ty.Of(str);
 
             // Add the return-value statement.
-            stmts.Push(create<ast::ReturnStatement>(
+            stmts.Push(builder_.Return(
                 source, builder_.Call(source, return_type, std::move(return_exprs))));
         }
     }
 
-    auto* body = create<ast::BlockStatement>(source, stmts, utils::Empty);
     AttributeList fn_attrs;
     fn_attrs.Push(create<ast::StageAttribute>(source, ep_info_->stage));
 
@@ -1411,9 +1407,8 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
         }
     }
 
-    builder_.AST().AddFunction(create<ast::Function>(
-        source, builder_.Symbols().Register(ep_info_->name), std::move(decl.params), return_type,
-        body, std::move(fn_attrs), AttributeList{}));
+    builder_.Func(source, ep_info_->name, std::move(decl.params), return_type, std::move(stmts),
+                  std::move(fn_attrs));
 
     return true;
 }
@@ -3124,20 +3119,20 @@ bool FunctionEmitter::EmitNormalTerminator(const BlockInfo& block_info) {
     const auto& terminator = *(block_info.basic_block->terminator());
     switch (opcode(terminator)) {
         case spv::Op::OpReturn:
-            AddStatement(create<ast::ReturnStatement>(Source{}));
+            AddStatement(builder_.Return(Source{}));
             return true;
         case spv::Op::OpReturnValue: {
             auto value = MakeExpression(terminator.GetSingleWordInOperand(0));
             if (!value) {
                 return false;
             }
-            AddStatement(create<ast::ReturnStatement>(Source{}, value.expr));
+            AddStatement(builder_.Return(Source{}, value.expr));
             return true;
         }
         case spv::Op::OpKill:
             // For now, assume SPIR-V OpKill has same semantics as WGSL discard.
             // TODO(dneto): https://github.com/gpuweb/gpuweb/issues/676
-            AddStatement(create<ast::DiscardStatement>(Source{}));
+            AddStatement(builder_.Discard(Source{}));
             return true;
         case spv::Op::OpUnreachable:
             // Translate as if it's a return. This avoids the problem where WGSL
@@ -3145,11 +3140,10 @@ bool FunctionEmitter::EmitNormalTerminator(const BlockInfo& block_info) {
             {
                 const auto* result_type = type_mgr_->GetType(function_.type_id());
                 if (result_type->AsVoid() != nullptr) {
-                    AddStatement(create<ast::ReturnStatement>(Source{}));
+                    AddStatement(builder_.Return(Source{}));
                 } else {
                     auto* ast_type = parser_impl_.ConvertType(function_.type_id());
-                    AddStatement(create<ast::ReturnStatement>(
-                        Source{}, parser_impl_.MakeNullValue(ast_type)));
+                    AddStatement(builder_.Return(Source{}, parser_impl_.MakeNullValue(ast_type)));
                 }
             }
             return true;
@@ -3848,8 +3842,8 @@ TypedExpression FunctionEmitter::MaybeEmitCombinatorialValue(
     }
 
     if (op == spv::Op::OpBitcast) {
-        return {ast_type, create<ast::BitcastExpression>(Source{}, ast_type->Build(builder_),
-                                                         MakeOperand(inst, 0).expr)};
+        return {ast_type,
+                builder_.Bitcast(Source{}, ast_type->Build(builder_), MakeOperand(inst, 0).expr)};
     }
 
     if (op == spv::Op::OpShiftLeftLogical || op == spv::Op::OpShiftRightLogical ||
@@ -5169,8 +5163,7 @@ TypedExpression FunctionEmitter::MakeNumericConversion(const spvtools::opt::Inst
         return result;
     }
     return {requested_type,
-            create<ast::BitcastExpression>(GetSourceForInst(inst), requested_type->Build(builder_),
-                                           result.expr)};
+            builder_.Bitcast(GetSourceForInst(inst), requested_type->Build(builder_), result.expr)};
 }
 
 bool FunctionEmitter::EmitFunctionCall(const spvtools::opt::Instruction& inst) {
@@ -5213,7 +5206,7 @@ bool FunctionEmitter::EmitFunctionCall(const spvtools::opt::Instruction& inst) {
     }
 
     if (result_type->Is<Void>()) {
-        return nullptr != AddStatement(create<ast::CallStatement>(Source{}, call_expr));
+        return nullptr != AddStatement(builder_.CallStmt(Source{}, call_expr));
     }
 
     return EmitConstDefOrWriteToHoistedVar(inst, {result_type, call_expr});
@@ -5247,14 +5240,14 @@ bool FunctionEmitter::EmitControlBarrier(const spvtools::opt::Instruction& inst)
         if (memory != uint32_t(spv::Scope::Workgroup)) {
             return Fail() << "workgroupBarrier requires workgroup memory scope";
         }
-        AddStatement(create<ast::CallStatement>(builder_.Call("workgroupBarrier")));
+        AddStatement(builder_.CallStmt(builder_.Call("workgroupBarrier")));
         semantics &= ~static_cast<uint32_t>(spv::MemorySemanticsMask::WorkgroupMemory);
     }
     if (semantics & uint32_t(spv::MemorySemanticsMask::UniformMemory)) {
         if (memory != uint32_t(spv::Scope::Device)) {
             return Fail() << "storageBarrier requires device memory scope";
         }
-        AddStatement(create<ast::CallStatement>(builder_.Call("storageBarrier")));
+        AddStatement(builder_.CallStmt(builder_.Call("storageBarrier")));
         semantics &= ~static_cast<uint32_t>(spv::MemorySemanticsMask::UniformMemory);
     }
     if (semantics) {
@@ -5662,8 +5655,7 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
         if (expected_component_type != result_component_type) {
             // This occurs if one is signed integer and the other is unsigned integer,
             // or vice versa. Perform a bitcast.
-            value =
-                create<ast::BitcastExpression>(Source{}, result_type->Build(builder_), call_expr);
+            value = builder_.Bitcast(Source{}, result_type->Build(builder_), call_expr);
         }
         if (!expected_component_type->Is<F32>() && IsSampledImageAccess(op)) {
             // WGSL permits sampled image access only on float textures.
@@ -5676,7 +5668,7 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
     } else {
         // It's an image write. No value is returned, so make a statement out
         // of the call.
-        AddStatement(create<ast::CallStatement>(Source{}, call_expr));
+        AddStatement(builder_.CallStmt(Source{}, call_expr));
     }
     return success();
 }
@@ -5784,27 +5776,24 @@ bool FunctionEmitter::EmitAtomicOp(const spvtools::opt::Instruction& inst) {
         }
 
         // Emit stub, will be removed by transform::SpirvAtomic
-        auto sym = builder_.Symbols().New(std::string("stub_") + sem::str(builtin));
-        auto* stub_deco = builder_.ASTNodes().Create<transform::SpirvAtomic::Stub>(
-            builder_.ID(), builder_.AllocateNodeID(), builtin);
-        auto* stub =
-            create<ast::Function>(Source{}, sym, std::move(params), ret_type,
-                                  /* body */ nullptr,
-                                  AttributeList{
-                                      stub_deco,
-                                      builder_.Disable(ast::DisabledValidation::kFunctionHasNoBody),
-                                  },
-                                  AttributeList{});
-        builder_.AST().AddFunction(stub);
+        auto* stub = builder_.Func(
+            Source{}, builder_.Symbols().New(std::string("stub_") + sem::str(builtin)),
+            std::move(params), ret_type,
+            /* body */ nullptr,
+            utils::Vector{
+                builder_.ASTNodes().Create<transform::SpirvAtomic::Stub>(
+                    builder_.ID(), builder_.AllocateNodeID(), builtin),
+                builder_.Disable(ast::DisabledValidation::kFunctionHasNoBody),
+            });
 
         // Emit call to stub, will be replaced with call to atomic builtin by transform::SpirvAtomic
-        auto* call = builder_.Call(Source{}, sym, std::move(exprs));
+        auto* call = builder_.Call(Source{}, stub->name->symbol, std::move(exprs));
         if (inst.type_id() != 0) {
             auto* result_type = parser_impl_.ConvertType(inst.type_id());
             TypedExpression expr{result_type, call};
             return EmitConstDefOrWriteToHoistedVar(inst, expr);
         }
-        AddStatement(create<ast::CallStatement>(call));
+        AddStatement(builder_.CallStmt(call));
 
         return true;
     };

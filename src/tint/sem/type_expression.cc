@@ -1,4 +1,4 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2023 The Tint Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,27 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ast/bool.h"
+#include "src/tint/sem/type_expression.h"
 
-#include "src/tint/program_builder.h"
+TINT_INSTANTIATE_TYPEINFO(tint::sem::TypeExpression);
 
-TINT_INSTANTIATE_TYPEINFO(tint::ast::Bool);
+namespace tint::sem {
 
-namespace tint::ast {
+TypeExpression::TypeExpression(const ast::Expression* declaration,
+                               const Statement* statement,
+                               const type::Type* type)
+    : Base(declaration, statement), type_(type) {}
 
-Bool::Bool(ProgramID pid, NodeID nid, const Source& src) : Base(pid, nid, src) {}
+TypeExpression::~TypeExpression() = default;
 
-Bool::Bool(Bool&&) = default;
-
-Bool::~Bool() = default;
-
-std::string Bool::FriendlyName(const SymbolTable&) const {
-    return "bool";
-}
-
-const Bool* Bool::Clone(CloneContext* ctx) const {
-    auto src = ctx->Clone(source);
-    return ctx->dst->create<Bool>(src);
-}
-
-}  // namespace tint::ast
+}  // namespace tint::sem

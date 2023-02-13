@@ -1,4 +1,4 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2023 The Tint Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,27 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ast/f32.h"
+#include "src/tint/sem/builtin_enum_expression.h"
 
-#include "src/tint/program_builder.h"
+TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpressionBase);
 
-TINT_INSTANTIATE_TYPEINFO(tint::ast::F32);
+namespace tint::sem {
 
-namespace tint::ast {
+BuiltinEnumExpressionBase::BuiltinEnumExpressionBase(const ast::Expression* declaration,
+                                                     const Statement* statement)
+    : Base(declaration, statement) {}
 
-F32::F32(ProgramID pid, NodeID nid, const Source& src) : Base(pid, nid, src) {}
+BuiltinEnumExpressionBase::~BuiltinEnumExpressionBase() = default;
 
-F32::F32(F32&&) = default;
-
-F32::~F32() = default;
-
-std::string F32::FriendlyName(const SymbolTable&) const {
-    return "f32";
-}
-
-const F32* F32::Clone(CloneContext* ctx) const {
-    auto src = ctx->Clone(source);
-    return ctx->dst->create<F32>(src);
-}
-
-}  // namespace tint::ast
+}  // namespace tint::sem

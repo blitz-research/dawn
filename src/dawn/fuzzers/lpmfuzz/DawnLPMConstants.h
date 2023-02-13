@@ -1,4 +1,4 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2023 The Dawn Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,19 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ast/f16.h"
-
-#include "src/tint/ast/test_helper.h"
-
-namespace tint::ast {
-namespace {
-
-using AstF16Test = TestHelper;
-
-TEST_F(AstF16Test, FriendlyName) {
-    auto* f = create<F16>();
-    EXPECT_EQ(f->FriendlyName(Symbols()), "f16");
-}
-
-}  // namespace
-}  // namespace tint::ast
+#define INSTANCE_OBJECT_ID 1

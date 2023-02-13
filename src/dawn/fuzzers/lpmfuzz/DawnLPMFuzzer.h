@@ -1,4 +1,4 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2023 The Dawn Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,19 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/ast/u32.h"
+#ifndef SRC_DAWN_FUZZERS_DAWNLPMFUZZER_H_
+#define SRC_DAWN_FUZZERS_DAWNLPMFUZZER_H_
 
-#include "src/tint/ast/test_helper.h"
+#include "dawn/fuzzers/lpmfuzz/dawn_lpm_autogen.pb.h"
+#include "dawn/webgpu_cpp.h"
 
-namespace tint::ast {
-namespace {
+namespace dawn::native {
 
-using AstU32Test = TestHelper;
+class Adapter;
 
-TEST_F(AstU32Test, FriendlyName) {
-    auto* u = create<U32>();
-    EXPECT_EQ(u->FriendlyName(Symbols()), "u32");
-}
+}  // namespace dawn::native
 
-}  // namespace
-}  // namespace tint::ast
+namespace DawnLPMFuzzer {
+
+int Initialize(int* argc, char*** argv);
+
+int Run(const fuzzing::Program& program, bool (*AdapterSupported)(const dawn::native::Adapter&));
+}  // namespace DawnLPMFuzzer
+
+#endif  // SRC_DAWN_FUZZERS_DAWNLPMFUZZER_H_

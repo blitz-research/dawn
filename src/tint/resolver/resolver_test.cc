@@ -581,7 +581,7 @@ TEST_F(ResolverTest, ArraySize_UnamedOverride_Equivalence) {
 TEST_F(ResolverTest, Expr_Bitcast) {
     GlobalVar("name", ty.f32(), type::AddressSpace::kPrivate);
 
-    auto* bitcast = create<ast::BitcastExpression>(ty.f32(), Expr("name"));
+    auto* bitcast = Bitcast<f32>(Expr("name"));
     WrapInFunction(bitcast);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -1253,7 +1253,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Struct) {
     EXPECT_TRUE(sma->Member()->Type()->Is<type::F32>());
     EXPECT_EQ(sma->Object()->Declaration(), mem->object);
     EXPECT_EQ(sma->Member()->Index(), 1u);
-    EXPECT_EQ(sma->Member()->Declaration()->symbol, Symbols().Get("second_member"));
+    EXPECT_EQ(sma->Member()->Declaration()->name->symbol, Symbols().Get("second_member"));
 }
 
 TEST_F(ResolverTest, Expr_MemberAccessor_Struct_Alias) {
@@ -2000,17 +2000,17 @@ TEST_F(ResolverTest, Function_EntryPoints_StageAttribute) {
 
     const auto& b_eps = func_b_sem->AncestorEntryPoints();
     ASSERT_EQ(2u, b_eps.size());
-    EXPECT_EQ(Symbols().Register("ep_1"), b_eps[0]->Declaration()->symbol);
-    EXPECT_EQ(Symbols().Register("ep_2"), b_eps[1]->Declaration()->symbol);
+    EXPECT_EQ(Symbols().Register("ep_1"), b_eps[0]->Declaration()->name->symbol);
+    EXPECT_EQ(Symbols().Register("ep_2"), b_eps[1]->Declaration()->name->symbol);
 
     const auto& a_eps = func_a_sem->AncestorEntryPoints();
     ASSERT_EQ(1u, a_eps.size());
-    EXPECT_EQ(Symbols().Register("ep_1"), a_eps[0]->Declaration()->symbol);
+    EXPECT_EQ(Symbols().Register("ep_1"), a_eps[0]->Declaration()->name->symbol);
 
     const auto& c_eps = func_c_sem->AncestorEntryPoints();
     ASSERT_EQ(2u, c_eps.size());
-    EXPECT_EQ(Symbols().Register("ep_1"), c_eps[0]->Declaration()->symbol);
-    EXPECT_EQ(Symbols().Register("ep_2"), c_eps[1]->Declaration()->symbol);
+    EXPECT_EQ(Symbols().Register("ep_1"), c_eps[0]->Declaration()->name->symbol);
+    EXPECT_EQ(Symbols().Register("ep_2"), c_eps[1]->Declaration()->name->symbol);
 
     EXPECT_TRUE(ep_1_sem->AncestorEntryPoints().empty());
     EXPECT_TRUE(ep_2_sem->AncestorEntryPoints().empty());
@@ -2063,8 +2063,8 @@ TEST_F(ResolverTest, Function_EntryPoints_LinearTime) {
 
 // Test for crbug.com/tint/728
 TEST_F(ResolverTest, ASTNodesAreReached) {
-    Structure("A", utils::Vector{Member("x", ty.array<f32, 4>(4))});
-    Structure("B", utils::Vector{Member("x", ty.array<f32, 4>(4))});
+    Structure("A", utils::Vector{Member("x", ty.array<f32, 4>(utils::Vector{Stride(4)}))});
+    Structure("B", utils::Vector{Member("x", ty.array<f32, 4>(utils::Vector{Stride(4)}))});
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 

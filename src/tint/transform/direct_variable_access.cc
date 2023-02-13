@@ -600,7 +600,7 @@ struct DirectVariableAccess::State {
 
             // Function was not called. Create a single variant with an empty signature.
             FnVariant variant;
-            variant.name = ctx.Clone(fn->Declaration()->symbol);
+            variant.name = ctx.Clone(fn->Declaration()->name->symbol);
             variant.order = 0;  // Unaltered comes first.
             fn_info->variants.Add(FnVariant::Signature{}, std::move(variant));
         }
@@ -679,7 +679,7 @@ struct DirectVariableAccess::State {
                 if (target_signature.IsEmpty()) {
                     // Call target does not require any argument changes.
                     FnVariant variant;
-                    variant.name = ctx.Clone(target->Declaration()->symbol);
+                    variant.name = ctx.Clone(target->Declaration()->name->symbol);
                     variant.order = 0;  // Unaltered comes first.
                     return variant;
                 }
@@ -688,7 +688,7 @@ struct DirectVariableAccess::State {
                 // This is derived from the original function name and the pointer parameter
                 // chains.
                 std::stringstream ss;
-                ss << ctx.src->Symbols().NameFor(target->Declaration()->symbol);
+                ss << ctx.src->Symbols().NameFor(target->Declaration()->name->symbol);
                 for (auto* param : target->Parameters()) {
                     if (auto indices = target_signature.Find(param)) {
                         ss << "_" << AccessShapeName(*indices);
@@ -711,13 +711,13 @@ struct DirectVariableAccess::State {
 
                     PtrParamSymbols symbols;
                     if (requires_base_ptr_param && requires_indices_param) {
-                        auto original_name = param->Declaration()->symbol;
+                        auto original_name = param->Declaration()->name->symbol;
                         symbols.base_ptr = UniqueSymbolWithSuffix(original_name, "_base");
                         symbols.indices = UniqueSymbolWithSuffix(original_name, "_indices");
                     } else if (requires_base_ptr_param) {
-                        symbols.base_ptr = ctx.Clone(param->Declaration()->symbol);
+                        symbols.base_ptr = ctx.Clone(param->Declaration()->name->symbol);
                     } else if (requires_indices_param) {
-                        symbols.indices = ctx.Clone(param->Declaration()->symbol);
+                        symbols.indices = ctx.Clone(param->Declaration()->name->symbol);
                     }
 
                     // Remember this base pointer name.
@@ -855,7 +855,7 @@ struct DirectVariableAccess::State {
                 auto attrs = ctx.Clone(fn->Declaration()->attributes);
                 auto ret_attrs = ctx.Clone(fn->Declaration()->return_type_attributes);
                 pending_variant =
-                    b.create<ast::Function>(variant.name, std::move(params), ret_ty, body,
+                    b.create<ast::Function>(b.Ident(variant.name), std::move(params), ret_ty, body,
                                             std::move(attrs), std::move(ret_attrs));
             }
 
@@ -1085,7 +1085,7 @@ struct DirectVariableAccess::State {
         if (IsPrivateOrFunction(shape.root.address_space)) {
             ss << "F";
         } else {
-            ss << ctx.src->Symbols().NameFor(shape.root.variable->Declaration()->symbol);
+            ss << ctx.src->Symbols().NameFor(shape.root.variable->Declaration()->name->symbol);
         }
 
         for (auto& op : shape.ops) {
@@ -1122,7 +1122,7 @@ struct DirectVariableAccess::State {
             }
         }
 
-        const ast::Expression* expr = b.Expr(ctx.Clone(root.variable->Declaration()->symbol));
+        const ast::Expression* expr = b.Expr(ctx.Clone(root.variable->Declaration()->name->symbol));
         if (deref) {
             if (root.variable->Type()->Is<type::Pointer>()) {
                 expr = b.Deref(expr);
