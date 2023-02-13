@@ -83,7 +83,7 @@ const OpenXRConfig& Adapter::GetOpenXRConfig() const {
     return mOpenXRConfig;
 }
 
-bool Adapter::IsDepthStencilFormatSupported(VkFormat format) {
+bool Adapter::IsDepthStencilFormatSupported(VkFormat format) const {
     ASSERT(format == VK_FORMAT_D16_UNORM_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT ||
            format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_S8_UINT);
 
