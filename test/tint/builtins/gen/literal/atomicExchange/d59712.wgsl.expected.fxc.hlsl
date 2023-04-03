@@ -1,14 +1,17 @@
-RWByteAddressBuffer sb_rw : register(u0, space0);
+RWByteAddressBuffer sb_rw : register(u0);
 
-uint tint_atomicExchange(RWByteAddressBuffer buffer, uint offset, uint value) {
+uint sb_rwatomicExchange(uint offset, uint value) {
   uint original_value = 0;
-  buffer.InterlockedExchange(offset, value, original_value);
+  sb_rw.InterlockedExchange(offset, value, original_value);
   return original_value;
 }
 
 
+RWByteAddressBuffer prevent_dce : register(u0, space2);
+
 void atomicExchange_d59712() {
-  uint res = tint_atomicExchange(sb_rw, 0u, 1u);
+  uint res = sb_rwatomicExchange(0u, 1u);
+  prevent_dce.Store(0u, asuint(res));
 }
 
 void fragment_main() {

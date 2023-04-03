@@ -165,17 +165,19 @@ class Token {
         kContinue,
         /// A 'continuing'
         kContinuing,
+        /// A 'default'
+        kDefault,
         /// A 'diagnostic'
         kDiagnostic,
         /// A 'discard'
         kDiscard,
-        /// A 'default'
-        kDefault,
         /// A 'else'
         kElse,
         /// A 'enable'
         kEnable,
         /// A 'fallthrough'
+        // Note, this isn't a keyword, but a reserved word. We match it as a keyword in order to
+        // provide better diagnostics in case a `fallthrough` is added to a case body.
         kFallthrough,
         /// A 'false'
         kFalse,
@@ -191,18 +193,16 @@ class Token {
         kLoop,
         /// A 'override'
         kOverride,
+        /// A 'requires'
+        kRequires,
         /// A 'return'
         kReturn,
-        /// A 'static_assert'
-        kStaticAssert,
         /// A 'struct'
         kStruct,
         /// A 'switch'
         kSwitch,
         /// A 'true'
         kTrue,
-        /// A 'type'
-        kType,
         /// A 'var'
         kVar,
         /// A 'while'
@@ -355,7 +355,7 @@ class Token {
     std::variant<int64_t, double, std::string, std::string_view> value_;
 };
 
-inline std::ostream& operator<<(std::ostream& out, Token::Type type) {
+inline utils::StringStream& operator<<(utils::StringStream& out, Token::Type type) {
     out << Token::TypeToName(type);
     return out;
 }

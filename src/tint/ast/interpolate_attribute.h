@@ -15,12 +15,14 @@
 #ifndef SRC_TINT_AST_INTERPOLATE_ATTRIBUTE_H_
 #define SRC_TINT_AST_INTERPOLATE_ATTRIBUTE_H_
 
-#include <ostream>
 #include <string>
 
 #include "src/tint/ast/attribute.h"
-#include "src/tint/builtin/interpolation_sampling.h"
-#include "src/tint/builtin/interpolation_type.h"
+
+// Forward declarations
+namespace tint::ast {
+class Expression;
+}
 
 namespace tint::ast {
 
@@ -36,8 +38,8 @@ class InterpolateAttribute final : public Castable<InterpolateAttribute, Attribu
     InterpolateAttribute(ProgramID pid,
                          NodeID nid,
                          const Source& src,
-                         builtin::InterpolationType type,
-                         builtin::InterpolationSampling sampling);
+                         const Expression* type,
+                         const Expression* sampling);
     ~InterpolateAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -50,10 +52,10 @@ class InterpolateAttribute final : public Castable<InterpolateAttribute, Attribu
     const InterpolateAttribute* Clone(CloneContext* ctx) const override;
 
     /// The interpolation type
-    const builtin::InterpolationType type;
+    const Expression* const type;
 
     /// The interpolation sampling
-    const builtin::InterpolationSampling sampling;
+    const Expression* const sampling;
 };
 
 }  // namespace tint::ast

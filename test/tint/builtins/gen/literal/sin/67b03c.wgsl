@@ -23,9 +23,8 @@
 
 // fn sin(vec<3, fa>) -> vec<3, fa>
 fn sin_67b03c() {
-  var res = sin(vec3(1.));
+  var res = sin(vec3(1.57079632679));
 }
-
 @vertex
 fn vertex_main() -> @builtin(position) vec4<f32> {
   sin_67b03c();

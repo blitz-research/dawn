@@ -1,4 +1,4 @@
-cbuffer cbuffer_x_7 : register(b0, space0) {
+cbuffer cbuffer_x_7 : register(b0) {
   uint4 x_7[1];
 };
 static float4 x_GLF_color = float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -14,7 +14,7 @@ void main_1() {
   v = float4(sin(x_33), cos(x_35), exp2(x_37), log(x_39));
   const float4 x_42 = v;
   const float4 x_44 = asfloat(x_7[0]);
-  if ((distance(x_42, x_44) < 0.100000001f)) {
+  if ((distance(x_42, x_44) < 0.10000000149011611938f)) {
     x_GLF_color = float4(1.0f, 0.0f, 0.0f, 1.0f);
   } else {
     x_GLF_color = (0.0f).xxxx;
@@ -31,8 +31,8 @@ struct tint_symbol {
 
 main_out main_inner() {
   main_1();
-  const main_out tint_symbol_2 = {x_GLF_color};
-  return tint_symbol_2;
+  const main_out tint_symbol_1 = {x_GLF_color};
+  return tint_symbol_1;
 }
 
 tint_symbol main() {

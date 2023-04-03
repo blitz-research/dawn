@@ -478,6 +478,36 @@ TEST_P(DeviceLifetimeTests, DroppedInsideCreatePipelineAsyncRaceCache) {
     }
 }
 
+// Tests that dropping 2nd device inside 1st device's callback triggered by instance.ProcessEvents
+// won't crash.
+TEST_P(DeviceLifetimeTests, DropDevice2InProcessEvents) {
+    wgpu::Device device2 = CreateDevice();
+
+    struct UserData {
+        wgpu::Device device2;
+        bool done = false;
+    } userdata;
+
+    userdata.device2 = std::move(device2);
+
+    device.PushErrorScope(wgpu::ErrorFilter::Validation);
+
+    // The following callback will drop the 2nd device. It won't be triggered until
+    // instance.ProcessEvents() is called.
+    device.PopErrorScope(
+        [](WGPUErrorType type, const char*, void* userdataPtr) {
+            auto userdata = static_cast<UserData*>(userdataPtr);
+
+            userdata->device2 = nullptr;
+            userdata->done = true;
+        },
+        &userdata);
+
+    while (!userdata.done) {
+        WaitABit();
+    }
+}
+
 DAWN_INSTANTIATE_TEST(DeviceLifetimeTests,
                       D3D12Backend(),
                       MetalBackend(),

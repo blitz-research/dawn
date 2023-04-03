@@ -34,6 +34,7 @@
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
+#include "src/tint/builtin/attribute.h"
 #include "src/tint/reader/wgsl/classify_template_args.h"
 #include "src/tint/reader/wgsl/lexer.h"
 #include "src/tint/type/depth_texture.h"
@@ -41,8 +42,10 @@
 #include "src/tint/type/multisampled_texture.h"
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/texture_dimension.h"
+#include "src/tint/utils/defer.h"
 #include "src/tint/utils/reverse.h"
 #include "src/tint/utils/string.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::wgsl {
 namespace {
@@ -70,39 +73,38 @@ constexpr size_t const kMaxResynchronizeLookahead = 32;
 
 // https://gpuweb.github.io/gpuweb/wgsl.html#reserved-keywords
 bool is_reserved(const Token& t) {
-    return t == "CompileShader" || t == "ComputeShader" || t == "DomainShader" ||
-           t == "GeometryShader" || t == "Hullshader" || t == "NULL" || t == "Self" ||
-           t == "abstract" || t == "active" || t == "alignas" || t == "alignof" || t == "as" ||
-           t == "asm" || t == "asm_fragment" || t == "async" || t == "attribute" || t == "auto" ||
-           t == "await" || t == "become" || t == "binding_array" || t == "cast" || t == "catch" ||
-           t == "class" || t == "co_await" || t == "co_return" || t == "co_yield" ||
-           t == "coherent" || t == "column_major" || t == "common" || t == "compile" ||
-           t == "compile_fragment" || t == "concept" || t == "const_cast" || t == "consteval" ||
-           t == "constexpr" || t == "constinit" || t == "crate" || t == "debugger" ||
-           t == "decltype" || t == "delete" || t == "demote" || t == "demote_to_helper" ||
-           t == "do" || t == "dynamic_cast" || t == "enum" || t == "explicit" || t == "export" ||
-           t == "extends" || t == "extern" || t == "external" || t == "filter" || t == "final" ||
-           t == "finally" || t == "friend" || t == "from" || t == "fxgroup" || t == "get" ||
-           t == "goto" || t == "groupshared" || t == "handle" || t == "highp" || t == "impl" ||
-           t == "implements" || t == "import" || t == "inline" || t == "inout" ||
-           t == "instanceof" || t == "interface" || t == "invariant" || t == "layout" ||
-           t == "lowp" || t == "macro" || t == "macro_rules" || t == "match" || t == "mediump" ||
-           t == "meta" || t == "mod" || t == "module" || t == "move" || t == "mut" ||
-           t == "mutable" || t == "namespace" || t == "new" || t == "nil" || t == "noexcept" ||
-           t == "noinline" || t == "nointerpolation" || t == "noperspective" || t == "null" ||
-           t == "nullptr" || t == "of" || t == "operator" || t == "package" || t == "packoffset" ||
+    return t == "NULL" || t == "Self" || t == "abstract" || t == "active" || t == "alignas" ||
+           t == "alignof" || t == "as" || t == "asm" || t == "asm_fragment" || t == "async" ||
+           t == "attribute" || t == "auto" || t == "await" || t == "become" ||
+           t == "binding_array" || t == "cast" || t == "catch" || t == "class" || t == "co_await" ||
+           t == "co_return" || t == "co_yield" || t == "coherent" || t == "column_major" ||
+           t == "common" || t == "compile" || t == "compile_fragment" || t == "concept" ||
+           t == "const_cast" || t == "consteval" || t == "constexpr" || t == "constinit" ||
+           t == "crate" || t == "debugger" || t == "decltype" || t == "delete" || t == "demote" ||
+           t == "demote_to_helper" || t == "do" || t == "dynamic_cast" || t == "enum" ||
+           t == "explicit" || t == "export" || t == "extends" || t == "extern" || t == "external" ||
+           t == "filter" || t == "final" || t == "finally" || t == "friend" || t == "from" ||
+           t == "fxgroup" || t == "get" || t == "goto" || t == "groupshared" || t == "highp" ||
+           t == "impl" || t == "implements" || t == "import" || t == "inline" ||
+           t == "instanceof" || t == "interface" || t == "layout" || t == "lowp" || t == "macro" ||
+           t == "macro_rules" || t == "match" || t == "mediump" || t == "meta" || t == "mod" ||
+           t == "module" || t == "move" || t == "mut" || t == "mutable" || t == "namespace" ||
+           t == "new" || t == "nil" || t == "noexcept" || t == "noinline" ||
+           t == "nointerpolation" || t == "noperspective" || t == "null" || t == "nullptr" ||
+           t == "of" || t == "operator" || t == "package" || t == "packoffset" ||
            t == "partition" || t == "pass" || t == "patch" || t == "pixelfragment" ||
            t == "precise" || t == "precision" || t == "premerge" || t == "priv" ||
            t == "protected" || t == "pub" || t == "public" || t == "readonly" || t == "ref" ||
-           t == "regardless" || t == "register" || t == "reinterpret_cast" || t == "requires" ||
+           t == "regardless" || t == "register" || t == "reinterpret_cast" || t == "require" ||
            t == "resource" || t == "restrict" || t == "self" || t == "set" || t == "shared" ||
-           t == "signed" || t == "sizeof" || t == "smooth" || t == "snorm" || t == "static" ||
-           t == "static_cast" || t == "std" || t == "subroutine" || t == "super" || t == "target" ||
-           t == "template" || t == "this" || t == "thread_local" || t == "throw" || t == "trait" ||
-           t == "try" || t == "typedef" || t == "typeid" || t == "typename" || t == "typeof" ||
-           t == "union" || t == "unless" || t == "unorm" || t == "unsafe" || t == "unsized" ||
-           t == "use" || t == "using" || t == "varying" || t == "virtual" || t == "volatile" ||
-           t == "wgsl" || t == "where" || t == "with" || t == "writeonly" || t == "yield";
+           t == "sizeof" || t == "smooth" || t == "snorm" || t == "static" ||
+           t == "static_assert" || t == "static_cast" || t == "std" || t == "subroutine" ||
+           t == "super" || t == "target" || t == "template" || t == "this" || t == "thread_local" ||
+           t == "throw" || t == "trait" || t == "try" || t == "type" || t == "typedef" ||
+           t == "typeid" || t == "typename" || t == "typeof" || t == "union" || t == "unless" ||
+           t == "unorm" || t == "unsafe" || t == "unsized" || t == "use" || t == "using" ||
+           t == "varying" || t == "virtual" || t == "volatile" || t == "wgsl" || t == "where" ||
+           t == "with" || t == "writeonly" || t == "yield";
 }
 
 /// Enter-exit counters for block token types.
@@ -211,30 +213,41 @@ ParserImpl::~ParserImpl() = default;
 ParserImpl::Failure::Errored ParserImpl::add_error(const Source& source,
                                                    std::string_view err,
                                                    std::string_view use) {
-    std::stringstream msg;
-    msg << err;
-    if (!use.empty()) {
-        msg << " for " << use;
+    if (silence_diags_ == 0) {
+        utils::StringStream msg;
+        msg << err;
+        if (!use.empty()) {
+            msg << " for " << use;
+        }
+        add_error(source, msg.str());
     }
-    add_error(source, msg.str());
     return Failure::kErrored;
 }
 
-ParserImpl::Failure::Errored ParserImpl::add_error(const Token& t, const std::string& err) {
+ParserImpl::Failure::Errored ParserImpl::add_error(const Token& t, std::string_view err) {
     add_error(t.source(), err);
     return Failure::kErrored;
 }
 
-ParserImpl::Failure::Errored ParserImpl::add_error(const Source& source, const std::string& err) {
-    if (silence_errors_ == 0) {
+ParserImpl::Failure::Errored ParserImpl::add_error(const Source& source, std::string_view err) {
+    if (silence_diags_ == 0) {
         builder_.Diagnostics().add_error(diag::System::Reader, err, source);
     }
     return Failure::kErrored;
 }
 
-void ParserImpl::deprecated(const Source& source, const std::string& msg) {
-    builder_.Diagnostics().add_warning(diag::System::Reader,
-                                       "use of deprecated language feature: " + msg, source);
+void ParserImpl::add_note(const Source& source, std::string_view err) {
+    if (silence_diags_ == 0) {
+        builder_.Diagnostics().add_note(diag::System::Reader, err, source);
+    }
+}
+
+void ParserImpl::deprecated(const Source& source, std::string_view msg) {
+    if (silence_diags_ == 0) {
+        builder_.Diagnostics().add_warning(
+            diag::System::Reader, "use of deprecated language feature: " + std::string(msg),
+            source);
+    }
 }
 
 const Token& ParserImpl::next() {
@@ -340,12 +353,16 @@ void ParserImpl::translation_unit() {
 
 // global_directive
 //  : diagnostic_directive
+//  | requires_directive
 //  | enable_directive
 Maybe<Void> ParserImpl::global_directive(bool have_parsed_decl) {
     auto& p = peek();
     Maybe<Void> result = diagnostic_directive();
     if (!result.errored && !result.matched) {
         result = enable_directive();
+    }
+    if (!result.errored && !result.matched) {
+        result = requires_directive();
     }
 
     if (result.matched && have_parsed_decl) {
@@ -384,15 +401,57 @@ Maybe<Void> ParserImpl::diagnostic_directive() {
     return decl;
 }
 
-// enable_directive
-//  : enable name SEMICLON
+// enable_directive :
+// | 'enable' identifier (COMMA identifier)* COMMA? SEMICOLON
 Maybe<Void> ParserImpl::enable_directive() {
-    auto decl = sync(Token::Type::kSemicolon, [&]() -> Maybe<Void> {
+    return sync(Token::Type::kSemicolon, [&]() -> Maybe<Void> {
+        MultiTokenSource decl_source(this);
         if (!match(Token::Type::kEnable)) {
             return Failure::kNoMatch;
         }
 
-        // Match the extension name.
+        if (peek_is(Token::Type::kParenLeft)) {
+            // A common error case is writing `enable(foo);` instead of `enable foo;`.
+            synchronized_ = false;
+            return add_error(peek().source(), "enable directives don't take parenthesis");
+        }
+
+        utils::Vector<const ast::Extension*, 4> extensions;
+        while (continue_parsing()) {
+            Source ext_src = peek().source();
+            auto ext =
+                expect_enum("extension", builtin::ParseExtension, builtin::kExtensionStrings);
+            if (ext.errored) {
+                return Failure::kErrored;
+            }
+            extensions.Push(create<ast::Extension>(ext_src, ext.value));
+
+            if (!match(Token::Type::kComma)) {
+                break;
+            }
+            if (peek_is(Token::Type::kSemicolon)) {
+                break;
+            }
+        }
+
+        if (!expect("enable directive", Token::Type::kSemicolon)) {
+            return Failure::kErrored;
+        }
+
+        builder_.AST().AddEnable(create<ast::Enable>(decl_source.Source(), std::move(extensions)));
+        return kSuccess;
+    });
+}
+
+// requires_directive
+//  : require identifier (COMMA identifier)* COMMA? SEMICOLON
+Maybe<Void> ParserImpl::requires_directive() {
+    return sync(Token::Type::kSemicolon, [&]() -> Maybe<Void> {
+        if (!match(Token::Type::kRequires)) {
+            return Failure::kNoMatch;
+        }
+
+        // Match the require name.
         auto& t = peek();
         if (handle_error(t)) {
             // The token might itself be an error.
@@ -400,31 +459,40 @@ Maybe<Void> ParserImpl::enable_directive() {
         }
 
         if (t.Is(Token::Type::kParenLeft)) {
-            // A common error case is writing `enable(foo);` instead of `enable foo;`.
+            // A common error case is writing `require(foo);` instead of `require foo;`.
             synchronized_ = false;
-            return add_error(t.source(), "enable directives don't take parenthesis");
+            return add_error(t.source(), "requires directives don't take parenthesis");
         }
 
-        auto ext = expect_enum("extension", builtin::ParseExtension, builtin::kExtensionStrings);
-        if (ext.errored) {
-            return Failure::kErrored;
-        }
+        while (continue_parsing()) {
+            auto& t2 = peek();
 
-        if (!expect("enable directive", Token::Type::kSemicolon)) {
-            return Failure::kErrored;
+            // Match the require name.
+            if (handle_error(t2)) {
+                // The token might itself be an error.
+                return Failure::kErrored;
+            }
+
+            if (t2.IsIdentifier()) {
+                // TODO(dsinclair): When there are actual values for a requires directive they
+                // should be checked here.
+
+                // Any identifer is a valid feature name, so we correctly handle new feature
+                // names getting added in the future, they just all get flagged as not supported.
+                return add_error(t2.source(), "feature '" + t2.to_str() + "' is not supported");
+            }
+            if (t2.Is(Token::Type::kSemicolon)) {
+                break;
+            }
+            if (!match(Token::Type::kComma)) {
+                return add_error(t2.source(), "invalid feature name for requires");
+            }
         }
-        builder_.AST().AddEnable(create<ast::Enable>(t.source(), ext.value));
-        return kSuccess;
+        // TODO(dsinclair): When there are actual values for a requires directive then the
+        // `while` will need to keep track if any were seen, and this needs to become
+        // conditional.
+        return add_error(t.source(), "missing feature names in requires directive");
     });
-
-    if (decl.errored) {
-        return Failure::kErrored;
-    }
-    if (decl.matched) {
-        return kSuccess;
-    }
-
-    return Failure::kNoMatch;
 }
 
 // global_decl
@@ -548,7 +616,7 @@ Maybe<Void> ParserImpl::global_decl() {
 
     // We have a statement outside of a function?
     auto& t = peek();
-    auto stat = without_error([&] { return statement(); });
+    auto stat = without_diag([&] { return statement(); });
     if (stat.matched) {
         // Attempt to jump to the next '}' - the function might have just been
         // missing an opening line.
@@ -774,12 +842,7 @@ Maybe<ParserImpl::VariableQualifier> ParserImpl::variable_qualifier() {
 //   : ALIAS IDENT EQUAL type_specifier
 Maybe<const ast::Alias*> ParserImpl::type_alias_decl() {
     Source source;
-    if (match(Token::Type::kAlias, &source)) {
-        // matched.
-    } else if (match(Token::Type::kType, &source)) {
-        // TODO(crbug.com/tint/1812): DEPRECATED
-        deprecated(source, "'type' has been renamed to 'alias'");
-    } else {
+    if (!match(Token::Type::kAlias, &source)) {
         return Failure::kNoMatch;
     }
 
@@ -849,7 +912,7 @@ Expect<ENUM> ParserImpl::expect_enum(std::string_view name,
     }
 
     /// Create a sensible error message
-    std::ostringstream err;
+    utils::StringStream err;
     err << "expected " << name;
 
     if (!use.empty()) {
@@ -950,11 +1013,7 @@ Expect<const ast::StructMember*> ParserImpl::expect_struct_member() {
 //   : STATIC_ASSERT expression
 Maybe<const ast::ConstAssert*> ParserImpl::const_assert_statement() {
     Source start;
-    if (match(Token::Type::kConstAssert, &start)) {
-        // matched
-    } else if (match(Token::Type::kStaticAssert, &start)) {
-        deprecated(start, "'static_assert' has been renamed to 'const_assert'");
-    } else {
+    if (!match(Token::Type::kConstAssert, &start)) {
         return Failure::kNoMatch;
     }
 
@@ -1111,41 +1170,6 @@ Expect<const ast::Parameter*> ParserImpl::expect_param() {
                           std::move(attrs.value));  // attributes
 }
 
-// interpolation_sample_name
-//   : 'center'
-//   | 'centroid'
-//   | 'sample'
-Expect<builtin::InterpolationSampling> ParserImpl::expect_interpolation_sample_name() {
-    return expect_enum("interpolation sampling", builtin::ParseInterpolationSampling,
-                       builtin::kInterpolationSamplingStrings);
-}
-
-// interpolation_type_name
-//   : 'perspective'
-//   | 'linear'
-//   | 'flat'
-Expect<builtin::InterpolationType> ParserImpl::expect_interpolation_type_name() {
-    return expect_enum("interpolation type", builtin::ParseInterpolationType,
-                       builtin::kInterpolationTypeStrings);
-}
-
-// builtin_value_name
-//   : frag_depth
-//   | front_facing
-//   | global_invocation_id
-//   | instance_index
-//   | local_invocation_id
-//   | local_invocation_index
-//   | num_workgroups
-//   | position
-//   | sample_index
-//   | sample_mask
-//   | vertex_index
-//   | workgroup_id
-Expect<builtin::BuiltinValue> ParserImpl::expect_builtin() {
-    return expect_enum("builtin", builtin::ParseBuiltinValue, builtin::kBuiltinValueStrings);
-}
-
 // compound_statement
 //   : attribute* BRACE_LEFT statement* BRACE_RIGHT
 Expect<ast::BlockStatement*> ParserImpl::expect_compound_statement(std::string_view use) {
@@ -1241,7 +1265,7 @@ Maybe<const ast::Statement*> ParserImpl::statement() {
         return stmt;
     }
 
-    auto stmt_if = if_statement();
+    auto stmt_if = if_statement(attrs.value);
     if (stmt_if.errored) {
         return Failure::kErrored;
     }
@@ -1249,7 +1273,7 @@ Maybe<const ast::Statement*> ParserImpl::statement() {
         return stmt_if.value;
     }
 
-    auto sw = switch_statement();
+    auto sw = switch_statement(attrs.value);
     if (sw.errored) {
         return Failure::kErrored;
     }
@@ -1257,7 +1281,7 @@ Maybe<const ast::Statement*> ParserImpl::statement() {
         return sw.value;
     }
 
-    auto loop = loop_statement();
+    auto loop = loop_statement(attrs.value);
     if (loop.errored) {
         return Failure::kErrored;
     }
@@ -1265,7 +1289,7 @@ Maybe<const ast::Statement*> ParserImpl::statement() {
         return loop.value;
     }
 
-    auto stmt_for = for_statement();
+    auto stmt_for = for_statement(attrs.value);
     if (stmt_for.errored) {
         return Failure::kErrored;
     }
@@ -1273,7 +1297,7 @@ Maybe<const ast::Statement*> ParserImpl::statement() {
         return stmt_for.value;
     }
 
-    auto stmt_while = while_statement();
+    auto stmt_while = while_statement(attrs.value);
     if (stmt_while.errored) {
         return Failure::kErrored;
     }
@@ -1493,11 +1517,14 @@ Maybe<const ast::VariableDeclStatement*> ParserImpl::variable_statement() {
 }
 
 // if_statement
-//   : IF expression compound_stmt ( ELSE else_stmt ) ?
-// else_stmt
-//  : compound_statement
-//  | if_statement
-Maybe<const ast::IfStatement*> ParserImpl::if_statement() {
+//   : attribute* if_clause else_if_clause* else_clause?
+// if_clause:
+//   : IF expression compound_stmt
+// else_if_clause:
+//   : ELSE IF expression compound_stmt
+// else_clause
+//   : ELSE compound_statement
+Maybe<const ast::IfStatement*> ParserImpl::if_statement(AttributeList& attrs) {
     // Parse if-else chains iteratively instead of recursively, to avoid
     // stack-overflow for long chains of if-else statements.
 
@@ -1505,6 +1532,7 @@ Maybe<const ast::IfStatement*> ParserImpl::if_statement() {
         Source source;
         const ast::Expression* condition;
         const ast::BlockStatement* body;
+        AttributeList attributes;
     };
 
     // Parse an if statement, capturing the source, condition, and body statement.
@@ -1527,7 +1555,8 @@ Maybe<const ast::IfStatement*> ParserImpl::if_statement() {
             return Failure::kErrored;
         }
 
-        return IfInfo{source, condition.value, body.value};
+        TINT_DEFER(attrs.Clear());
+        return IfInfo{source, condition.value, body.value, std::move(attrs)};
     };
 
     std::vector<IfInfo> statements;
@@ -1568,15 +1597,16 @@ Maybe<const ast::IfStatement*> ParserImpl::if_statement() {
 
     // Now walk back through the statements to create their AST nodes.
     for (auto itr = statements.rbegin(); itr != statements.rend(); itr++) {
-        last_stmt = create<ast::IfStatement>(itr->source, itr->condition, itr->body, last_stmt);
+        last_stmt = create<ast::IfStatement>(itr->source, itr->condition, itr->body, last_stmt,
+                                             std::move(itr->attributes));
     }
 
     return last_stmt->As<ast::IfStatement>();
 }
 
 // switch_statement
-//   : SWITCH expression BRACKET_LEFT switch_body+ BRACKET_RIGHT
-Maybe<const ast::SwitchStatement*> ParserImpl::switch_statement() {
+//   : attribute* SWITCH expression BRACKET_LEFT switch_body+ BRACKET_RIGHT
+Maybe<const ast::SwitchStatement*> ParserImpl::switch_statement(AttributeList& attrs) {
     Source source;
     if (!match(Token::Type::kSwitch, &source)) {
         return Failure::kNoMatch;
@@ -1588,6 +1618,11 @@ Maybe<const ast::SwitchStatement*> ParserImpl::switch_statement() {
     }
     if (!condition.matched) {
         return add_error(peek(), "unable to parse selector expression");
+    }
+
+    auto body_attrs = attribute_list();
+    if (body_attrs.errored) {
+        return Failure::kErrored;
     }
 
     auto body = expect_brace_block("switch statement", [&]() -> Expect<CaseStatementList> {
@@ -1614,7 +1649,9 @@ Maybe<const ast::SwitchStatement*> ParserImpl::switch_statement() {
         return Failure::kErrored;
     }
 
-    return create<ast::SwitchStatement>(source, condition.value, body.value);
+    TINT_DEFER(attrs.Clear());
+    return create<ast::SwitchStatement>(source, condition.value, body.value, std::move(attrs),
+                                        std::move(body_attrs.value));
 }
 
 // switch_body
@@ -1699,42 +1736,17 @@ Maybe<const ast::CaseSelector*> ParserImpl::case_selector() {
     return create<ast::CaseSelector>(p.source(), expr.value);
 }
 
-// case_body
-//   :
-//   | statement case_body
-Maybe<const ast::BlockStatement*> ParserImpl::case_body() {
-    StatementList stmts;
-    while (continue_parsing()) {
-        Source source;
-        if (match(Token::Type::kFallthrough, &source)) {
-            return add_error(
-                source,
-                "fallthrough is not premitted in WGSL. "
-                "Case can accept multiple selectors if the existing case bodies are empty. "
-                "(e.g. `case 1, 2, 3:`) "
-                "`default` is a valid case selector value. (e.g. `case 1, default:`)");
-        }
-
-        auto stmt = statement();
-        if (stmt.errored) {
-            return Failure::kErrored;
-        }
-        if (!stmt.matched) {
-            break;
-        }
-
-        stmts.Push(stmt.value);
-    }
-
-    return create<ast::BlockStatement>(Source{}, stmts, utils::Empty);
-}
-
 // loop_statement
-//   : LOOP BRACKET_LEFT statements continuing_statement? BRACKET_RIGHT
-Maybe<const ast::LoopStatement*> ParserImpl::loop_statement() {
+//   : attribute* LOOP attribute* BRACKET_LEFT statements continuing_statement? BRACKET_RIGHT
+Maybe<const ast::LoopStatement*> ParserImpl::loop_statement(AttributeList& attrs) {
     Source source;
     if (!match(Token::Type::kLoop, &source)) {
         return Failure::kNoMatch;
+    }
+
+    auto body_attrs = attribute_list();
+    if (body_attrs.errored) {
+        return Failure::kErrored;
     }
 
     Maybe<const ast::BlockStatement*> continuing(Failure::kErrored);
@@ -1756,11 +1768,12 @@ Maybe<const ast::LoopStatement*> ParserImpl::loop_statement() {
     }
     auto body_end = last_source();
 
+    TINT_DEFER(attrs.Clear());
     return create<ast::LoopStatement>(
         source,
         create<ast::BlockStatement>(Source::Combine(body_start, body_end), body.value,
-                                    utils::Empty),
-        continuing.value);
+                                    std::move(body_attrs.value)),
+        continuing.value, std::move(attrs));
 }
 
 ForHeader::ForHeader(const ast::Statement* init,
@@ -1851,7 +1864,7 @@ Expect<std::unique_ptr<ForHeader>> ParserImpl::expect_for_header() {
 
 // for_statement
 //   : FOR PAREN_LEFT for_header PAREN_RIGHT compound_statement
-Maybe<const ast::ForLoopStatement*> ParserImpl::for_statement() {
+Maybe<const ast::ForLoopStatement*> ParserImpl::for_statement(AttributeList& attrs) {
     Source source;
     if (!match(Token::Type::kFor, &source)) {
         return Failure::kNoMatch;
@@ -1867,13 +1880,14 @@ Maybe<const ast::ForLoopStatement*> ParserImpl::for_statement() {
         return Failure::kErrored;
     }
 
+    TINT_DEFER(attrs.Clear());
     return create<ast::ForLoopStatement>(source, header->initializer, header->condition,
-                                         header->continuing, body.value);
+                                         header->continuing, body.value, std::move(attrs));
 }
 
 // while_statement
-//   :  WHILE expression compound_statement
-Maybe<const ast::WhileStatement*> ParserImpl::while_statement() {
+//   :  attribute* WHILE expression compound_statement
+Maybe<const ast::WhileStatement*> ParserImpl::while_statement(AttributeList& attrs) {
     Source source;
     if (!match(Token::Type::kWhile, &source)) {
         return Failure::kNoMatch;
@@ -1892,7 +1906,8 @@ Maybe<const ast::WhileStatement*> ParserImpl::while_statement() {
         return Failure::kErrored;
     }
 
-    return create<ast::WhileStatement>(source, condition.value, body.value);
+    TINT_DEFER(attrs.Clear());
+    return create<ast::WhileStatement>(source, condition.value, body.value, std::move(attrs));
 }
 
 // func_call_statement
@@ -1966,8 +1981,13 @@ Maybe<const ast::Statement*> ParserImpl::break_if_statement() {
 }
 
 // continuing_compound_statement:
-//   brace_left statement* break_if_statement? brace_right
+//   attribute* BRACE_LEFT statement* break_if_statement? BRACE_RIGHT
 Maybe<const ast::BlockStatement*> ParserImpl::continuing_compound_statement() {
+    auto attrs = attribute_list();
+    if (attrs.errored) {
+        return Failure::kErrored;
+    }
+
     auto source_start = peek().source();
     auto body = expect_brace_block("", [&]() -> Expect<StatementList> {
         StatementList stmts;
@@ -2001,7 +2021,7 @@ Maybe<const ast::BlockStatement*> ParserImpl::continuing_compound_statement() {
     auto source_end = last_source();
 
     return create<ast::BlockStatement>(Source::Combine(source_start, source_end), body.value,
-                                       utils::Empty);
+                                       std::move(attrs.value));
 }
 
 // continuing_statement
@@ -2329,37 +2349,6 @@ Expect<const ast::Expression*> ParserImpl::expect_math_expression_post_unary_exp
     }
 
     return expect_additive_expression_post_unary_expression(rhs.value);
-}
-
-// element_count_expression
-//   : unary_expression math_expression.post.unary_expression
-//   | unary_expression bitwise_expression.post.unary_expression
-//
-// Note, this moves the `( multiplicative_operator unary_expression )* ( additive_operator
-// unary_expression ( multiplicative_operator unary_expression )* )*` expression for the first
-// branch out into helper methods.
-Maybe<const ast::Expression*> ParserImpl::element_count_expression() {
-    auto lhs = unary_expression();
-    if (lhs.errored) {
-        return Failure::kErrored;
-    }
-    if (!lhs.matched) {
-        return Failure::kNoMatch;
-    }
-
-    auto bitwise = bitwise_expression_post_unary_expression(lhs.value);
-    if (bitwise.errored) {
-        return Failure::kErrored;
-    }
-    if (bitwise.matched) {
-        return bitwise.value;
-    }
-
-    auto math = expect_math_expression_post_unary_expression(lhs.value);
-    if (math.errored) {
-        return Failure::kErrored;
-    }
-    return math.value;
 }
 
 // shift_expression
@@ -2962,85 +2951,16 @@ Expect<const ast::Attribute*> ParserImpl::expect_attribute() {
 }
 
 // attribute
-//   : ATTR 'align' PAREN_LEFT expression COMMA? PAREN_RIGHT
-//   | ATTR 'binding' PAREN_LEFT expression COMMA? PAREN_RIGHT
-//   | ATTR 'builtin' PAREN_LEFT builtin_value_name COMMA? PAREN_RIGHT
-//   | ATTR 'const'
-//   | ATTR 'diagnostic' diagnostic_control
-//   | ATTR 'group' PAREN_LEFT expression COMMA? PAREN_RIGHT
-//   | ATTR 'id' PAREN_LEFT expression COMMA? PAREN_RIGHT
-//   | ATTR 'interpolate' PAREN_LEFT interpolation_type_name COMMA? PAREN_RIGHT
-//   | ATTR 'interpolate' PAREN_LEFT interpolation_type_name COMMA
-//                                   interpolation_sample_name COMMA? PAREN_RIGHT
-//   | ATTR 'invariant'
-//   | ATTR 'location' PAREN_LEFT expression COMMA? PAREN_RIGHT
-//   | ATTR 'size' PAREN_LEFT expression COMMA? PAREN_RIGHT
-//   | ATTR 'workgroup_size' PAREN_LEFT expression COMMA? PAREN_RIGHT
-//   | ATTR 'workgroup_size' PAREN_LEFT expression COMMA expression COMMA? PAREN_RIGHT
-//   | ATTR 'workgroup_size' PAREN_LEFT expression COMMA expression COMMA
-//                                      expression COMMA? PAREN_RIGHT
-//   | ATTR 'vertex'
-//   | ATTR 'fragment'
-//   | ATTR 'compute'
+//   : ATTR identifier ( PAREN_LEFT expression ( COMMA expression )? COMMA? PAREN_RIGHT )?
 Maybe<const ast::Attribute*> ParserImpl::attribute() {
-    using Result = Maybe<const ast::Attribute*>;
-    auto& t = next();
+    // Note, the ATTR is matched by the called `attribute_list` in this case, so it is not matched
+    // here and this has to be an attribute.
+    auto& t = peek();
 
-    if (!t.IsIdentifier() && !(t.Is(Token::Type::kDiagnostic))) {
-        return Failure::kNoMatch;
+    if (match(Token::Type::kConst)) {
+        return add_error(t.source(), "const attribute may not appear in shaders");
     }
-
-    if (t == "align") {
-        const char* use = "align attribute";
-        return expect_paren_block(use, [&]() -> Result {
-            auto expr = expression();
-            if (expr.errored) {
-                return Failure::kErrored;
-            }
-            if (!expr.matched) {
-                return add_error(peek(), "expected align expression");
-            }
-            match(Token::Type::kComma);
-
-            return create<ast::StructMemberAlignAttribute>(t.source(), expr.value);
-        });
-    }
-
-    if (t == "binding") {
-        const char* use = "binding attribute";
-        return expect_paren_block(use, [&]() -> Result {
-            auto expr = expression();
-            if (expr.errored) {
-                return Failure::kErrored;
-            }
-            if (!expr.matched) {
-                return add_error(peek(), "expected binding expression");
-            }
-            match(Token::Type::kComma);
-
-            return create<ast::BindingAttribute>(t.source(), expr.value);
-        });
-    }
-
-    if (t == "builtin") {
-        return expect_paren_block("builtin attribute", [&]() -> Result {
-            auto builtin = expect_builtin();
-            if (builtin.errored) {
-                return Failure::kErrored;
-            }
-            match(Token::Type::kComma);
-
-            return create<ast::BuiltinAttribute>(t.source(), builtin.value);
-        });
-    }
-
-    if (t == "compute") {
-        return create<ast::StageAttribute>(t.source(), ast::PipelineStage::kCompute);
-    }
-
-    // Note, `const` is not valid in a WGSL source file, it's internal only
-
-    if (t.Is(Token::Type::kDiagnostic)) {
+    if (match(Token::Type::kDiagnostic)) {
         auto control = expect_diagnostic_control();
         if (control.errored) {
             return Failure::kErrored;
@@ -3048,150 +2968,111 @@ Maybe<const ast::Attribute*> ParserImpl::attribute() {
         return create<ast::DiagnosticAttribute>(t.source(), std::move(control.value));
     }
 
-    if (t == "fragment") {
-        return create<ast::StageAttribute>(t.source(), ast::PipelineStage::kFragment);
+    auto attr = expect_enum("attribute", builtin::ParseAttribute, builtin::kAttributeStrings);
+    if (attr.errored) {
+        return Failure::kErrored;
     }
 
-    if (t == "group") {
-        const char* use = "group attribute";
-        return expect_paren_block(use, [&]() -> Result {
-            auto expr = expression();
-            if (expr.errored) {
-                return Failure::kErrored;
-            }
-            if (!expr.matched) {
-                return add_error(peek(), "expected group expression");
-            }
-            match(Token::Type::kComma);
-
-            return create<ast::GroupAttribute>(t.source(), expr.value);
-        });
+    uint32_t min = 1;
+    uint32_t max = 1;
+    switch (attr.value) {
+        case builtin::Attribute::kCompute:
+        case builtin::Attribute::kFragment:
+        case builtin::Attribute::kInvariant:
+        case builtin::Attribute::kMustUse:
+        case builtin::Attribute::kVertex:
+            min = 0;
+            max = 0;
+            break;
+        case builtin::Attribute::kInterpolate:
+            max = 2;
+            break;
+        case builtin::Attribute::kWorkgroupSize:
+            max = 3;
+            break;
+        default:
+            break;
     }
 
-    if (t == "id") {
-        const char* use = "id attribute";
-        return expect_paren_block(use, [&]() -> Result {
-            auto expr = expression();
-            if (expr.errored) {
-                return Failure::kErrored;
-            }
-            if (!expr.matched) {
-                return add_error(peek(), "expected id expression");
-            }
-            match(Token::Type::kComma);
+    utils::Vector<const ast::Expression*, 2> args;
 
-            return create<ast::IdAttribute>(t.source(), expr.value);
-        });
-    }
+    // Handle no parameter items which should have no parens
+    if (min == 0) {
+        auto& t2 = peek();
+        if (match(Token::Type::kParenLeft)) {
+            return add_error(t2.source(), t.to_str() + " attribute doesn't take parenthesis");
+        }
+    } else {
+        auto res = expect_paren_block(t.to_str() + " attribute", [&]() -> Expect<bool> {
+            while (continue_parsing()) {
+                if (peek().Is(Token::Type::kParenRight)) {
+                    break;
+                }
 
-    if (t == "interpolate") {
-        return expect_paren_block("interpolate attribute", [&]() -> Result {
-            auto type = expect_interpolation_type_name();
-            if (type.errored) {
-                return Failure::kErrored;
-            }
+                auto expr = expect_expression(t.to_str());
+                if (expr.errored) {
+                    return Failure::kErrored;
+                }
+                args.Push(expr.value);
 
-            builtin::InterpolationSampling sampling = builtin::InterpolationSampling::kUndefined;
-            if (match(Token::Type::kComma)) {
-                if (!peek_is(Token::Type::kParenRight)) {
-                    auto sample = expect_interpolation_sample_name();
-                    if (sample.errored) {
-                        return Failure::kErrored;
-                    }
-
-                    sampling = sample.value;
-                    match(Token::Type::kComma);
+                if (!match(Token::Type::kComma)) {
+                    break;
                 }
             }
-
-            return create<ast::InterpolateAttribute>(t.source(), type.value, sampling);
+            return true;
         });
+        if (res.errored) {
+            return Failure::kErrored;
+        }
+
+        if (args.IsEmpty() || args.Length() < min) {
+            return add_error(t.source(),
+                             t.to_str() + " expects" + (min != max ? " at least " : " ") +
+                                 std::to_string(min) + " argument" + (min != 1 ? "s" : ""));
+        }
+        if (args.Length() > max) {
+            return add_error(t.source(),
+                             t.to_str() + " expects" + (min != max ? " at most " : " ") +
+                                 std::to_string(max) + " argument" + (max != 1 ? "s" : "") +
+                                 ", got " + std::to_string(args.Length()));
+        }
     }
 
-    if (t == "invariant") {
-        return create<ast::InvariantAttribute>(t.source());
+    switch (attr.value) {
+        case builtin::Attribute::kAlign:
+            return create<ast::StructMemberAlignAttribute>(t.source(), args[0]);
+        case builtin::Attribute::kBinding:
+            return create<ast::BindingAttribute>(t.source(), args[0]);
+        case builtin::Attribute::kBuiltin:
+            return create<ast::BuiltinAttribute>(t.source(), args[0]);
+        case builtin::Attribute::kCompute:
+            return create<ast::StageAttribute>(t.source(), ast::PipelineStage::kCompute);
+        case builtin::Attribute::kFragment:
+            return create<ast::StageAttribute>(t.source(), ast::PipelineStage::kFragment);
+        case builtin::Attribute::kGroup:
+            return create<ast::GroupAttribute>(t.source(), args[0]);
+        case builtin::Attribute::kId:
+            return create<ast::IdAttribute>(t.source(), args[0]);
+        case builtin::Attribute::kInterpolate:
+            return create<ast::InterpolateAttribute>(t.source(), args[0],
+                                                     args.Length() == 2 ? args[1] : nullptr);
+        case builtin::Attribute::kInvariant:
+            return create<ast::InvariantAttribute>(t.source());
+        case builtin::Attribute::kLocation:
+            return builder_.Location(t.source(), args[0]);
+        case builtin::Attribute::kMustUse:
+            return create<ast::MustUseAttribute>(t.source());
+        case builtin::Attribute::kSize:
+            return builder_.MemberSize(t.source(), args[0]);
+        case builtin::Attribute::kVertex:
+            return create<ast::StageAttribute>(t.source(), ast::PipelineStage::kVertex);
+        case builtin::Attribute::kWorkgroupSize:
+            return create<ast::WorkgroupAttribute>(t.source(), args[0],
+                                                   args.Length() > 1 ? args[1] : nullptr,
+                                                   args.Length() > 2 ? args[2] : nullptr);
+        default:
+            return Failure::kNoMatch;
     }
-
-    if (t == "location") {
-        const char* use = "location attribute";
-        return expect_paren_block(use, [&]() -> Result {
-            auto expr = expression();
-            if (expr.errored) {
-                return Failure::kErrored;
-            }
-            if (!expr.matched) {
-                return add_error(peek(), "expected location expression");
-            }
-            match(Token::Type::kComma);
-
-            return builder_.Location(t.source(), expr.value);
-        });
-    }
-
-    if (t == "size") {
-        const char* use = "size attribute";
-        return expect_paren_block(use, [&]() -> Result {
-            auto expr = expression();
-            if (expr.errored) {
-                return Failure::kErrored;
-            }
-            if (!expr.matched) {
-                return add_error(peek(), "expected size expression");
-            }
-            match(Token::Type::kComma);
-
-            return builder_.MemberSize(t.source(), expr.value);
-        });
-    }
-
-    if (t == "vertex") {
-        return create<ast::StageAttribute>(t.source(), ast::PipelineStage::kVertex);
-    }
-
-    if (t == "workgroup_size") {
-        return expect_paren_block("workgroup_size attribute", [&]() -> Result {
-            const ast::Expression* x = nullptr;
-            const ast::Expression* y = nullptr;
-            const ast::Expression* z = nullptr;
-
-            auto expr = expression();
-            if (expr.errored) {
-                return Failure::kErrored;
-            } else if (!expr.matched) {
-                return add_error(peek(), "expected workgroup_size x parameter");
-            }
-            x = std::move(expr.value);
-
-            if (match(Token::Type::kComma)) {
-                if (!peek_is(Token::Type::kParenRight)) {
-                    expr = expression();
-                    if (expr.errored) {
-                        return Failure::kErrored;
-                    } else if (!expr.matched) {
-                        return add_error(peek(), "expected workgroup_size y parameter");
-                    }
-                    y = std::move(expr.value);
-
-                    if (match(Token::Type::kComma)) {
-                        if (!peek_is(Token::Type::kParenRight)) {
-                            expr = expression();
-                            if (expr.errored) {
-                                return Failure::kErrored;
-                            } else if (!expr.matched) {
-                                return add_error(peek(), "expected workgroup_size z parameter");
-                            }
-                            z = std::move(expr.value);
-
-                            match(Token::Type::kComma);
-                        }
-                    }
-                }
-            }
-
-            return create<ast::WorkgroupAttribute>(t.source(), x, y, z);
-        });
-    }
-    return Failure::kNoMatch;
 }
 
 bool ParserImpl::expect_attributes_consumed(utils::VectorRef<const ast::Attribute*> in) {
@@ -3280,7 +3161,7 @@ bool ParserImpl::expect(std::string_view use, Token::Type tok) {
         return false;
     }
 
-    std::stringstream err;
+    utils::StringStream err;
     if (tok == Token::Type::kTemplateArgsLeft && t.type() == Token::Type::kLessThan) {
         err << "missing closing '>'";
     } else {
@@ -3489,10 +3370,10 @@ bool ParserImpl::handle_error(const Token& t) {
 }
 
 template <typename F, typename T>
-T ParserImpl::without_error(F&& body) {
-    silence_errors_++;
+T ParserImpl::without_diag(F&& body) {
+    silence_diags_++;
     auto result = body();
-    silence_errors_--;
+    silence_diags_--;
     return result;
 }
 

@@ -19,6 +19,7 @@
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/terminator.h"
+#include "src/tint/switch.h"
 
 namespace tint::ir {
 namespace {
@@ -53,7 +54,7 @@ Disassembler::Disassembler(const Module& mod) : mod_(mod) {}
 
 Disassembler::~Disassembler() = default;
 
-std::ostream& Disassembler::Indent() {
+utils::StringStream& Disassembler::Indent() {
     for (uint32_t i = 0; i < indent_size_; i++) {
         out_ << " ";
     }

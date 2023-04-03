@@ -1,7 +1,7 @@
 #version 310 es
 
 void sin_a9ab19() {
-  float res = 0.841470957f;
+  float res = 1.0f;
 }
 
 vec4 vertex_main() {
@@ -18,10 +18,10 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 void sin_a9ab19() {
-  float res = 0.841470957f;
+  float res = 1.0f;
 }
 
 void fragment_main() {
@@ -35,7 +35,7 @@ void main() {
 #version 310 es
 
 void sin_a9ab19() {
-  float res = 0.841470957f;
+  float res = 1.0f;
 }
 
 void compute_main() {

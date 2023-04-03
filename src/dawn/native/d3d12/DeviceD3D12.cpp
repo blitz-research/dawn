@@ -23,6 +23,7 @@
 #include "dawn/native/D3D12Backend.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Instance.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/AdapterD3D12.h"
 #include "dawn/native/d3d12/BackendD3D12.h"
 #include "dawn/native/d3d12/BindGroupD3D12.h"
@@ -31,10 +32,9 @@
 #include "dawn/native/d3d12/CommandBufferD3D12.h"
 #include "dawn/native/d3d12/ComputePipelineD3D12.h"
 #include "dawn/native/d3d12/D3D11on12Util.h"
-#include "dawn/native/d3d12/D3D12Error.h"
 #include "dawn/native/d3d12/ExternalImageDXGIImpl.h"
 #include "dawn/native/d3d12/PipelineLayoutD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctions.h"
+#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/QuerySetD3D12.h"
 #include "dawn/native/d3d12/QueueD3D12.h"
 #include "dawn/native/d3d12/RenderPipelineD3D12.h"
@@ -187,6 +187,11 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     return {};
 }
 
+Device::Device(AdapterBase* adapter,
+               const DeviceDescriptor* descriptor,
+               const TogglesState& deviceToggles)
+    : Base(adapter, descriptor, deviceToggles) {}
+
 Device::~Device() {
     Destroy();
 
@@ -226,10 +231,6 @@ ComPtr<ID3D12CommandSignature> Device::GetDrawIndexedIndirectSignature() const {
     return mDrawIndexedIndirectSignature;
 }
 
-ComPtr<IDXGIFactory4> Device::GetFactory() const {
-    return ToBackend(GetAdapter())->GetBackend()->GetFactory();
-}
-
 // Ensure DXC if use_dxc toggles are set and validated.
 MaybeError Device::EnsureDXCIfRequired() {
     if (IsToggleEnabled(Toggle::UseDXC)) {
@@ -240,18 +241,6 @@ MaybeError Device::EnsureDXCIfRequired() {
     }
 
     return {};
-}
-
-ComPtr<IDxcLibrary> Device::GetDxcLibrary() const {
-    return ToBackend(GetAdapter())->GetBackend()->GetDxcLibrary();
-}
-
-ComPtr<IDxcCompiler> Device::GetDxcCompiler() const {
-    return ToBackend(GetAdapter())->GetBackend()->GetDxcCompiler();
-}
-
-ComPtr<IDxcValidator> Device::GetDxcValidator() const {
-    return ToBackend(GetAdapter())->GetBackend()->GetDxcValidator();
 }
 
 const PlatformFunctions* Device::GetFunctions() const {
@@ -530,7 +519,7 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
     if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst.mipLevel)) {
         texture->SetIsSubresourceContentInitialized(true, range);
     } else {
-        texture->EnsureSubresourceContentInitialized(commandContext, range);
+        DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));
     }
 
     texture->TrackUsageAndTransitionNow(commandContext, wgpu::TextureUsage::CopyDst, range);
@@ -595,7 +584,7 @@ std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
     const Format* format = GetInternalFormat(textureDescriptor->format).AcquireSuccess();
     if (format->IsMultiPlanar()) {
         if (ConsumedError(ValidateD3D12VideoTextureCanBeShared(
-                this, D3D12TextureFormat(textureDescriptor->format)))) {
+                this, d3d::DXGITextureFormat(textureDescriptor->format)))) {
             return nullptr;
         }
     }

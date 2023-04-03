@@ -13,10 +13,12 @@
 // limitations under the License.
 
 #include "src/tint/ast/disable_validation_attribute.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
 #include "src/tint/transform/add_block_attribute.h"
 #include "src/tint/type/texture_dimension.h"
+#include "src/tint/utils/string_stream.h"
 
 #include "gmock/gmock.h"
 
@@ -60,6 +62,7 @@ enum class AttributeKind {
     kInterpolate,
     kInvariant,
     kLocation,
+    kMustUse,
     kOffset,
     kSize,
     kStage,
@@ -112,6 +115,8 @@ static utils::Vector<const ast::Attribute*, 2> createAttributes(const Source& so
             return {builder.Location(source, 1_a)};
         case AttributeKind::kOffset:
             return {builder.MemberOffset(source, 4_a)};
+        case AttributeKind::kMustUse:
+            return {builder.MustUse(source)};
         case AttributeKind::kSize:
             return {builder.MemberSize(source, 16_a)};
         case AttributeKind::kStage:
@@ -157,6 +162,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -194,6 +200,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -221,9 +228,9 @@ TEST_P(ComputeShaderParameterAttributeTest, IsValid) {
     } else {
         EXPECT_FALSE(r()->Resolve());
         if (params.kind == AttributeKind::kBuiltin) {
-            EXPECT_EQ(r()->error(),
-                      "12:34 error: builtin(position) cannot be used in input of "
-                      "compute pipeline stage");
+            EXPECT_EQ(
+                r()->error(),
+                R"(12:34 error: @builtin(position) cannot be used in input of compute pipeline stage)");
         } else if (params.kind == AttributeKind::kInterpolate ||
                    params.kind == AttributeKind::kLocation ||
                    params.kind == AttributeKind::kInvariant) {
@@ -245,6 +252,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -283,6 +291,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          // kInterpolate tested separately (requires @location)
                                          TestParams{AttributeKind::kInvariant, true},
                                          TestParams{AttributeKind::kLocation, true},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -314,9 +323,9 @@ TEST_P(VertexShaderParameterAttributeTest, IsValid) {
     } else {
         EXPECT_FALSE(r()->Resolve());
         if (params.kind == AttributeKind::kBuiltin) {
-            EXPECT_EQ(r()->error(),
-                      "12:34 error: builtin(position) cannot be used in input of "
-                      "vertex pipeline stage");
+            EXPECT_EQ(
+                r()->error(),
+                R"(12:34 error: @builtin(position) cannot be used in input of vertex pipeline stage)");
         } else if (params.kind == AttributeKind::kInvariant) {
             EXPECT_EQ(r()->error(),
                       "12:34 error: invariant attribute must only be applied to a "
@@ -337,6 +346,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, true},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, true},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -362,9 +372,9 @@ TEST_P(ComputeShaderReturnTypeAttributeTest, IsValid) {
     } else {
         EXPECT_FALSE(r()->Resolve());
         if (params.kind == AttributeKind::kBuiltin) {
-            EXPECT_EQ(r()->error(),
-                      "12:34 error: builtin(position) cannot be used in output of "
-                      "compute pipeline stage");
+            EXPECT_EQ(
+                r()->error(),
+                R"(12:34 error: @builtin(position) cannot be used in output of compute pipeline stage)");
         } else if (params.kind == AttributeKind::kInterpolate ||
                    params.kind == AttributeKind::kLocation ||
                    params.kind == AttributeKind::kInvariant) {
@@ -388,6 +398,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -411,21 +422,20 @@ TEST_P(FragmentShaderReturnTypeAttributeTest, IsValid) {
     } else {
         EXPECT_FALSE(r()->Resolve());
         if (params.kind == AttributeKind::kBuiltin) {
-            EXPECT_EQ(r()->error(),
-                      "12:34 error: builtin(position) cannot be used in output of "
-                      "fragment pipeline stage");
+            EXPECT_EQ(
+                r()->error(),
+                R"(12:34 error: @builtin(position) cannot be used in output of fragment pipeline stage)");
         } else if (params.kind == AttributeKind::kInvariant) {
-            EXPECT_EQ(r()->error(),
-                      "12:34 error: invariant attribute must only be applied to a "
-                      "position builtin");
+            EXPECT_EQ(
+                r()->error(),
+                R"(12:34 error: invariant attribute must only be applied to a position builtin)");
         } else if (params.kind == AttributeKind::kLocation) {
             EXPECT_EQ(r()->error(),
-                      "34:56 error: duplicate location attribute\n"
-                      "12:34 note: first attribute declared here");
+                      R"(34:56 error: duplicate location attribute
+12:34 note: first attribute declared here)");
         } else {
             EXPECT_EQ(r()->error(),
-                      "12:34 error: attribute is not valid for entry point return "
-                      "types");
+                      R"(12:34 error: attribute is not valid for entry point return types)");
         }
     }
 }
@@ -440,6 +450,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, true},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -470,12 +481,11 @@ TEST_P(VertexShaderReturnTypeAttributeTest, IsValid) {
         EXPECT_FALSE(r()->Resolve());
         if (params.kind == AttributeKind::kLocation) {
             EXPECT_EQ(r()->error(),
-                      "34:56 error: multiple entry point IO attributes\n"
-                      "12:34 note: previously consumed location(1)");
+                      R"(34:56 error: multiple entry point IO attributes
+12:34 note: previously consumed @location)");
         } else {
             EXPECT_EQ(r()->error(),
-                      "12:34 error: attribute is not valid for entry point return "
-                      "types");
+                      R"(12:34 error: attribute is not valid for entry point return types)");
         }
     }
 }
@@ -490,6 +500,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          // kInterpolate tested separately (requires @location)
                                          TestParams{AttributeKind::kInvariant, true},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -594,6 +605,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -630,6 +642,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          // kInterpolate tested separately (requires @location)
                                          // kInvariant tested separately (requires position builtin)
                                          TestParams{AttributeKind::kLocation, true},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, true},
                                          TestParams{AttributeKind::kSize, true},
                                          TestParams{AttributeKind::kStage, false},
@@ -872,6 +885,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -912,6 +926,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -964,6 +979,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -1008,6 +1024,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -1027,6 +1044,204 @@ TEST_F(OverrideAttributeTest, DuplicateAttribute) {
               R"(56:78 error: duplicate id attribute
 12:34 note: first attribute declared here)");
 }
+
+using SwitchStatementAttributeTest = TestWithParams;
+TEST_P(SwitchStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(Switch(Expr(0_a), utils::Vector{DefaultCase()},
+                          createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for switch statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         SwitchStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using SwitchBodyAttributeTest = TestWithParams;
+TEST_P(SwitchBodyAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(Switch(Expr(0_a), utils::Vector{DefaultCase()}, utils::Empty,
+                          createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for switch body");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         SwitchBodyAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using IfStatementAttributeTest = TestWithParams;
+TEST_P(IfStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(If(Expr(true), Block(), ElseStmt(),
+                      createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for if statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         IfStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using ForStatementAttributeTest = TestWithParams;
+TEST_P(ForStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(For(nullptr, Expr(false), nullptr, Block(),
+                       createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for for statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         ForStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using LoopStatementAttributeTest = TestWithParams;
+TEST_P(LoopStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(
+        Loop(Block(Return()), Block(), createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for loop statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         LoopStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
+
+using WhileStatementAttributeTest = TestWithParams;
+TEST_P(WhileStatementAttributeTest, IsValid) {
+    auto& params = GetParam();
+
+    WrapInFunction(
+        While(Expr(false), Block(), createAttributes(Source{{12, 34}}, *this, params.kind)));
+
+    if (params.should_pass) {
+        EXPECT_TRUE(r()->Resolve()) << r()->error();
+    } else {
+        EXPECT_FALSE(r()->Resolve());
+        EXPECT_EQ(r()->error(), "12:34 error: attribute is not valid for while statements");
+    }
+}
+INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
+                         WhileStatementAttributeTest,
+                         testing::Values(TestParams{AttributeKind::kAlign, false},
+                                         TestParams{AttributeKind::kBinding, false},
+                                         TestParams{AttributeKind::kBuiltin, false},
+                                         TestParams{AttributeKind::kDiagnostic, true},
+                                         TestParams{AttributeKind::kGroup, false},
+                                         TestParams{AttributeKind::kId, false},
+                                         TestParams{AttributeKind::kInterpolate, false},
+                                         TestParams{AttributeKind::kInvariant, false},
+                                         TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
+                                         TestParams{AttributeKind::kOffset, false},
+                                         TestParams{AttributeKind::kSize, false},
+                                         TestParams{AttributeKind::kStage, false},
+                                         TestParams{AttributeKind::kStride, false},
+                                         TestParams{AttributeKind::kWorkgroup, false},
+                                         TestParams{AttributeKind::kBindingAndGroup, false}));
 
 namespace BlockStatementTests {
 class BlockStatementTest : public TestWithParams {
@@ -1076,6 +1291,13 @@ TEST_P(BlockStatementTest, ForStatementBody) {
          });
     Check();
 }
+TEST_P(BlockStatementTest, LoopStatementBody) {
+    Func("foo", utils::Empty, ty.void_(),
+         utils::Vector{
+             Loop(Block(utils::Vector{Break()}, createAttributes({}, *this, GetParam().kind))),
+         });
+    Check();
+}
 TEST_P(BlockStatementTest, WhileStatementBody) {
     Func("foo", utils::Empty, ty.void_(),
          utils::Vector{
@@ -1114,6 +1336,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverAttributeValidationTest,
                                          TestParams{AttributeKind::kInterpolate, false},
                                          TestParams{AttributeKind::kInvariant, false},
                                          TestParams{AttributeKind::kLocation, false},
+                                         TestParams{AttributeKind::kMustUse, false},
                                          TestParams{AttributeKind::kOffset, false},
                                          TestParams{AttributeKind::kSize, false},
                                          TestParams{AttributeKind::kStage, false},
@@ -1147,7 +1370,7 @@ TEST_P(ArrayStrideTest, All) {
     auto& params = GetParam();
     ast::Type el_ty = params.create_el_type(*this);
 
-    std::stringstream ss;
+    utils::StringStream ss;
     ss << "el_ty: " << FriendlyName(el_ty) << ", stride: " << params.stride
        << ", should_pass: " << params.should_pass;
     SCOPED_TRACE(ss.str());
@@ -1414,6 +1637,24 @@ TEST_F(InvariantAttributeTests, InvariantWithoutPosition) {
 }  // namespace
 }  // namespace InvariantAttributeTests
 
+namespace MustUseAttributeTests {
+namespace {
+
+using MustUseAttributeTests = ResolverTest;
+TEST_F(MustUseAttributeTests, MustUse) {
+    Func("main", utils::Empty, ty.vec4<f32>(),
+         utils::Vector{
+             Return(Call(ty.vec4<f32>())),
+         },
+         utils::Vector{
+             MustUse(Source{{12, 34}}),
+         });
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+}  // namespace
+}  // namespace MustUseAttributeTests
+
 namespace WorkgroupAttributeTests {
 namespace {
 
@@ -1447,9 +1688,7 @@ TEST_F(WorkgroupAttribute, NotAnEntryPoint) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: the workgroup_size attribute is only valid for "
-              "compute stages");
+    EXPECT_EQ(r()->error(), "12:34 error: @workgroup_size is only valid for compute stages");
 }
 
 TEST_F(WorkgroupAttribute, NotAComputeShader) {
@@ -1460,9 +1699,7 @@ TEST_F(WorkgroupAttribute, NotAComputeShader) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              "12:34 error: the workgroup_size attribute is only valid for "
-              "compute stages");
+    EXPECT_EQ(r()->error(), "12:34 error: @workgroup_size is only valid for compute stages");
 }
 
 TEST_F(WorkgroupAttribute, DuplicateAttribute) {
@@ -1650,8 +1887,7 @@ TEST_F(InterpolateTest, MissingLocationAttribute_Parameter) {
              Param("a", ty.vec4<f32>(),
                    utils::Vector{
                        Builtin(builtin::BuiltinValue::kPosition),
-                       Interpolate(Source{{12, 34}}, builtin::InterpolationType::kFlat,
-                                   builtin::InterpolationSampling::kUndefined),
+                       Interpolate(Source{{12, 34}}, builtin::InterpolationType::kFlat),
                    }),
          },
          ty.void_(), utils::Empty,
@@ -1674,8 +1910,7 @@ TEST_F(InterpolateTest, MissingLocationAttribute_ReturnType) {
          },
          utils::Vector{
              Builtin(builtin::BuiltinValue::kPosition),
-             Interpolate(Source{{12, 34}}, builtin::InterpolationType::kFlat,
-                         builtin::InterpolationSampling::kUndefined),
+             Interpolate(Source{{12, 34}}, builtin::InterpolationType::kFlat),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -1688,8 +1923,7 @@ TEST_F(InterpolateTest, MissingLocationAttribute_Struct) {
         "S",
         utils::Vector{
             Member("a", ty.f32(),
-                   utils::Vector{Interpolate(Source{{12, 34}}, builtin::InterpolationType::kFlat,
-                                             builtin::InterpolationSampling::kUndefined)}),
+                   utils::Vector{Interpolate(Source{{12, 34}}, builtin::InterpolationType::kFlat)}),
         });
 
     EXPECT_FALSE(r()->Resolve());
@@ -1932,4 +2166,56 @@ INSTANTIATE_TEST_SUITE_P(LocationTest,
 }  // namespace
 }  // namespace InterpolateTests
 
+namespace MustUseTests {
+namespace {
+
+using MustUseAttributeTest = ResolverTest;
+TEST_F(MustUseAttributeTest, UsedOnFnWithNoReturnValue) {
+    Func("fn_must_use", utils::Empty, ty.void_(), utils::Empty,
+         utils::Vector{MustUse(Source{{12, 34}})});
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: @must_use can only be applied to functions that return a value)");
+}
+
+}  // namespace
+}  // namespace MustUseTests
+
+namespace InternalAttributeDeps {
+namespace {
+
+class TestAttribute : public Castable<TestAttribute, ast::InternalAttribute> {
+  public:
+    TestAttribute(ProgramID pid, ast::NodeID nid, const ast::IdentifierExpression* dep)
+        : Base(pid, nid, utils::Vector{dep}) {}
+    std::string InternalName() const override { return "test_attribute"; }
+    const Cloneable* Clone(CloneContext*) const override { return nullptr; }
+};
+
+using InternalAttributeDepsTest = ResolverTest;
+TEST_F(InternalAttributeDepsTest, Dependency) {
+    auto* ident = Expr("v");
+    auto* attr = ASTNodes().Create<TestAttribute>(ID(), AllocateNodeID(), ident);
+    auto* f = Func("f", utils::Empty, ty.void_(), utils::Empty, utils::Vector{attr});
+    auto* v = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    auto* user = As<sem::VariableUser>(Sem().Get(ident));
+    ASSERT_NE(user, nullptr);
+
+    auto* var = Sem().Get(v);
+    EXPECT_EQ(user->Variable(), var);
+
+    auto* fn = Sem().Get(f);
+    EXPECT_THAT(fn->DirectlyReferencedGlobals(), testing::ElementsAre(var));
+    EXPECT_THAT(fn->TransitivelyReferencedGlobals(), testing::ElementsAre(var));
+}
+
+}  // namespace
+}  // namespace InternalAttributeDeps
+
 }  // namespace tint::resolver
+
+TINT_INSTANTIATE_TYPEINFO(tint::resolver::InternalAttributeDeps::TestAttribute);

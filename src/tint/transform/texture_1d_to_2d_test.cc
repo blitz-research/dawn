@@ -142,14 +142,14 @@ TEST_F(Texture1DTo2DTest, Global1DDeclAndTextureDimensionsInCallStmt) {
 @group(0) @binding(0) var t : texture_1d<f32>;
 
 fn main() {
-  textureDimensions(t);
+  _ = textureDimensions(t);
 }
 )";
     auto* expect = R"(
 @group(0) @binding(0) var t : texture_2d<f32>;
 
 fn main() {
-  textureDimensions(t);
+  _ = textureDimensions(t).x;
 }
 )";
 
@@ -226,7 +226,7 @@ fn main() -> vec4<f32> {
 @group(0) @binding(1) var samp : sampler;
 
 fn f(t : texture_2d<f32>, s : sampler) -> vec4<f32> {
-  return textureSample(t, s, vec2<f32>(0.7, 0.5));
+  return textureSample(t, s, vec2<f32>(0.69999999999999995559, 0.5));
 }
 
 fn main() -> vec4<f32> {
@@ -276,7 +276,7 @@ TEST_F(Texture1DTo2DTest, TextureAndNonTextureBuiltin) {
 @group(0) @binding(0) var tex : texture_1d<i32>;
 
 fn d() {
-  textureLoad(tex, 1, 0);
+  _ = textureLoad(tex, 1, 0);
   let l = sin(3.0);
 }
 )";
@@ -285,7 +285,7 @@ fn d() {
 @group(0) @binding(0) var tex : texture_2d<i32>;
 
 fn d() {
-  textureLoad(tex, vec2<i32>(1, 0), 0);
+  _ = textureLoad(tex, vec2<i32>(1, 0), 0);
   let l = sin(3.0);
 }
 )";

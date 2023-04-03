@@ -371,12 +371,18 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
                         depthStencilAttachment->stencilReadOnly);
     }
 
-    if (depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Clear) {
-        DAWN_INVALID_IF(std::isnan(depthStencilAttachment->depthClearValue),
-                        "depthClearValue is NaN.");
+    if (depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Clear &&
+        IsSubset(Aspect::Depth, attachment->GetAspects())) {
+        DAWN_INVALID_IF(
+            std::isnan(depthStencilAttachment->depthClearValue),
+            "depthClearValue (%f) must be set and must not be a NaN value if the attachment "
+            "(%s) has a depth aspect and depthLoadOp is clear.",
+            depthStencilAttachment->depthClearValue, attachment);
         DAWN_INVALID_IF(depthStencilAttachment->depthClearValue < 0.0f ||
                             depthStencilAttachment->depthClearValue > 1.0f,
-                        "depthClearValue is not between 0.0 and 1.0");
+                        "depthClearValue (%f) must be between 0.0 and 1.0 if the attachment (%s) "
+                        "has a depth aspect and depthLoadOp is clear.",
+                        depthStencilAttachment->depthClearValue, attachment);
     }
 
     // *sampleCount == 0 must only happen when there is no color attachment. In that case we
@@ -884,8 +890,18 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
 
                 cmd->depthStencilAttachment.view = view;
 
-                cmd->depthStencilAttachment.clearDepth =
-                    descriptor->depthStencilAttachment->depthClearValue;
+                switch (descriptor->depthStencilAttachment->depthLoadOp) {
+                    case wgpu::LoadOp::Clear:
+                        cmd->depthStencilAttachment.clearDepth =
+                            descriptor->depthStencilAttachment->depthClearValue;
+                        break;
+                    case wgpu::LoadOp::Load:
+                    case wgpu::LoadOp::Undefined:
+                        // Set depthClearValue to 0 if it is the load op is not clear.
+                        // The default value NaN may be invalid in the backend.
+                        cmd->depthStencilAttachment.clearDepth = 0.f;
+                        break;
+                }
                 cmd->depthStencilAttachment.clearStencil =
                     descriptor->depthStencilAttachment->stencilClearValue;
 

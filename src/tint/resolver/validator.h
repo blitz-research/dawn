@@ -61,7 +61,6 @@ class LoopStatement;
 class Materialize;
 class Statement;
 class SwitchStatement;
-class TypeInitializer;
 class WhileStatement;
 }  // namespace tint::sem
 namespace tint::type {
@@ -430,12 +429,10 @@ class Validator {
 
     /// Validates a variable initializer
     /// @param v the variable to validate
-    /// @param address_space the address space of the variable
     /// @param storage_type the type of the storage
     /// @param initializer the RHS initializer expression
     /// @returns true on succes, false otherwise
     bool VariableInitializer(const ast::Variable* v,
-                             builtin::AddressSpace address_space,
                              const type::Type* storage_type,
                              const sem::ValueExpression* initializer) const;
 
@@ -445,11 +442,11 @@ class Validator {
     /// @returns true on success, false otherwise
     bool Vector(const type::Type* el_ty, const Source& source) const;
 
-    /// Validates an array initializer
+    /// Validates an array constructor
     /// @param ctor the call expresion to validate
     /// @param arr_type the type of the array
     /// @returns true on success, false otherwise
-    bool ArrayInitializer(const ast::CallExpression* ctor, const type::Array* arr_type) const;
+    bool ArrayConstructor(const ast::CallExpression* ctor, const type::Array* arr_type) const;
 
     /// Validates a texture builtin function
     /// @param call the builtin call to validate

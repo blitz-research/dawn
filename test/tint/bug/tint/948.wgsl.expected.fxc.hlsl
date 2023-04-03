@@ -1,3 +1,7 @@
+float tint_trunc(float param_0) {
+  return param_0 < 0 ? ceil(param_0) : floor(param_0);
+}
+
 cbuffer cbuffer_x_20 : register(b9, space2) {
   uint4 x_20[8];
 };
@@ -34,7 +38,7 @@ float4x4 getFrameData_f1_(inout float frameID) {
 }
 
 float tint_float_mod(float lhs, float rhs) {
-  return (lhs - (trunc((lhs / rhs)) * rhs));
+  return (lhs - (tint_trunc((lhs / rhs)) * rhs));
 }
 
 void main_1() {
@@ -210,8 +214,8 @@ main_out main_inner(float2 tUV_param, float2 tileID_1_param, float2 levelUnits_p
   vPosition = vPosition_param;
   vUV = vUV_param;
   main_1();
-  const main_out tint_symbol_6 = {glFragColor};
-  return tint_symbol_6;
+  const main_out tint_symbol_3 = {glFragColor};
+  return tint_symbol_3;
 }
 
 tint_symbol_2 main(tint_symbol_1 tint_symbol) {

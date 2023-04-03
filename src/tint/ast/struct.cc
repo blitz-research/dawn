@@ -26,8 +26,8 @@ Struct::Struct(ProgramID pid,
                NodeID nid,
                const Source& src,
                const Identifier* n,
-               utils::VectorRef<const ast::StructMember*> m,
-               utils::VectorRef<const ast::Attribute*> attrs)
+               utils::VectorRef<const StructMember*> m,
+               utils::VectorRef<const Attribute*> attrs)
     : Base(pid, nid, src, n), members(std::move(m)), attributes(std::move(attrs)) {
     for (auto* mem : members) {
         TINT_ASSERT(AST, mem);
@@ -38,8 +38,6 @@ Struct::Struct(ProgramID pid,
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, attr, program_id);
     }
 }
-
-Struct::Struct(Struct&&) = default;
 
 Struct::~Struct() = default;
 

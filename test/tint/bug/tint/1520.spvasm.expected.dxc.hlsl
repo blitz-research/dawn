@@ -1,4 +1,8 @@
-cbuffer cbuffer_x_4 : register(b0, space0) {
+int tint_ftoi(float v) {
+  return ((v < 2147483520.0f) ? ((v < -2147483648.0f) ? -2147483648 : int(v)) : 2147483647);
+}
+
+cbuffer cbuffer_x_4 : register(b0) {
   uint4 x_4[7];
 };
 static float4 sk_FragColor = float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -20,13 +24,12 @@ bool test_int_S1_c0_b() {
   bool x_65 = false;
   bool x_66 = false;
   const float x_26 = asfloat(x_4[1].x);
-  const int x_27 = int(x_26);
+  const int x_27 = tint_ftoi(x_26);
   unknown = x_27;
   ok = true;
   x_41 = false;
   if (true) {
-    const int4 tint_symbol_3 = tint_div((0).xxxx, int4(x_27, x_27, x_27, x_27));
-    x_40 = all((tint_symbol_3 == (0).xxxx));
+    x_40 = all((tint_div((0).xxxx, int4(x_27, x_27, x_27, x_27)) == (0).xxxx));
     x_41 = x_40;
   }
   ok = x_41;
@@ -152,8 +155,8 @@ main_out main_inner(bool sk_Clockwise_param, float4 vcolor_S0_param) {
   sk_Clockwise = sk_Clockwise_param;
   vcolor_S0 = vcolor_S0_param;
   main_1();
-  const main_out tint_symbol_6 = {sk_FragColor};
-  return tint_symbol_6;
+  const main_out tint_symbol_3 = {sk_FragColor};
+  return tint_symbol_3;
 }
 
 tint_symbol_2 main(tint_symbol_1 tint_symbol) {

@@ -89,8 +89,8 @@ void comp_main_inner(uint3 gl_GlobalInvocationID, device Particles* const tint_s
     if ((i == index)) {
       continue;
     }
-    pos = float2((*(tint_symbol_4)).particles[i].pos).xy;
-    vel = float2((*(tint_symbol_4)).particles[i].vel).xy;
+    pos = (*(tint_symbol_4)).particles[i].pos.xy;
+    vel = (*(tint_symbol_4)).particles[i].vel.xy;
     if ((distance(pos, vPos) < (*(tint_symbol_5)).rule1Distance)) {
       cMass = (cMass + pos);
       cMassCount = as_type<int>((as_type<uint>(cMassCount) + as_type<uint>(1)));
@@ -110,7 +110,7 @@ void comp_main_inner(uint3 gl_GlobalInvocationID, device Particles* const tint_s
     cVel = (cVel / float2(float(cVelCount), float(cVelCount)));
   }
   vVel = (((vVel + (cMass * (*(tint_symbol_5)).rule1Scale)) + (colVel * (*(tint_symbol_5)).rule2Scale)) + (cVel * (*(tint_symbol_5)).rule3Scale));
-  vVel = (normalize(vVel) * clamp(length(vVel), 0.0f, 0.100000001f));
+  vVel = (normalize(vVel) * clamp(length(vVel), 0.0f, 0.10000000149011611938f));
   vPos = (vPos + (vVel * (*(tint_symbol_5)).deltaT));
   if ((vPos[0] < -1.0f)) {
     vPos[0] = 1.0f;

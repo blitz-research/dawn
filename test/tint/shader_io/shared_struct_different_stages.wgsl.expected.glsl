@@ -9,7 +9,7 @@ struct Interface {
 };
 
 Interface vert_main() {
-  Interface tint_symbol = Interface(0.400000006f, 0.600000024f, vec4(0.0f));
+  Interface tint_symbol = Interface(0.40000000596046447754f, 0.60000002384185791016f, vec4(0.0f));
   return tint_symbol;
 }
 
@@ -24,7 +24,7 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 layout(location = 1) in float col1_1;
 layout(location = 2) in float col2_1;

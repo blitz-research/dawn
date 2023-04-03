@@ -79,6 +79,11 @@
         "category": "object",
         "methods": [
             {
+                "name": "get instance",
+                "tags": ["dawn"],
+                "returns": "instance"
+            },
+            {
                 "name": "get limits",
                 "returns": "bool",
                 "args": [
@@ -174,7 +179,7 @@
         "tags": ["dawn", "native"],
         "category": "structure",
         "chained": "in",
-        "chain roots": ["device descriptor"],
+        "chain roots": ["instance descriptor", "device descriptor"],
         "members": [
             {"name": "enabled toggles count", "type": "uint32_t", "default": 0},
             {"name": "enabled toggles", "type": "char", "annotation": "const*const*", "length": "enabled toggles count"},
@@ -1312,7 +1317,8 @@
             {"name": "max compute workgroup size x", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup size y", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup size z", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
-            {"name": "max compute workgroups per dimension", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"}
+            {"name": "max compute workgroups per dimension", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
+            {"name": "max fragment combined output resources", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"}
         ]
     },
     "required limits": {
@@ -1398,6 +1404,14 @@
             },
             {
                 "name": "destroy",
+                "returns": "void"
+            },
+            {
+                "name": "expire",
+                "returns": "void"
+            },
+            {
+                "name": "refresh",
                 "returns": "void"
             }
         ]
@@ -1499,7 +1513,8 @@
         "tags": ["dawn"],
         "members": [
             {"name": "external texture", "type": "external texture"},
-            {"name": "origin", "type": "origin 3D"}
+            {"name": "origin", "type": "origin 3D"},
+            {"name": "natural size", "type": "extent 2D"}
         ]
     },
     "index format": {
@@ -1521,8 +1536,7 @@
                 ]
             },
             {
-                "name": "process events",
-                "tags": ["upstream", "emscripten"]
+                "name": "process events"
             },
             {
                 "name": "request adapter",
@@ -1981,7 +1995,7 @@
             {"name": "view", "type": "texture view"},
             {"name": "depth load op", "type": "load op", "default": "undefined"},
             {"name": "depth store op", "type": "store op", "default": "undefined"},
-            {"name": "depth clear value", "type": "float", "default": "0"},
+            {"name": "depth clear value", "type": "float", "default": "NAN"},
             {"name": "depth read only", "type": "bool", "default": "false"},
             {"name": "stencil load op", "type": "load op", "default": "undefined"},
             {"name": "stencil store op", "type": "store op", "default": "undefined"},
@@ -2274,8 +2288,8 @@
         "extensible": "in",
         "members": [
             {"name": "format", "type": "texture format"},
-            {"name": "depth write enabled", "type": "bool", "default": "false"},
-            {"name": "depth compare", "type": "compare function", "default": "always"},
+            {"name": "depth write enabled", "type": "bool"},
+            {"name": "depth compare", "type": "compare function"},
             {"name": "stencil front", "type": "stencil face state"},
             {"name": "stencil back", "type": "stencil face state"},
             {"name": "stencil read mask", "type": "uint32_t", "default": "0xFFFFFFFF"},
@@ -2697,6 +2711,7 @@
     },
     "texture component type": {
         "category": "enum",
+        "tags": ["dawn"],
         "values": [
             {"value": 0, "name": "float"},
             {"value": 1, "name": "sint"},

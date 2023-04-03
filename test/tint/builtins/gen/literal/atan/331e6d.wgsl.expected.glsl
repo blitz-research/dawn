@@ -1,7 +1,12 @@
 #version 310 es
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  vec3 inner;
+} prevent_dce;
+
 void atan_331e6d() {
-  vec3 res = vec3(0.785398185f);
+  vec3 res = vec3(0.78539818525314331055f);
+  prevent_dce.inner = res;
 }
 
 vec4 vertex_main() {
@@ -18,10 +23,15 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
+
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  vec3 inner;
+} prevent_dce;
 
 void atan_331e6d() {
-  vec3 res = vec3(0.785398185f);
+  vec3 res = vec3(0.78539818525314331055f);
+  prevent_dce.inner = res;
 }
 
 void fragment_main() {
@@ -34,8 +44,13 @@ void main() {
 }
 #version 310 es
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  vec3 inner;
+} prevent_dce;
+
 void atan_331e6d() {
-  vec3 res = vec3(0.785398185f);
+  vec3 res = vec3(0.78539818525314331055f);
+  prevent_dce.inner = res;
 }
 
 void compute_main() {

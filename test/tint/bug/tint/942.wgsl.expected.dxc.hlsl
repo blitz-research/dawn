@@ -1,5 +1,5 @@
-SamplerState samp : register(s0, space0);
-cbuffer cbuffer_params : register(b1, space0) {
+SamplerState samp : register(s0);
+cbuffer cbuffer_params : register(b1) {
   uint4 params[1];
 };
 Texture2D<float4> inputTex : register(t1, space1);
@@ -30,7 +30,7 @@ void main_inner(uint3 WorkGroupID, uint3 LocalInvocationID, uint local_invocatio
   }
   GroupMemoryBarrierWithGroupSync();
   const uint filterOffset = tint_div((params[0].x - 1u), 2u);
-  int3 tint_tmp;
+  uint3 tint_tmp;
   inputTex.GetDimensions(0, tint_tmp.x, tint_tmp.y, tint_tmp.z);
   const uint2 dims = tint_tmp.xy;
   const uint2 baseIndex = (((WorkGroupID.xy * uint2(params[0].y, 4u)) + (LocalInvocationID.xy * uint2(4u, 1u))) - uint2(filterOffset, 0u));

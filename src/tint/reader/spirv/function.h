@@ -25,8 +25,10 @@
 #include <vector>
 
 #include "src/tint/program_builder.h"
+#include "src/tint/reader/spirv/attributes.h"
 #include "src/tint/reader/spirv/construct.h"
 #include "src/tint/reader/spirv/parser_impl.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::spirv {
 
@@ -177,11 +179,11 @@ struct BlockInfo {
     utils::Vector<uint32_t, 4> phis_needing_state_vars;
 };
 
-/// Writes the BlockInfo to the ostream
-/// @param o the ostream
+/// Writes the BlockInfo to the stream
+/// @param o the stream
 /// @param bi the BlockInfo
-/// @returns the ostream so calls can be chained
-inline std::ostream& operator<<(std::ostream& o, const BlockInfo& bi) {
+/// @returns the stream so calls can be chained
+inline utils::StringStream& operator<<(utils::StringStream& o, const BlockInfo& bi) {
     o << "BlockInfo{"
       << " id: " << bi.id << " pos: " << bi.pos << " merge_for_header: " << bi.merge_for_header
       << " continue_for_header: " << bi.continue_for_header
@@ -352,11 +354,11 @@ struct DefInfo {
     SkipReason skip = SkipReason::kDontSkip;
 };
 
-/// Writes the DefInfo to the ostream
-/// @param o the ostream
+/// Writes the DefInfo to the stream
+/// @param o the stream
 /// @param di the DefInfo
-/// @returns the ostream so calls can be chained
-inline std::ostream& operator<<(std::ostream& o, const DefInfo& di) {
+/// @returns the stream so calls can be chained
+inline utils::StringStream& operator<<(utils::StringStream& o, const DefInfo& di) {
     o << "DefInfo{"
       << " inst.result_id: " << di.inst.result_id();
     if (di.local.has_value()) {
@@ -420,7 +422,6 @@ class StatementBuilder : public Castable<StatementBuilder, ast::Statement> {
 
 /// A FunctionEmitter emits a SPIR-V function onto a Tint AST module.
 class FunctionEmitter {
-    using AttributeList = utils::Vector<const ast::Attribute*, 8>;
     using StructMemberList = utils::Vector<const ast::StructMember*, 8>;
     using ExpressionList = utils::Vector<const ast::Expression*, 8>;
     using ParameterList = utils::Vector<const ast::Parameter*, 8>;
@@ -473,32 +474,31 @@ class FunctionEmitter {
     /// @returns false if emission failed.
     bool EmitEntryPointAsWrapper();
 
-    /// Creates one or more entry point input parameters corresponding to a
-    /// part of an input variable.  The part of the input variable is specfied
-    /// by the `index_prefix`, which successively indexes into the variable.
-    /// Also generates the assignment statements that copy the input parameter
-    /// to the corresponding part of the variable.  Assumes the variable
-    /// has already been created in the Private address space.
+    /// Creates one or more entry point input parameters corresponding to a part of an input
+    /// variable.  The part of the input variable is specfied by the `index_prefix`, which
+    /// successively indexes into the variable. Also generates the assignment statements that copy
+    /// the input parameter to the corresponding part of the variable.  Assumes the variable has
+    /// already been created in the Private address space.
     /// @param var_name The name of the variable
     /// @param var_type The store type of the variable
-    /// @param decos The variable's decorations
-    /// @param index_prefix Indices stepping into the variable, indicating
-    /// what part of the variable to populate.
-    /// @param tip_type The type of the component inside variable, after indexing
-    /// with the indices in `index_prefix`.
-    /// @param forced_param_type The type forced by WGSL, if the variable is a
-    /// builtin, otherwise the same as var_type.
+    /// @param attributes The variable's attributes
+    /// @param index_prefix Indices stepping into the variable, indicating what part of the variable
+    /// to populate.
+    /// @param tip_type The type of the component inside variable, after indexing with the indices
+    /// in `index_prefix`.
+    /// @param forced_param_type The type forced by WGSL, if the variable is a builtin, otherwise
+    /// the same as var_type.
     /// @param params The parameter list where the new parameter is appended.
     /// @param statements The statement list where the assignment is appended.
     /// @returns false if emission failed
     bool EmitPipelineInput(std::string var_name,
                            const Type* var_type,
-                           AttributeList* decos,
                            utils::Vector<int, 8> index_prefix,
                            const Type* tip_type,
                            const Type* forced_param_type,
-                           ParameterList* params,
-                           StatementList* statements);
+                           Attributes& attributes,
+                           ParameterList& params,
+                           StatementList& statements);
 
     /// Creates one or more struct members from an output variable, and the
     /// expressions that compute the value they contribute to the entry point
@@ -507,31 +507,31 @@ class FunctionEmitter {
     /// Assumes the variable has already been created in the Private address space
     /// @param var_name The name of the variable
     /// @param var_type The store type of the variable
-    /// @param decos The variable's decorations
     /// @param index_prefix Indices stepping into the variable, indicating what part of the variable
     /// to populate.
     /// @param tip_type The type of the component inside variable, after indexing with the indices
     /// in `index_prefix`.
     /// @param forced_member_type The type forced by WGSL, if the variable is a builtin, otherwise
     /// the same as var_type.
+    /// @param attributes The variable's attributes
     /// @param return_members The struct member list where the new member is added.
     /// @param return_exprs The expression list where the return expression is added.
     /// @returns false if emission failed
     bool EmitPipelineOutput(std::string var_name,
                             const Type* var_type,
-                            AttributeList* decos,
                             utils::Vector<int, 8> index_prefix,
                             const Type* tip_type,
                             const Type* forced_member_type,
-                            StructMemberList* return_members,
-                            ExpressionList* return_exprs);
+                            Attributes& attributes,
+                            StructMemberList& return_members,
+                            ExpressionList& return_exprs);
 
     /// Updates the attribute list, replacing an existing Location attribute
     /// with another having one higher location value. Does nothing if no
     /// location attribute exists.
     /// Assumes the list contains at most one Location attribute.
     /// @param attributes the attribute list to modify
-    void IncrementLocation(AttributeList* attributes);
+    void IncrementLocation(Attributes& attributes);
 
     /// Create an ast::BlockStatement representing the body of the function.
     /// This creates the statement stack, which is non-empty for the lifetime
@@ -945,6 +945,12 @@ class FunctionEmitter {
     /// @returns the value as an i32 value.
     TypedExpression ToI32(TypedExpression value);
 
+    /// Returns the given value as an u32. If it's already an u32 then simply returns @p value.
+    /// Otherwise, wrap the value in a TypeInitializer expression.
+    /// @param value the value to pass through or convert
+    /// @returns the value as an u32 value.
+    TypedExpression ToU32(TypedExpression value);
+
     /// Returns the given value as a signed integer type of the same shape if the value is unsigned
     /// scalar or vector, by wrapping the value with a TypeInitializer expression.  Returns the
     /// value itself if the value was already signed.
@@ -976,7 +982,7 @@ class FunctionEmitter {
         /// Function return type
         const Type* return_type;
         /// Function attributes
-        AttributeList attributes;
+        Attributes attributes;
     };
 
     /// Parse the function declaration, which comprises the name, parameters, and
@@ -1034,6 +1040,18 @@ class FunctionEmitter {
     /// @param inst the SPIR-V instruction
     /// @returns an expression
     TypedExpression MakeBuiltinCall(const spvtools::opt::Instruction& inst);
+
+    /// Returns an expression for a SPIR-V instruction that maps to the extractBits WGSL
+    /// builtin function call, with special handling to cast offset and count to u32, if needed.
+    /// @param inst the SPIR-V instruction
+    /// @returns an expression
+    TypedExpression MakeExtractBitsCall(const spvtools::opt::Instruction& inst);
+
+    /// Returns an expression for a SPIR-V instruction that maps to the insertBits WGSL
+    /// builtin function call, with special handling to cast offset and count to u32, if needed.
+    /// @param inst the SPIR-V instruction
+    /// @returns an expression
+    TypedExpression MakeInsertBitsCall(const spvtools::opt::Instruction& inst);
 
     /// Returns an expression for a SPIR-V OpArrayLength instruction.
     /// @param inst the SPIR-V instruction

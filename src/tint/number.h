@@ -20,11 +20,11 @@
 #include <functional>
 #include <limits>
 #include <optional>
-#include <ostream>
 
 #include "src/tint/traits.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/result.h"
+#include "src/tint/utils/string_stream.h"
 
 // Forward declaration
 namespace tint {
@@ -175,11 +175,11 @@ struct Number : NumberBase<Number<T>> {
 };
 
 /// Writes the number to the ostream.
-/// @param out the std::ostream to write to
+/// @param out the stream to write to
 /// @param num the Number
-/// @return the std::ostream so calls can be chained
+/// @return the stream so calls can be chained
 template <typename T>
-inline std::ostream& operator<<(std::ostream& out, Number<T> num) {
+inline utils::StringStream& operator<<(utils::StringStream& out, Number<T> num) {
     return out << num.value;
 }
 
@@ -314,10 +314,10 @@ enum class ConversionFailure {
 };
 
 /// Writes the conversion failure message to the ostream.
-/// @param out the std::ostream to write to
+/// @param out the stream to write to
 /// @param failure the ConversionFailure
-/// @return the std::ostream so calls can be chained
-std::ostream& operator<<(std::ostream& out, ConversionFailure failure);
+/// @return the stream so calls can be chained
+utils::StringStream& operator<<(utils::StringStream& out, ConversionFailure failure);
 
 /// Converts a number from one type to another, checking that the value fits in the target type.
 /// @returns the resulting value of the conversion, or a failure reason.
@@ -539,6 +539,9 @@ inline std::optional<AInt> CheckedDiv(AInt a, AInt b) {
 /// @returns a / b, or an empty optional if the resulting value overflowed the float value
 template <typename FloatingPointT, typename = traits::EnableIf<IsFloatingPoint<FloatingPointT>>>
 inline std::optional<FloatingPointT> CheckedDiv(FloatingPointT a, FloatingPointT b) {
+    if (b == FloatingPointT{0.0} || b == FloatingPointT{-0.0}) {
+        return {};
+    }
     auto result = FloatingPointT{a.value / b.value};
     if (!std::isfinite(result.value)) {
         return {};
@@ -576,6 +579,9 @@ inline std::optional<AInt> CheckedMod(AInt a, AInt b) {
 /// float value
 template <typename FloatingPointT, typename = traits::EnableIf<IsFloatingPoint<FloatingPointT>>>
 inline std::optional<FloatingPointT> CheckedMod(FloatingPointT a, FloatingPointT b) {
+    if (b == FloatingPointT{0.0} || b == FloatingPointT{-0.0}) {
+        return {};
+    }
     auto result = FloatingPointT{detail::Mod(a.value, b.value)};
     if (!std::isfinite(result.value)) {
         return {};

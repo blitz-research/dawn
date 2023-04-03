@@ -15,6 +15,7 @@
 #include "src/tint/reader/wgsl/lexer.h"
 
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -24,6 +25,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "absl/strings/charconv.h"
 #include "src/tint/debug.h"
 #include "src/tint/number.h"
 #include "src/tint/text/unicode.h"
@@ -329,18 +331,32 @@ Token Lexer::try_float() {
     auto source = begin_source();
     bool has_mantissa_digits = false;
 
+    std::optional<size_t> first_significant_digit_position;
     while (end < length() && is_digit(at(end))) {
+        if (!first_significant_digit_position.has_value() && (at(end) != '0')) {
+            first_significant_digit_position = end;
+        }
+
         has_mantissa_digits = true;
         end++;
     }
 
-    bool has_point = false;
+    std::optional<size_t> dot_position;
     if (end < length() && matches(end, '.')) {
-        has_point = true;
+        dot_position = end;
         end++;
     }
 
+    size_t zeros_before_digit = 0;
     while (end < length() && is_digit(at(end))) {
+        if (!first_significant_digit_position.has_value()) {
+            if (at(end) == '0') {
+                zeros_before_digit += 1;
+            } else {
+                first_significant_digit_position = end;
+            }
+        }
+
         has_mantissa_digits = true;
         end++;
     }
@@ -350,20 +366,24 @@ Token Lexer::try_float() {
     }
 
     // Parse the exponent if one exists
-    bool has_exponent = false;
+    std::optional<size_t> exponent_value_position;
+    bool negative_exponent = false;
     if (end < length() && (matches(end, 'e') || matches(end, 'E'))) {
         end++;
         if (end < length() && (matches(end, '+') || matches(end, '-'))) {
+            negative_exponent = matches(end, '-');
             end++;
         }
+        exponent_value_position = end;
 
+        bool has_digits = false;
         while (end < length() && isdigit(at(end))) {
-            has_exponent = true;
+            has_digits = true;
             end++;
         }
 
         // If an 'e' or 'E' was present, then the number part must also be present.
-        if (!has_exponent) {
+        if (!has_digits) {
             const auto str = std::string{substr(start, end - start)};
             return {Token::Type::kError, source,
                     "incomplete exponent for floating point literal: " + str};
@@ -373,41 +393,84 @@ Token Lexer::try_float() {
     bool has_f_suffix = false;
     bool has_h_suffix = false;
     if (end < length() && matches(end, 'f')) {
-        end++;
         has_f_suffix = true;
     } else if (end < length() && matches(end, 'h')) {
-        end++;
         has_h_suffix = true;
     }
 
-    if (!has_point && !has_exponent && !has_f_suffix && !has_h_suffix) {
+    if (!dot_position.has_value() && !exponent_value_position.has_value() && !has_f_suffix &&
+        !has_h_suffix) {
         // If it only has digits then it's an integer.
         return {};
     }
 
-    advance(end - start);
-    end_source(source);
+    // Note, the `at` method will return a static `0` if the provided position is >= length. We
+    // actually need the end pointer to point to the correct memory location to use `from_chars`.
+    // So, handle the case where we point past the length specially.
+    auto* end_ptr = &at(end);
+    if (end >= length()) {
+        end_ptr = &at(length() - 1) + 1;
+    }
 
-    double value = std::strtod(&at(start), nullptr);
+    double value = 0;
+    auto ret = absl::from_chars(&at(start), end_ptr, value);
+    bool overflow = ret.ec != std::errc();
+
+    // Value didn't fit in a double, check for underflow as that is 0.0 in WGSL and not an error.
+    if (ret.ec == std::errc::result_out_of_range) {
+        // The exponent is negative, so treat as underflow
+        if (negative_exponent) {
+            overflow = false;
+            value = 0.0;
+        } else if (dot_position.has_value() && first_significant_digit_position.has_value() &&
+                   first_significant_digit_position.value() > dot_position.value()) {
+            // Parse the exponent from the float if provided
+            size_t exp_value = 0;
+            bool exp_conversion_succeeded = true;
+            if (exponent_value_position.has_value()) {
+                auto exp_end_ptr = end_ptr - (has_f_suffix || has_h_suffix ? 1 : 0);
+                auto exp_ret = std::from_chars(&at(exponent_value_position.value()), exp_end_ptr,
+                                               exp_value, 10);
+
+                if (exp_ret.ec != std::errc{}) {
+                    exp_conversion_succeeded = false;
+                }
+            }
+            // If the exponent has gone negative, then this is an underflow case
+            if (exp_conversion_succeeded && exp_value < zeros_before_digit) {
+                overflow = false;
+                value = 0.0;
+            }
+        }
+    }
+
+    TINT_ASSERT(Reader, end_ptr == ret.ptr);
+    advance(end - start);
 
     if (has_f_suffix) {
-        if (auto f = CheckedConvert<f32>(AFloat(value))) {
+        auto f = CheckedConvert<f32>(AFloat(value));
+        if (!overflow && f) {
+            advance(1);
+            end_source(source);
             return {Token::Type::kFloatLiteral_F, source, static_cast<double>(f.Get())};
-        } else {
-            return {Token::Type::kError, source, "value cannot be represented as 'f32'"};
         }
+        return {Token::Type::kError, source, "value cannot be represented as 'f32'"};
     }
 
     if (has_h_suffix) {
-        if (auto f = CheckedConvert<f16>(AFloat(value))) {
+        auto f = CheckedConvert<f16>(AFloat(value));
+        if (!overflow && f) {
+            advance(1);
+            end_source(source);
             return {Token::Type::kFloatLiteral_H, source, static_cast<double>(f.Get())};
-        } else {
-            return {Token::Type::kError, source, "value cannot be represented as 'f16'"};
         }
+        return {Token::Type::kError, source, "value cannot be represented as 'f16'"};
     }
 
+    end_source(source);
+
     TINT_BEGIN_DISABLE_WARNING(FLOAT_EQUAL);
-    if (value == HUGE_VAL || -value == HUGE_VAL) {
+    if (overflow || value == HUGE_VAL || -value == HUGE_VAL) {
         return {Token::Type::kError, source, "value cannot be represented as 'abstract-float'"};
     } else {
         return {Token::Type::kFloatLiteral, source, value};
@@ -804,41 +867,48 @@ Token Lexer::try_hex_float() {
     return {Token::Type::kFloatLiteral, source, result_f64};
 }
 
-Token Lexer::build_token_from_int_if_possible(Source source, size_t start, int32_t base) {
+Token Lexer::build_token_from_int_if_possible(Source source,
+                                              size_t start,
+                                              size_t prefix_count,
+                                              int32_t base) {
     const char* start_ptr = &at(start);
-    char* end_ptr = nullptr;
+    // The call to `from_chars` will return the pointer to just after the last parsed character.
+    // We also need to tell it the maximum end character to parse. So, instead of walking all the
+    // characters to find the last possible and using that, we just provide the end of the string.
+    // We then calculate the count based off the provided end pointer and the start pointer. The
+    // extra `prefix_count` is to handle a `0x` which is not included in the `start` value.
+    const char* end_ptr = &at(length() - 1) + 1;
 
-    errno = 0;
-    int64_t res = strtoll(start_ptr, &end_ptr, base);
-    const bool overflow = errno == ERANGE;
-
-    if (end_ptr) {
-        advance(static_cast<size_t>(end_ptr - start_ptr));
-    }
+    int64_t value = 0;
+    auto res = std::from_chars(start_ptr, end_ptr, value, base);
+    const bool overflow = res.ec != std::errc();
+    advance(static_cast<size_t>(res.ptr - start_ptr) + prefix_count);
 
     if (matches(pos(), 'u')) {
-        if (!overflow && CheckedConvert<u32>(AInt(res))) {
+        if (!overflow && CheckedConvert<u32>(AInt(value))) {
             advance(1);
             end_source(source);
-            return {Token::Type::kIntLiteral_U, source, res};
+            return {Token::Type::kIntLiteral_U, source, value};
         }
         return {Token::Type::kError, source, "value cannot be represented as 'u32'"};
     }
 
     if (matches(pos(), 'i')) {
-        if (!overflow && CheckedConvert<i32>(AInt(res))) {
+        if (!overflow && CheckedConvert<i32>(AInt(value))) {
             advance(1);
             end_source(source);
-            return {Token::Type::kIntLiteral_I, source, res};
+            return {Token::Type::kIntLiteral_I, source, value};
         }
         return {Token::Type::kError, source, "value cannot be represented as 'i32'"};
     }
 
-    end_source(source);
+    // Check this last in order to get the more specific sized error messages
     if (overflow) {
         return {Token::Type::kError, source, "value cannot be represented as 'abstract-int'"};
     }
-    return {Token::Type::kIntLiteral, source, res};
+
+    end_source(source);
+    return {Token::Type::kIntLiteral, source, value};
 }
 
 Token Lexer::try_hex_integer() {
@@ -858,7 +928,7 @@ Token Lexer::try_hex_integer() {
                 "integer or float hex literal has no significant digits"};
     }
 
-    return build_token_from_int_if_possible(source, start, 16);
+    return build_token_from_int_if_possible(source, curr, curr - start, 16);
 }
 
 Token Lexer::try_integer() {
@@ -879,7 +949,7 @@ Token Lexer::try_integer() {
         }
     }
 
-    return build_token_from_int_if_possible(source, start, 10);
+    return build_token_from_int_if_possible(source, start, 0, 10);
 }
 
 Token Lexer::try_ident() {
@@ -1181,8 +1251,8 @@ Token Lexer::check_keyword(const Source& source, std::string_view str) {
     if (str == "return") {
         return {Token::Type::kReturn, source, "return"};
     }
-    if (str == "static_assert") {
-        return {Token::Type::kStaticAssert, source, "static_assert"};
+    if (str == "requires") {
+        return {Token::Type::kRequires, source, "requires"};
     }
     if (str == "struct") {
         return {Token::Type::kStruct, source, "struct"};
@@ -1192,9 +1262,6 @@ Token Lexer::check_keyword(const Source& source, std::string_view str) {
     }
     if (str == "true") {
         return {Token::Type::kTrue, source, "true"};
-    }
-    if (str == "type") {
-        return {Token::Type::kType, source, "type"};
     }
     if (str == "var") {
         return {Token::Type::kVar, source, "var"};

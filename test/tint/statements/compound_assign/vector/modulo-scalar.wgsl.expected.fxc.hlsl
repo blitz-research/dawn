@@ -3,7 +3,7 @@ void unused_entry_point() {
   return;
 }
 
-RWByteAddressBuffer v : register(u0, space0);
+RWByteAddressBuffer v : register(u0);
 
 int4 tint_mod(int4 lhs, int rhs) {
   const int4 r = int4((rhs).xxxx);
@@ -16,6 +16,5 @@ int4 tint_mod(int4 lhs, int rhs) {
 }
 
 void foo() {
-  const int4 tint_symbol = tint_mod(asint(v.Load4(0u)), 2);
-  v.Store4(0u, asuint(tint_symbol));
+  v.Store4(0u, asuint(tint_mod(asint(v.Load4(0u)), 2)));
 }

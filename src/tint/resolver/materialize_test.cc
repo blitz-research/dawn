@@ -16,6 +16,7 @@
 
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
+#include "src/tint/switch.h"
 #include "src/tint/type/test_helper.h"
 
 #include "gmock/gmock.h"
@@ -340,7 +341,7 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
             WrapInFunction(CallStmt(Call("F", abstract_expr)));
             break;
         case Method::kBuiltinArg:
-            WrapInFunction(CallStmt(Call("min", target_expr(), abstract_expr)));
+            WrapInFunction(Assign(Phony(), Call("min", target_expr(), abstract_expr)));
             break;
         case Method::kReturn:
             Func("F", utils::Empty, target_ty(), utils::Vector{Return(abstract_expr)});
@@ -939,7 +940,7 @@ TEST_P(MaterializeAbstractNumericToDefaultType, Test) {
             break;
         }
         case Method::kTintMaterializeBuiltin: {
-            auto* call = Call(sem::str(sem::BuiltinType::kTintMaterialize), abstract_expr());
+            auto* call = Call(builtin::str(builtin::Function::kTintMaterialize), abstract_expr());
             WrapInFunction(Decl(Const("c", call)));
             break;
         }

@@ -57,6 +57,8 @@ class BuiltinPolyfill final : public Castable<BuiltinPolyfill, Transform> {
         bool count_leading_zeros = false;
         /// Should `countTrailingZeros()` be polyfilled?
         bool count_trailing_zeros = false;
+        /// Should converting f32 to i32 or u32 be polyfilled?
+        bool conv_f32_to_iu32 = false;
         /// What level should `extractBits()` be polyfilled?
         Level extract_bits = Level::kNone;
         /// Should `firstLeadingBit()` be polyfilled?
@@ -70,6 +72,8 @@ class BuiltinPolyfill final : public Castable<BuiltinPolyfill, Transform> {
         bool int_div_mod = false;
         /// Should float modulos be polyfilled to emit a precise modulo operation as per the spec?
         bool precise_float_mod = false;
+        /// Should `reflect()` be polyfilled for vec2<f32>?
+        bool reflect_vec2_f32 = false;
         /// Should `saturate()` be polyfilled?
         bool saturate = false;
         /// Should `sign()` be polyfilled for integer types?

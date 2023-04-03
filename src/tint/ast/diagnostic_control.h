@@ -15,7 +15,6 @@
 #ifndef SRC_TINT_AST_DIAGNOSTIC_CONTROL_H_
 #define SRC_TINT_AST_DIAGNOSTIC_CONTROL_H_
 
-#include <ostream>
 #include <string>
 #include <unordered_map>
 
@@ -33,12 +32,15 @@ namespace tint::ast {
 struct DiagnosticControl {
   public:
     /// Default constructor.
-    DiagnosticControl() {}
+    DiagnosticControl();
 
     /// Constructor
     /// @param sev the diagnostic severity
     /// @param rule the diagnostic rule name
     DiagnosticControl(builtin::DiagnosticSeverity sev, const Identifier* rule);
+
+    /// Move constructor
+    DiagnosticControl(DiagnosticControl&&);
 
     /// The diagnostic severity control.
     builtin::DiagnosticSeverity severity;

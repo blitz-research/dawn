@@ -1,7 +1,7 @@
 #version 310 es
 
 void acosh_17260e() {
-  vec2 res = vec2(1.316957951f);
+  vec2 res = vec2(1.0f);
 }
 
 vec4 vertex_main() {
@@ -18,10 +18,10 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 void acosh_17260e() {
-  vec2 res = vec2(1.316957951f);
+  vec2 res = vec2(1.0f);
 }
 
 void fragment_main() {
@@ -35,7 +35,7 @@ void main() {
 #version 310 es
 
 void acosh_17260e() {
-  vec2 res = vec2(1.316957951f);
+  vec2 res = vec2(1.0f);
 }
 
 void compute_main() {

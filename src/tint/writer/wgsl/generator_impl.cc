@@ -34,6 +34,8 @@
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/sem/struct.h"
 #include "src/tint/sem/switch_statement.h"
+#include "src/tint/switch.h"
+#include "src/tint/utils/defer.h"
 #include "src/tint/utils/math.h"
 #include "src/tint/utils/scoped_assignment.h"
 #include "src/tint/writer/float_to_string.h"
@@ -89,7 +91,7 @@ bool GeneratorImpl::Generate() {
     return true;
 }
 
-bool GeneratorImpl::EmitDiagnosticControl(std::ostream& out,
+bool GeneratorImpl::EmitDiagnosticControl(utils::StringStream& out,
                                           const ast::DiagnosticControl& diagnostic) {
     out << "diagnostic(" << diagnostic.severity << ", "
         << program_->Symbols().NameFor(diagnostic.rule_name->symbol) << ")";
@@ -98,7 +100,14 @@ bool GeneratorImpl::EmitDiagnosticControl(std::ostream& out,
 
 bool GeneratorImpl::EmitEnable(const ast::Enable* enable) {
     auto out = line();
-    out << "enable " << enable->extension << ";";
+    out << "enable ";
+    for (auto* ext : enable->extensions) {
+        if (ext != enable->extensions.Front()) {
+            out << ", ";
+        }
+        out << ext->name;
+    }
+    out << ";";
     return true;
 }
 
@@ -124,7 +133,7 @@ bool GeneratorImpl::EmitTypeDecl(const ast::TypeDecl* ty) {
         });
 }
 
-bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* expr) {
+bool GeneratorImpl::EmitExpression(utils::StringStream& out, const ast::Expression* expr) {
     return Switch(
         expr,
         [&](const ast::IndexAccessorExpression* a) {  //
@@ -161,7 +170,8 @@ bool GeneratorImpl::EmitExpression(std::ostream& out, const ast::Expression* exp
         });
 }
 
-bool GeneratorImpl::EmitIndexAccessor(std::ostream& out, const ast::IndexAccessorExpression* expr) {
+bool GeneratorImpl::EmitIndexAccessor(utils::StringStream& out,
+                                      const ast::IndexAccessorExpression* expr) {
     bool paren_lhs =
         !expr->object
              ->IsAnyOf<ast::AccessorExpression, ast::CallExpression, ast::IdentifierExpression>();
@@ -184,7 +194,7 @@ bool GeneratorImpl::EmitIndexAccessor(std::ostream& out, const ast::IndexAccesso
     return true;
 }
 
-bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
+bool GeneratorImpl::EmitMemberAccessor(utils::StringStream& out,
                                        const ast::MemberAccessorExpression* expr) {
     bool paren_lhs =
         !expr->object
@@ -203,7 +213,7 @@ bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitBitcast(std::ostream& out, const ast::BitcastExpression* expr) {
+bool GeneratorImpl::EmitBitcast(utils::StringStream& out, const ast::BitcastExpression* expr) {
     out << "bitcast<";
     if (!EmitExpression(out, expr->type)) {
         return false;
@@ -218,7 +228,7 @@ bool GeneratorImpl::EmitBitcast(std::ostream& out, const ast::BitcastExpression*
     return true;
 }
 
-bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr) {
+bool GeneratorImpl::EmitCall(utils::StringStream& out, const ast::CallExpression* expr) {
     if (!EmitExpression(out, expr->target)) {
         return false;
     }
@@ -242,7 +252,7 @@ bool GeneratorImpl::EmitCall(std::ostream& out, const ast::CallExpression* expr)
     return true;
 }
 
-bool GeneratorImpl::EmitLiteral(std::ostream& out, const ast::LiteralExpression* lit) {
+bool GeneratorImpl::EmitLiteral(utils::StringStream& out, const ast::LiteralExpression* lit) {
     return Switch(
         lit,
         [&](const ast::BoolLiteralExpression* l) {  //
@@ -271,11 +281,12 @@ bool GeneratorImpl::EmitLiteral(std::ostream& out, const ast::LiteralExpression*
         });
 }
 
-bool GeneratorImpl::EmitIdentifier(std::ostream& out, const ast::IdentifierExpression* expr) {
+bool GeneratorImpl::EmitIdentifier(utils::StringStream& out,
+                                   const ast::IdentifierExpression* expr) {
     return EmitIdentifier(out, expr->identifier);
 }
 
-bool GeneratorImpl::EmitIdentifier(std::ostream& out, const ast::Identifier* ident) {
+bool GeneratorImpl::EmitIdentifier(utils::StringStream& out, const ast::Identifier* ident) {
     if (auto* tmpl_ident = ident->As<ast::TemplatedIdentifier>()) {
         if (!tmpl_ident->attributes.IsEmpty()) {
             EmitAttributes(out, tmpl_ident->attributes);
@@ -363,7 +374,7 @@ bool GeneratorImpl::EmitFunction(const ast::Function* func) {
     return true;
 }
 
-bool GeneratorImpl::EmitImageFormat(std::ostream& out, const builtin::TexelFormat fmt) {
+bool GeneratorImpl::EmitImageFormat(utils::StringStream& out, const builtin::TexelFormat fmt) {
     switch (fmt) {
         case builtin::TexelFormat::kUndefined:
             diagnostics_.add_error(diag::System::Writer, "unknown image format");
@@ -441,7 +452,7 @@ bool GeneratorImpl::EmitStructType(const ast::Struct* str) {
     return true;
 }
 
-bool GeneratorImpl::EmitVariable(std::ostream& out, const ast::Variable* v) {
+bool GeneratorImpl::EmitVariable(utils::StringStream& out, const ast::Variable* v) {
     if (!v->attributes.IsEmpty()) {
         if (!EmitAttributes(out, v->attributes)) {
             return false;
@@ -508,7 +519,7 @@ bool GeneratorImpl::EmitVariable(std::ostream& out, const ast::Variable* v) {
     return true;
 }
 
-bool GeneratorImpl::EmitAttributes(std::ostream& out,
+bool GeneratorImpl::EmitAttributes(utils::StringStream& out,
                                    utils::VectorRef<const ast::Attribute*> attrs) {
     bool first = true;
     for (auto* attr : attrs) {
@@ -564,16 +575,26 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
                 return true;
             },
             [&](const ast::BuiltinAttribute* builtin) {
-                out << "builtin(" << builtin->builtin << ")";
+                out << "builtin(";
+                if (!EmitExpression(out, builtin->builtin)) {
+                    return false;
+                }
+                out << ")";
                 return true;
             },
             [&](const ast::DiagnosticAttribute* diagnostic) {
                 return EmitDiagnosticControl(out, diagnostic->control);
             },
             [&](const ast::InterpolateAttribute* interpolate) {
-                out << "interpolate(" << interpolate->type;
-                if (interpolate->sampling != builtin::InterpolationSampling::kUndefined) {
-                    out << ", " << interpolate->sampling;
+                out << "interpolate(";
+                if (!EmitExpression(out, interpolate->type)) {
+                    return false;
+                }
+                if (interpolate->sampling) {
+                    out << ", ";
+                    if (!EmitExpression(out, interpolate->sampling)) {
+                        return false;
+                    }
                 }
                 out << ")";
                 return true;
@@ -588,6 +609,10 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
                     return false;
                 }
                 out << ")";
+                return true;
+            },
+            [&](const ast::MustUseAttribute*) {
+                out << "must_use";
                 return true;
             },
             [&](const ast::StructMemberOffsetAttribute* offset) {
@@ -636,7 +661,7 @@ bool GeneratorImpl::EmitAttributes(std::ostream& out,
     return true;
 }
 
-bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* expr) {
+bool GeneratorImpl::EmitBinary(utils::StringStream& out, const ast::BinaryExpression* expr) {
     out << "(";
 
     if (!EmitExpression(out, expr->lhs)) {
@@ -656,7 +681,7 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, const ast::BinaryExpression* e
     return true;
 }
 
-bool GeneratorImpl::EmitBinaryOp(std::ostream& out, const ast::BinaryOp op) {
+bool GeneratorImpl::EmitBinaryOp(utils::StringStream& out, const ast::BinaryOp op) {
     switch (op) {
         case ast::BinaryOp::kAnd:
             out << "&";
@@ -719,7 +744,7 @@ bool GeneratorImpl::EmitBinaryOp(std::ostream& out, const ast::BinaryOp op) {
     return true;
 }
 
-bool GeneratorImpl::EmitUnaryOp(std::ostream& out, const ast::UnaryOpExpression* expr) {
+bool GeneratorImpl::EmitUnaryOp(utils::StringStream& out, const ast::UnaryOpExpression* expr) {
     switch (expr->op) {
         case ast::UnaryOp::kAddressOf:
             out << "&";
@@ -763,7 +788,7 @@ bool GeneratorImpl::EmitBlock(const ast::BlockStatement* stmt) {
     return true;
 }
 
-bool GeneratorImpl::EmitBlockHeader(std::ostream& out, const ast::BlockStatement* stmt) {
+bool GeneratorImpl::EmitBlockHeader(utils::StringStream& out, const ast::BlockStatement* stmt) {
     if (!stmt->attributes.IsEmpty()) {
         if (!EmitAttributes(out, stmt->attributes)) {
             return false;
@@ -924,6 +949,14 @@ bool GeneratorImpl::EmitContinue(const ast::ContinueStatement*) {
 bool GeneratorImpl::EmitIf(const ast::IfStatement* stmt) {
     {
         auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
         out << "if (";
         if (!EmitExpression(out, stmt->condition)) {
             return false;
@@ -992,7 +1025,21 @@ bool GeneratorImpl::EmitDiscard(const ast::DiscardStatement*) {
 }
 
 bool GeneratorImpl::EmitLoop(const ast::LoopStatement* stmt) {
-    line() << "loop {";
+    {
+        auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
+        out << "loop ";
+        if (!EmitBlockHeader(out, stmt->body)) {
+            return false;
+        }
+    }
     increment_indent();
 
     if (!EmitStatements(stmt->body->statements)) {
@@ -1001,7 +1048,17 @@ bool GeneratorImpl::EmitLoop(const ast::LoopStatement* stmt) {
 
     if (stmt->continuing && !stmt->continuing->Empty()) {
         line();
-        line() << "continuing {";
+        {
+            auto out = line();
+            out << "continuing ";
+            if (!stmt->continuing->attributes.IsEmpty()) {
+                if (!EmitAttributes(out, stmt->continuing->attributes)) {
+                    return false;
+                }
+                out << " ";
+            }
+            out << "{";
+        }
         if (!EmitStatementsWithIndent(stmt->continuing->statements)) {
             return false;
         }
@@ -1033,6 +1090,14 @@ bool GeneratorImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
 
     {
         auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
         out << "for";
         {
             ScopedParen sp(out);
@@ -1094,6 +1159,14 @@ bool GeneratorImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
 bool GeneratorImpl::EmitWhile(const ast::WhileStatement* stmt) {
     {
         auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
         out << "while";
         {
             ScopedParen sp(out);
@@ -1133,7 +1206,7 @@ bool GeneratorImpl::EmitReturn(const ast::ReturnStatement* stmt) {
 
 bool GeneratorImpl::EmitConstAssert(const ast::ConstAssert* stmt) {
     auto out = line();
-    out << "static_assert ";
+    out << "const_assert ";
     if (!EmitExpression(out, stmt->condition)) {
         return false;
     }
@@ -1144,11 +1217,28 @@ bool GeneratorImpl::EmitConstAssert(const ast::ConstAssert* stmt) {
 bool GeneratorImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
     {
         auto out = line();
+
+        if (!stmt->attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
         out << "switch(";
         if (!EmitExpression(out, stmt->condition)) {
             return false;
         }
-        out << ") {";
+        out << ") ";
+
+        if (!stmt->body_attributes.IsEmpty()) {
+            if (!EmitAttributes(out, stmt->body_attributes)) {
+                return false;
+            }
+            out << " ";
+        }
+
+        out << "{";
     }
 
     {

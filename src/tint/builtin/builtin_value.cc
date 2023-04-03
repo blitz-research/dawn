@@ -28,6 +28,9 @@ namespace tint::builtin {
 /// @param str the string to parse
 /// @returns the parsed enum, or BuiltinValue::kUndefined if the string could not be parsed.
 BuiltinValue ParseBuiltinValue(std::string_view str) {
+    if (str == "__point_size") {
+        return BuiltinValue::kPointSize;
+    }
     if (str == "frag_depth") {
         return BuiltinValue::kFragDepth;
     }
@@ -67,10 +70,12 @@ BuiltinValue ParseBuiltinValue(std::string_view str) {
     return BuiltinValue::kUndefined;
 }
 
-std::ostream& operator<<(std::ostream& out, BuiltinValue value) {
+utils::StringStream& operator<<(utils::StringStream& out, BuiltinValue value) {
     switch (value) {
         case BuiltinValue::kUndefined:
             return out << "undefined";
+        case BuiltinValue::kPointSize:
+            return out << "__point_size";
         case BuiltinValue::kFragDepth:
             return out << "frag_depth";
         case BuiltinValue::kFrontFacing:
@@ -85,8 +90,6 @@ std::ostream& operator<<(std::ostream& out, BuiltinValue value) {
             return out << "local_invocation_index";
         case BuiltinValue::kNumWorkgroups:
             return out << "num_workgroups";
-        case BuiltinValue::kPointSize:
-            return out << "point_size";
         case BuiltinValue::kPosition:
             return out << "position";
         case BuiltinValue::kSampleIndex:

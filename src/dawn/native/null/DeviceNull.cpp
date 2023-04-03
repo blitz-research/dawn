@@ -30,7 +30,12 @@ namespace dawn::native::null {
 
 // Implementation of pre-Device objects: the null adapter, null backend connection and Connect()
 
-Adapter::Adapter(InstanceBase* instance) : AdapterBase(instance, wgpu::BackendType::Null) {
+Adapter::Adapter(InstanceBase* instance)
+    : Adapter(instance,
+              TogglesState(ToggleStage::Adapter).InheritFrom(instance->GetTogglesState())) {}
+
+Adapter::Adapter(InstanceBase* instance, const TogglesState& adapterToggles)
+    : AdapterBase(instance, wgpu::BackendType::Null, adapterToggles) {
     mVendorId = 0;
     mDeviceId = 0;
     mName = "Null backend";
@@ -45,21 +50,15 @@ bool Adapter::SupportsExternalImages() const {
     return false;
 }
 
-// Used for the tests that intend to use an adapter without all features enabled.
-void Adapter::SetSupportedFeatures(const std::vector<wgpu::FeatureName>& requiredFeatures) {
-    mSupportedFeatures = {};
-    for (wgpu::FeatureName f : requiredFeatures) {
-        mSupportedFeatures.EnableFeature(f);
-    }
-}
-
 MaybeError Adapter::InitializeImpl() {
     return {};
 }
 
 void Adapter::InitializeSupportedFeaturesImpl() {
     // Enable all features by default for the convenience of tests.
-    mSupportedFeatures.featuresBitSet.set();
+    for (uint32_t i = 0; i < static_cast<uint32_t>(Feature::EnumCount); i++) {
+        EnableFeature(static_cast<Feature>(i));
+    }
 }
 
 MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -74,9 +73,8 @@ ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor*
     return Device::Create(this, descriptor, deviceToggles);
 }
 
-MaybeError Adapter::ValidateFeatureSupportedWithDeviceTogglesImpl(
-    wgpu::FeatureName feature,
-    const TogglesState& deviceToggles) {
+MaybeError Adapter::ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
+                                                            const TogglesState& toggles) const {
     return {};
 }
 
@@ -85,11 +83,12 @@ class Backend : public BackendConnection {
     explicit Backend(InstanceBase* instance)
         : BackendConnection(instance, wgpu::BackendType::Null) {}
 
-    std::vector<Ref<AdapterBase>> DiscoverDefaultAdapters() override {
+    std::vector<Ref<AdapterBase>> DiscoverDefaultAdapters(
+        const TogglesState& adapterToggles) override {
         // There is always a single Null adapter because it is purely CPU based and doesn't
         // depend on the system.
         std::vector<Ref<AdapterBase>> adapters;
-        Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance()));
+        Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance(), adapterToggles));
         adapters.push_back(std::move(adapter));
         return adapters;
     }
@@ -390,8 +389,6 @@ MaybeError ComputePipeline::Initialize() {
     const tint::Program* program;
     tint::transform::Manager transformManager;
     tint::transform::DataMap transformInputs;
-
-    transformManager.Add<tint::transform::Robustness>();
 
     if (!computeStage.metadata->overrides.empty()) {
         transformManager.Add<tint::transform::SingleEntryPoint>();

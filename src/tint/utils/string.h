@@ -15,9 +15,11 @@
 #ifndef SRC_TINT_UTILS_STRING_H_
 #define SRC_TINT_UTILS_STRING_H_
 
-#include <sstream>
 #include <string>
 #include <variant>
+
+#include "src/tint/utils/slice.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::utils {
 
@@ -37,19 +39,19 @@ namespace tint::utils {
 }
 
 /// @param value the value to be printed as a string
-/// @returns value printed as a string via the std::ostream `<<` operator
+/// @returns value printed as a string via the stream `<<` operator
 template <typename T>
 std::string ToString(const T& value) {
-    std::stringstream s;
+    utils::StringStream s;
     s << value;
     return s.str();
 }
 
 /// @param value the variant to be printed as a string
-/// @returns value printed as a string via the std::ostream `<<` operator
+/// @returns value printed as a string via the stream `<<` operator
 template <typename... TYs>
 std::string ToString(const std::variant<TYs...>& value) {
-    std::stringstream s;
+    utils::StringStream s;
     s << std::visit([&](auto& v) { return ToString(v); }, value);
     return s.str();
 }
@@ -66,42 +68,13 @@ inline size_t HasPrefix(std::string_view str, std::string_view prefix) {
 /// @returns the Levenshtein distance between @p a and @p b
 size_t Distance(std::string_view a, std::string_view b);
 
-/// Suggest alternatives for an unrecognized string from a list of expected values.
+/// Suggest alternatives for an unrecognized string from a list of possible values.
 /// @param got the unrecognized string
-/// @param strings the list of expected values
+/// @param strings the list of possible values
 /// @param ss the stream to write the suggest and list of possible values to
-template <size_t N>
 void SuggestAlternatives(std::string_view got,
-                         const char* const (&strings)[N],
-                         std::ostringstream& ss) {
-    // If the string typed was within kSuggestionDistance of one of the possible enum values,
-    // suggest that. Don't bother with suggestions if the string was extremely long.
-    constexpr size_t kSuggestionDistance = 5;
-    constexpr size_t kSuggestionMaxLength = 64;
-    if (!got.empty() && got.size() < kSuggestionMaxLength) {
-        size_t candidate_dist = kSuggestionDistance;
-        const char* candidate = nullptr;
-        for (auto* str : strings) {
-            auto dist = utils::Distance(str, got);
-            if (dist < candidate_dist) {
-                candidate = str;
-                candidate_dist = dist;
-            }
-        }
-        if (candidate) {
-            ss << "Did you mean '" << candidate << "'?\n";
-        }
-    }
-
-    // List all the possible enumerator values
-    ss << "Possible values: ";
-    for (auto* str : strings) {
-        if (str != strings[0]) {
-            ss << ", ";
-        }
-        ss << "'" << str << "'";
-    }
-}
+                         Slice<char const* const> strings,
+                         utils::StringStream& ss);
 
 }  // namespace tint::utils
 

@@ -1,8 +1,17 @@
 #version 310 es
-precision mediump float;
+precision highp float;
+
+ivec4 tint_select(ivec4 param_0, ivec4 param_1, bvec4 param_2) {
+    return ivec4(param_2[0] ? param_1[0] : param_0[0], param_2[1] ? param_1[1] : param_0[1], param_2[2] ? param_1[2] : param_0[2], param_2[3] ? param_1[3] : param_0[3]);
+}
+
 
 layout(location = 0) in vec4 vcolor_S0_param_1;
 layout(location = 0) out vec4 sk_FragColor_1_1;
+int tint_ftoi(float v) {
+  return ((v < 2147483520.0f) ? ((v < -2147483648.0f) ? (-2147483647 - 1) : int(v)) : 2147483647);
+}
+
 struct UniformBuffer {
   uint pad;
   uint pad_1;
@@ -25,7 +34,7 @@ vec4 sk_FragColor = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 bool sk_Clockwise = false;
 vec4 vcolor_S0 = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 ivec4 tint_div(ivec4 lhs, ivec4 rhs) {
-  return (lhs / mix(rhs, ivec4(1), bvec4(uvec4(equal(rhs, ivec4(0))) | uvec4(bvec4(uvec4(equal(lhs, ivec4(-2147483648))) & uvec4(equal(rhs, ivec4(-1))))))));
+  return (lhs / tint_select(rhs, ivec4(1), bvec4(uvec4(equal(rhs, ivec4(0))) | uvec4(bvec4(uvec4(equal(lhs, ivec4((-2147483647 - 1)))) & uvec4(equal(rhs, ivec4(-1))))))));
 }
 
 bool test_int_S1_c0_b() {
@@ -39,13 +48,12 @@ bool test_int_S1_c0_b() {
   bool x_65 = false;
   bool x_66 = false;
   float x_26 = x_4.inner.unknownInput_S1_c0;
-  int x_27 = int(x_26);
+  int x_27 = tint_ftoi(x_26);
   unknown = x_27;
   ok = true;
   x_41 = false;
   if (true) {
-    ivec4 tint_symbol_1 = tint_div(ivec4(0), ivec4(x_27, x_27, x_27, x_27));
-    x_40 = all(equal(tint_symbol_1, ivec4(0)));
+    x_40 = all(equal(tint_div(ivec4(0), ivec4(x_27, x_27, x_27, x_27)), ivec4(0)));
     x_41 = x_40;
   }
   ok = x_41;
@@ -164,8 +172,8 @@ main_out tint_symbol(bool sk_Clockwise_param, vec4 vcolor_S0_param) {
   sk_Clockwise = sk_Clockwise_param;
   vcolor_S0 = vcolor_S0_param;
   main_1();
-  main_out tint_symbol_2 = main_out(sk_FragColor);
-  return tint_symbol_2;
+  main_out tint_symbol_1 = main_out(sk_FragColor);
+  return tint_symbol_1;
 }
 
 void main() {

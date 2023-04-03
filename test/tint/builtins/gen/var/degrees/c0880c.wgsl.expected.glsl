@@ -1,7 +1,7 @@
 #version 310 es
 
 void degrees_c0880c() {
-  vec3 res = vec3(57.295780182f);
+  vec3 res = vec3(57.295780181884765625f);
 }
 
 vec4 vertex_main() {
@@ -18,10 +18,10 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 void degrees_c0880c() {
-  vec3 res = vec3(57.295780182f);
+  vec3 res = vec3(57.295780181884765625f);
 }
 
 void fragment_main() {
@@ -35,7 +35,7 @@ void main() {
 #version 310 es
 
 void degrees_c0880c() {
-  vec3 res = vec3(57.295780182f);
+  vec3 res = vec3(57.295780181884765625f);
 }
 
 void compute_main() {

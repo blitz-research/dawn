@@ -103,20 +103,20 @@ struct LoggingCallbackTask : CallbackTask {
           mLoggingType(loggingType),
           mMessage(message),
           mUserdata(userdata) {
-        // Since the Finish() will be called in uncertain future in which time the message
+        // Since the FinishImpl() will be called in uncertain future in which time the message
         // may already disposed, we must keep a local copy in the CallbackTask.
     }
 
-    void Finish() override { mCallback(mLoggingType, mMessage.c_str(), mUserdata); }
+  private:
+    void FinishImpl() override { mCallback(mLoggingType, mMessage.c_str(), mUserdata); }
 
-    void HandleShutDown() override {
+    void HandleShutDownImpl() override {
         // Do the logging anyway
         mCallback(mLoggingType, mMessage.c_str(), mUserdata);
     }
 
-    void HandleDeviceLoss() override { mCallback(mLoggingType, mMessage.c_str(), mUserdata); }
+    void HandleDeviceLossImpl() override { mCallback(mLoggingType, mMessage.c_str(), mUserdata); }
 
-  private:
     // As all deferred callback tasks will be triggered before modifying the registered
     // callback or shutting down, we are ensured that callback function and userdata pointer
     // stored in tasks is valid when triggered.
@@ -125,6 +125,7 @@ struct LoggingCallbackTask : CallbackTask {
     std::string mMessage;
     void* mUserdata;
 };
+}  // anonymous namespace
 
 ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(
     DeviceBase* device,
@@ -167,15 +168,12 @@ ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetRenderPipelineDescrip
     return layoutRef;
 }
 
-}  // anonymous namespace
-
 // DeviceBase
 
 DeviceBase::DeviceBase(AdapterBase* adapter,
                        const DeviceDescriptor* descriptor,
                        const TogglesState& deviceToggles)
     : mAdapter(adapter), mToggles(deviceToggles), mNextPipelineCompatibilityToken(1) {
-    mAdapter->GetInstance()->IncrementDeviceCountForTesting();
     ASSERT(descriptor != nullptr);
 
     AdapterProperties adapterProperties;
@@ -210,17 +208,14 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
 }
 
 DeviceBase::DeviceBase() : mState(State::Alive), mToggles(ToggleStage::Device) {
-    mCaches = std::make_unique<DeviceBase::Caches>();
+    GetDefaultLimits(&mLimits.v1);
+    mFormatTable = BuildFormatTable(this);
 }
 
 DeviceBase::~DeviceBase() {
     // We need to explicitly release the Queue before we complete the destructor so that the
     // Queue does not get destroyed after the Device.
     mQueue = nullptr;
-    // mAdapter is not set for mock test devices.
-    if (mAdapter != nullptr) {
-        mAdapter->GetInstance()->DecrementDeviceCountForTesting();
-    }
 }
 
 MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
@@ -253,7 +248,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
     mCaches = std::make_unique<DeviceBase::Caches>();
     mErrorScopeStack = std::make_unique<ErrorScopeStack>();
     mDynamicUploader = std::make_unique<DynamicUploader>(this);
-    mCallbackTaskManager = std::make_unique<CallbackTaskManager>();
+    mCallbackTaskManager = AcquireRef(new CallbackTaskManager());
     mDeprecationWarnings = std::make_unique<DeprecationWarnings>();
     mInternalPipelineStore = std::make_unique<InternalPipelineStore>(this);
 
@@ -282,6 +277,11 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
                         CreateShaderModule(&descriptor));
     }
 
+    // TODO(crbug.com/dawn/1702): using a mock adapter could avoid the null checking.
+    if (mAdapter != nullptr) {
+        mAdapter->GetInstance()->AddDevice(this);
+    }
+
     return {};
 }
 
@@ -305,6 +305,11 @@ void DeviceBase::WillDropLastExternalRef() {
     // out all remaining refs.
     Destroy();
 
+    // Flush last remaining callback tasks.
+    do {
+        mCallbackTaskManager->Flush();
+    } while (!mCallbackTaskManager->IsEmpty());
+
     // Drop te device's reference to the queue. Because the application dropped the last external
     // references, they can no longer get the queue from APIGetQueue().
     mQueue = nullptr;
@@ -320,6 +325,16 @@ void DeviceBase::WillDropLastExternalRef() {
         dawn::WarningLog() << "Device lost after last external device reference dropped.\n"
                            << message;
     };
+
+    // mAdapter is not set for mock test devices.
+    // TODO(crbug.com/dawn/1702): using a mock adapter could avoid the null checking.
+    if (mAdapter != nullptr) {
+        mAdapter->GetInstance()->RemoveDevice(this);
+
+        // Once last external ref dropped, all callbacks should be forwarded to Instance's callback
+        // queue instead.
+        mCallbackTaskManager = mAdapter->GetInstance()->GetCallbackTaskManager();
+    }
 }
 
 void DeviceBase::DestroyObjects() {
@@ -381,18 +396,16 @@ void DeviceBase::Destroy() {
     if (mState != State::BeingCreated) {
         // The device is being destroyed so it will be lost, call the application callback.
         if (mDeviceLostCallback != nullptr) {
-            mDeviceLostCallback(WGPUDeviceLostReason_Destroyed, "Device was destroyed.",
-                                mDeviceLostUserdata);
+            mCallbackTaskManager->AddCallbackTask(
+                std::bind(mDeviceLostCallback, WGPUDeviceLostReason_Destroyed,
+                          "Device was destroyed.", mDeviceLostUserdata));
             mDeviceLostCallback = nullptr;
         }
 
         // Call all the callbacks immediately as the device is about to shut down.
         // TODO(crbug.com/dawn/826): Cancel the tasks that are in flight if possible.
         mAsyncTaskManager->WaitAllPendingTasks();
-        auto callbackTasks = mCallbackTaskManager->AcquireCallbackTasks();
-        for (std::unique_ptr<CallbackTask>& callbackTask : callbackTasks) {
-            callbackTask->HandleShutDown();
-        }
+        mCallbackTaskManager->HandleShutDown();
     }
 
     // Disconnect the device, depending on which state we are currently in.
@@ -436,9 +449,6 @@ void DeviceBase::Destroy() {
         // Call TickImpl once last time to clean up resources
         // Ignore errors so that we can continue with destruction
         IgnoreErrors(TickImpl());
-
-        // Trigger all in-flight TrackTask callbacks from 'mQueue'.
-        FlushCallbackTaskQueue();
     }
 
     // At this point GPU operations are always finished, so we are in the disconnected state.
@@ -466,9 +476,13 @@ void DeviceBase::APIDestroy() {
     Destroy();
 }
 
-void DeviceBase::HandleError(InternalErrorType type,
-                             const char* message,
+void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
+                             InternalErrorType additionalAllowedErrors,
                              WGPUDeviceLostReason lost_reason) {
+    AppendDebugLayerMessages(error.get());
+    InternalErrorType allowedErrors =
+        InternalErrorType::Validation | InternalErrorType::DeviceLost | additionalAllowedErrors;
+    InternalErrorType type = error->GetType();
     if (type == InternalErrorType::DeviceLost) {
         mState = State::Disconnected;
 
@@ -482,10 +496,12 @@ void DeviceBase::HandleError(InternalErrorType type,
         // A real device lost happened. Set the state to disconnected as the device cannot be
         // used. Also tags all commands as completed since the device stopped running.
         AssumeCommandsComplete();
-    } else if (type == InternalErrorType::Internal) {
-        // If we receive an internal error, assume the backend can't recover and proceed with
-        // device destruction. We first wait for all previous commands to be completed so that
-        // backend objects can be freed immediately, before handling the loss.
+    } else if (!(allowedErrors & type)) {
+        // If we receive an error which we did not explicitly allow, assume the backend can't
+        // recover and proceed with device destruction. We first wait for all previous commands to
+        // be completed so that backend objects can be freed immediately, before handling the loss.
+        error->AppendContext("handling unexpected error type %s when allowed errors are %s.", type,
+                             allowedErrors);
 
         // Move away from the Alive state so that the application cannot use this device
         // anymore.
@@ -504,10 +520,17 @@ void DeviceBase::HandleError(InternalErrorType type,
         type = InternalErrorType::DeviceLost;
     }
 
+    // TODO(lokokung) Update call sites that take the c-string to take string_view.
+    const std::string messageStr = error->GetFormattedMessage();
     if (type == InternalErrorType::DeviceLost) {
-        // The device was lost, call the application callback.
+        // The device was lost, schedule the application callback's executation.
+        // Note: we don't invoke the callbacks directly here because it could cause re-entrances ->
+        // possible deadlock.
         if (mDeviceLostCallback != nullptr) {
-            mDeviceLostCallback(lost_reason, message, mDeviceLostUserdata);
+            mCallbackTaskManager->AddCallbackTask([callback = mDeviceLostCallback, lost_reason,
+                                                   messageStr, userdata = mDeviceLostUserdata] {
+                callback(lost_reason, messageStr.c_str(), userdata);
+            });
             mDeviceLostCallback = nullptr;
         }
 
@@ -515,29 +538,30 @@ void DeviceBase::HandleError(InternalErrorType type,
 
         // TODO(crbug.com/dawn/826): Cancel the tasks that are in flight if possible.
         mAsyncTaskManager->WaitAllPendingTasks();
-        auto callbackTasks = mCallbackTaskManager->AcquireCallbackTasks();
-        for (std::unique_ptr<CallbackTask>& callbackTask : callbackTasks) {
-            callbackTask->HandleDeviceLoss();
-        }
+        mCallbackTaskManager->HandleDeviceLoss();
 
         // Still forward device loss errors to the error scopes so they all reject.
-        mErrorScopeStack->HandleError(ToWGPUErrorType(type), message);
+        mErrorScopeStack->HandleError(ToWGPUErrorType(type), messageStr.c_str());
     } else {
         // Pass the error to the error scope stack and call the uncaptured error callback
         // if it isn't handled. DeviceLost is not handled here because it should be
         // handled by the lost callback.
-        bool captured = mErrorScopeStack->HandleError(ToWGPUErrorType(type), message);
+        bool captured = mErrorScopeStack->HandleError(ToWGPUErrorType(type), messageStr.c_str());
         if (!captured && mUncapturedErrorCallback != nullptr) {
-            mUncapturedErrorCallback(static_cast<WGPUErrorType>(ToWGPUErrorType(type)), message,
-                                     mUncapturedErrorUserdata);
+            mCallbackTaskManager->AddCallbackTask([callback = mUncapturedErrorCallback, type,
+                                                   messageStr,
+                                                   userdata = mUncapturedErrorUserdata] {
+                callback(static_cast<WGPUErrorType>(ToWGPUErrorType(type)), messageStr.c_str(),
+                         userdata);
+            });
         }
     }
 }
 
-void DeviceBase::ConsumeError(std::unique_ptr<ErrorData> error) {
+void DeviceBase::ConsumeError(std::unique_ptr<ErrorData> error,
+                              InternalErrorType additionalAllowedErrors) {
     ASSERT(error != nullptr);
-    AppendDebugLayerMessages(error.get());
-    HandleError(error->GetType(), error->GetFormattedMessage().c_str());
+    HandleError(std::move(error), additionalAllowedErrors);
 }
 
 void DeviceBase::APISetLoggingCallback(wgpu::LoggingCallback callback, void* userdata) {
@@ -549,7 +573,7 @@ void DeviceBase::APISetLoggingCallback(wgpu::LoggingCallback callback, void* use
     if (IsLost()) {
         return;
     }
-    FlushCallbackTaskQueue();
+    mCallbackTaskManager->Flush();
     mLoggingCallback = callback;
     mLoggingUserdata = userdata;
 }
@@ -563,7 +587,7 @@ void DeviceBase::APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, voi
     if (IsLost()) {
         return;
     }
-    FlushCallbackTaskQueue();
+    mCallbackTaskManager->Flush();
     mUncapturedErrorCallback = callback;
     mUncapturedErrorUserdata = userdata;
 }
@@ -577,7 +601,7 @@ void DeviceBase::APISetDeviceLostCallback(wgpu::DeviceLostCallback callback, voi
     if (IsLost()) {
         return;
     }
-    FlushCallbackTaskQueue();
+    mCallbackTaskManager->Flush();
     mDeviceLostCallback = callback;
     mDeviceLostUserdata = userdata;
 }
@@ -598,15 +622,21 @@ bool DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) 
     }
     // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
     if (IsLost()) {
-        callback(WGPUErrorType_DeviceLost, "GPU device disconnected", userdata);
+        mCallbackTaskManager->AddCallbackTask(
+            std::bind(callback, WGPUErrorType_DeviceLost, "GPU device disconnected", userdata));
         return returnValue;
     }
     if (mErrorScopeStack->Empty()) {
-        callback(WGPUErrorType_Unknown, "No error scopes to pop", userdata);
+        mCallbackTaskManager->AddCallbackTask(
+            std::bind(callback, WGPUErrorType_Unknown, "No error scopes to pop", userdata));
         return returnValue;
     }
     ErrorScope scope = mErrorScopeStack->Pop();
-    callback(static_cast<WGPUErrorType>(scope.GetErrorType()), scope.GetErrorMessage(), userdata);
+    mCallbackTaskManager->AddCallbackTask(
+        [callback, errorType = static_cast<WGPUErrorType>(scope.GetErrorType()),
+         message = scope.GetErrorMessage(),
+         userdata] { callback(errorType, message.c_str(), userdata); });
+
     return returnValue;
 }
 
@@ -652,7 +682,10 @@ void DeviceBase::APIForceLoss(wgpu::DeviceLostReason reason, const char* message
     if (mState != State::Alive) {
         return;
     }
-    HandleError(InternalErrorType::Internal, message, ToAPI(reason));
+    // Note that since we are passing None as the allowedErrors, an additional message will be
+    // appended noting that the error was unexpected. Since this call is for testing only it is not
+    // too important, but useful for users to understand where the extra message is coming from.
+    HandleError(DAWN_INTERNAL_ERROR(message), InternalErrorType::None, ToAPI(reason));
 }
 
 DeviceBase::State DeviceBase::GetState() const {
@@ -698,11 +731,12 @@ void DeviceBase::AssumeCommandsComplete() {
     mCompletedSerial = mLastSubmittedSerial;
 }
 
+bool DeviceBase::HasPendingTasks() {
+    return mAsyncTaskManager->HasPendingTasks() || !mCallbackTaskManager->IsEmpty();
+}
+
 bool DeviceBase::IsDeviceIdle() {
-    if (mAsyncTaskManager->HasPendingTasks()) {
-        return false;
-    }
-    if (!mCallbackTaskManager->IsEmpty()) {
+    if (HasPendingTasks()) {
         return false;
     }
     return !HasScheduledCommands();
@@ -1034,8 +1068,8 @@ BindGroupLayoutBase* DeviceBase::APICreateBindGroupLayout(
 }
 BufferBase* DeviceBase::APICreateBuffer(const BufferDescriptor* descriptor) {
     Ref<BufferBase> result = nullptr;
-    if (ConsumedError(CreateBuffer(descriptor), &result, "calling %s.CreateBuffer(%s).", this,
-                      descriptor)) {
+    if (ConsumedError(CreateBuffer(descriptor), &result, InternalErrorType::OutOfMemory,
+                      "calling %s.CreateBuffer(%s).", this, descriptor)) {
         ASSERT(result == nullptr);
         return BufferBase::MakeError(this, descriptor);
     }
@@ -1077,7 +1111,10 @@ void DeviceBase::APICreateComputePipelineAsync(const ComputePipelineDescriptor* 
         WGPUCreatePipelineAsyncStatus status =
             CreatePipelineAsyncStatusFromErrorType(error->GetType());
         // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-        callback(status, nullptr, error->GetMessage().c_str(), userdata);
+        mCallbackTaskManager->AddCallbackTask(
+            [callback, status, message = error->GetMessage(), userdata] {
+                callback(status, nullptr, message.c_str(), userdata);
+            });
     }
 }
 PipelineLayoutBase* DeviceBase::APICreatePipelineLayout(
@@ -1091,8 +1128,8 @@ PipelineLayoutBase* DeviceBase::APICreatePipelineLayout(
 }
 QuerySetBase* DeviceBase::APICreateQuerySet(const QuerySetDescriptor* descriptor) {
     Ref<QuerySetBase> result;
-    if (ConsumedError(CreateQuerySet(descriptor), &result, "calling %s.CreateQuerySet(%s).", this,
-                      descriptor)) {
+    if (ConsumedError(CreateQuerySet(descriptor), &result, InternalErrorType::OutOfMemory,
+                      "calling %s.CreateQuerySet(%s).", this, descriptor)) {
         return QuerySetBase::MakeError(this, descriptor);
     }
     return result.Detach();
@@ -1121,7 +1158,10 @@ void DeviceBase::APICreateRenderPipelineAsync(const RenderPipelineDescriptor* de
         WGPUCreatePipelineAsyncStatus status =
             CreatePipelineAsyncStatusFromErrorType(error->GetType());
         // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-        callback(status, nullptr, error->GetMessage().c_str(), userdata);
+        mCallbackTaskManager->AddCallbackTask(
+            [callback, status, message = error->GetMessage(), userdata] {
+                callback(status, nullptr, message.c_str(), userdata);
+            });
     }
 }
 RenderBundleEncoder* DeviceBase::APICreateRenderBundleEncoder(
@@ -1175,8 +1215,8 @@ SwapChainBase* DeviceBase::APICreateSwapChain(Surface* surface,
 }
 TextureBase* DeviceBase::APICreateTexture(const TextureDescriptor* descriptor) {
     Ref<TextureBase> result;
-    if (ConsumedError(CreateTexture(descriptor), &result, "calling %s.CreateTexture(%s).", this,
-                      descriptor)) {
+    if (ConsumedError(CreateTexture(descriptor), &result, InternalErrorType::OutOfMemory,
+                      "calling %s.CreateTexture(%s).", this, descriptor)) {
         return TextureBase::MakeError(this, descriptor);
     }
     return result.Detach();
@@ -1191,19 +1231,24 @@ BufferBase* DeviceBase::APICreateErrorBuffer(const BufferDescriptor* desc) {
     // The validation errors on BufferDescriptor should be prior to any OOM errors when
     // MapppedAtCreation == false.
     MaybeError maybeError = ValidateBufferDescriptor(this, &fakeDescriptor);
-    if (maybeError.IsError()) {
-        ConsumedError(maybeError.AcquireError(), "calling %s.CreateBuffer(%s).", this, desc);
-    } else {
-        const DawnBufferDescriptorErrorInfoFromWireClient* clientErrorInfo = nullptr;
-        FindInChain(desc->nextInChain, &clientErrorInfo);
-        if (clientErrorInfo != nullptr && clientErrorInfo->outOfMemory) {
-            ConsumedError(DAWN_OUT_OF_MEMORY_ERROR("Failed to allocate memory for buffer mapping"));
-        }
-    }
 
     // Set the size of the error buffer to 0 as this function is called only when an OOM happens at
     // the client side.
     fakeDescriptor.size = 0;
+
+    if (maybeError.IsError()) {
+        std::unique_ptr<ErrorData> error = maybeError.AcquireError();
+        error->AppendContext("calling %s.CreateBuffer(%s).", this, desc);
+        HandleError(std::move(error), InternalErrorType::OutOfMemory);
+    } else {
+        const DawnBufferDescriptorErrorInfoFromWireClient* clientErrorInfo = nullptr;
+        FindInChain(desc->nextInChain, &clientErrorInfo);
+        if (clientErrorInfo != nullptr && clientErrorInfo->outOfMemory) {
+            HandleError(DAWN_OUT_OF_MEMORY_ERROR("Failed to allocate memory for buffer mapping"),
+                        InternalErrorType::OutOfMemory);
+        }
+    }
+
     return BufferBase::MakeError(this, &fakeDescriptor);
 }
 
@@ -1222,8 +1267,19 @@ bool DeviceBase::APITick() {
     // Tick may trigger callbacks which drop a ref to the device itself. Hold a Ref to ourselves
     // to avoid deleting |this| in the middle of this function call.
     Ref<DeviceBase> self(this);
-    if (IsLost() || ConsumedError(Tick())) {
+    if (ConsumedError(Tick())) {
+        mCallbackTaskManager->Flush();
         return false;
+    }
+
+    // We have to check callback tasks in every APITick because it is not related to any global
+    // serials.
+    mCallbackTaskManager->Flush();
+
+    // We don't throw an error when device is lost. This allows pending callbacks to be
+    // executed even after the Device is lost/destroyed.
+    if (IsLost()) {
+        return HasPendingTasks();
     }
 
     TRACE_EVENT1(GetPlatform(), General, "DeviceBase::APITick::IsDeviceIdle", "isDeviceIdle",
@@ -1233,25 +1289,21 @@ bool DeviceBase::APITick() {
 }
 
 MaybeError DeviceBase::Tick() {
-    DAWN_TRY(ValidateIsAlive());
+    if (IsLost() || !HasScheduledCommands()) {
+        return {};
+    }
 
     // To avoid overly ticking, we only want to tick when:
     // 1. the last submitted serial has moved beyond the completed serial
     // 2. or the backend still has pending commands to submit.
-    if (HasScheduledCommands()) {
-        DAWN_TRY(CheckPassedSerials());
-        DAWN_TRY(TickImpl());
+    DAWN_TRY(CheckPassedSerials());
+    DAWN_TRY(TickImpl());
 
-        // TODO(crbug.com/dawn/833): decouple TickImpl from updating the serial so that we can
-        // tick the dynamic uploader before the backend resource allocators. This would allow
-        // reclaiming resources one tick earlier.
-        mDynamicUploader->Deallocate(mCompletedSerial);
-        mQueue->Tick(mCompletedSerial);
-    }
-
-    // We have to check callback tasks in every Tick because it is not related to any global
-    // serials.
-    FlushCallbackTaskQueue();
+    // TODO(crbug.com/dawn/833): decouple TickImpl from updating the serial so that we can
+    // tick the dynamic uploader before the backend resource allocators. This would allow
+    // reclaiming resources one tick earlier.
+    mDynamicUploader->Deallocate(mCompletedSerial);
+    mQueue->Tick(mCompletedSerial);
 
     return {};
 }
@@ -1378,16 +1430,16 @@ void DeviceBase::APIInjectError(wgpu::ErrorType type, const char* message) {
     // This method should only be used to make error scope reject. For DeviceLost there is the
     // LoseForTesting function that can be used instead.
     if (type != wgpu::ErrorType::Validation && type != wgpu::ErrorType::OutOfMemory) {
-        HandleError(InternalErrorType::Validation,
-                    "Invalid injected error, must be Validation or OutOfMemory");
+        HandleError(
+            DAWN_VALIDATION_ERROR("Invalid injected error, must be Validation or OutOfMemory"));
         return;
     }
 
-    HandleError(FromWGPUErrorType(type), message);
+    HandleError(DAWN_MAKE_ERROR(FromWGPUErrorType(type), message), InternalErrorType::OutOfMemory);
 }
 
 void DeviceBase::APIValidateTextureDescriptor(const TextureDescriptor* desc) {
-    ConsumedError(ValidateTextureDescriptor(this, desc));
+    DAWN_UNUSED(ConsumedError(ValidateTextureDescriptor(this, desc)));
 }
 
 QueueBase* DeviceBase::GetQueue() const {
@@ -1500,8 +1552,9 @@ MaybeError DeviceBase::CreateComputePipelineAsync(const ComputePipelineDescripto
         GetCachedComputePipeline(uninitializedComputePipeline.Get());
     if (cachedComputePipeline.Get() != nullptr) {
         // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-        callback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(cachedComputePipeline.Detach()), "",
-                 userdata);
+        mCallbackTaskManager->AddCallbackTask(
+            std::bind(callback, WGPUCreatePipelineAsyncStatus_Success,
+                      ToAPI(cachedComputePipeline.Detach()), "", userdata));
     } else {
         // Otherwise we will create the pipeline object in InitializeComputePipelineAsyncImpl(),
         // where the pipeline object may be initialized asynchronously and the result will be
@@ -1641,8 +1694,9 @@ MaybeError DeviceBase::CreateRenderPipelineAsync(const RenderPipelineDescriptor*
         GetCachedRenderPipeline(uninitializedRenderPipeline.Get());
     if (cachedRenderPipeline != nullptr) {
         // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-        callback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(cachedRenderPipeline.Detach()), "",
-                 userdata);
+        mCallbackTaskManager->AddCallbackTask(
+            std::bind(callback, WGPUCreatePipelineAsyncStatus_Success,
+                      ToAPI(cachedRenderPipeline.Detach()), "", userdata));
     } else {
         // Otherwise we will create the pipeline object in InitializeRenderPipelineAsyncImpl(),
         // where the pipeline object may be initialized asynchronously and the result will be
@@ -1759,19 +1813,6 @@ void DeviceBase::ForceSetToggleForTesting(Toggle toggle, bool isEnabled) {
     mToggles.ForceSet(toggle, isEnabled);
 }
 
-void DeviceBase::FlushCallbackTaskQueue() {
-    if (!mCallbackTaskManager->IsEmpty()) {
-        // If a user calls Queue::Submit inside the callback, then the device will be ticked,
-        // which in turns ticks the tracker, causing reentrance and dead lock here. To prevent
-        // such reentrant call, we remove all the callback tasks from mCallbackTaskManager,
-        // update mCallbackTaskManager, then call all the callbacks.
-        auto callbackTasks = mCallbackTaskManager->AcquireCallbackTasks();
-        for (std::unique_ptr<CallbackTask>& callbackTask : callbackTasks) {
-            callbackTask->Finish();
-        }
-    }
-}
-
 const CombinedLimits& DeviceBase::GetLimits() const {
     return mLimits;
 }
@@ -1781,7 +1822,7 @@ AsyncTaskManager* DeviceBase::GetAsyncTaskManager() const {
 }
 
 CallbackTaskManager* DeviceBase::GetCallbackTaskManager() const {
-    return mCallbackTaskManager.get();
+    return mCallbackTaskManager.Get();
 }
 
 dawn::platform::WorkerTaskPool* DeviceBase::GetWorkerTaskPool() const {
@@ -1797,14 +1838,14 @@ void DeviceBase::AddComputePipelineAsyncCallbackTask(
     struct CreateComputePipelineAsyncWaitableCallbackTask final
         : CreateComputePipelineAsyncCallbackTask {
         using CreateComputePipelineAsyncCallbackTask::CreateComputePipelineAsyncCallbackTask;
-        void Finish() final {
+        void FinishImpl() final {
             // TODO(dawn:529): call AddOrGetCachedComputePipeline() asynchronously in
             // CreateComputePipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
             // thread-safe.
             ASSERT(mPipeline != nullptr);
             mPipeline = mPipeline->GetDevice()->AddOrGetCachedComputePipeline(mPipeline);
 
-            CreateComputePipelineAsyncCallbackTask::Finish();
+            CreateComputePipelineAsyncCallbackTask::FinishImpl();
         }
     };
 
@@ -1822,7 +1863,7 @@ void DeviceBase::AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipe
         : CreateRenderPipelineAsyncCallbackTask {
         using CreateRenderPipelineAsyncCallbackTask::CreateRenderPipelineAsyncCallbackTask;
 
-        void Finish() final {
+        void FinishImpl() final {
             // TODO(dawn:529): call AddOrGetCachedRenderPipeline() asynchronously in
             // CreateRenderPipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
             // thread-safe.
@@ -1830,7 +1871,7 @@ void DeviceBase::AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipe
                 mPipeline = mPipeline->GetDevice()->AddOrGetCachedRenderPipeline(mPipeline);
             }
 
-            CreateRenderPipelineAsyncCallbackTask::Finish();
+            CreateRenderPipelineAsyncCallbackTask::FinishImpl();
         }
     };
 

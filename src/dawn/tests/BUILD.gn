@@ -132,6 +132,7 @@ if (build_with_chromium && is_win &&
   assert(defined(windows_sdk_path))
   assert(defined(windows_sdk_version))
   assert(windows_sdk_path != "")
+  assert(windows_sdk_version != "")
 
   # Declare a copy target to copy DXC binary from Windows SDK for running Dawn
   # end-to-end test in Chromium.
@@ -191,6 +192,7 @@ source_set("native_mocks_sources") {
 
   deps = [
     ":gmock_and_gtest",
+    "${dawn_root}/src/dawn:proc",
     "${dawn_root}/src/dawn/native:sources",
     "${dawn_root}/src/dawn/native:static",
     "${dawn_root}/src/dawn/utils",
@@ -210,6 +212,9 @@ source_set("native_mocks_sources") {
     "unittests/native/mocks/CommandBufferMock.h",
     "unittests/native/mocks/ComputePipelineMock.cpp",
     "unittests/native/mocks/ComputePipelineMock.h",
+    "unittests/native/mocks/DawnMockTest.cpp",
+    "unittests/native/mocks/DawnMockTest.h",
+    "unittests/native/mocks/DeviceMock.cpp",
     "unittests/native/mocks/DeviceMock.h",
     "unittests/native/mocks/ExternalTextureMock.cpp",
     "unittests/native/mocks/ExternalTextureMock.h",
@@ -217,6 +222,8 @@ source_set("native_mocks_sources") {
     "unittests/native/mocks/PipelineLayoutMock.h",
     "unittests/native/mocks/QuerySetMock.cpp",
     "unittests/native/mocks/QuerySetMock.h",
+    "unittests/native/mocks/QueueMock.cpp",
+    "unittests/native/mocks/QueueMock.h",
     "unittests/native/mocks/RenderPipelineMock.cpp",
     "unittests/native/mocks/RenderPipelineMock.h",
     "unittests/native/mocks/SamplerMock.cpp",
@@ -286,6 +293,7 @@ dawn_test("dawn_unittests") {
     "unittests/LimitsTests.cpp",
     "unittests/LinkedListTests.cpp",
     "unittests/MathTests.cpp",
+    "unittests/NumericTests.cpp",
     "unittests/ObjectBaseTests.cpp",
     "unittests/PerStageTests.cpp",
     "unittests/PerThreadProcTests.cpp",
@@ -301,13 +309,16 @@ dawn_test("dawn_unittests") {
     "unittests/SubresourceStorageTests.cpp",
     "unittests/SystemUtilsTests.cpp",
     "unittests/ToBackendTests.cpp",
+    "unittests/ToggleTests.cpp",
     "unittests/TypedIntegerTests.cpp",
     "unittests/UnicodeTests.cpp",
+    "unittests/native/AllowedErrorTests.cpp",
     "unittests/native/BlobTests.cpp",
     "unittests/native/CacheRequestTests.cpp",
     "unittests/native/CommandBufferEncodingTests.cpp",
     "unittests/native/CreatePipelineAsyncTaskTests.cpp",
     "unittests/native/DestroyObjectTests.cpp",
+    "unittests/native/DeviceAsyncTaskTests.cpp",
     "unittests/native/DeviceCreationTests.cpp",
     "unittests/native/ObjectContentHasherTests.cpp",
     "unittests/native/StreamTests.cpp",
@@ -357,6 +368,8 @@ dawn_test("dawn_unittests") {
     "unittests/validation/VertexBufferValidationTests.cpp",
     "unittests/validation/VertexStateValidationTests.cpp",
     "unittests/validation/VideoViewsValidationTests.cpp",
+    "unittests/validation/WritableBufferBindingAliasingValidationTests.cpp",
+    "unittests/validation/WritableTextureBindingAliasingValidationTests.cpp",
     "unittests/validation/WriteBufferTests.cpp",
     "unittests/wire/WireAdapterTests.cpp",
     "unittests/wire/WireArgumentTests.cpp",
@@ -481,6 +494,7 @@ source_set("end2end_tests_sources") {
     "end2end/CompressedTextureFormatTests.cpp",
     "end2end/ComputeCopyStorageBufferTests.cpp",
     "end2end/ComputeDispatchTests.cpp",
+    "end2end/ComputeFlowControlTests.cpp",
     "end2end/ComputeLayoutMemoryBufferTests.cpp",
     "end2end/ComputeSharedMemoryTests.cpp",
     "end2end/ComputeStorageBufferBarrierTests.cpp",

@@ -241,13 +241,22 @@ INSTANTIATE_TEST_SUITE_P(GlslGeneratorImplTest_MemberAccessor,
                                          TypeCase{ty_vec4<f32>, "data.inner.b = value"},
                                          TypeCase{ty_vec4<i32>, "data.inner.b = value"},
                                          TypeCase{ty_mat2x2<f32>, "data.inner.b = value"},
-                                         TypeCase{ty_mat2x3<f32>, "data.inner.b = value"},
+                                         TypeCase{ty_mat2x3<f32>, R"(
+  data.inner.b[0] = value[0u];
+  data.inner.b[1] = value[1u];)"},
                                          TypeCase{ty_mat2x4<f32>, "data.inner.b = value"},
                                          TypeCase{ty_mat3x2<f32>, "data.inner.b = value"},
-                                         TypeCase{ty_mat3x3<f32>, "data.inner.b = value"},
+                                         TypeCase{ty_mat3x3<f32>, R"(
+  data.inner.b[0] = value[0u];
+  data.inner.b[1] = value[1u];
+  data.inner.b[2] = value[2u];)"},
                                          TypeCase{ty_mat3x4<f32>, "data.inner.b = value"},
                                          TypeCase{ty_mat4x2<f32>, "data.inner.b = value"},
-                                         TypeCase{ty_mat4x3<f32>, "data.inner.b = value"},
+                                         TypeCase{ty_mat4x3<f32>, R"(
+  data.inner.b[0] = value[0u];
+  data.inner.b[1] = value[1u];
+  data.inner.b[2] = value[2u];
+  data.inner.b[3] = value[3u];)"},
                                          TypeCase{ty_mat4x4<f32>, "data.inner.b = value"}));
 
 TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_Matrix_Empty) {
@@ -272,7 +281,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_Matrix_Empty) {
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Data {
   int a;
@@ -286,8 +295,13 @@ layout(binding = 0, std430) buffer data_block_ssbo {
   Data inner;
 } data;
 
+void assign_and_preserve_padding_data_b(mat2x3 value) {
+  data.inner.b[0] = value[0u];
+  data.inner.b[1] = value[1u];
+}
+
 void tint_symbol() {
-  data.inner.b = mat2x3(vec3(0.0f), vec3(0.0f));
+  assign_and_preserve_padding_data_b(mat2x3(vec3(0.0f), vec3(0.0f)));
 }
 
 void main() {
@@ -320,7 +334,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_Matrix_Single_El
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Data {
   float z;
@@ -368,7 +382,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Data {
   float z;
@@ -416,7 +430,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Data {
   float z;
@@ -463,7 +477,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_ToArray) {
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Data {
   float z;
@@ -516,7 +530,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel) {
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Inner {
   vec3 a;
@@ -577,7 +591,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel_Swizz
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Inner {
   vec3 a;
@@ -639,7 +653,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Inner {
   vec3 a;
@@ -700,7 +714,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel_Index
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Inner {
   vec3 a;
@@ -760,7 +774,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_MultiLevel) {
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Inner {
   vec3 a;
@@ -821,7 +835,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_Swizzle_SingleL
     ASSERT_TRUE(gen.Generate()) << gen.error();
     auto* expected =
         R"(#version 310 es
-precision mediump float;
+precision highp float;
 
 struct Inner {
   ivec3 a;

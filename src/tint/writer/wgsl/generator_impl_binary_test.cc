@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/wgsl/test_helper.h"
 
 namespace tint::writer::wgsl {
@@ -22,7 +23,9 @@ struct BinaryData {
     ast::BinaryOp op;
 };
 inline std::ostream& operator<<(std::ostream& out, BinaryData data) {
-    out << data.op;
+    utils::StringStream str;
+    str << data.op;
+    out << str.str();
     return out;
 }
 using WgslBinaryTest = TestParamHelper<BinaryData>;
@@ -47,7 +50,7 @@ TEST_P(WgslBinaryTest, Emit) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
+    utils::StringStream out;
     ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
     EXPECT_EQ(out.str(), params.result);
 }

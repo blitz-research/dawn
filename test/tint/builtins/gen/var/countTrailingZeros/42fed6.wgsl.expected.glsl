@@ -15,9 +15,14 @@ int tint_count_trailing_zeros(int v) {
   return int((((((b16 | b8) | b4) | b2) | b1) + is_zero));
 }
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  int inner;
+} prevent_dce;
+
 void countTrailingZeros_42fed6() {
   int arg_0 = 1;
   int res = tint_count_trailing_zeros(arg_0);
+  prevent_dce.inner = res;
 }
 
 vec4 vertex_main() {
@@ -34,7 +39,7 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 int tint_count_trailing_zeros(int v) {
   uint x = uint(v);
@@ -51,9 +56,14 @@ int tint_count_trailing_zeros(int v) {
   return int((((((b16 | b8) | b4) | b2) | b1) + is_zero));
 }
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  int inner;
+} prevent_dce;
+
 void countTrailingZeros_42fed6() {
   int arg_0 = 1;
   int res = tint_count_trailing_zeros(arg_0);
+  prevent_dce.inner = res;
 }
 
 void fragment_main() {
@@ -81,9 +91,14 @@ int tint_count_trailing_zeros(int v) {
   return int((((((b16 | b8) | b4) | b2) | b1) + is_zero));
 }
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  int inner;
+} prevent_dce;
+
 void countTrailingZeros_42fed6() {
   int arg_0 = 1;
   int res = tint_count_trailing_zeros(arg_0);
+  prevent_dce.inner = res;
 }
 
 void compute_main() {

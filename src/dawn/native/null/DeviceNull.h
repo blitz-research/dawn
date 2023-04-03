@@ -171,23 +171,25 @@ class Device final : public DeviceBase {
 
 class Adapter : public AdapterBase {
   public:
+    // Create null adapter without providing toggles state for testing, only inherit instance's
+    // toggles state
     explicit Adapter(InstanceBase* instance);
+    Adapter(InstanceBase* instance, const TogglesState& adapterToggles);
     ~Adapter() override;
 
     // AdapterBase Implementation
     bool SupportsExternalImages() const override;
 
     // Used for the tests that intend to use an adapter without all features enabled.
-    void SetSupportedFeatures(const std::vector<wgpu::FeatureName>& requiredFeatures);
+    using AdapterBase::SetSupportedFeaturesForTesting;
 
   private:
     MaybeError InitializeImpl() override;
     void InitializeSupportedFeaturesImpl() override;
     MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) override;
 
-    MaybeError ValidateFeatureSupportedWithDeviceTogglesImpl(
-        wgpu::FeatureName feature,
-        const TogglesState& deviceToggles) override;
+    MaybeError ValidateFeatureSupportedWithTogglesImpl(wgpu::FeatureName feature,
+                                                       const TogglesState& toggles) const override;
 
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
     ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor,

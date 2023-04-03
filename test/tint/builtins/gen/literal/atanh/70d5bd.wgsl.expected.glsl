@@ -1,7 +1,7 @@
 #version 310 es
 
 void atanh_70d5bd() {
-  vec2 res = vec2(0.549306154f);
+  vec2 res = vec2(0.54930615425109863281f);
 }
 
 vec4 vertex_main() {
@@ -18,10 +18,10 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 void atanh_70d5bd() {
-  vec2 res = vec2(0.549306154f);
+  vec2 res = vec2(0.54930615425109863281f);
 }
 
 void fragment_main() {
@@ -35,7 +35,7 @@ void main() {
 #version 310 es
 
 void atanh_70d5bd() {
-  vec2 res = vec2(0.549306154f);
+  vec2 res = vec2(0.54930615425109863281f);
 }
 
 void compute_main() {

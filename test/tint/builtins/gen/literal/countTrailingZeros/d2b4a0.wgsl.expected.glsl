@@ -1,7 +1,12 @@
 #version 310 es
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uvec4 inner;
+} prevent_dce;
+
 void countTrailingZeros_d2b4a0() {
   uvec4 res = uvec4(0u);
+  prevent_dce.inner = res;
 }
 
 vec4 vertex_main() {
@@ -18,10 +23,15 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
+
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uvec4 inner;
+} prevent_dce;
 
 void countTrailingZeros_d2b4a0() {
   uvec4 res = uvec4(0u);
+  prevent_dce.inner = res;
 }
 
 void fragment_main() {
@@ -34,8 +44,13 @@ void main() {
 }
 #version 310 es
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uvec4 inner;
+} prevent_dce;
+
 void countTrailingZeros_d2b4a0() {
   uvec4 res = uvec4(0u);
+  prevent_dce.inner = res;
 }
 
 void compute_main() {

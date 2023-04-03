@@ -15,11 +15,10 @@
 #ifndef SRC_TINT_IR_VALUE_H_
 #define SRC_TINT_IR_VALUE_H_
 
-#include <ostream>
-
 #include "src/tint/castable.h"
 #include "src/tint/symbol_table.h"
 #include "src/tint/type/type.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/utils/unique_vector.h"
 
 // Forward declarations
@@ -56,7 +55,8 @@ class Value : public Castable<Value> {
     /// @param out the stream to write to
     /// @param st the symbol table
     /// @returns the stream
-    virtual std::ostream& ToString(std::ostream& out, const SymbolTable& st) const = 0;
+    virtual utils::StringStream& ToString(utils::StringStream& out,
+                                          const SymbolTable& st) const = 0;
 
   protected:
     /// Constructor

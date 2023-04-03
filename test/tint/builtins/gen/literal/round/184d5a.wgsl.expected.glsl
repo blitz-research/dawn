@@ -1,7 +1,7 @@
 #version 310 es
 
 void round_184d5a() {
-  vec4 res = vec4(3.0f);
+  vec4 res = vec4(4.0f);
 }
 
 vec4 vertex_main() {
@@ -18,10 +18,10 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 void round_184d5a() {
-  vec4 res = vec4(3.0f);
+  vec4 res = vec4(4.0f);
 }
 
 void fragment_main() {
@@ -35,7 +35,7 @@ void main() {
 #version 310 es
 
 void round_184d5a() {
-  vec4 res = vec4(3.0f);
+  vec4 res = vec4(4.0f);
 }
 
 void compute_main() {

@@ -394,6 +394,30 @@ source_set("sources") {
   # WinPIX should be added as third party tools and linked statically
 
   if (dawn_enable_d3d12) {
+    sources += [
+      "d3d/AdapterD3D.cpp",
+      "d3d/AdapterD3D.h",
+      "d3d/BackendD3D.cpp",
+      "d3d/BackendD3D.h",
+      "d3d/BlobD3D.cpp",
+      "d3d/BlobD3D.h",
+      "d3d/D3DCompilationRequest.h",
+      "d3d/D3DError.cpp",
+      "d3d/D3DError.h",
+      "d3d/DeviceD3D.cpp",
+      "d3d/DeviceD3D.h",
+      "d3d/Forward.h",
+      "d3d/PlatformFunctions.cpp",
+      "d3d/PlatformFunctions.h",
+      "d3d/ShaderUtils.cpp",
+      "d3d/ShaderUtils.h",
+      "d3d/UtilsD3D.cpp",
+      "d3d/UtilsD3D.h",
+      "d3d/d3d_platform.h",
+    ]
+  }
+
+  if (dawn_enable_d3d12) {
     libs += [ "dxguid.lib" ]
     sources += [
       "d3d12/AdapterD3D12.cpp",
@@ -404,8 +428,6 @@ source_set("sources") {
       "d3d12/BindGroupD3D12.h",
       "d3d12/BindGroupLayoutD3D12.cpp",
       "d3d12/BindGroupLayoutD3D12.h",
-      "d3d12/BlobD3D12.cpp",
-      "d3d12/BlobD3D12.h",
       "d3d12/BufferD3D12.cpp",
       "d3d12/BufferD3D12.h",
       "d3d12/CPUDescriptorHeapAllocationD3D12.cpp",
@@ -420,8 +442,6 @@ source_set("sources") {
       "d3d12/ComputePipelineD3D12.h",
       "d3d12/D3D11on12Util.cpp",
       "d3d12/D3D11on12Util.h",
-      "d3d12/D3D12Error.cpp",
-      "d3d12/D3D12Error.h",
       "d3d12/D3D12Info.cpp",
       "d3d12/D3D12Info.h",
       "d3d12/DeviceD3D12.cpp",
@@ -444,8 +464,8 @@ source_set("sources") {
       "d3d12/PageableD3D12.h",
       "d3d12/PipelineLayoutD3D12.cpp",
       "d3d12/PipelineLayoutD3D12.h",
-      "d3d12/PlatformFunctions.cpp",
-      "d3d12/PlatformFunctions.h",
+      "d3d12/PlatformFunctionsD3D12.cpp",
+      "d3d12/PlatformFunctionsD3D12.h",
       "d3d12/QuerySetD3D12.cpp",
       "d3d12/QuerySetD3D12.h",
       "d3d12/QueueD3D12.cpp",
@@ -676,37 +696,47 @@ source_set("sources") {
       "vulkan/VulkanFunctions.h",
       "vulkan/VulkanInfo.cpp",
       "vulkan/VulkanInfo.h",
+      "vulkan/external_memory/MemoryImportParams.h",
       "vulkan/external_memory/MemoryService.cpp",
       "vulkan/external_memory/MemoryService.h",
+      "vulkan/external_memory/MemoryServiceImplementation.cpp",
+      "vulkan/external_memory/MemoryServiceImplementation.h",
       "vulkan/external_semaphore/SemaphoreService.cpp",
       "vulkan/external_semaphore/SemaphoreService.h",
-      "vulkan/external_semaphore/ServiceImplementation.cpp",
-      "vulkan/external_semaphore/ServiceImplementation.h",
+      "vulkan/external_semaphore/SemaphoreServiceImplementation.cpp",
+      "vulkan/external_semaphore/SemaphoreServiceImplementation.h",
     ]
 
     if (is_android || is_linux || is_chromeos) {
       sources += [
-        "vulkan/external_semaphore/ServiceImplementationFD.cpp",
-        "vulkan/external_semaphore/ServiceImplementationFD.h",
+        "vulkan/external_semaphore/SemaphoreServiceImplementationFD.cpp",
+        "vulkan/external_semaphore/SemaphoreServiceImplementationFD.h",
       ]
     } else if (is_fuchsia) {
       sources += [
-        "vulkan/external_semaphore/ServiceImplementationZirconHandle.cpp",
-        "vulkan/external_semaphore/ServiceImplementationZirconHandle.h",
+        "vulkan/external_semaphore/SemaphoreServiceImplementationZirconHandle.cpp",
+        "vulkan/external_semaphore/SemaphoreServiceImplementationZirconHandle.h",
       ]
     }
 
     if (is_chromeos) {
-      sources += [ "vulkan/external_memory/MemoryServiceDmaBuf.cpp" ]
+      sources +=
+          [ "vulkan/external_memory/MemoryServiceImplementationDmaBuf.cpp" ]
     } else if (is_linux) {
-      sources += [ "vulkan/external_memory/MemoryServiceOpaqueFD.cpp" ]
+      sources +=
+          [ "vulkan/external_memory/MemoryServiceImplementationOpaqueFD.cpp" ]
     } else if (is_fuchsia) {
-      sources += [ "vulkan/external_memory/MemoryServiceZirconHandle.cpp" ]
+      sources += [
+        "vulkan/external_memory/MemoryServiceImplementationZirconHandle.cpp",
+      ]
     } else if (is_android) {
-      sources += [ "vulkan/external_memory/MemoryServiceAHardwareBuffer.cpp" ]
+      sources += [
+        "vulkan/external_memory/MemoryServiceImplementationAHardwareBuffer.cpp",
+      ]
     } else {
       sources += [ "vulkan/external_memory/MemoryServiceNull.cpp" ]
     }
+
     if (build_with_chromium && is_fuchsia) {
       # Necessary to ensure that the Vulkan libraries will be in the
       # final Fuchsia package.
