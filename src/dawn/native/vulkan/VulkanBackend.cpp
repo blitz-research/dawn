@@ -24,7 +24,6 @@
 #include "dawn/common/SwapChainUtils.h"
 #include "dawn/native/vulkan/AdapterVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
-#include "dawn/native/vulkan/NativeSwapChainImplVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
 
 namespace dawn::native::vulkan {
@@ -63,6 +62,8 @@ PFN_vkVoidFunction GetInstanceProcAddr(WGPUDevice device, const char* pName) {
     return (*backendDevice->fn.GetInstanceProcAddr)(backendDevice->GetVkInstance(), pName);
 }
 
+#if 0
+
 // Explicitly export this function because it uses the "native" type for surfaces while the
 // header as seen in this file uses the wrapped type.
 DawnSwapChainImplementation CreateNativeSwapChainImpl(WGPUDevice device,
@@ -81,6 +82,8 @@ WGPUTextureFormat GetNativeSwapChainPreferredFormat(const DawnSwapChainImplement
     NativeSwapChainImpl* impl = reinterpret_cast<NativeSwapChainImpl*>(swapChain->userData);
     return static_cast<WGPUTextureFormat>(impl->GetPreferredFormat());
 }
+
+#endif
 
 AdapterDiscoveryOptions::AdapterDiscoveryOptions()
     : AdapterDiscoveryOptionsBase(WGPUBackendType_Vulkan) {}

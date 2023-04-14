@@ -174,12 +174,8 @@ ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     return module;
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
-    const SwapChainDescriptor* descriptor) {
-    return AcquireRef(new OldSwapChain(this, descriptor));
-}
-ResultOrError<Ref<NewSwapChainBase>> Device::CreateSwapChainImpl(
     Surface* surface,
-    NewSwapChainBase* previousSwapChain,
+    SwapChainBase* previousSwapChain,
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
@@ -428,14 +424,14 @@ MaybeError RenderPipeline::Initialize() {
 // static
 ResultOrError<Ref<SwapChain>> SwapChain::Create(Device* device,
                                                 Surface* surface,
-                                                NewSwapChainBase* previousSwapChain,
+                                                SwapChainBase* previousSwapChain,
                                                 const SwapChainDescriptor* descriptor) {
     Ref<SwapChain> swapchain = AcquireRef(new SwapChain(device, surface, descriptor));
     DAWN_TRY(swapchain->Initialize(previousSwapChain));
     return swapchain;
 }
 
-MaybeError SwapChain::Initialize(NewSwapChainBase* previousSwapChain) {
+MaybeError SwapChain::Initialize(SwapChainBase* previousSwapChain) {
     if (previousSwapChain != nullptr) {
         // TODO(crbug.com/dawn/269): figure out what should happen when surfaces are used by
         // multiple backends one after the other. It probably needs to block until the backend
@@ -474,47 +470,6 @@ void SwapChain::DetachFromSurfaceImpl() {
 MaybeError ShaderModule::Initialize(ShaderModuleParseResult* parseResult,
                                     OwnedCompilationMessages* compilationMessages) {
     return InitializeBase(parseResult, compilationMessages);
-}
-
-// OldSwapChain
-
-OldSwapChain::OldSwapChain(Device* device, const SwapChainDescriptor* descriptor)
-    : OldSwapChainBase(device, descriptor) {
-    const auto& im = GetImplementation();
-    im.Init(im.userData, nullptr);
-}
-
-OldSwapChain::~OldSwapChain() {}
-
-TextureBase* OldSwapChain::GetNextTextureImpl(const TextureDescriptor* descriptor) {
-    return GetDevice()->APICreateTexture(descriptor);
-}
-
-MaybeError OldSwapChain::OnBeforePresent(TextureViewBase*) {
-    return {};
-}
-
-// NativeSwapChainImpl
-
-void NativeSwapChainImpl::Init(WSIContext* context) {}
-
-DawnSwapChainError NativeSwapChainImpl::Configure(WGPUTextureFormat format,
-                                                  WGPUTextureUsage,
-                                                  uint32_t width,
-                                                  uint32_t height) {
-    return DAWN_SWAP_CHAIN_NO_ERROR;
-}
-
-DawnSwapChainError NativeSwapChainImpl::GetNextTexture(DawnSwapChainNextTexture* nextTexture) {
-    return DAWN_SWAP_CHAIN_NO_ERROR;
-}
-
-DawnSwapChainError NativeSwapChainImpl::Present() {
-    return DAWN_SWAP_CHAIN_NO_ERROR;
-}
-
-wgpu::TextureFormat NativeSwapChainImpl::GetPreferredFormat() const {
-    return wgpu::TextureFormat::RGBA8Unorm;
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {

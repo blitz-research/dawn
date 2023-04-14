@@ -110,11 +110,7 @@ class DeviceMock : public DeviceBase {
                 (override));
     MOCK_METHOD(ResultOrError<Ref<SwapChainBase>>,
                 CreateSwapChainImpl,
-                (const SwapChainDescriptor*),
-                (override));
-    MOCK_METHOD(ResultOrError<Ref<NewSwapChainBase>>,
-                CreateSwapChainImpl,
-                (Surface*, NewSwapChainBase*, const SwapChainDescriptor*),
+                (Surface*, SwapChainBase*, const SwapChainDescriptor*),
                 (override));
     MOCK_METHOD(ResultOrError<Ref<TextureBase>>,
                 CreateTextureImpl,

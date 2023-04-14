@@ -147,10 +147,8 @@ class Device final : public DeviceBase {
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
-        const SwapChainDescriptor* descriptor) override;
-    ResultOrError<Ref<NewSwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
-        NewSwapChainBase* previousSwapChain,
+        SwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) override;
     ResultOrError<Ref<TextureBase>> CreateTextureImpl(const TextureDescriptor* descriptor) override;
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
@@ -293,46 +291,23 @@ class ShaderModule final : public ShaderModuleBase {
                           OwnedCompilationMessages* compilationMessages);
 };
 
-class SwapChain final : public NewSwapChainBase {
+class SwapChain final : public SwapChainBase {
   public:
     static ResultOrError<Ref<SwapChain>> Create(Device* device,
                                                 Surface* surface,
-                                                NewSwapChainBase* previousSwapChain,
+                                                SwapChainBase* previousSwapChain,
                                                 const SwapChainDescriptor* descriptor);
     ~SwapChain() override;
 
   private:
-    using NewSwapChainBase::NewSwapChainBase;
-    MaybeError Initialize(NewSwapChainBase* previousSwapChain);
+    using SwapChainBase::SwapChainBase;
+    MaybeError Initialize(SwapChainBase* previousSwapChain);
 
     Ref<Texture> mTexture;
 
     MaybeError PresentImpl() override;
     ResultOrError<Ref<TextureViewBase>> GetCurrentTextureViewImpl() override;
     void DetachFromSurfaceImpl() override;
-};
-
-class OldSwapChain final : public OldSwapChainBase {
-  public:
-    OldSwapChain(Device* device, const SwapChainDescriptor* descriptor);
-
-  protected:
-    ~OldSwapChain() override;
-    TextureBase* GetNextTextureImpl(const TextureDescriptor* descriptor) override;
-    MaybeError OnBeforePresent(TextureViewBase*) override;
-};
-
-class NativeSwapChainImpl {
-  public:
-    using WSIContext = struct {};
-    void Init(WSIContext* context);
-    DawnSwapChainError Configure(WGPUTextureFormat format,
-                                 WGPUTextureUsage,
-                                 uint32_t width,
-                                 uint32_t height);
-    DawnSwapChainError GetNextTexture(DawnSwapChainNextTexture* nextTexture);
-    DawnSwapChainError Present();
-    wgpu::TextureFormat GetPreferredFormat() const;
 };
 
 class Texture : public TextureBase {

@@ -22,11 +22,9 @@
 
 #include "dawn/common/Log.h"
 #include "dawn/common/Math.h"
-#include "dawn/common/SwapChainUtils.h"
 #include "dawn/native/d3d12/D3D11on12Util.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/ExternalImageDXGIImpl.h"
-#include "dawn/native/d3d12/NativeSwapChainImplD3D12.h"
 #include "dawn/native/d3d12/ResidencyManagerD3D12.h"
 #include "dawn/native/d3d12/TextureD3D12.h"
 
@@ -46,6 +44,8 @@ DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device, con
     return nullptr;
 }
 
+#if 0
+
 DawnSwapChainImplementation CreateNativeSwapChainImpl(WGPUDevice device, HWND window) {
     Device* backendDevice = ToBackend(FromAPI(device));
 
@@ -60,6 +60,8 @@ WGPUTextureFormat GetNativeSwapChainPreferredFormat(const DawnSwapChainImplement
     NativeSwapChainImpl* impl = reinterpret_cast<NativeSwapChainImpl*>(swapChain->userData);
     return static_cast<WGPUTextureFormat>(impl->GetPreferredFormat());
 }
+
+#endif
 
 ExternalImageDescriptorDXGISharedHandle::ExternalImageDescriptorDXGISharedHandle()
     : ExternalImageDescriptor(ExternalImageType::DXGISharedHandle) {}
@@ -83,19 +85,11 @@ WGPUTexture ExternalImageDXGI::ProduceTexture(
 
 WGPUTexture ExternalImageDXGI::BeginAccess(
     const ExternalImageDXGIBeginAccessDescriptor* descriptor) {
-    if (!IsValid()) {
-        dawn::ErrorLog() << "Cannot use external image after device destruction";
-        return nullptr;
-    }
     return mImpl->BeginAccess(descriptor);
 }
 
 void ExternalImageDXGI::EndAccess(WGPUTexture texture,
                                   ExternalImageDXGIFenceDescriptor* signalFence) {
-    if (!IsValid()) {
-        dawn::ErrorLog() << "Cannot use external image after device destruction";
-        return;
-    }
     mImpl->EndAccess(texture, signalFence);
 }
 
@@ -104,6 +98,7 @@ std::unique_ptr<ExternalImageDXGI> ExternalImageDXGI::Create(
     WGPUDevice device,
     const ExternalImageDescriptorDXGISharedHandle* descriptor) {
     Device* backendDevice = ToBackend(FromAPI(device));
+    auto deviceLock(backendDevice->GetScopedLock());
     std::unique_ptr<ExternalImageDXGIImpl> impl =
         backendDevice->CreateExternalImageDXGIImpl(descriptor);
     if (!impl) {
@@ -118,13 +113,15 @@ uint64_t SetExternalMemoryReservation(WGPUDevice device,
                                       MemorySegment memorySegment) {
     Device* backendDevice = ToBackend(FromAPI(device));
 
+    auto deviceLock(backendDevice->GetScopedLock());
+
     return backendDevice->GetResidencyManager()->SetExternalMemoryReservation(
         memorySegment, requestedReservationSize);
 }
 
-AdapterDiscoveryOptions::AdapterDiscoveryOptions()
-    : AdapterDiscoveryOptionsBase(WGPUBackendType_D3D12), dxgiAdapter(nullptr) {}
+AdapterDiscoveryOptions::AdapterDiscoveryOptions() : AdapterDiscoveryOptions(nullptr) {}
 
 AdapterDiscoveryOptions::AdapterDiscoveryOptions(ComPtr<IDXGIAdapter> adapter)
-    : AdapterDiscoveryOptionsBase(WGPUBackendType_D3D12), dxgiAdapter(std::move(adapter)) {}
+    : d3d::AdapterDiscoveryOptions(WGPUBackendType_D3D12, std::move(adapter)) {}
+
 }  // namespace dawn::native::d3d12

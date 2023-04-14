@@ -34,9 +34,9 @@
 
 #endif  // TINT_BUILD_SYNTAX_TREE_WRITER
 
-#if TINT_BUILD_SPV_READER
+#if TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 #include "spirv-tools/libspirv.hpp"
-#endif  // TINT_BUILD_SPV_READER
+#endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
 #include "src/tint/ast/module.h"
 #include "src/tint/cmd/generate_external_texture_bindings.h"
@@ -83,7 +83,6 @@ struct Options {
     bool disable_workgroup_init = false;
     bool validate = false;
     bool print_hash = false;
-    bool demangle = false;
     bool dump_inspector_bindings = false;
     bool enable_robustness = false;
 
@@ -140,8 +139,6 @@ ${transforms} --parse-only              -- Stop after parsing the input
                                inserting a module-scope directive to suppress any uniformity
                                violations that may be produced.
   --disable-workgroup-init  -- Disable workgroup memory zero initialization.
-  --demangle                -- Preserve original source names. Demangle them.
-                               Affects AST dumping, and text-based output languages.
   --dump-inspector-bindings -- Dump reflection data about bindins to stdout.
   -h                        -- This help text
   --hlsl-root-constant-binding-point <group>,<binding>  -- Binding point for root constant.
@@ -349,8 +346,6 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
 #endif
         } else if (arg == "--disable-workgroup-init") {
             opts->disable_workgroup_init = true;
-        } else if (arg == "--demangle") {
-            opts->demangle = true;
         } else if (arg == "--dump-inspector-bindings") {
             opts->dump_inspector_bindings = true;
         } else if (arg == "--validate") {

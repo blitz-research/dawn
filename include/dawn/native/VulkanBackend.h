@@ -20,7 +20,6 @@
 #include <array>
 #include <vector>
 
-#include "dawn/dawn_wsi.h"
 #include "dawn/native/DawnNative.h"
 #include <functional>
 
@@ -39,10 +38,14 @@ DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device, con
 
 DAWN_NATIVE_EXPORT PFN_vkVoidFunction GetInstanceProcAddr(WGPUDevice device, const char* pName);
 
+#if 0
+
 DAWN_NATIVE_EXPORT DawnSwapChainImplementation CreateNativeSwapChainImpl(WGPUDevice device,
                                                                          ::VkSurfaceKHR surface);
 DAWN_NATIVE_EXPORT WGPUTextureFormat
 GetNativeSwapChainPreferredFormat(const DawnSwapChainImplementation* swapChain);
+
+#endif
 
 struct DAWN_NATIVE_EXPORT OpenXRConfig : OpenXRConfigBase {
 

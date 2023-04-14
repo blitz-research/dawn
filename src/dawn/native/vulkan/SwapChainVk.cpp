@@ -34,56 +34,6 @@
 
 namespace dawn::native::vulkan {
 
-// OldSwapChain
-
-// static
-Ref<OldSwapChain> OldSwapChain::Create(Device* device, const SwapChainDescriptor* descriptor) {
-    return AcquireRef(new OldSwapChain(device, descriptor));
-}
-
-OldSwapChain::OldSwapChain(Device* device, const SwapChainDescriptor* descriptor)
-    : OldSwapChainBase(device, descriptor) {
-    const auto& im = GetImplementation();
-    DawnWSIContextVulkan wsiContext = {};
-    im.Init(im.userData, &wsiContext);
-
-    ASSERT(im.textureUsage != WGPUTextureUsage_None);
-    mTextureUsage = static_cast<wgpu::TextureUsage>(im.textureUsage);
-}
-
-OldSwapChain::~OldSwapChain() {}
-
-TextureBase* OldSwapChain::GetNextTextureImpl(const TextureDescriptor* descriptor) {
-    const auto& im = GetImplementation();
-    DawnSwapChainNextTexture next = {};
-    DawnSwapChainError error = im.GetNextTexture(im.userData, &next);
-
-    if (error) {
-        GetDevice()->HandleError(DAWN_INTERNAL_ERROR(error));
-        return nullptr;
-    }
-
-    ::VkImage image = NativeNonDispatachableHandleFromU64<::VkImage>(next.texture.u64);
-    VkImage nativeTexture = VkImage::CreateFromHandle(image);
-    return Texture::CreateForSwapChain(ToBackend(GetDevice()), descriptor, nativeTexture).Detach();
-}
-
-MaybeError OldSwapChain::OnBeforePresent(TextureViewBase* view) {
-    Device* device = ToBackend(GetDevice());
-
-    // Perform the necessary pipeline barriers for the texture to be used with the usage
-    // requested by the implementation.
-    CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
-    ToBackend(view->GetTexture())
-        ->TransitionUsageNow(recordingContext, mTextureUsage, view->GetSubresourceRange());
-
-    DAWN_TRY(device->SubmitPendingCommands());
-
-    return {};
-}
-
-// SwapChain
-
 namespace {
 
 ResultOrError<VkSurfaceKHR> CreateVulkanSurface(Adapter* adapter, Surface* surface) {
@@ -258,7 +208,7 @@ uint32_t MinImageCountForPresentMode(VkPresentModeKHR mode) {
 // static
 ResultOrError<Ref<SwapChain>> SwapChain::Create(Device* device,
                                                 Surface* surface,
-                                                NewSwapChainBase* previousSwapChain,
+                                                SwapChainBase* previousSwapChain,
                                                 const SwapChainDescriptor* descriptor) {
     Ref<SwapChain> swapchain = AcquireRef(new SwapChain(device, surface, descriptor));
     DAWN_TRY(swapchain->Initialize(previousSwapChain));
@@ -274,7 +224,7 @@ void SwapChain::DestroyImpl() {
 
 // Note that when we need to re-create the swapchain because it is out of date,
 // previousSwapChain can be set to `this`.
-MaybeError SwapChain::Initialize(NewSwapChainBase* previousSwapChain) {
+MaybeError SwapChain::Initialize(SwapChainBase* previousSwapChain) {
     Device* device = ToBackend(GetDevice());
     Adapter* adapter = ToBackend(GetDevice()->GetAdapter());
 
@@ -291,8 +241,7 @@ MaybeError SwapChain::Initialize(NewSwapChainBase* previousSwapChain) {
                         "Vulkan SwapChain cannot switch backend types from %s to %s.",
                         previousSwapChain->GetBackendType(), wgpu::BackendType::Vulkan);
 
-        // TODO(crbug.com/dawn/269): use ToBackend once OldSwapChainBase is removed.
-        SwapChain* previousVulkanSwapChain = static_cast<SwapChain*>(previousSwapChain);
+        SwapChain* previousVulkanSwapChain = ToBackend(previousSwapChain);
 
         // TODO(crbug.com/dawn/269): Figure out switching a single surface between multiple
         // Vulkan devices on different VkInstances. Probably needs to block too!

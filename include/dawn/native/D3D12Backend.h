@@ -23,8 +23,7 @@
 #include <memory>
 #include <vector>
 
-#include "dawn/dawn_wsi.h"
-#include "dawn/native/DawnNative.h"
+#include "dawn/native/D3DBackend.h"
 
 struct ID3D12Device;
 struct ID3D12Resource;
@@ -42,10 +41,14 @@ DAWN_NATIVE_EXPORT Microsoft::WRL::ComPtr<ID3D12CommandQueue> GetD3D12CommandQue
 DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor,
                                                  ID3D12Resource* d3dTexture);
 
+#if 0
+
 DAWN_NATIVE_EXPORT DawnSwapChainImplementation CreateNativeSwapChainImpl(WGPUDevice device,
                                                                          HWND window);
 DAWN_NATIVE_EXPORT WGPUTextureFormat
 GetNativeSwapChainPreferredFormat(const DawnSwapChainImplementation* swapChain);
+
+#endif
 
 enum MemorySegment {
     Local,
@@ -55,7 +58,6 @@ enum MemorySegment {
 DAWN_NATIVE_EXPORT uint64_t SetExternalMemoryReservation(WGPUDevice device,
                                                          uint64_t requestedReservationSize,
                                                          MemorySegment memorySegment);
-
 struct DAWN_NATIVE_EXPORT ExternalImageDescriptorDXGISharedHandle : ExternalImageDescriptor {
   public:
     ExternalImageDescriptorDXGISharedHandle();
@@ -132,11 +134,9 @@ class DAWN_NATIVE_EXPORT ExternalImageDXGI {
     std::unique_ptr<ExternalImageDXGIImpl> mImpl;
 };
 
-struct DAWN_NATIVE_EXPORT AdapterDiscoveryOptions : public AdapterDiscoveryOptionsBase {
+struct DAWN_NATIVE_EXPORT AdapterDiscoveryOptions : public d3d::AdapterDiscoveryOptions {
     AdapterDiscoveryOptions();
     explicit AdapterDiscoveryOptions(Microsoft::WRL::ComPtr<IDXGIAdapter> adapter);
-
-    Microsoft::WRL::ComPtr<IDXGIAdapter> dxgiAdapter;
 };
 
 }  // namespace dawn::native::d3d12

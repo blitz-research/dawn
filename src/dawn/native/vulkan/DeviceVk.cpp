@@ -190,12 +190,8 @@ ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     return ShaderModule::Create(this, descriptor, parseResult, compilationMessages);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
-    const SwapChainDescriptor* descriptor) {
-    return OldSwapChain::Create(this, descriptor);
-}
-ResultOrError<Ref<NewSwapChainBase>> Device::CreateSwapChainImpl(
     Surface* surface,
-    NewSwapChainBase* previousSwapChain,
+    SwapChainBase* previousSwapChain,
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
@@ -858,8 +854,8 @@ MaybeError Device::ImportExternalImage(const ExternalImageDescriptorVk* descript
                     "External semaphore usage not supported");
 
     DAWN_INVALID_IF(!mExternalMemoryService->SupportsImportMemory(
-                        VulkanImageFormat(this, textureDescriptor->format), VK_IMAGE_TYPE_2D,
-                        VK_IMAGE_TILING_OPTIMAL,
+                        descriptor->GetType(), VulkanImageFormat(this, textureDescriptor->format),
+                        VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
                         VulkanImageUsage(usage, GetValidInternalFormat(textureDescriptor->format)),
                         VK_IMAGE_CREATE_ALIAS_BIT_KHR),
                     "External memory usage not supported");
@@ -867,8 +863,8 @@ MaybeError Device::ImportExternalImage(const ExternalImageDescriptorVk* descript
     // Import the external image's memory
     external_memory::MemoryImportParams importParams;
     DAWN_TRY_ASSIGN(importParams, mExternalMemoryService->GetMemoryImportParams(descriptor, image));
-    DAWN_TRY_ASSIGN(*outAllocation,
-                    mExternalMemoryService->ImportMemory(memoryHandle, importParams, image));
+    DAWN_TRY_ASSIGN(*outAllocation, mExternalMemoryService->ImportMemory(
+                                        descriptor->GetType(), memoryHandle, importParams, image));
 
     // Import semaphores we have to wait on before using the texture
     for (const ExternalSemaphoreHandle& handle : waitHandles) {

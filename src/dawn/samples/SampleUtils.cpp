@@ -27,7 +27,6 @@
 #include "dawn/common/Platform.h"
 #include "dawn/common/SystemUtils.h"
 #include "dawn/dawn_proc.h"
-#include "dawn/dawn_wsi.h"
 #include "dawn/native/DawnNative.h"
 #include "dawn/utils/TerribleCommandBuffer.h"
 #include "dawn/wire/WireClient.h"
@@ -180,7 +179,6 @@ wgpu::Device CreateCppDawnDevice() {
     swapChainDesc.width = kWidth;
     swapChainDesc.height = kHeight;
     swapChainDesc.presentMode = WGPUPresentMode_Mailbox;
-    swapChainDesc.implementation = 0;
     WGPUSwapChain backendSwapChain =
         backendProcs.deviceCreateSwapChain(backendDevice, surface, &swapChainDesc);
 
@@ -392,4 +390,8 @@ bool ShouldQuit() {
 
 GLFWwindow* GetGLFWWindow() {
     return window;
+}
+
+void ProcessEvents() {
+    dawn::native::InstanceProcessEvents(instance->Get());
 }
