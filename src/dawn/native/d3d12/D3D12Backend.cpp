@@ -44,25 +44,6 @@ DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device, con
     return nullptr;
 }
 
-#if 0
-
-DawnSwapChainImplementation CreateNativeSwapChainImpl(WGPUDevice device, HWND window) {
-    Device* backendDevice = ToBackend(FromAPI(device));
-
-    DawnSwapChainImplementation impl;
-    impl = CreateSwapChainImplementation(new NativeSwapChainImpl(backendDevice, window));
-    impl.textureUsage = WGPUTextureUsage_Present;
-
-    return impl;
-}
-
-WGPUTextureFormat GetNativeSwapChainPreferredFormat(const DawnSwapChainImplementation* swapChain) {
-    NativeSwapChainImpl* impl = reinterpret_cast<NativeSwapChainImpl*>(swapChain->userData);
-    return static_cast<WGPUTextureFormat>(impl->GetPreferredFormat());
-}
-
-#endif
-
 ExternalImageDescriptorDXGISharedHandle::ExternalImageDescriptorDXGISharedHandle()
     : ExternalImageDescriptor(ExternalImageType::DXGISharedHandle) {}
 
