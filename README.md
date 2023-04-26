@@ -1,5 +1,10 @@
 ![Dawn's logo: a sun rising behind a stylized mountain inspired by the WebGPU logo. The text "Dawn" is written below it.](docs/imgs/dawn_logo.png "Dawn's logo")
 
+(Note: After cloning this repository you will need to copy the 'standlone/.gclient' file to the root dawn directory and run 'gclient sync' to
+install a bunch of missing stuff from the 'thirdparty' dir. gclient is part of google's 'depot tools' so you will also need to install that.
+
+After that, you can build the 'bundling_target' target to create a stand alone static lib called dawn_static.lib in the root cmake build dir.)
+
 # Dawn, a WebGPU implementation
 
 Dawn is an open-source and cross-platform implementation of the work-in-progress [WebGPU](https://webgpu.dev) standard.
