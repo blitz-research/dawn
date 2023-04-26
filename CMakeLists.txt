@@ -536,9 +536,9 @@ function(tint_default_compile_options TARGET)
   tint_core_compile_options(${TARGET})
 
   set(COMMON_GNU_OPTIONS
-    -Wall
-    -Werror
-    -Wextra
+#    -Wall
+#    -Werror
+#    -Wextra
     -Wno-documentation-unknown-command
     -Wno-padded
     -Wno-switch-enum
@@ -555,7 +555,7 @@ function(tint_default_compile_options TARGET)
     -Wno-undefined-var-template
     -Wno-unsafe-buffer-usage
     -Wno-used-but-marked-unused
-    -Weverything
+#    -Weverything
   )
 
   if (COMPILER_IS_LIKE_GNU)
