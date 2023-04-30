@@ -16,7 +16,8 @@
 #
 # https://cristianadam.eu/20190501/bundling-together-static-libraries-with-cmake/
 
-function(bundle_static_library tgt_name bundled_tgt_name)
+function(bundle_static_library bundled_tgt_name tgt_name)
+
     list(APPEND static_libs ${tgt_name})
 
     function(_recursively_collect_dependencies input_target)
@@ -83,11 +84,11 @@ function(bundle_static_library tgt_name bundled_tgt_name)
         add_custom_command(
                 COMMAND ${ar_tool} -M < ${CMAKE_BINARY_DIR}/${bundled_tgt_name}.ar
                 OUTPUT ${bundled_tgt_full_name}
+                DEPENDS {static_libs}
                 COMMENT "Bundling ${bundled_tgt_name}"
                 VERBATIM)
     elseif(MSVC)
     
-#        find_program(lib_tool lib)
         set(lib_tool "${CMAKE_AR}")
 
         foreach(tgt IN LISTS static_libs)
@@ -97,6 +98,7 @@ function(bundle_static_library tgt_name bundled_tgt_name)
         add_custom_command(
                 COMMAND ${lib_tool} /NOLOGO /OUT:${bundled_tgt_full_name} ${static_libs_full_names}
                 OUTPUT ${bundled_tgt_full_name}
+                DEPENDS {static_libs}
                 COMMENT "Bundling ${bundled_tgt_name}"
                 VERBATIM)
     else()
@@ -119,8 +121,9 @@ endfunction()
 
 add_library(dawn_static_deps STATIC ${DAWN_PLACEHOLDER_FILE})
 target_link_libraries(dawn_static_deps PUBLIC dawn_native dawn_proc dawncpp)
-bundle_static_library(dawn_static_deps dawn_static)
 
+bundle_static_library(dawn_static dawn_static_deps)
+ 
 install(FILES "${CMAKE_BINARY_DIR}/dawn_static.lib"
         CONFIGURATIONS Release
         RUNTIME DESTINATION lib)
