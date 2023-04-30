@@ -84,7 +84,7 @@ function(bundle_static_library bundled_tgt_name tgt_name)
         add_custom_command(
                 COMMAND ${ar_tool} -M < ${CMAKE_BINARY_DIR}/${bundled_tgt_name}.ar
                 OUTPUT ${bundled_tgt_full_name}
-                DEPENDS {static_libs}
+                DEPENDS ${static_libs}
                 COMMENT "Bundling ${bundled_tgt_name}"
                 VERBATIM)
     elseif(MSVC)
@@ -98,7 +98,7 @@ function(bundle_static_library bundled_tgt_name tgt_name)
         add_custom_command(
                 COMMAND ${lib_tool} /NOLOGO /OUT:${bundled_tgt_full_name} ${static_libs_full_names}
                 OUTPUT ${bundled_tgt_full_name}
-                DEPENDS {static_libs}
+                DEPENDS ${static_libs}
                 COMMENT "Bundling ${bundled_tgt_name}"
                 VERBATIM)
     else()
@@ -124,6 +124,6 @@ target_link_libraries(dawn_static_deps PUBLIC dawn_native dawn_proc dawncpp)
 
 bundle_static_library(dawn_static dawn_static_deps)
  
-install(FILES "${CMAKE_BINARY_DIR}/dawn_static.lib"
+install(FILES "${CMAKE_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}dawn_static${CMAKE_STATIC_LIBRARY_SUFFIX}"
         CONFIGURATIONS Release
         RUNTIME DESTINATION lib)
