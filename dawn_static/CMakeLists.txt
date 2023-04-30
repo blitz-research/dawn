@@ -46,7 +46,7 @@ function(bundle_static_library tgt_name bundled_tgt_name)
                     _recursively_collect_dependencies(${dependency})
                 endif()
             else()
-                message("### Dependency is not a target: ${dependency}")
+#                message("### Dependency is not a target: ${dependency}")
             endif()
         endforeach()
         set(static_libs ${static_libs} PARENT_SCOPE)
@@ -86,7 +86,9 @@ function(bundle_static_library tgt_name bundled_tgt_name)
                 COMMENT "Bundling ${bundled_tgt_name}"
                 VERBATIM)
     elseif(MSVC)
-        find_program(lib_tool lib)
+    
+#        find_program(lib_tool lib)
+        set(lib_tool "${CMAKE_AR}")
 
         foreach(tgt IN LISTS static_libs)
             list(APPEND static_libs_full_names $<TARGET_FILE:${tgt}>)
@@ -104,7 +106,7 @@ function(bundle_static_library tgt_name bundled_tgt_name)
     add_custom_target(bundling_target ALL DEPENDS ${bundled_tgt_full_name})
     add_dependencies(bundling_target ${tgt_name})
 
-    message("### Add library: ${bundled_tgt_name}")
+#    message("### Add library: ${bundled_tgt_name}")
 
     add_library(${bundled_tgt_name} STATIC IMPORTED)
     set_target_properties(${bundled_tgt_name}
@@ -118,3 +120,7 @@ endfunction()
 add_library(dawn_static_deps STATIC ${DAWN_PLACEHOLDER_FILE})
 target_link_libraries(dawn_static_deps PUBLIC dawn_native dawn_proc dawncpp)
 bundle_static_library(dawn_static_deps dawn_static)
+
+install(FILES "${CMAKE_BINARY_DIR}/dawn_static.lib"
+        CONFIGURATIONS Release
+        RUNTIME DESTINATION lib)
