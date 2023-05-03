@@ -416,7 +416,7 @@ TEST_P(ObjectCachingTest, SamplerDeduplication) {
     wgpu::Sampler otherSamplerMinFilter = device.CreateSampler(&otherSamplerDescMinFilter);
 
     wgpu::SamplerDescriptor otherSamplerDescMipmapFilter;
-    otherSamplerDescMipmapFilter.mipmapFilter = wgpu::FilterMode::Linear;
+    otherSamplerDescMipmapFilter.mipmapFilter = wgpu::MipmapFilterMode::Linear;
     wgpu::Sampler otherSamplerMipmapFilter = device.CreateSampler(&otherSamplerDescMipmapFilter);
 
     wgpu::SamplerDescriptor otherSamplerDescLodMinClamp;
@@ -445,6 +445,7 @@ TEST_P(ObjectCachingTest, SamplerDeduplication) {
 }
 
 DAWN_INSTANTIATE_TEST(ObjectCachingTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

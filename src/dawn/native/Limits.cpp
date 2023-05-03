@@ -63,7 +63,7 @@
     X(Maximum,                       maxTextureDimension3D,      2048,       2048) \
     X(Maximum,                       maxTextureArrayLayers,       256,        256) \
     X(Maximum,                               maxBindGroups,         4,          4) \
-    X(Maximum,                     maxBindingsPerBindGroup,       640,        640) \
+    X(Maximum,                     maxBindingsPerBindGroup,      1000,       1000) \
     X(Maximum,                 maxUniformBufferBindingSize,     65536,      65536) \
     X(Alignment,           minUniformBufferOffsetAlignment,       256,        256) \
     X(Alignment,           minStorageBufferOffsetAlignment,       256,        256) \
@@ -73,8 +73,7 @@
     X(Maximum,               maxInterStageShaderComponents,        60,         60) \
     X(Maximum,               maxInterStageShaderVariables,         16,         16) \
     X(Maximum,                         maxColorAttachments,         8,          8) \
-    X(Maximum,            maxColorAttachmentBytesPerSample,        32,         32) \
-    X(Maximum,          maxFragmentCombinedOutputResources,         8,          8)
+    X(Maximum,            maxColorAttachmentBytesPerSample,        32,         32)
 // clang-format on
 
 #define LIMITS_EACH_GROUP(X)              \

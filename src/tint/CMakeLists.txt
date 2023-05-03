@@ -66,10 +66,10 @@ add_library(tint_diagnostic_utils
   diagnostic/formatter.h
   diagnostic/printer.cc
   diagnostic/printer.h
-  text/unicode.cc
-  text/unicode.h
   utils/debugger.cc
   utils/debugger.h
+  utils/unicode.cc
+  utils/unicode.h
 )
 tint_default_compile_options(tint_diagnostic_utils)
 
@@ -126,6 +126,8 @@ list(APPEND TINT_LIB_SRCS
   ast/diagnostic_control.h
   ast/diagnostic_directive.cc
   ast/diagnostic_directive.h
+  ast/diagnostic_rule_name.cc
+  ast/diagnostic_rule_name.h
   ast/disable_validation_attribute.cc
   ast/disable_validation_attribute.h
   ast/discard_statement.cc
@@ -230,8 +232,6 @@ list(APPEND TINT_LIB_SRCS
   ast/while_statement.h
   ast/workgroup_attribute.cc
   ast/workgroup_attribute.h
-  castable.cc
-  castable.h
   clone_context.cc
   clone_context.h
   constant/clone_context.h
@@ -264,6 +264,8 @@ list(APPEND TINT_LIB_SRCS
   reflection.h
   reader/reader.cc
   reader/reader.h
+  resolver/builtin_structs.cc
+  resolver/builtin_structs.h
   resolver/const_eval.cc
   resolver/const_eval.h
   resolver/dependency_graph.cc
@@ -348,7 +350,6 @@ list(APPEND TINT_LIB_SRCS
   symbol.cc
   symbol.h
   tint.cc
-  traits.h
   transform/add_empty_entry_point.cc
   transform/add_empty_entry_point.h
   transform/add_block_attribute.cc
@@ -517,6 +518,9 @@ list(APPEND TINT_LIB_SRCS
   utils/bitcast.h
   utils/bitset.h
   utils/block_allocator.h
+  utils/bump_allocator.h
+  utils/castable.cc
+  utils/castable.h
   utils/compiler_macros.h
   utils/concat.h
   utils/crc32.h
@@ -534,6 +538,7 @@ list(APPEND TINT_LIB_SRCS
   utils/string.h
   utils/string_stream.cc
   utils/string_stream.h
+  utils/traits.h
   utils/unique_allocator.h
   utils/unique_vector.h
   utils/vector.h
@@ -713,10 +718,14 @@ if(${TINT_BUILD_IR})
     ir/construct.h
     ir/convert.cc
     ir/convert.h
+    ir/converter.cc
+    ir/converter.h
     ir/debug.cc
     ir/debug.h
     ir/disassembler.cc
     ir/disassembler.h
+    ir/discard.cc
+    ir/discard.h
     ir/flow_node.cc
     ir/flow_node.h
     ir/function.cc
@@ -729,16 +738,20 @@ if(${TINT_BUILD_IR})
     ir/loop.h
     ir/module.cc
     ir/module.h
+    ir/store.cc
+    ir/store.h
     ir/switch.cc
     ir/switch.h
-    ir/temp.cc
-    ir/temp.h
     ir/terminator.cc
     ir/terminator.h
+    ir/unary.cc
+    ir/unary.h
     ir/user_call.cc
     ir/user_call.h
     ir/value.cc
     ir/value.h
+    ir/var.cc
+    ir/var.h
   )
 endif()
 
@@ -785,9 +798,6 @@ target_link_libraries(tint_val tint_utils_io)
 add_library(libtint ${TINT_LIB_SRCS})
 tint_default_compile_options(libtint)
 target_link_libraries(libtint tint_diagnostic_utils absl_strings)
-if (${TINT_SYMBOL_STORE_DEBUG_NAME})
-    target_compile_definitions(libtint PUBLIC "TINT_SYMBOL_STORE_DEBUG_NAME=1")
-endif()
 set_target_properties(libtint PROPERTIES OUTPUT_NAME "tint")
 
 if (${TINT_BUILD_FUZZERS})
@@ -847,6 +857,7 @@ if(TINT_BUILD_TESTS)
     ast/diagnostic_attribute_test.cc
     ast/diagnostic_control_test.cc
     ast/diagnostic_directive_test.cc
+    ast/diagnostic_rule_name_test.cc
     ast/discard_statement_test.cc
     ast/enable_test.cc
     ast/float_literal_expression_test.cc
@@ -884,7 +895,6 @@ if(TINT_BUILD_TESTS)
     ast/variable_test.cc
     ast/while_statement_test.cc
     ast/workgroup_attribute_test.cc
-    castable_test.cc
     clone_context_test.cc
     constant/composite_test.cc
     constant/scalar_test.cc
@@ -905,6 +915,7 @@ if(TINT_BUILD_TESTS)
     resolver/attribute_validation_test.cc
     resolver/bitcast_validation_test.cc
     resolver/builtin_enum_test.cc
+    resolver/builtin_structs_test.cc
     resolver/builtin_test.cc
     resolver/builtin_validation_test.cc
     resolver/builtins_validation_test.cc
@@ -970,8 +981,6 @@ if(TINT_BUILD_TESTS)
     symbol_table_test.cc
     symbol_test.cc
     test_main.cc
-    text/unicode_test.cc
-    traits_test.cc
     transform/transform_test.cc
     type/array_test.cc
     type/atomic_test.cc
@@ -998,6 +1007,8 @@ if(TINT_BUILD_TESTS)
     utils/bitcast_test.cc
     utils/bitset_test.cc
     utils/block_allocator_test.cc
+    utils/bump_allocator_test.cc
+    utils/castable_test.cc
     utils/crc32_test.cc
     utils/defer_test.cc
     utils/enum_set_test.cc
@@ -1014,7 +1025,9 @@ if(TINT_BUILD_TESTS)
     utils/slice_test.cc
     utils/string_stream_test.cc
     utils/string_test.cc
+    utils/traits_test.cc
     utils/transform_test.cc
+    utils/unicode_test.cc
     utils/unique_allocator_test.cc
     utils/unique_vector_test.cc
     utils/vector_test.cc
@@ -1411,8 +1424,10 @@ if(TINT_BUILD_TESTS)
       ir/bitcast_test.cc
       ir/builder_impl_test.cc
       ir/constant_test.cc
-      ir/temp_test.cc
+      ir/discard_test.cc
+      ir/store_test.cc
       ir/test_helper.h
+      ir/unary_test.cc
     )
   endif()
 
@@ -1495,4 +1510,27 @@ if(TINT_BUILD_BENCHMARKS)
   tint_core_compile_options(tint-benchmark)
 
   target_link_libraries(tint-benchmark PRIVATE benchmark::benchmark libtint)
+
+  if (TINT_EXTERNAL_BENCHMARK_CORPUS_DIR)
+    # Glob all the files at TINT_EXTERNAL_BENCHMARK_CORPUS_DIR, and create a header
+    # that lists these with the TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS() macro
+    set(TINT_BENCHMARK_GEN_DIR "${DAWN_BUILD_GEN_DIR}/src/tint/benchmark/")
+    set(TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER "${TINT_BENCHMARK_GEN_DIR}/external_wgsl_programs.h")
+    message("Globbing ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}...")
+    file(GLOB_RECURSE
+      TINT_EXTERNAL_BENCHMARK_FILES
+      RELATIVE "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}"
+      "${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/**.wgsl")
+    list(TRANSFORM TINT_EXTERNAL_BENCHMARK_FILES REPLACE
+      "(.+)"
+      "    BENCHMARK_CAPTURE\(FUNC, \"\\1\", \"${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}/\\1\")")
+    list(JOIN TINT_EXTERNAL_BENCHMARK_FILES "; \\\n" TINT_EXTERNAL_BENCHMARK_FILES)
+    file(CONFIGURE
+      OUTPUT "${TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER}"
+      CONTENT "#define TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAMS(FUNC) \\
+${TINT_EXTERNAL_BENCHMARK_FILES};")
+    # Define TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER to the generated header path
+    target_compile_definitions(tint-benchmark PRIVATE
+      "TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER=\"${TINT_BENCHMARK_EXTERNAL_WGSL_PROGRAM_HEADER}\"")
+  endif()
 endif(TINT_BUILD_BENCHMARKS)

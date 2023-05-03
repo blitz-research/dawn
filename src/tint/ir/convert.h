@@ -15,42 +15,44 @@
 #ifndef SRC_TINT_IR_CONVERT_H_
 #define SRC_TINT_IR_CONVERT_H_
 
-#include "src/tint/castable.h"
 #include "src/tint/ir/call.h"
-#include "src/tint/symbol_table.h"
 #include "src/tint/type/type.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// A value conversion instruction in the IR.
-class Convert : public Castable<Convert, Call> {
+class Convert : public utils::Castable<Convert, Call> {
   public:
     /// Constructor
-    /// @param result the result value
-    /// @param from the type being converted from
+    /// @param id the instruction id
+    /// @param result_type the result type
+    /// @param from_type the type being converted from
     /// @param args the conversion arguments
-    Convert(Value* result, const type::Type* from, utils::VectorRef<Value*> args);
-    Convert(const Convert& instr) = delete;
-    Convert(Convert&& instr) = delete;
+    Convert(uint32_t id,
+            const type::Type* result_type,
+            const type::Type* from_type,
+            utils::VectorRef<Value*> args);
+    Convert(const Convert& inst) = delete;
+    Convert(Convert&& inst) = delete;
     ~Convert() override;
 
-    Convert& operator=(const Convert& instr) = delete;
-    Convert& operator=(Convert&& instr) = delete;
+    Convert& operator=(const Convert& inst) = delete;
+    Convert& operator=(Convert&& inst) = delete;
 
     /// @returns the from type
-    const type::Type* From() const { return from_; }
+    const type::Type* FromType() const { return from_type_; }
     /// @returns the to type
-    const type::Type* To() const { return Result()->Type(); }
+    const type::Type* ToType() const { return Type(); }
 
     /// Write the instruction to the given stream
     /// @param out the stream to write to
-    /// @param st the symbol table
     /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out, const SymbolTable& st) const override;
+    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
 
   private:
-    const type::Type* from_ = nullptr;
+    const type::Type* from_type_ = nullptr;
 };
 
 }  // namespace tint::ir

@@ -16,8 +16,6 @@
 
 #include <utility>
 
-#include "src/tint/ir/builder_impl.h"
-
 namespace tint::ir {
 
 Builder::Builder() {}
@@ -25,6 +23,17 @@ Builder::Builder() {}
 Builder::Builder(Module&& mod) : ir(std::move(mod)) {}
 
 Builder::~Builder() = default;
+
+ir::Block* Builder::CreateRootBlockIfNeeded() {
+    if (!ir.root_block) {
+        ir.root_block = CreateBlock();
+
+        // Everything in the module scope must have been const-eval's, so everything will go into a
+        // single block. So, we can create the terminator for the root-block now.
+        ir.root_block->branch.target = CreateTerminator();
+    }
+    return ir.root_block;
+}
 
 Block* Builder::CreateBlock() {
     return ir.flow_nodes.Create<Block>();
@@ -93,12 +102,8 @@ void Builder::Branch(Block* from, FlowNode* to, utils::VectorRef<Value*> args) {
     to->inbound_branches.Push(from);
 }
 
-Temp::Id Builder::AllocateTempId() {
-    return next_temp_id++;
-}
-
 Binary* Builder::CreateBinary(Binary::Kind kind, const type::Type* type, Value* lhs, Value* rhs) {
-    return ir.instructions.Create<ir::Binary>(kind, Temp(type), lhs, rhs);
+    return ir.instructions.Create<ir::Binary>(next_inst_id(), kind, type, lhs, rhs);
 }
 
 Binary* Builder::And(const type::Type* type, Value* lhs, Value* rhs) {
@@ -173,30 +178,68 @@ Binary* Builder::Modulo(const type::Type* type, Value* lhs, Value* rhs) {
     return CreateBinary(Binary::Kind::kModulo, type, lhs, rhs);
 }
 
+Unary* Builder::CreateUnary(Unary::Kind kind, const type::Type* type, Value* val) {
+    return ir.instructions.Create<ir::Unary>(next_inst_id(), kind, type, val);
+}
+
+Unary* Builder::AddressOf(const type::Type* type, Value* val) {
+    return CreateUnary(Unary::Kind::kAddressOf, type, val);
+}
+
+Unary* Builder::Complement(const type::Type* type, Value* val) {
+    return CreateUnary(Unary::Kind::kComplement, type, val);
+}
+
+Unary* Builder::Indirection(const type::Type* type, Value* val) {
+    return CreateUnary(Unary::Kind::kIndirection, type, val);
+}
+
+Unary* Builder::Negation(const type::Type* type, Value* val) {
+    return CreateUnary(Unary::Kind::kNegation, type, val);
+}
+
+Unary* Builder::Not(const type::Type* type, Value* val) {
+    return CreateUnary(Unary::Kind::kNot, type, val);
+}
+
 ir::Bitcast* Builder::Bitcast(const type::Type* type, Value* val) {
-    return ir.instructions.Create<ir::Bitcast>(Temp(type), val);
+    return ir.instructions.Create<ir::Bitcast>(next_inst_id(), type, val);
+}
+
+ir::Discard* Builder::Discard() {
+    return ir.instructions.Create<ir::Discard>();
 }
 
 ir::UserCall* Builder::UserCall(const type::Type* type,
                                 Symbol name,
                                 utils::VectorRef<Value*> args) {
-    return ir.instructions.Create<ir::UserCall>(Temp(type), name, std::move(args));
+    return ir.instructions.Create<ir::UserCall>(next_inst_id(), type, name, std::move(args));
 }
 
 ir::Convert* Builder::Convert(const type::Type* to,
                               const type::Type* from,
                               utils::VectorRef<Value*> args) {
-    return ir.instructions.Create<ir::Convert>(Temp(to), from, std::move(args));
+    return ir.instructions.Create<ir::Convert>(next_inst_id(), to, from, std::move(args));
 }
 
 ir::Construct* Builder::Construct(const type::Type* to, utils::VectorRef<Value*> args) {
-    return ir.instructions.Create<ir::Construct>(Temp(to), std::move(args));
+    return ir.instructions.Create<ir::Construct>(next_inst_id(), to, std::move(args));
 }
 
 ir::Builtin* Builder::Builtin(const type::Type* type,
                               builtin::Function func,
                               utils::VectorRef<Value*> args) {
-    return ir.instructions.Create<ir::Builtin>(Temp(type), func, args);
+    return ir.instructions.Create<ir::Builtin>(next_inst_id(), type, func, args);
+}
+
+ir::Store* Builder::Store(Value* to, Value* from) {
+    return ir.instructions.Create<ir::Store>(to, from);
+}
+
+ir::Var* Builder::Declare(const type::Type* type,
+                          builtin::AddressSpace address_space,
+                          builtin::Access access) {
+    return ir.instructions.Create<ir::Var>(next_inst_id(), type, address_space, access);
 }
 
 }  // namespace tint::ir

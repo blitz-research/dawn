@@ -15,13 +15,13 @@
 #ifndef SRC_TINT_IR_FLOW_NODE_H_
 #define SRC_TINT_IR_FLOW_NODE_H_
 
-#include "src/tint/castable.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/vector.h"
 
 namespace tint::ir {
 
 /// Base class for flow nodes
-class FlowNode : public Castable<FlowNode> {
+class FlowNode : public utils::Castable<FlowNode> {
   public:
     ~FlowNode() override;
 
@@ -32,8 +32,11 @@ class FlowNode : public Castable<FlowNode> {
     ///   - Node is a continue target outside control flow (loop that returns)
     utils::Vector<FlowNode*, 2> inbound_branches;
 
-    /// @returns true if this node has no inbound branches
-    bool IsDisconnected() const { return inbound_branches.IsEmpty(); }
+    /// @returns true if this node has inbound branches and branches out
+    bool IsConnected() const { return !IsDead() && !inbound_branches.IsEmpty(); }
+
+    /// @returns true if the node does not branch out
+    virtual bool IsDead() const { return false; }
 
   protected:
     /// Constructor

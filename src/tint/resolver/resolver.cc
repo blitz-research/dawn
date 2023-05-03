@@ -43,6 +43,7 @@
 #include "src/tint/ast/while_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/builtin/builtin.h"
+#include "src/tint/resolver/builtin_structs.h"
 #include "src/tint/resolver/uniformity.h"
 #include "src/tint/sem/break_if_statement.h"
 #include "src/tint/sem/builtin_enum_expression.h"
@@ -128,8 +129,7 @@ bool Resolver::Resolve() {
     // Pre-allocate the marked bitset with the total number of AST nodes.
     marked_.Resize(builder_->ASTNodes().Count());
 
-    if (!DependencyGraph::Build(builder_->AST(), builder_->Symbols(), diagnostics_,
-                                dependencies_)) {
+    if (!DependencyGraph::Build(builder_->AST(), diagnostics_, dependencies_)) {
         return false;
     }
 
@@ -140,18 +140,20 @@ bool Resolver::Resolve() {
         return false;
     }
 
+    // Check before std::move()'ing enabled_extensions_
+    const bool disable_uniformity_analysis =
+        enabled_extensions_.Contains(builtin::Extension::kChromiumDisableUniformityAnalysis);
+
     // Create the semantic module.
     auto* mod = builder_->create<sem::Module>(std::move(dependencies_.ordered_globals),
                                               std::move(enabled_extensions_));
     ApplyDiagnosticSeverities(mod);
     builder_->Sem().SetModule(mod);
 
-    if (result) {
+    if (result && !disable_uniformity_analysis) {
         // Run the uniformity analysis, which requires a complete semantic module.
-        if (!enabled_extensions_.Contains(builtin::Extension::kChromiumDisableUniformityAnalysis)) {
-            if (!AnalyzeUniformity(builder_, dependencies_)) {
-                return false;
-            }
+        if (!AnalyzeUniformity(builder_, dependencies_)) {
+            return false;
         }
     }
 
@@ -245,6 +247,20 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
         }
     }
 
+    for (auto* attribute : v->attributes) {
+        Mark(attribute);
+        bool ok = Switch(
+            attribute,  //
+            [&](const ast::InternalAttribute* attr) -> bool { return InternalAttribute(attr); },
+            [&](Default) {
+                ErrorInvalidAttribute(attribute, "'let' declaration");
+                return false;
+            });
+        if (!ok) {
+            return nullptr;
+        }
+    }
+
     if (!v->initializer) {
         AddError("'let' declaration must have an initializer", v->source);
         return nullptr;
@@ -266,8 +282,7 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
 
     if (!ApplyAddressSpaceUsageToType(builtin::AddressSpace::kUndefined,
                                       const_cast<type::Type*>(ty), v->source)) {
-        AddNote("while instantiating 'let' " + builder_->Symbols().NameFor(v->name->symbol),
-                v->source);
+        AddNote("while instantiating 'let' " + v->name->symbol.Name(), v->source);
         return nullptr;
     }
 
@@ -276,7 +291,7 @@ sem::Variable* Resolver::Let(const ast::Let* v, bool is_global) {
         sem = builder_->create<sem::GlobalVariable>(
             v, ty, sem::EvaluationStage::kRuntime, builtin::AddressSpace::kUndefined,
             builtin::Access::kUndefined,
-            /* constant_value */ nullptr, sem::BindingPoint{}, std::nullopt);
+            /* constant_value */ nullptr, std::nullopt, std::nullopt);
     } else {
         sem = builder_->create<sem::LocalVariable>(v, ty, sem::EvaluationStage::kRuntime,
                                                    builtin::AddressSpace::kUndefined,
@@ -329,48 +344,61 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
 
     if (!ApplyAddressSpaceUsageToType(builtin::AddressSpace::kUndefined,
                                       const_cast<type::Type*>(ty), v->source)) {
-        AddNote("while instantiating 'override' " + builder_->Symbols().NameFor(v->name->symbol),
-                v->source);
+        AddNote("while instantiating 'override' " + v->name->symbol.Name(), v->source);
         return nullptr;
     }
 
     auto* sem = builder_->create<sem::GlobalVariable>(
         v, ty, sem::EvaluationStage::kOverride, builtin::AddressSpace::kUndefined,
         builtin::Access::kUndefined,
-        /* constant_value */ nullptr, sem::BindingPoint{}, std::nullopt);
+        /* constant_value */ nullptr, std::nullopt, std::nullopt);
     sem->SetInitializer(rhs);
 
-    if (auto* id_attr = ast::GetAttribute<ast::IdAttribute>(v->attributes)) {
-        ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@id"};
-        TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
+    for (auto* attribute : v->attributes) {
+        Mark(attribute);
+        bool ok = Switch(
+            attribute,  //
+            [&](const ast::IdAttribute* attr) {
+                ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@id"};
+                TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
 
-        auto* materialized = Materialize(ValueExpression(id_attr->expr));
-        if (!materialized) {
+                auto* materialized = Materialize(ValueExpression(attr->expr));
+                if (!materialized) {
+                    return false;
+                }
+                if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
+                    AddError("@id must be an i32 or u32 value", attr->source);
+                    return false;
+                }
+
+                auto const_value = materialized->ConstantValue();
+                auto value = const_value->ValueAs<AInt>();
+                if (value < 0) {
+                    AddError("@id value must be non-negative", attr->source);
+                    return false;
+                }
+                if (value > std::numeric_limits<decltype(OverrideId::value)>::max()) {
+                    AddError(
+                        "@id value must be between 0 and " +
+                            std::to_string(std::numeric_limits<decltype(OverrideId::value)>::max()),
+                        attr->source);
+                    return false;
+                }
+
+                auto o = OverrideId{static_cast<decltype(OverrideId::value)>(value)};
+                sem->SetOverrideId(o);
+
+                // Track the constant IDs that are specified in the shader.
+                override_ids_.Add(o, sem);
+                return true;
+            },
+            [&](Default) {
+                ErrorInvalidAttribute(attribute, "'override' declaration");
+                return false;
+            });
+        if (!ok) {
             return nullptr;
         }
-        if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
-            AddError("@id must be an i32 or u32 value", id_attr->source);
-            return nullptr;
-        }
-
-        auto const_value = materialized->ConstantValue();
-        auto value = const_value->ValueAs<AInt>();
-        if (value < 0) {
-            AddError("@id value must be non-negative", id_attr->source);
-            return nullptr;
-        }
-        if (value > std::numeric_limits<decltype(OverrideId::value)>::max()) {
-            AddError("@id value must be between 0 and " +
-                         std::to_string(std::numeric_limits<decltype(OverrideId::value)>::max()),
-                     id_attr->source);
-            return nullptr;
-        }
-
-        auto o = OverrideId{static_cast<decltype(OverrideId::value)>(value)};
-        sem->SetOverrideId(o);
-
-        // Track the constant IDs that are specified in the shader.
-        override_ids_.Add(o, sem);
     }
 
     builder_->Sem().Add(v, sem);
@@ -391,6 +419,18 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
     if (!c->initializer) {
         AddError("'const' declaration must have an initializer", c->source);
         return nullptr;
+    }
+
+    for (auto* attribute : c->attributes) {
+        Mark(attribute);
+        bool ok = Switch(attribute,  //
+                         [&](Default) {
+                             ErrorInvalidAttribute(attribute, "'const' declaration");
+                             return false;
+                         });
+        if (!ok) {
+            return nullptr;
+        }
     }
 
     const sem::ValueExpression* rhs = nullptr;
@@ -423,8 +463,7 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
 
     if (!ApplyAddressSpaceUsageToType(builtin::AddressSpace::kUndefined,
                                       const_cast<type::Type*>(ty), c->source)) {
-        AddNote("while instantiating 'const' " + builder_->Symbols().NameFor(c->name->symbol),
-                c->source);
+        AddNote("while instantiating 'const' " + c->name->symbol.Name(), c->source);
         return nullptr;
     }
 
@@ -432,7 +471,7 @@ sem::Variable* Resolver::Const(const ast::Const* c, bool is_global) {
     auto* sem = is_global
                     ? static_cast<sem::Variable*>(builder_->create<sem::GlobalVariable>(
                           c, ty, sem::EvaluationStage::kConstant, builtin::AddressSpace::kUndefined,
-                          builtin::Access::kUndefined, value, sem::BindingPoint{}, std::nullopt))
+                          builtin::Access::kUndefined, value, std::nullopt, std::nullopt))
                     : static_cast<sem::Variable*>(builder_->create<sem::LocalVariable>(
                           c, ty, sem::EvaluationStage::kConstant, builtin::AddressSpace::kUndefined,
                           builtin::Access::kUndefined, current_statement_, value));
@@ -524,79 +563,104 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
 
     if (!ApplyAddressSpaceUsageToType(address_space, var_ty,
                                       var->type ? var->type->source : var->source)) {
-        AddNote("while instantiating 'var' " + builder_->Symbols().NameFor(var->name->symbol),
-                var->source);
+        AddNote("while instantiating 'var' " + var->name->symbol.Name(), var->source);
         return nullptr;
     }
 
     sem::Variable* sem = nullptr;
     if (is_global) {
-        sem::BindingPoint binding_point;
-        if (var->HasBindingPoint()) {
-            uint32_t binding = 0;
-            {
-                ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@binding"};
-                TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
+        bool has_io_address_space = address_space == builtin::AddressSpace::kIn ||
+                                    address_space == builtin::AddressSpace::kOut;
 
-                auto* attr = ast::GetAttribute<ast::BindingAttribute>(var->attributes);
-                auto* materialized = Materialize(ValueExpression(attr->expr));
-                if (!materialized) {
-                    return nullptr;
-                }
-                if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
-                    AddError("@binding must be an i32 or u32 value", attr->source);
-                    return nullptr;
-                }
+        std::optional<uint32_t> group, binding, location;
+        for (auto* attribute : var->attributes) {
+            Mark(attribute);
+            enum Status { kSuccess, kErrored, kInvalid };
+            auto res = Switch(
+                attribute,  //
+                [&](const ast::BindingAttribute* attr) {
+                    auto value = BindingAttribute(attr);
+                    if (!value) {
+                        return kErrored;
+                    }
+                    binding = value.Get();
+                    return kSuccess;
+                },
+                [&](const ast::GroupAttribute* attr) {
+                    auto value = GroupAttribute(attr);
+                    if (!value) {
+                        return kErrored;
+                    }
+                    group = value.Get();
+                    return kSuccess;
+                },
+                [&](const ast::LocationAttribute* attr) {
+                    if (!has_io_address_space) {
+                        return kInvalid;
+                    }
+                    auto value = LocationAttribute(attr);
+                    if (!value) {
+                        return kErrored;
+                    }
+                    location = value.Get();
+                    return kSuccess;
+                },
+                [&](const ast::BuiltinAttribute* attr) {
+                    if (!has_io_address_space) {
+                        return kInvalid;
+                    }
+                    return BuiltinAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](const ast::InterpolateAttribute* attr) {
+                    if (!has_io_address_space) {
+                        return kInvalid;
+                    }
+                    return InterpolateAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](const ast::InvariantAttribute* attr) {
+                    if (!has_io_address_space) {
+                        return kInvalid;
+                    }
+                    return InvariantAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](const ast::InternalAttribute* attr) {
+                    return InternalAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](Default) { return kInvalid; });
 
-                auto const_value = materialized->ConstantValue();
-                auto value = const_value->ValueAs<AInt>();
-                if (value < 0) {
-                    AddError("@binding value must be non-negative", attr->source);
+            switch (res) {
+                case kSuccess:
+                    break;
+                case kErrored:
                     return nullptr;
-                }
-                binding = u32(value);
+                case kInvalid:
+                    ErrorInvalidAttribute(attribute, "module-scope 'var'");
+                    return nullptr;
             }
-
-            uint32_t group = 0;
-            {
-                ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@group"};
-                TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
-
-                auto* attr = ast::GetAttribute<ast::GroupAttribute>(var->attributes);
-                auto* materialized = Materialize(ValueExpression(attr->expr));
-                if (!materialized) {
-                    return nullptr;
-                }
-                if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
-                    AddError("@group must be an i32 or u32 value", attr->source);
-                    return nullptr;
-                }
-
-                auto const_value = materialized->ConstantValue();
-                auto value = const_value->ValueAs<AInt>();
-                if (value < 0) {
-                    AddError("@group value must be non-negative", attr->source);
-                    return nullptr;
-                }
-                group = u32(value);
-            }
-            binding_point = {group, binding};
         }
 
-        std::optional<uint32_t> location;
-        if (auto* attr = ast::GetAttribute<ast::LocationAttribute>(var->attributes)) {
-            auto value = LocationAttribute(attr);
-            if (!value) {
-                return nullptr;
-            }
-            location = value.Get();
+        std::optional<sem::BindingPoint> binding_point;
+        if (group && binding) {
+            binding_point = sem::BindingPoint{group.value(), binding.value()};
         }
-
         sem = builder_->create<sem::GlobalVariable>(
             var, var_ty, sem::EvaluationStage::kRuntime, address_space, access,
             /* constant_value */ nullptr, binding_point, location);
 
     } else {
+        for (auto* attribute : var->attributes) {
+            Mark(attribute);
+            bool ok = Switch(
+                attribute,
+                [&](const ast::InternalAttribute* attr) { return InternalAttribute(attr); },
+                [&](Default) {
+                    ErrorInvalidAttribute(attribute, "function-scope 'var'");
+                    return false;
+                });
+            if (!ok) {
+                return nullptr;
+            }
+        }
         sem = builder_->create<sem::LocalVariable>(var, var_ty, sem::EvaluationStage::kRuntime,
                                                    address_space, access, current_statement_,
                                                    /* constant_value */ nullptr);
@@ -607,19 +671,93 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
     return sem;
 }
 
-sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index) {
+sem::Parameter* Resolver::Parameter(const ast::Parameter* param,
+                                    const ast::Function* func,
+                                    uint32_t index) {
     Mark(param->name);
 
     auto add_note = [&] {
-        AddNote("while instantiating parameter " + builder_->Symbols().NameFor(param->name->symbol),
-                param->source);
+        AddNote("while instantiating parameter " + param->name->symbol.Name(), param->source);
     };
 
-    for (auto* attr : param->attributes) {
-        if (!Attribute(attr)) {
-            return nullptr;
+    std::optional<uint32_t> location, group, binding;
+
+    if (func->IsEntryPoint()) {
+        for (auto* attribute : param->attributes) {
+            Mark(attribute);
+            bool ok = Switch(
+                attribute,  //
+                [&](const ast::LocationAttribute* attr) {
+                    auto value = LocationAttribute(attr);
+                    if (!value) {
+                        return false;
+                    }
+                    location = value.Get();
+                    return true;
+                },
+                [&](const ast::BuiltinAttribute* attr) -> bool { return BuiltinAttribute(attr); },
+                [&](const ast::InvariantAttribute* attr) -> bool {
+                    return InvariantAttribute(attr);
+                },
+                [&](const ast::InterpolateAttribute* attr) -> bool {
+                    return InterpolateAttribute(attr);
+                },
+                [&](const ast::InternalAttribute* attr) -> bool { return InternalAttribute(attr); },
+                [&](const ast::GroupAttribute* attr) -> bool {
+                    if (validator_.IsValidationEnabled(
+                            param->attributes, ast::DisabledValidation::kEntryPointParameter)) {
+                        ErrorInvalidAttribute(attribute, "function parameters");
+                        return false;
+                    }
+                    auto value = GroupAttribute(attr);
+                    if (!value) {
+                        return false;
+                    }
+                    group = value.Get();
+                    return true;
+                },
+                [&](const ast::BindingAttribute* attr) -> bool {
+                    if (validator_.IsValidationEnabled(
+                            param->attributes, ast::DisabledValidation::kEntryPointParameter)) {
+                        ErrorInvalidAttribute(attribute, "function parameters");
+                        return false;
+                    }
+                    auto value = BindingAttribute(attr);
+                    if (!value) {
+                        return false;
+                    }
+                    binding = value.Get();
+                    return true;
+                },
+                [&](Default) {
+                    ErrorInvalidAttribute(attribute, "function parameters");
+                    return false;
+                });
+            if (!ok) {
+                return nullptr;
+            }
+        }
+    } else {
+        for (auto* attribute : param->attributes) {
+            Mark(attribute);
+            bool ok = Switch(
+                attribute,  //
+                [&](const ast::InternalAttribute* attr) -> bool { return InternalAttribute(attr); },
+                [&](Default) {
+                    if (attribute->IsAnyOf<ast::LocationAttribute, ast::BuiltinAttribute,
+                                           ast::InvariantAttribute, ast::InterpolateAttribute>()) {
+                        ErrorInvalidAttribute(attribute, "non-entry point function parameters");
+                    } else {
+                        ErrorInvalidAttribute(attribute, "function parameters");
+                    }
+                    return false;
+                });
+            if (!ok) {
+                return nullptr;
+            }
         }
     }
+
     if (!validator_.NoDuplicateAttributes(param->attributes)) {
         return nullptr;
     }
@@ -644,70 +782,21 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param, uint32_t index)
         }
     }
 
-    sem::BindingPoint binding_point;
-    if (param->HasBindingPoint()) {
-        {
-            ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@binding value"};
-            TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
-
-            auto* attr = ast::GetAttribute<ast::BindingAttribute>(param->attributes);
-            auto* materialized = Materialize(ValueExpression(attr->expr));
-            if (!materialized) {
-                return nullptr;
-            }
-            binding_point.binding = materialized->ConstantValue()->ValueAs<u32>();
-        }
-        {
-            ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@group value"};
-            TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
-
-            auto* attr = ast::GetAttribute<ast::GroupAttribute>(param->attributes);
-            auto* materialized = Materialize(ValueExpression(attr->expr));
-            if (!materialized) {
-                return nullptr;
-            }
-            binding_point.group = materialized->ConstantValue()->ValueAs<u32>();
-        }
-    }
-
-    std::optional<uint32_t> location;
-    if (auto* attr = ast::GetAttribute<ast::LocationAttribute>(param->attributes)) {
-        auto value = LocationAttribute(attr);
-        if (!value) {
-            return nullptr;
-        }
-        location = value.Get();
+    std::optional<sem::BindingPoint> binding_point;
+    if (group && binding) {
+        binding_point = sem::BindingPoint{group.value(), binding.value()};
     }
 
     auto* sem = builder_->create<sem::Parameter>(
         param, index, ty, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
         sem::ParameterUsage::kNone, binding_point, location);
     builder_->Sem().Add(param, sem);
+
+    if (!validator_.Parameter(sem)) {
+        return nullptr;
+    }
+
     return sem;
-}
-
-utils::Result<uint32_t> Resolver::LocationAttribute(const ast::LocationAttribute* attr) {
-    ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@location value"};
-    TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
-
-    auto* materialized = Materialize(ValueExpression(attr->expr));
-    if (!materialized) {
-        return utils::Failure;
-    }
-
-    if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
-        AddError("@location must be an i32 or u32 value", attr->source);
-        return utils::Failure;
-    }
-
-    auto const_value = materialized->ConstantValue();
-    auto value = const_value->ValueAs<AInt>();
-    if (value < 0) {
-        AddError("@location value must be non-negative", attr->source);
-        return utils::Failure;
-    }
-
-    return static_cast<uint32_t>(value);
 }
 
 builtin::Access Resolver::DefaultAccessForAddressSpace(builtin::AddressSpace address_space) {
@@ -774,7 +863,7 @@ bool Resolver::AllocateOverridableConstantIds() {
 
 void Resolver::SetShadows() {
     for (auto it : dependencies_.shadows) {
-        CastableBase* b = sem_.Get(it.value);
+        utils::CastableBase* b = sem_.Get(it.value);
         if (TINT_UNLIKELY(!b)) {
             TINT_ICE(Resolver, diagnostics_)
                 << "AST node '" << it.value->TypeInfo().name << "' had no semantic info\n"
@@ -796,12 +885,6 @@ sem::GlobalVariable* Resolver::GlobalVariable(const ast::Variable* v) {
     auto* sem = As<sem::GlobalVariable>(Variable(v, /* is_global */ true));
     if (!sem) {
         return nullptr;
-    }
-
-    for (auto* attr : v->attributes) {
-        if (!Attribute(attr)) {
-            return nullptr;
-        }
     }
 
     if (!validator_.NoDuplicateAttributes(v->attributes)) {
@@ -862,8 +945,28 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
 
     validator_.DiagnosticFilters().Push();
     TINT_DEFER(validator_.DiagnosticFilters().Pop());
-    for (auto* attr : decl->attributes) {
-        if (!Attribute(attr)) {
+
+    for (auto* attribute : decl->attributes) {
+        Mark(attribute);
+        bool ok = Switch(
+            attribute,
+            [&](const ast::DiagnosticAttribute* attr) { return DiagnosticAttribute(attr); },
+            [&](const ast::StageAttribute* attr) { return StageAttribute(attr); },
+            [&](const ast::MustUseAttribute* attr) { return MustUseAttribute(attr); },
+            [&](const ast::WorkgroupAttribute* attr) {
+                auto value = WorkgroupAttribute(attr);
+                if (!value) {
+                    return false;
+                }
+                func->SetWorkgroupSize(value.Get());
+                return true;
+            },
+            [&](const ast::InternalAttribute* attr) { return InternalAttribute(attr); },
+            [&](Default) {
+                ErrorInvalidAttribute(attribute, "functions");
+                return false;
+            });
+        if (!ok) {
             return nullptr;
         }
     }
@@ -879,26 +982,22 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
 
         {  // Check the parameter name is unique for the function
             if (auto added = parameter_names.Add(param->name->symbol, param->source); !added) {
-                auto name = builder_->Symbols().NameFor(param->name->symbol);
+                auto name = param->name->symbol.Name();
                 AddError("redefinition of parameter '" + name + "'", param->source);
                 AddNote("previous definition is here", *added.value);
                 return nullptr;
             }
         }
 
-        auto* p = Parameter(param, parameter_index++);
+        auto* p = Parameter(param, decl, parameter_index++);
         if (!p) {
-            return nullptr;
-        }
-
-        if (!validator_.Parameter(decl, p)) {
             return nullptr;
         }
 
         func->AddParameter(p);
 
         auto* p_ty = const_cast<type::Type*>(p->Type());
-        if (auto* str = p_ty->As<sem::Struct>()) {
+        if (auto* str = p_ty->As<type::Struct>()) {
             switch (decl->PipelineStage()) {
                 case ast::PipelineStage::kVertex:
                     str->AddUsage(type::PipelineStageUsage::kVertexInput);
@@ -927,25 +1026,79 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     }
     func->SetReturnType(return_type);
 
-    // Determine if the return type has a location
-    for (auto* attr : decl->return_type_attributes) {
-        if (!Attribute(attr)) {
-            return nullptr;
-        }
+    if (decl->IsEntryPoint()) {
+        // Determine if the return type has a location
+        bool permissive = validator_.IsValidationDisabled(
+                              decl->attributes, ast::DisabledValidation::kEntryPointParameter) ||
+                          validator_.IsValidationDisabled(
+                              decl->attributes, ast::DisabledValidation::kFunctionParameter);
+        for (auto* attribute : decl->return_type_attributes) {
+            Mark(attribute);
+            enum Status { kSuccess, kErrored, kInvalid };
+            auto res = Switch(
+                attribute,  //
+                [&](const ast::LocationAttribute* attr) {
+                    auto value = LocationAttribute(attr);
+                    if (!value) {
+                        return kErrored;
+                    }
+                    func->SetReturnLocation(value.Get());
+                    return kSuccess;
+                },
+                [&](const ast::BuiltinAttribute* attr) {
+                    return BuiltinAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](const ast::InternalAttribute* attr) {
+                    return InternalAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](const ast::InterpolateAttribute* attr) {
+                    return InterpolateAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](const ast::InvariantAttribute* attr) {
+                    return InvariantAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](const ast::BindingAttribute* attr) {
+                    if (!permissive) {
+                        return kInvalid;
+                    }
+                    return BindingAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](const ast::GroupAttribute* attr) {
+                    if (!permissive) {
+                        return kInvalid;
+                    }
+                    return GroupAttribute(attr) ? kSuccess : kErrored;
+                },
+                [&](Default) { return kInvalid; });
 
-        if (auto* loc_attr = attr->As<ast::LocationAttribute>()) {
-            auto value = LocationAttribute(loc_attr);
-            if (!value) {
+            switch (res) {
+                case kSuccess:
+                    break;
+                case kErrored:
+                    return nullptr;
+                case kInvalid:
+                    ErrorInvalidAttribute(attribute, "entry point return types");
+                    return nullptr;
+            }
+        }
+    } else {
+        for (auto* attribute : decl->return_type_attributes) {
+            Mark(attribute);
+            bool ok = Switch(attribute,  //
+                             [&](Default) {
+                                 ErrorInvalidAttribute(attribute,
+                                                       "non-entry point function return types");
+                                 return false;
+                             });
+            if (!ok) {
                 return nullptr;
             }
-            func->SetReturnLocation(value.Get());
         }
     }
 
-    if (auto* str = return_type->As<sem::Struct>()) {
+    if (auto* str = return_type->As<type::Struct>()) {
         if (!ApplyAddressSpaceUsageToType(builtin::AddressSpace::kUndefined, str, decl->source)) {
-            AddNote("while instantiating return type for " +
-                        builder_->Symbols().NameFor(decl->name->symbol),
+            AddNote("while instantiating return type for " + decl->name->symbol.Name(),
                     decl->source);
             return nullptr;
         }
@@ -966,10 +1119,6 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     }
 
     ApplyDiagnosticSeverities(func);
-
-    if (!WorkgroupSize(decl)) {
-        return nullptr;
-    }
 
     if (decl->IsEntryPoint()) {
         entry_points_.Push(func);
@@ -1017,94 +1166,6 @@ sem::Function* Resolver::Function(const ast::Function* decl) {
     }
 
     return func;
-}
-
-bool Resolver::WorkgroupSize(const ast::Function* func) {
-    // Set work-group size defaults.
-    sem::WorkgroupSize ws;
-    for (size_t i = 0; i < 3; i++) {
-        ws[i] = 1;
-    }
-
-    auto* attr = ast::GetAttribute<ast::WorkgroupAttribute>(func->attributes);
-    if (!attr) {
-        return true;
-    }
-
-    auto values = attr->Values();
-    utils::Vector<const sem::ValueExpression*, 3> args;
-    utils::Vector<const type::Type*, 3> arg_tys;
-
-    constexpr const char* kErrBadExpr =
-        "workgroup_size argument must be a constant or override-expression of type "
-        "abstract-integer, i32 or u32";
-
-    for (size_t i = 0; i < 3; i++) {
-        // Each argument to this attribute can either be a literal, an identifier for a
-        // module-scope constants, a const-expression, or nullptr if not specified.
-        auto* value = values[i];
-        if (!value) {
-            break;
-        }
-        const auto* expr = ValueExpression(value);
-        if (!expr) {
-            return false;
-        }
-        auto* ty = expr->Type();
-        if (!ty->IsAnyOf<type::I32, type::U32, type::AbstractInt>()) {
-            AddError(kErrBadExpr, value->source);
-            return false;
-        }
-
-        if (expr->Stage() != sem::EvaluationStage::kConstant &&
-            expr->Stage() != sem::EvaluationStage::kOverride) {
-            AddError(kErrBadExpr, value->source);
-            return false;
-        }
-
-        args.Push(expr);
-        arg_tys.Push(ty);
-    }
-
-    auto* common_ty = type::Type::Common(arg_tys);
-    if (!common_ty) {
-        AddError("workgroup_size arguments must be of the same type, either i32 or u32",
-                 attr->source);
-        return false;
-    }
-
-    // If all arguments are abstract-integers, then materialize to i32.
-    if (common_ty->Is<type::AbstractInt>()) {
-        common_ty = builder_->create<type::I32>();
-    }
-
-    for (size_t i = 0; i < args.Length(); i++) {
-        auto* materialized = Materialize(args[i], common_ty);
-        if (!materialized) {
-            return false;
-        }
-        if (auto* value = materialized->ConstantValue()) {
-            if (value->ValueAs<AInt>() < 1) {
-                AddError("workgroup_size argument must be at least 1", values[i]->source);
-                return false;
-            }
-            ws[i] = value->ValueAs<u32>();
-        } else {
-            ws[i] = std::nullopt;
-        }
-    }
-
-    uint64_t total_size = static_cast<uint64_t>(ws[0].value_or(1));
-    for (size_t i = 1; i < 3; i++) {
-        total_size *= static_cast<uint64_t>(ws[i].value_or(1));
-        if (total_size > 0xffffffff) {
-            AddError("total workgroup grid size cannot exceed 0xffffffff", values[i]->source);
-            return false;
-        }
-    }
-
-    current_function_->SetWorkgroupSize(std::move(ws));
-    return true;
 }
 
 bool Resolver::Statements(utils::VectorRef<const ast::Statement*> stmts) {
@@ -1577,7 +1638,7 @@ bool Resolver::AliasAnalysis(const sem::Call* call) {
                 break;
             case Alias::ModuleScope: {
                 auto* func = var.expr->Stmt()->Function();
-                auto func_name = builder_->Symbols().NameFor(func->Declaration()->name->symbol);
+                auto func_name = func->Declaration()->name->symbol.Name();
                 AddNote(
                     "aliases with module-scope variable " + var.access + " in '" + func_name + "'",
                     var.expr->Declaration()->source);
@@ -1700,7 +1761,7 @@ const type::Type* Resolver::ConcreteType(const type::Type* ty,
             }
             return nullptr;
         },
-        [&](const sem::Struct* s) -> const type::Type* {
+        [&](const type::Struct* s) -> const type::Type* {
             if (auto tys = s->ConcreteTypes(); !tys.IsEmpty()) {
                 return target_ty ? target_ty : tys[0];
             }
@@ -2082,7 +2143,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                 }
                 return call;
             },
-            [&](const sem::Struct* str) -> sem::Call* {
+            [&](const type::Struct* str) -> sem::Call* {
                 auto* call_target = struct_ctors_.GetOrCreate(
                     StructConstructorSig{{str, args.Length(), args_stage}},
                     [&]() -> sem::ValueConstructor* {
@@ -2147,8 +2208,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
         auto resolved = dependencies_.resolved_identifiers.Get(ident);
         if (!resolved) {
             TINT_ICE(Resolver, diagnostics_)
-                << "identifier '" << builder_->Symbols().NameFor(ident->symbol)
-                << "' was not resolved";
+                << "identifier '" << ident->symbol.Name() << "' was not resolved";
             return nullptr;
         }
 
@@ -2341,6 +2401,7 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
     auto check_no_tmpl_args = [&](type::Type* ty) -> type::Type* {
         return TINT_LIKELY(CheckNotTemplated("type", ident)) ? ty : nullptr;
     };
+    auto af = [&] { return b.create<type::AbstractFloat>(); };
     auto f32 = [&] { return b.create<type::F32>(); };
     auto i32 = [&] { return b.create<type::I32>(); };
     auto u32 = [&] { return b.create<type::U32>(); };
@@ -2355,27 +2416,27 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
         auto* tmpl_ident = ident->As<ast::TemplatedIdentifier>();
         if (!tmpl_ident) {
             if (TINT_UNLIKELY(min_args != 0)) {
-                AddError("expected '<' for '" + b.Symbols().NameFor(ident->symbol) + "'",
+                AddError("expected '<' for '" + ident->symbol.Name() + "'",
                          Source{ident->source.range.end});
             }
             return nullptr;
         }
         if (min_args == max_args) {
             if (TINT_UNLIKELY(tmpl_ident->arguments.Length() != min_args)) {
-                AddError("'" + b.Symbols().NameFor(ident->symbol) + "' requires " +
-                             std::to_string(min_args) + " template arguments",
+                AddError("'" + ident->symbol.Name() + "' requires " + std::to_string(min_args) +
+                             " template arguments",
                          ident->source);
                 return nullptr;
             }
         } else {
             if (TINT_UNLIKELY(tmpl_ident->arguments.Length() < min_args)) {
-                AddError("'" + b.Symbols().NameFor(ident->symbol) + "' requires at least " +
+                AddError("'" + ident->symbol.Name() + "' requires at least " +
                              std::to_string(min_args) + " template arguments",
                          ident->source);
                 return nullptr;
             }
             if (TINT_UNLIKELY(tmpl_ident->arguments.Length() > max_args)) {
-                AddError("'" + b.Symbols().NameFor(ident->symbol) + "' requires at most " +
+                AddError("'" + ident->symbol.Name() + "' requires at most " +
                              std::to_string(max_args) + " template arguments",
                          ident->source);
                 return nullptr;
@@ -2591,9 +2652,6 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
             return nullptr;
         }
 
-        if (TINT_UNLIKELY(!el_ty)) {
-            return nullptr;
-        }
         if (TINT_UNLIKELY(!validator_.Vector(el_ty, ident->source))) {
             return nullptr;
         }
@@ -2745,14 +2803,65 @@ type::Type* Resolver::BuiltinType(builtin::Builtin builtin_ty, const ast::Identi
             return storage_texture(type::TextureDimension::k2dArray);
         case builtin::Builtin::kTextureStorage3D:
             return storage_texture(type::TextureDimension::k3d);
-        case builtin::Builtin::kPackedVec3: {
+        case builtin::Builtin::kPackedVec3:
             return packed_vec3_t();
-        }
+        case builtin::Builtin::kAtomicCompareExchangeResultI32:
+            return CreateAtomicCompareExchangeResult(*builder_, i32());
+        case builtin::Builtin::kAtomicCompareExchangeResultU32:
+            return CreateAtomicCompareExchangeResult(*builder_, u32());
+        case builtin::Builtin::kFrexpResultAbstract:
+            return CreateFrexpResult(*builder_, af());
+        case builtin::Builtin::kFrexpResultF16:
+            return CreateFrexpResult(*builder_, f16());
+        case builtin::Builtin::kFrexpResultF32:
+            return CreateFrexpResult(*builder_, f32());
+        case builtin::Builtin::kFrexpResultVec2Abstract:
+            return CreateFrexpResult(*builder_, vec(af(), 2));
+        case builtin::Builtin::kFrexpResultVec2F16:
+            return CreateFrexpResult(*builder_, vec(f16(), 2));
+        case builtin::Builtin::kFrexpResultVec2F32:
+            return CreateFrexpResult(*builder_, vec(f32(), 2));
+        case builtin::Builtin::kFrexpResultVec3Abstract:
+            return CreateFrexpResult(*builder_, vec(af(), 3));
+        case builtin::Builtin::kFrexpResultVec3F16:
+            return CreateFrexpResult(*builder_, vec(f16(), 3));
+        case builtin::Builtin::kFrexpResultVec3F32:
+            return CreateFrexpResult(*builder_, vec(f32(), 3));
+        case builtin::Builtin::kFrexpResultVec4Abstract:
+            return CreateFrexpResult(*builder_, vec(af(), 4));
+        case builtin::Builtin::kFrexpResultVec4F16:
+            return CreateFrexpResult(*builder_, vec(f16(), 4));
+        case builtin::Builtin::kFrexpResultVec4F32:
+            return CreateFrexpResult(*builder_, vec(f32(), 4));
+        case builtin::Builtin::kModfResultAbstract:
+            return CreateModfResult(*builder_, af());
+        case builtin::Builtin::kModfResultF16:
+            return CreateModfResult(*builder_, f16());
+        case builtin::Builtin::kModfResultF32:
+            return CreateModfResult(*builder_, f32());
+        case builtin::Builtin::kModfResultVec2Abstract:
+            return CreateModfResult(*builder_, vec(af(), 2));
+        case builtin::Builtin::kModfResultVec2F16:
+            return CreateModfResult(*builder_, vec(f16(), 2));
+        case builtin::Builtin::kModfResultVec2F32:
+            return CreateModfResult(*builder_, vec(f32(), 2));
+        case builtin::Builtin::kModfResultVec3Abstract:
+            return CreateModfResult(*builder_, vec(af(), 3));
+        case builtin::Builtin::kModfResultVec3F16:
+            return CreateModfResult(*builder_, vec(f16(), 3));
+        case builtin::Builtin::kModfResultVec3F32:
+            return CreateModfResult(*builder_, vec(f32(), 3));
+        case builtin::Builtin::kModfResultVec4Abstract:
+            return CreateModfResult(*builder_, vec(af(), 4));
+        case builtin::Builtin::kModfResultVec4F16:
+            return CreateModfResult(*builder_, vec(f16(), 4));
+        case builtin::Builtin::kModfResultVec4F32:
+            return CreateModfResult(*builder_, vec(f32(), 4));
         case builtin::Builtin::kUndefined:
             break;
     }
 
-    auto name = builder_->Symbols().NameFor(ident->symbol);
+    auto name = ident->symbol.Name();
     TINT_ICE(Resolver, diagnostics_) << ident->source << " unhandled builtin type '" << name << "'";
     return nullptr;
 }
@@ -2940,7 +3049,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
     auto resolved = dependencies_.resolved_identifiers.Get(ident);
     if (!resolved) {
         TINT_ICE(Resolver, diagnostics_)
-            << "identifier '" << builder_->Symbols().NameFor(ident->symbol) << "' was not resolved";
+            << "identifier '" << ident->symbol.Name() << "' was not resolved";
         return nullptr;
     }
 
@@ -2968,12 +3077,11 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                             if (auto decl = loop_block->Decls().Find(symbol)) {
                                 if (decl->order >= loop_block->NumDeclsAtFirstContinue()) {
                                     AddError("continue statement bypasses declaration of '" +
-                                                 builder_->Symbols().NameFor(symbol) + "'",
+                                                 symbol.Name() + "'",
                                              loop_block->FirstContinue()->source);
-                                    AddNote("identifier '" + builder_->Symbols().NameFor(symbol) +
-                                                "' declared here",
+                                    AddNote("identifier '" + symbol.Name() + "' declared here",
                                             decl->variable->Declaration()->source);
-                                    AddNote("identifier '" + builder_->Symbols().NameFor(symbol) +
+                                    AddNote("identifier '" + symbol.Name() +
                                                 "' referenced in continuing block here",
                                             expr->source);
                                     return nullptr;
@@ -3011,7 +3119,7 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
                     // Note: The spec is currently vague around the rules here. See
                     // https://github.com/gpuweb/gpuweb/issues/3081. Remove this comment when
                     // resolved.
-                    std::string desc = "var '" + builder_->Symbols().NameFor(symbol) + "' ";
+                    std::string desc = "var '" + symbol.Name() + "' ";
                     AddError(desc + "cannot be referenced at module-scope", expr->source);
                     AddNote(desc + "declared here", variable->Declaration()->source);
                     return nullptr;
@@ -3116,17 +3224,18 @@ sem::Expression* Resolver::Identifier(const ast::IdentifierExpression* expr) {
     }
 
     TINT_UNREACHABLE(Resolver, diagnostics_)
-        << "unhandled resolved identifier: " << resolved->String(builder_->Symbols(), diagnostics_);
+        << "unhandled resolved identifier: " << resolved->String(diagnostics_);
     return nullptr;
 }
 
 sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpression* expr) {
-    auto* structure = sem_.TypeOf(expr->object);
-    auto* storage_ty = structure->UnwrapRef();
     auto* object = sem_.GetVal(expr->object);
     if (!object) {
         return nullptr;
     }
+
+    auto* object_ty = object->Type();
+    auto* storage_ty = object_ty->UnwrapRef();
 
     auto* root_ident = object->RootIdentifier();
 
@@ -3139,10 +3248,10 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
 
     return Switch(
         storage_ty,  //
-        [&](const sem::Struct* str) -> sem::ValueExpression* {
+        [&](const type::Struct* str) -> sem::ValueExpression* {
             auto symbol = expr->member->symbol;
 
-            const sem::StructMember* member = nullptr;
+            const type::StructMember* member = nullptr;
             for (auto* m : str->Members()) {
                 if (m->Name() == symbol) {
                     member = m;
@@ -3151,15 +3260,14 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
             }
 
             if (member == nullptr) {
-                AddError("struct member " + builder_->Symbols().NameFor(symbol) + " not found",
-                         expr->source);
+                AddError("struct member " + symbol.Name() + " not found", expr->source);
                 return nullptr;
             }
 
             ty = member->Type();
 
             // If we're extracting from a reference, we return a reference.
-            if (auto* ref = structure->As<type::Reference>()) {
+            if (auto* ref = object_ty->As<type::Reference>()) {
                 ty = builder_->create<type::Reference>(ty, ref->AddressSpace(), ref->Access());
             }
 
@@ -3173,7 +3281,7 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
         },
 
         [&](const type::Vector* vec) -> sem::ValueExpression* {
-            std::string s = builder_->Symbols().NameFor(expr->member->symbol);
+            std::string s = expr->member->symbol.Name();
             auto size = s.size();
             utils::Vector<uint32_t, 4> swizzle;
             swizzle.Reserve(s.size());
@@ -3228,7 +3336,7 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
                 // A single element swizzle is just the type of the vector.
                 ty = vec->type();
                 // If we're extracting from a reference, we return a reference.
-                if (auto* ref = structure->As<type::Reference>()) {
+                if (auto* ref = object_ty->As<type::Reference>()) {
                     ty = builder_->create<type::Reference>(ty, ref->AddressSpace(), ref->Access());
                 }
             } else {
@@ -3430,36 +3538,205 @@ sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
     return sem;
 }
 
-bool Resolver::Attribute(const ast::Attribute* attr) {
-    Mark(attr);
-    return Switch(
-        attr,  //
-        [&](const ast::BuiltinAttribute* b) { return BuiltinAttribute(b); },
-        [&](const ast::DiagnosticAttribute* d) { return DiagnosticControl(d->control); },
-        [&](const ast::InterpolateAttribute* i) { return InterpolateAttribute(i); },
-        [&](const ast::InternalAttribute* i) { return InternalAttribute(i); },
-        [&](Default) { return true; });
+utils::Result<uint32_t> Resolver::LocationAttribute(const ast::LocationAttribute* attr) {
+    ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@location value"};
+    TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
+
+    auto* materialized = Materialize(ValueExpression(attr->expr));
+    if (!materialized) {
+        return utils::Failure;
+    }
+
+    if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
+        AddError("@location must be an i32 or u32 value", attr->source);
+        return utils::Failure;
+    }
+
+    auto const_value = materialized->ConstantValue();
+    auto value = const_value->ValueAs<AInt>();
+    if (value < 0) {
+        AddError("@location value must be non-negative", attr->source);
+        return utils::Failure;
+    }
+
+    return static_cast<uint32_t>(value);
 }
 
-bool Resolver::BuiltinAttribute(const ast::BuiltinAttribute* attr) {
+utils::Result<uint32_t> Resolver::BindingAttribute(const ast::BindingAttribute* attr) {
+    ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@binding"};
+    TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
+
+    auto* materialized = Materialize(ValueExpression(attr->expr));
+    if (!materialized) {
+        return utils::Failure;
+    }
+    if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
+        AddError("@binding must be an i32 or u32 value", attr->source);
+        return utils::Failure;
+    }
+
+    auto const_value = materialized->ConstantValue();
+    auto value = const_value->ValueAs<AInt>();
+    if (value < 0) {
+        AddError("@binding value must be non-negative", attr->source);
+        return utils::Failure;
+    }
+    return static_cast<uint32_t>(value);
+}
+
+utils::Result<uint32_t> Resolver::GroupAttribute(const ast::GroupAttribute* attr) {
+    ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@group"};
+    TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
+
+    auto* materialized = Materialize(ValueExpression(attr->expr));
+    if (!materialized) {
+        return utils::Failure;
+    }
+    if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
+        AddError("@group must be an i32 or u32 value", attr->source);
+        return utils::Failure;
+    }
+
+    auto const_value = materialized->ConstantValue();
+    auto value = const_value->ValueAs<AInt>();
+    if (value < 0) {
+        AddError("@group value must be non-negative", attr->source);
+        return utils::Failure;
+    }
+    return static_cast<uint32_t>(value);
+}
+
+utils::Result<sem::WorkgroupSize> Resolver::WorkgroupAttribute(
+    const ast::WorkgroupAttribute* attr) {
+    // Set work-group size defaults.
+    sem::WorkgroupSize ws;
+    for (size_t i = 0; i < 3; i++) {
+        ws[i] = 1;
+    }
+
+    auto values = attr->Values();
+    utils::Vector<const sem::ValueExpression*, 3> args;
+    utils::Vector<const type::Type*, 3> arg_tys;
+
+    constexpr const char* kErrBadExpr =
+        "workgroup_size argument must be a constant or override-expression of type "
+        "abstract-integer, i32 or u32";
+
+    for (size_t i = 0; i < 3; i++) {
+        // Each argument to this attribute can either be a literal, an identifier for a
+        // module-scope constants, a const-expression, or nullptr if not specified.
+        auto* value = values[i];
+        if (!value) {
+            break;
+        }
+        const auto* expr = ValueExpression(value);
+        if (!expr) {
+            return utils::Failure;
+        }
+        auto* ty = expr->Type();
+        if (!ty->IsAnyOf<type::I32, type::U32, type::AbstractInt>()) {
+            AddError(kErrBadExpr, value->source);
+            return utils::Failure;
+        }
+
+        if (expr->Stage() != sem::EvaluationStage::kConstant &&
+            expr->Stage() != sem::EvaluationStage::kOverride) {
+            AddError(kErrBadExpr, value->source);
+            return utils::Failure;
+        }
+
+        args.Push(expr);
+        arg_tys.Push(ty);
+    }
+
+    auto* common_ty = type::Type::Common(arg_tys);
+    if (!common_ty) {
+        AddError("workgroup_size arguments must be of the same type, either i32 or u32",
+                 attr->source);
+        return utils::Failure;
+    }
+
+    // If all arguments are abstract-integers, then materialize to i32.
+    if (common_ty->Is<type::AbstractInt>()) {
+        common_ty = builder_->create<type::I32>();
+    }
+
+    for (size_t i = 0; i < args.Length(); i++) {
+        auto* materialized = Materialize(args[i], common_ty);
+        if (!materialized) {
+            return utils::Failure;
+        }
+        if (auto* value = materialized->ConstantValue()) {
+            if (value->ValueAs<AInt>() < 1) {
+                AddError("workgroup_size argument must be at least 1", values[i]->source);
+                return utils::Failure;
+            }
+            ws[i] = value->ValueAs<u32>();
+        } else {
+            ws[i] = std::nullopt;
+        }
+    }
+
+    uint64_t total_size = static_cast<uint64_t>(ws[0].value_or(1));
+    for (size_t i = 1; i < 3; i++) {
+        total_size *= static_cast<uint64_t>(ws[i].value_or(1));
+        if (total_size > 0xffffffff) {
+            AddError("total workgroup grid size cannot exceed 0xffffffff", values[i]->source);
+            return utils::Failure;
+        }
+    }
+
+    return ws;
+}
+
+utils::Result<tint::builtin::BuiltinValue> Resolver::BuiltinAttribute(
+    const ast::BuiltinAttribute* attr) {
     auto* builtin_expr = BuiltinValueExpression(attr->builtin);
     if (!builtin_expr) {
-        return false;
+        return utils::Failure;
     }
     // Apply the resolved tint::sem::BuiltinEnumExpression<tint::builtin::BuiltinValue> to the
     // attribute.
     builder_->Sem().Add(attr, builtin_expr);
+    return builtin_expr->Value();
+}
+
+bool Resolver::DiagnosticAttribute(const ast::DiagnosticAttribute* attr) {
+    return DiagnosticControl(attr->control);
+}
+
+bool Resolver::StageAttribute(const ast::StageAttribute*) {
     return true;
 }
 
-bool Resolver::InterpolateAttribute(const ast::InterpolateAttribute* attr) {
-    if (!InterpolationType(attr->type)) {
-        return false;
-    }
-    if (attr->sampling && !InterpolationSampling(attr->sampling)) {
-        return false;
-    }
+bool Resolver::MustUseAttribute(const ast::MustUseAttribute*) {
     return true;
+}
+
+bool Resolver::InvariantAttribute(const ast::InvariantAttribute*) {
+    return true;
+}
+
+bool Resolver::StrideAttribute(const ast::StrideAttribute*) {
+    return true;
+}
+
+utils::Result<builtin::Interpolation> Resolver::InterpolateAttribute(
+    const ast::InterpolateAttribute* attr) {
+    builtin::Interpolation out;
+    auto* type = InterpolationType(attr->type);
+    if (!type) {
+        return utils::Failure;
+    }
+    out.type = type->Value();
+    if (attr->sampling) {
+        auto* sampling = InterpolationSampling(attr->sampling);
+        if (!sampling) {
+            return utils::Failure;
+        }
+        out.sampling = sampling->Value();
+    }
+    return out;
 }
 
 bool Resolver::InternalAttribute(const ast::InternalAttribute* attr) {
@@ -3473,15 +3750,33 @@ bool Resolver::InternalAttribute(const ast::InternalAttribute* attr) {
 
 bool Resolver::DiagnosticControl(const ast::DiagnosticControl& control) {
     Mark(control.rule_name);
+    Mark(control.rule_name->name);
+    auto name = control.rule_name->name->symbol.Name();
 
-    auto rule_name = builder_->Symbols().NameFor(control.rule_name->symbol);
-    auto rule = builtin::ParseDiagnosticRule(rule_name);
-    if (rule != builtin::DiagnosticRule::kUndefined) {
+    if (control.rule_name->category) {
+        Mark(control.rule_name->category);
+        if (control.rule_name->category->symbol.Name() == "chromium") {
+            auto rule = builtin::ParseChromiumDiagnosticRule(name);
+            if (rule != builtin::ChromiumDiagnosticRule::kUndefined) {
+                validator_.DiagnosticFilters().Set(rule, control.severity);
+            } else {
+                utils::StringStream ss;
+                ss << "unrecognized diagnostic rule 'chromium." << name << "'\n";
+                utils::SuggestAlternatives(name, builtin::kChromiumDiagnosticRuleStrings, ss,
+                                           "chromium.");
+                AddWarning(ss.str(), control.rule_name->source);
+            }
+        }
+        return true;
+    }
+
+    auto rule = builtin::ParseCoreDiagnosticRule(name);
+    if (rule != builtin::CoreDiagnosticRule::kUndefined) {
         validator_.DiagnosticFilters().Set(rule, control.severity);
     } else {
         utils::StringStream ss;
-        ss << "unrecognized diagnostic rule '" << rule_name << "'\n";
-        utils::SuggestAlternatives(rule_name, builtin::kDiagnosticRuleStrings, ss);
+        ss << "unrecognized diagnostic rule '" << name << "'\n";
+        utils::SuggestAlternatives(name, builtin::kCoreDiagnosticRuleStrings, ss);
         AddWarning(ss.str(), control.rule_name->source);
     }
     return true;
@@ -3564,24 +3859,30 @@ bool Resolver::ArrayAttributes(utils::VectorRef<const ast::Attribute*> attribute
         return false;
     }
 
-    for (auto* attr : attributes) {
-        Mark(attr);
-        if (auto* sd = attr->As<ast::StrideAttribute>()) {
-            // If the element type is not plain, then el_ty->Align() may be 0, in which case we
-            // could get a DBZ in ArrayStrideAttribute(). In this case, validation will error
-            // about the invalid array element type (which is tested later), so this is just a
-            // seatbelt.
-            if (IsPlain(el_ty)) {
-                explicit_stride = sd->stride;
-                if (!validator_.ArrayStrideAttribute(sd, el_ty->Size(), el_ty->Align())) {
-                    return false;
+    for (auto* attribute : attributes) {
+        Mark(attribute);
+        bool ok = Switch(
+            attribute,  //
+            [&](const ast::StrideAttribute* attr) {
+                // If the element type is not plain, then el_ty->Align() may be 0, in which case we
+                // could get a DBZ in ArrayStrideAttribute(). In this case, validation will error
+                // about the invalid array element type (which is tested later), so this is just a
+                // seatbelt.
+                if (IsPlain(el_ty)) {
+                    explicit_stride = attr->stride;
+                    if (!validator_.ArrayStrideAttribute(attr, el_ty->Size(), el_ty->Align())) {
+                        return false;
+                    }
                 }
-            }
-            continue;
+                return true;
+            },
+            [&](Default) {
+                ErrorInvalidAttribute(attribute, "array types");
+                return false;
+            });
+        if (!ok) {
+            return false;
         }
-
-        AddError("attribute is not valid for array types", attr->source);
-        return false;
     }
 
     return true;
@@ -3646,7 +3947,7 @@ type::Type* Resolver::Alias(const ast::Alias* alias) {
 
 sem::Struct* Resolver::Structure(const ast::Struct* str) {
     auto struct_name = [&] {  //
-        return builder_->Symbols().NameFor(str->name->symbol);
+        return str->name->symbol.Name();
     };
 
     if (validator_.IsValidationEnabled(str->attributes,
@@ -3665,8 +3966,18 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     if (!validator_.NoDuplicateAttributes(str->attributes)) {
         return nullptr;
     }
-    for (auto* attr : str->attributes) {
-        Mark(attr);
+
+    for (auto* attribute : str->attributes) {
+        Mark(attribute);
+        bool ok = Switch(
+            attribute, [&](const ast::InternalAttribute* attr) { return InternalAttribute(attr); },
+            [&](Default) {
+                ErrorInvalidAttribute(attribute, "struct declarations");
+                return false;
+            });
+        if (!ok) {
+            return nullptr;
+        }
     }
 
     utils::Vector<const sem::StructMember*, 8> sem_members;
@@ -3687,8 +3998,7 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
         Mark(member);
         Mark(member->name);
         if (auto added = member_map.Add(member->name->symbol, member); !added) {
-            AddError("redefinition of '" + builder_->Symbols().NameFor(member->name->symbol) + "'",
-                     member->source);
+            AddError("redefinition of '" + member->name->symbol.Name() + "'", member->source);
             AddNote("previous definition is here", (*added.value)->source);
             return nullptr;
         }
@@ -3719,89 +4029,88 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
         bool has_offset_attr = false;
         bool has_align_attr = false;
         bool has_size_attr = false;
-        std::optional<uint32_t> location;
-        for (auto* attr : member->attributes) {
-            if (!Attribute(attr)) {
-                return nullptr;
-            }
+        type::StructMemberAttributes attributes;
+        for (auto* attribute : member->attributes) {
+            Mark(attribute);
             bool ok = Switch(
-                attr,  //
-                [&](const ast::StructMemberOffsetAttribute* o) {
-                    // Offset attributes are not part of the WGSL spec, but are emitted
-                    // by the SPIR-V reader.
+                attribute,  //
+                [&](const ast::StructMemberOffsetAttribute* attr) {
+                    // Offset attributes are not part of the WGSL spec, but are emitted by the
+                    // SPIR-V reader.
+
                     ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant,
                                                        "@offset value"};
                     TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
 
-                    auto* materialized = Materialize(ValueExpression(o->expr));
+                    auto* materialized = Materialize(ValueExpression(attr->expr));
                     if (!materialized) {
                         return false;
                     }
                     auto const_value = materialized->ConstantValue();
                     if (!const_value) {
-                        AddError("@offset must be constant expression", o->expr->source);
+                        AddError("@offset must be constant expression", attr->expr->source);
                         return false;
                     }
                     offset = const_value->ValueAs<uint64_t>();
 
                     if (offset < struct_size) {
-                        AddError("offsets must be in ascending order", o->source);
+                        AddError("offsets must be in ascending order", attr->source);
                         return false;
                     }
                     has_offset_attr = true;
                     return true;
                 },
-                [&](const ast::StructMemberAlignAttribute* a) {
+                [&](const ast::StructMemberAlignAttribute* attr) {
                     ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@align"};
                     TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
 
-                    auto* materialized = Materialize(ValueExpression(a->expr));
+                    auto* materialized = Materialize(ValueExpression(attr->expr));
                     if (!materialized) {
                         return false;
                     }
                     if (!materialized->Type()->IsAnyOf<type::I32, type::U32>()) {
-                        AddError("@align must be an i32 or u32 value", a->source);
+                        AddError("@align must be an i32 or u32 value", attr->source);
                         return false;
                     }
 
                     auto const_value = materialized->ConstantValue();
                     if (!const_value) {
-                        AddError("@align must be constant expression", a->source);
+                        AddError("@align must be constant expression", attr->source);
                         return false;
                     }
                     auto value = const_value->ValueAs<AInt>();
 
                     if (value <= 0 || !utils::IsPowerOfTwo(value)) {
                         AddError("@align value must be a positive, power-of-two integer",
-                                 a->source);
+                                 attr->source);
                         return false;
                     }
                     align = u32(value);
                     has_align_attr = true;
                     return true;
                 },
-                [&](const ast::StructMemberSizeAttribute* s) {
+                [&](const ast::StructMemberSizeAttribute* attr) {
                     ExprEvalStageConstraint constraint{sem::EvaluationStage::kConstant, "@size"};
                     TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
 
-                    auto* materialized = Materialize(ValueExpression(s->expr));
+                    auto* materialized = Materialize(ValueExpression(attr->expr));
                     if (!materialized) {
                         return false;
                     }
                     if (!materialized->Type()->IsAnyOf<type::U32, type::I32>()) {
-                        AddError("@size must be an i32 or u32 value", s->source);
+                        AddError("@size must be an i32 or u32 value", attr->source);
                         return false;
                     }
 
                     auto const_value = materialized->ConstantValue();
                     if (!const_value) {
-                        AddError("@size must be constant expression", s->expr->source);
+                        AddError("@size must be constant expression", attr->expr->source);
                         return false;
                     }
                     {
                         auto value = const_value->ValueAs<AInt>();
                         if (value <= 0) {
-                            AddError("@size must be a positive integer", s->source);
+                            AddError("@size must be a positive integer", attr->source);
                             return false;
                         }
                     }
@@ -3809,24 +4118,56 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                     if (value < size) {
                         AddError("@size must be at least as big as the type's size (" +
                                      std::to_string(size) + ")",
-                                 s->source);
+                                 attr->source);
                         return false;
                     }
                     size = u32(value);
                     has_size_attr = true;
                     return true;
                 },
-                [&](const ast::LocationAttribute* loc_attr) {
-                    auto value = LocationAttribute(loc_attr);
+                [&](const ast::LocationAttribute* attr) {
+                    auto value = LocationAttribute(attr);
                     if (!value) {
                         return false;
                     }
-                    location = value.Get();
+                    attributes.location = value.Get();
                     return true;
                 },
-                [&](Default) {
-                    // The validator will check attributes can be applied to the struct member.
+                [&](const ast::BuiltinAttribute* attr) {
+                    auto value = BuiltinAttribute(attr);
+                    if (!value) {
+                        return false;
+                    }
+                    attributes.builtin = value.Get();
                     return true;
+                },
+                [&](const ast::InterpolateAttribute* attr) {
+                    auto value = InterpolateAttribute(attr);
+                    if (!value) {
+                        return false;
+                    }
+                    attributes.interpolation = value.Get();
+                    return true;
+                },
+                [&](const ast::InvariantAttribute* attr) {
+                    if (!InvariantAttribute(attr)) {
+                        return false;
+                    }
+                    attributes.invariant = true;
+                    return true;
+                },
+                [&](const ast::StrideAttribute* attr) {
+                    if (validator_.IsValidationEnabled(
+                            member->attributes, ast::DisabledValidation::kIgnoreStrideAttribute)) {
+                        ErrorInvalidAttribute(attribute, "struct members");
+                        return false;
+                    }
+                    return StrideAttribute(attr);
+                },
+                [&](const ast::InternalAttribute* attr) { return InternalAttribute(attr); },
+                [&](Default) {
+                    ErrorInvalidAttribute(attribute, "struct members");
+                    return false;
                 });
             if (!ok) {
                 return nullptr;
@@ -3848,9 +4189,9 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
         }
 
         auto* sem_member = builder_->create<sem::StructMember>(
-            member, member->source, member->name->symbol, type,
-            static_cast<uint32_t>(sem_members.Length()), static_cast<uint32_t>(offset),
-            static_cast<uint32_t>(align), static_cast<uint32_t>(size), location);
+            member, member->name->symbol, type, static_cast<uint32_t>(sem_members.Length()),
+            static_cast<uint32_t>(offset), static_cast<uint32_t>(align),
+            static_cast<uint32_t>(size), attributes);
         builder_->Sem().Add(member, sem_member);
         sem_members.Push(sem_member);
 
@@ -3873,14 +4214,13 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
     }
 
     auto* out = builder_->create<sem::Struct>(
-        str, str->source, str->name->symbol, std::move(sem_members),
-        static_cast<uint32_t>(struct_align), static_cast<uint32_t>(struct_size),
-        static_cast<uint32_t>(size_no_padding));
+        str, str->name->symbol, std::move(sem_members), static_cast<uint32_t>(struct_align),
+        static_cast<uint32_t>(struct_size), static_cast<uint32_t>(size_no_padding));
 
     for (size_t i = 0; i < sem_members.Length(); i++) {
         auto* mem_type = sem_members[i]->Type();
         if (mem_type->Is<type::Atomic>()) {
-            atomic_composite_info_.Add(out, &sem_members[i]->Source());
+            atomic_composite_info_.Add(out, &sem_members[i]->Declaration()->source);
             break;
         } else {
             if (auto found = atomic_composite_info_.Get(mem_type)) {
@@ -3988,14 +4328,16 @@ sem::SwitchStatement* Resolver::SwitchStatement(const ast::SwitchStatement* stmt
         }
 
         // Handle switch body attributes.
-        for (auto* attr : stmt->body_attributes) {
-            Mark(attr);
-            if (auto* dc = attr->As<ast::DiagnosticAttribute>()) {
-                if (!DiagnosticControl(dc->control)) {
+        for (auto* attribute : stmt->body_attributes) {
+            Mark(attribute);
+            bool ok = Switch(
+                attribute,
+                [&](const ast::DiagnosticAttribute* attr) { return DiagnosticAttribute(attr); },
+                [&](Default) {
+                    ErrorInvalidAttribute(attribute, "switch body");
                     return false;
-                }
-            } else {
-                AddError("attribute is not valid for switch body", attr->source);
+                });
+            if (!ok) {
                 return false;
             }
         }
@@ -4036,14 +4378,6 @@ sem::Statement* Resolver::VariableDeclStatement(const ast::VariableDeclStatement
         auto* variable = Variable(stmt->variable, /* is_global */ false);
         if (!variable) {
             return false;
-        }
-
-        for (auto* attr : stmt->variable->attributes) {
-            Mark(attr);
-            if (!attr->Is<ast::InternalAttribute>()) {
-                AddError("attributes are not valid on local variables", attr->source);
-                return false;
-            }
         }
 
         current_compound_statement_->AddDecl(variable->As<sem::LocalVariable>());
@@ -4230,8 +4564,8 @@ bool Resolver::ApplyAddressSpaceUsageToType(builtin::AddressSpace address_space,
                     address_space, const_cast<type::Type*>(member->Type()), decl->type->source)) {
                 utils::StringStream err;
                 err << "while analyzing structure member " << sem_.TypeNameOf(str) << "."
-                    << builder_->Symbols().NameFor(member->Name());
-                AddNote(err.str(), member->Source());
+                    << member->Name().Name();
+                AddNote(err.str(), member->Declaration()->source);
                 return false;
             }
         }
@@ -4273,20 +4607,21 @@ template <typename SEM, typename F>
 SEM* Resolver::StatementScope(const ast::Statement* ast, SEM* sem, F&& callback) {
     builder_->Sem().Add(ast, sem);
 
-    auto* as_compound = As<sem::CompoundStatement, CastFlags::kDontErrorOnImpossibleCast>(sem);
+    auto* as_compound =
+        As<sem::CompoundStatement, utils::CastFlags::kDontErrorOnImpossibleCast>(sem);
 
     // Helper to handle attributes that are supported on certain types of statement.
     auto handle_attributes = [&](auto* stmt, sem::Statement* sem_stmt, const char* use) {
-        for (auto* attr : stmt->attributes) {
-            Mark(attr);
-            if (auto* dc = attr->template As<ast::DiagnosticAttribute>()) {
-                if (!DiagnosticControl(dc->control)) {
+        for (auto* attribute : stmt->attributes) {
+            Mark(attribute);
+            bool ok = Switch(
+                attribute,  //
+                [&](const ast::DiagnosticAttribute* attr) { return DiagnosticAttribute(attr); },
+                [&](Default) {
+                    ErrorInvalidAttribute(attribute, use);
                     return false;
-                }
-            } else {
-                utils::StringStream ss;
-                ss << "attribute is not valid for " << use;
-                AddError(ss.str(), attr->source);
+                });
+            if (!ok) {
                 return false;
             }
         }
@@ -4369,9 +4704,9 @@ void Resolver::ApplyDiagnosticSeverities(NODE* node) {
 
 bool Resolver::CheckNotTemplated(const char* use, const ast::Identifier* ident) {
     if (TINT_UNLIKELY(ident->Is<ast::TemplatedIdentifier>())) {
-        AddError(std::string(use) + " '" + builder_->Symbols().NameFor(ident->symbol) +
-                     "' does not take template arguments",
-                 ident->source);
+        AddError(
+            std::string(use) + " '" + ident->symbol.Name() + "' does not take template arguments",
+            ident->source);
         if (auto resolved = dependencies_.resolved_identifiers.Get(ident)) {
             if (auto* ast_node = resolved->Node()) {
                 sem_.NoteDeclarationSource(ast_node);
@@ -4385,10 +4720,12 @@ bool Resolver::CheckNotTemplated(const char* use, const ast::Identifier* ident) 
 void Resolver::ErrorMismatchedResolvedIdentifier(const Source& source,
                                                  const ResolvedIdentifier& resolved,
                                                  std::string_view wanted) {
-    AddError("cannot use " + resolved.String(builder_->Symbols(), diagnostics_) + " as " +
-                 std::string(wanted),
-             source);
+    AddError("cannot use " + resolved.String(diagnostics_) + " as " + std::string(wanted), source);
     sem_.NoteDeclarationSource(resolved.Node());
+}
+
+void Resolver::ErrorInvalidAttribute(const ast::Attribute* attr, std::string_view use) {
+    AddError("@" + attr->Name() + " is not valid for " + std::string(use), attr->source);
 }
 
 void Resolver::AddError(const std::string& msg, const Source& source) const {

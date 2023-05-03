@@ -1438,6 +1438,12 @@ bool ParserImpl::EmitModuleScopeVariables() {
         if ((type_id == builtin_position_.pointer_type_id) &&
             ((spirv_storage_class == spv::StorageClass::Input) ||
              (spirv_storage_class == spv::StorageClass::Output))) {
+            // TODO(crbug.com/tint/103): Support modules that contain multiple Position built-ins.
+            if (builtin_position_.per_vertex_var_id != 0) {
+                return Fail()
+                       << "unsupported: multiple Position built-in variables in the same module";
+            }
+
             // Skip emitting gl_PerVertex.
             builtin_position_.per_vertex_var_id = var.result_id();
             builtin_position_.per_vertex_var_init_id =
@@ -1910,6 +1916,13 @@ TypedExpression ParserImpl::MakeConstantExpression(uint32_t id) {
         case spv::Op::OpConstantComposite: {
             // Handle vector, matrix, array, and struct
 
+            auto itr = declared_constant_composites_.find(id);
+            if (itr != declared_constant_composites_.end()) {
+                // We've already declared this constant value as a module-scope const, so just
+                // reference that identifier.
+                return {original_ast_type, builder_.Expr(itr->second)};
+            }
+
             // Generate a composite from explicit components.
             ExpressionList ast_components;
             if (!inst->WhileEachInId([&](const uint32_t* id_ref) -> bool {
@@ -1924,8 +1937,20 @@ TypedExpression ParserImpl::MakeConstantExpression(uint32_t id) {
                 // We've already emitted a diagnostic.
                 return {};
             }
-            return {original_ast_type, builder_.Call(source, original_ast_type->Build(builder_),
-                                                     std::move(ast_components))};
+
+            auto* expr = builder_.Call(source, original_ast_type->Build(builder_),
+                                       std::move(ast_components));
+
+            if (def_use_mgr_->NumUses(id) == 1) {
+                // The constant is only used once, so just inline its use.
+                return {original_ast_type, expr};
+            }
+
+            // Create a module-scope const declaration for the constant.
+            auto name = namer_.Name(id);
+            auto* decl = builder_.GlobalConst(name, expr);
+            declared_constant_composites_.insert({id, decl->name->symbol});
+            return {original_ast_type, builder_.Expr(name)};
         }
         default:
             break;

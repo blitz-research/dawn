@@ -120,7 +120,7 @@ class SamplerTest : public DawnTest {
             wgpu::SamplerDescriptor descriptor = {};
             descriptor.minFilter = wgpu::FilterMode::Nearest;
             descriptor.magFilter = wgpu::FilterMode::Nearest;
-            descriptor.mipmapFilter = wgpu::FilterMode::Nearest;
+            descriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
             descriptor.addressModeU = u.mMode;
             descriptor.addressModeV = v.mMode;
             descriptor.addressModeW = w.mMode;
@@ -205,6 +205,7 @@ TEST_P(SamplerTest, PassThroughUserFunctionParameters) {
 }
 
 DAWN_INSTANTIATE_TEST(SamplerTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

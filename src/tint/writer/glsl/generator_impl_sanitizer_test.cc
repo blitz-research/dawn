@@ -17,6 +17,8 @@
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/writer/glsl/test_helper.h"
 
+#include "gmock/gmock.h"
+
 using namespace tint::number_suffixes;  // NOLINT
 
 namespace tint::writer::glsl {
@@ -38,8 +40,8 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength) {
          });
 
     GeneratorImpl& gen = SanitizeAndBuild();
-
-    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
@@ -78,8 +80,8 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
          });
 
     GeneratorImpl& gen = SanitizeAndBuild();
-
-    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
@@ -122,8 +124,8 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength_ViaLets) {
          });
 
     GeneratorImpl& gen = SanitizeAndBuild();
-
-    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
@@ -159,8 +161,8 @@ TEST_F(GlslSanitizerTest, PromoteArrayInitializerToConstVar) {
          });
 
     GeneratorImpl& gen = SanitizeAndBuild();
-
-    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
@@ -201,8 +203,8 @@ TEST_F(GlslSanitizerTest, PromoteStructInitializerToConstVar) {
          });
 
     GeneratorImpl& gen = SanitizeAndBuild();
-
-    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
@@ -228,7 +230,7 @@ void main() {
     EXPECT_EQ(expect, got);
 }
 
-TEST_F(GlslSanitizerTest, InlinePtrLetsBasic) {
+TEST_F(GlslSanitizerTest, SimplifyPointersBasic) {
     // var v : i32;
     // let p : ptr<function, i32> = &v;
     // let x : i32 = *p;
@@ -247,8 +249,8 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsBasic) {
          });
 
     GeneratorImpl& gen = SanitizeAndBuild();
-
-    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es
@@ -267,7 +269,7 @@ void main() {
     EXPECT_EQ(expect, got);
 }
 
-TEST_F(GlslSanitizerTest, InlinePtrLetsComplexChain) {
+TEST_F(GlslSanitizerTest, SimplifyPointersComplexChain) {
     // var a : array<mat4x4<f32>, 4u>;
     // let ap : ptr<function, array<mat4x4<f32>, 4u>> = &a;
     // let mp : ptr<function, mat4x4<f32>> = &(*ap)[3i];
@@ -296,8 +298,8 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsComplexChain) {
          });
 
     GeneratorImpl& gen = SanitizeAndBuild();
-
-    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
 
     auto got = gen.result();
     auto* expect = R"(#version 310 es

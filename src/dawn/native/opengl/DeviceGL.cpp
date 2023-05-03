@@ -137,7 +137,7 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // extensions
     bool hasDebugOutput = gl.IsAtLeastGL(4, 3) || gl.IsAtLeastGLES(3, 2);
 
-    if (GetAdapter()->GetInstance()->IsBackendValidationEnabled() && hasDebugOutput) {
+    if (GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled() && hasDebugOutput) {
         gl.Enable(GL_DEBUG_OUTPUT);
         gl.Enable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
@@ -251,6 +251,13 @@ ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
     const TextureViewDescriptor* descriptor) {
     return AcquireRef(new TextureView(texture, descriptor));
+}
+
+ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
+    const Surface* surface) const {
+    wgpu::TextureUsage usages =
+        wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+    return usages;
 }
 
 void Device::SubmitFenceSync() {

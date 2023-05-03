@@ -17,6 +17,7 @@
 #include <iostream>
 
 #include "src/tint/ast/alias.h"
+#include "src/tint/ast/assignment_statement.h"
 #include "src/tint/ast/binary_expression.h"
 #include "src/tint/ast/bitcast_expression.h"
 #include "src/tint/ast/block_statement.h"
@@ -25,8 +26,11 @@
 #include "src/tint/ast/break_statement.h"
 #include "src/tint/ast/call_expression.h"
 #include "src/tint/ast/call_statement.h"
+#include "src/tint/ast/compound_assignment_statement.h"
+#include "src/tint/ast/const.h"
 #include "src/tint/ast/const_assert.h"
 #include "src/tint/ast/continue_statement.h"
+#include "src/tint/ast/discard_statement.h"
 #include "src/tint/ast/float_literal_expression.h"
 #include "src/tint/ast/for_loop_statement.h"
 #include "src/tint/ast/function.h"
@@ -35,6 +39,7 @@
 #include "src/tint/ast/identifier_expression.h"
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ast/int_literal_expression.h"
+#include "src/tint/ast/let.h"
 #include "src/tint/ast/literal_expression.h"
 #include "src/tint/ast/loop_statement.h"
 #include "src/tint/ast/override.h"
@@ -45,14 +50,18 @@
 #include "src/tint/ast/struct_member_size_attribute.h"
 #include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/templated_identifier.h"
+#include "src/tint/ast/unary_op_expression.h"
+#include "src/tint/ast/var.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/ast/while_statement.h"
 #include "src/tint/ir/function.h"
 #include "src/tint/ir/if.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/store.h"
 #include "src/tint/ir/switch.h"
 #include "src/tint/ir/terminator.h"
+#include "src/tint/ir/value.h"
 #include "src/tint/program.h"
 #include "src/tint/sem/builtin.h"
 #include "src/tint/sem/call.h"
@@ -62,8 +71,10 @@
 #include "src/tint/sem/value_constructor.h"
 #include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/value_expression.h"
+#include "src/tint/sem/variable.h"
 #include "src/tint/switch.h"
 #include "src/tint/type/void.h"
+#include "src/tint/utils/scoped_assignment.h"
 
 namespace tint::ir {
 namespace {
@@ -146,49 +157,48 @@ FlowNode* BuilderImpl::FindEnclosingControl(ControlFlags flags) {
 }
 
 Symbol BuilderImpl::CloneSymbol(Symbol sym) const {
-    return clone_ctx_.type_ctx.dst.st->Register(clone_ctx_.type_ctx.src.st->NameFor(sym));
+    return clone_ctx_.type_ctx.dst.st->Register(sym.Name());
 }
 
 ResultType BuilderImpl::Build() {
     auto* sem = program_->Sem().Module();
 
     for (auto* decl : sem->DependencyOrderedDeclarations()) {
-        bool ok = tint::Switch(
+        tint::Switch(
             decl,  //
             [&](const ast::Struct*) {
                 // Will be encoded into the `type::Struct` when used. We will then hoist all
                 // used structs up to module scope when converting IR.
-                return true;
             },
             [&](const ast::Alias*) {
                 // Folded away and doesn't appear in the IR.
-                return true;
             },
-            // [&](const ast::Variable* var) {
-            // TODO(dsinclair): Implement
-            // },
-            [&](const ast::Function* func) { return EmitFunction(func); },
+            [&](const ast::Variable* var) {
+                // Setup the current flow node to be the root block for the module. The builder will
+                // handle creating it if it doesn't exist already.
+                TINT_SCOPED_ASSIGNMENT(current_flow_block, builder.CreateRootBlockIfNeeded());
+                EmitVariable(var);
+            },
+            [&](const ast::Function* func) { EmitFunction(func); },
             // [&](const ast::Enable*) {
             // TODO(dsinclair): Implement? I think these need to be passed along so further stages
             // know what is enabled.
             // },
             [&](const ast::ConstAssert*) {
                 // Evaluated by the resolver, drop from the IR.
-                return true;
             },
             [&](Default) {
                 add_error(decl->source, "unknown type: " + std::string(decl->TypeInfo().name));
-                return true;
             });
-        if (!ok) {
-            return utils::Failure;
-        }
+    }
+    if (!diagnostics_.empty()) {
+        return utils::Failure;
     }
 
     return ResultType{std::move(builder.ir)};
 }
 
-bool BuilderImpl::EmitFunction(const ast::Function* ast_func) {
+void BuilderImpl::EmitFunction(const ast::Function* ast_func) {
     // The flow stack should have been emptied when the previous function finished building.
     TINT_ASSERT(IR, flow_stack.IsEmpty());
 
@@ -207,9 +217,7 @@ bool BuilderImpl::EmitFunction(const ast::Function* ast_func) {
         FlowStackScope scope(this, ir_func);
 
         current_flow_block = ir_func->start_target;
-        if (!EmitStatements(ast_func->body->statements)) {
-            return false;
-        }
+        EmitStatements(ast_func->body->statements);
 
         // TODO(dsinclair): Store return type and attributes
         // TODO(dsinclair): Store parameters
@@ -223,15 +231,11 @@ bool BuilderImpl::EmitFunction(const ast::Function* ast_func) {
     TINT_ASSERT(IR, flow_stack.IsEmpty());
     current_flow_block = nullptr;
     current_function_ = nullptr;
-
-    return true;
 }
 
-bool BuilderImpl::EmitStatements(utils::VectorRef<const ast::Statement*> stmts) {
+void BuilderImpl::EmitStatements(utils::VectorRef<const ast::Statement*> stmts) {
     for (auto* s : stmts) {
-        if (!EmitStatement(s)) {
-            return false;
-        }
+        EmitStatement(s);
 
         // If the current flow block has a branch target then the rest of the statements in this
         // block are dead code. Skip them.
@@ -239,59 +243,141 @@ bool BuilderImpl::EmitStatements(utils::VectorRef<const ast::Statement*> stmts) 
             break;
         }
     }
-    return true;
 }
 
-bool BuilderImpl::EmitStatement(const ast::Statement* stmt) {
-    return tint::Switch(
-        stmt,
-        // [&](const ast::AssignmentStatement* a) {
-        // TODO(dsinclair): Implement
-        // },
-        [&](const ast::BlockStatement* b) { return EmitBlock(b); },
-        [&](const ast::BreakStatement* b) { return EmitBreak(b); },
-        [&](const ast::BreakIfStatement* b) { return EmitBreakIf(b); },
-        [&](const ast::CallStatement* c) { return EmitCall(c); },
-        // [&](const ast::CompoundAssignmentStatement* c) {
-        // TODO(dsinclair): Implement
-        // },
-        [&](const ast::ContinueStatement* c) { return EmitContinue(c); },
-        // [&](const ast::DiscardStatement* d) {
-        // TODO(dsinclair): Implement
-        // },
-        [&](const ast::IfStatement* i) { return EmitIf(i); },
-        [&](const ast::LoopStatement* l) { return EmitLoop(l); },
-        [&](const ast::ForLoopStatement* l) { return EmitForLoop(l); },
-        [&](const ast::WhileStatement* l) { return EmitWhile(l); },
-        [&](const ast::ReturnStatement* r) { return EmitReturn(r); },
-        [&](const ast::SwitchStatement* s) { return EmitSwitch(s); },
-        [&](const ast::VariableDeclStatement* v) { return EmitVariable(v->variable); },
+void BuilderImpl::EmitStatement(const ast::Statement* stmt) {
+    tint::Switch(
+        stmt,  //
+        [&](const ast::AssignmentStatement* a) { EmitAssignment(a); },
+        [&](const ast::BlockStatement* b) { EmitBlock(b); },
+        [&](const ast::BreakStatement* b) { EmitBreak(b); },
+        [&](const ast::BreakIfStatement* b) { EmitBreakIf(b); },
+        [&](const ast::CallStatement* c) { EmitCall(c); },
+        [&](const ast::CompoundAssignmentStatement* c) { EmitCompoundAssignment(c); },
+        [&](const ast::ContinueStatement* c) { EmitContinue(c); },
+        [&](const ast::DiscardStatement* d) { EmitDiscard(d); },
+        [&](const ast::IfStatement* i) { EmitIf(i); },
+        [&](const ast::LoopStatement* l) { EmitLoop(l); },
+        [&](const ast::ForLoopStatement* l) { EmitForLoop(l); },
+        [&](const ast::WhileStatement* l) { EmitWhile(l); },
+        [&](const ast::ReturnStatement* r) { EmitReturn(r); },
+        [&](const ast::SwitchStatement* s) { EmitSwitch(s); },
+        [&](const ast::VariableDeclStatement* v) { EmitVariable(v->variable); },
         [&](const ast::ConstAssert*) {
-            return true;  // Not emitted
+            // Not emitted
         },
         [&](Default) {
             add_error(stmt->source,
                       "unknown statement type: " + std::string(stmt->TypeInfo().name));
-            // TODO(dsinclair): This should return `false`, switch back when all
-            // the cases are handled.
-            return true;
         });
 }
 
-bool BuilderImpl::EmitBlock(const ast::BlockStatement* block) {
+void BuilderImpl::EmitAssignment(const ast::AssignmentStatement* stmt) {
+    auto lhs = EmitExpression(stmt->lhs);
+    if (!lhs) {
+        return;
+    }
+
+    auto rhs = EmitExpression(stmt->rhs);
+    if (!rhs) {
+        return;
+    }
+    auto store = builder.Store(lhs.Get(), rhs.Get());
+    current_flow_block->instructions.Push(store);
+}
+
+void BuilderImpl::EmitCompoundAssignment(const ast::CompoundAssignmentStatement* stmt) {
+    auto lhs = EmitExpression(stmt->lhs);
+    if (!lhs) {
+        return;
+    }
+
+    auto rhs = EmitExpression(stmt->rhs);
+    if (!rhs) {
+        return;
+    }
+
+    auto* ty = lhs.Get()->Type();
+    Binary* inst = nullptr;
+    switch (stmt->op) {
+        case ast::BinaryOp::kAnd:
+            inst = builder.And(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kOr:
+            inst = builder.Or(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kXor:
+            inst = builder.Xor(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kLogicalAnd:
+            inst = builder.LogicalAnd(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kLogicalOr:
+            inst = builder.LogicalOr(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kEqual:
+            inst = builder.Equal(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kNotEqual:
+            inst = builder.NotEqual(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kLessThan:
+            inst = builder.LessThan(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kGreaterThan:
+            inst = builder.GreaterThan(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kLessThanEqual:
+            inst = builder.LessThanEqual(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kGreaterThanEqual:
+            inst = builder.GreaterThanEqual(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kShiftLeft:
+            inst = builder.ShiftLeft(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kShiftRight:
+            inst = builder.ShiftRight(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kAdd:
+            inst = builder.Add(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kSubtract:
+            inst = builder.Subtract(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kMultiply:
+            inst = builder.Multiply(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kDivide:
+            inst = builder.Divide(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kModulo:
+            inst = builder.Modulo(ty, lhs.Get(), rhs.Get());
+            break;
+        case ast::BinaryOp::kNone:
+            TINT_ICE(IR, diagnostics_) << "missing binary operand type";
+            return;
+    }
+    current_flow_block->instructions.Push(inst);
+
+    auto store = builder.Store(lhs.Get(), inst);
+    current_flow_block->instructions.Push(store);
+}
+
+void BuilderImpl::EmitBlock(const ast::BlockStatement* block) {
     // Note, this doesn't need to emit a Block as the current block flow node should be
     // sufficient as the blocks all get flattened. Each flow control node will inject the basic
     // blocks it requires.
-    return EmitStatements(block->statements);
+    EmitStatements(block->statements);
 }
 
-bool BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
+void BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
     auto* if_node = builder.CreateIf();
 
     // Emit the if condition into the end of the preceding block
     auto reg = EmitExpression(stmt->condition);
     if (!reg) {
-        return false;
+        return;
     }
     if_node->condition = reg.Get();
 
@@ -303,16 +389,16 @@ bool BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
         FlowStackScope scope(this, if_node);
 
         current_flow_block = if_node->true_.target->As<Block>();
-        if (!EmitStatement(stmt->body)) {
-            return false;
-        }
+        EmitStatement(stmt->body);
+
         // If the true branch did not execute control flow, then go to the merge target
         BranchToIfNeeded(if_node->merge.target);
 
         current_flow_block = if_node->false_.target->As<Block>();
-        if (stmt->else_statement && !EmitStatement(stmt->else_statement)) {
-            return false;
+        if (stmt->else_statement) {
+            EmitStatement(stmt->else_statement);
         }
+
         // If the false branch did not execute control flow, then go to the merge target
         BranchToIfNeeded(if_node->merge.target);
     }
@@ -324,11 +410,9 @@ bool BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
     if (IsConnected(if_node->merge.target)) {
         current_flow_block = if_node->merge.target->As<Block>();
     }
-
-    return true;
 }
 
-bool BuilderImpl::EmitLoop(const ast::LoopStatement* stmt) {
+void BuilderImpl::EmitLoop(const ast::LoopStatement* stmt) {
     auto* loop_node = builder.CreateLoop();
 
     BranchTo(loop_node);
@@ -339,34 +423,29 @@ bool BuilderImpl::EmitLoop(const ast::LoopStatement* stmt) {
         FlowStackScope scope(this, loop_node);
 
         current_flow_block = loop_node->start.target->As<Block>();
-        if (!EmitStatement(stmt->body)) {
-            return false;
-        }
+        EmitStatement(stmt->body);
 
         // The current block didn't `break`, `return` or `continue`, go to the continuing block.
         BranchToIfNeeded(loop_node->continuing.target);
 
         current_flow_block = loop_node->continuing.target->As<Block>();
         if (stmt->continuing) {
-            if (!EmitStatement(stmt->continuing)) {
-                return false;
-            }
+            EmitStatement(stmt->continuing);
         }
 
         // Branch back to the start node if the continue target didn't branch out already
         BranchToIfNeeded(loop_node->start.target);
     }
 
-    // The loop merge can get disconnected if the loop returns directly, or the continuing target
-    // branches, eventually, to the merge, but nothing branched to the continuing target.
+    // The loop merge can get disconnected if the loop returns directly, or the continuing
+    // target branches, eventually, to the merge, but nothing branched to the continuing target.
     current_flow_block = loop_node->merge.target->As<Block>();
     if (!IsConnected(loop_node->merge.target)) {
         current_flow_block = nullptr;
     }
-    return true;
 }
 
-bool BuilderImpl::EmitWhile(const ast::WhileStatement* stmt) {
+void BuilderImpl::EmitWhile(const ast::WhileStatement* stmt) {
     auto* loop_node = builder.CreateLoop();
     // Continue is always empty, just go back to the start
     TINT_ASSERT(IR, loop_node->continuing.target->Is<Block>());
@@ -385,7 +464,7 @@ bool BuilderImpl::EmitWhile(const ast::WhileStatement* stmt) {
         // Emit the while condition into the start target of the loop
         auto reg = EmitExpression(stmt->condition);
         if (!reg) {
-            return false;
+            return;
         }
 
         // Create an `if (cond) {} else {break;}` control flow
@@ -400,19 +479,16 @@ bool BuilderImpl::EmitWhile(const ast::WhileStatement* stmt) {
         BranchTo(if_node);
 
         current_flow_block = if_node->merge.target->As<Block>();
-        if (!EmitStatement(stmt->body)) {
-            return false;
-        }
+        EmitStatement(stmt->body);
 
         BranchToIfNeeded(loop_node->continuing.target);
     }
     // The while loop always has a path to the merge target as the break statement comes before
     // anything inside the loop.
     current_flow_block = loop_node->merge.target->As<Block>();
-    return true;
 }
 
-bool BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
+void BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
     auto* loop_node = builder.CreateLoop();
     TINT_ASSERT(IR, loop_node->continuing.target->Is<Block>());
     builder.Branch(loop_node->continuing.target->As<Block>(), loop_node->start.target,
@@ -420,9 +496,7 @@ bool BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
 
     if (stmt->initializer) {
         // Emit the for initializer before branching to the loop
-        if (!EmitStatement(stmt->initializer)) {
-            return false;
-        }
+        EmitStatement(stmt->initializer);
     }
 
     BranchTo(loop_node);
@@ -438,7 +512,7 @@ bool BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
             // Emit the condition into the target target of the loop
             auto reg = EmitExpression(stmt->condition);
             if (!reg) {
-                return false;
+                return;
             }
 
             // Create an `if (cond) {} else {break;}` control flow
@@ -455,32 +529,26 @@ bool BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
             current_flow_block = if_node->merge.target->As<Block>();
         }
 
-        if (!EmitStatement(stmt->body)) {
-            return false;
-        }
-
+        EmitStatement(stmt->body);
         BranchToIfNeeded(loop_node->continuing.target);
 
         if (stmt->continuing) {
             current_flow_block = loop_node->continuing.target->As<Block>();
-            if (!EmitStatement(stmt->continuing)) {
-                return false;
-            }
+            EmitStatement(stmt->continuing);
         }
     }
     // The while loop always has a path to the merge target as the break statement comes before
     // anything inside the loop.
     current_flow_block = loop_node->merge.target->As<Block>();
-    return true;
 }
 
-bool BuilderImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
+void BuilderImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
     auto* switch_node = builder.CreateSwitch();
 
     // Emit the condition into the preceding block
     auto reg = EmitExpression(stmt->condition);
     if (!reg) {
-        return false;
+        return;
     }
     switch_node->condition = reg.Get();
 
@@ -503,9 +571,7 @@ bool BuilderImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
             }
 
             current_flow_block = builder.CreateCase(switch_node, selectors);
-            if (!EmitStatement(c->Body()->Declaration())) {
-                return false;
-            }
+            EmitStatement(c->Body()->Declaration());
             BranchToIfNeeded(switch_node->merge.target);
         }
     }
@@ -514,25 +580,22 @@ bool BuilderImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
     if (IsConnected(switch_node->merge.target)) {
         current_flow_block = switch_node->merge.target->As<Block>();
     }
-
-    return true;
 }
 
-bool BuilderImpl::EmitReturn(const ast::ReturnStatement* stmt) {
+void BuilderImpl::EmitReturn(const ast::ReturnStatement* stmt) {
     utils::Vector<Value*, 1> ret_value;
     if (stmt->value) {
         auto ret = EmitExpression(stmt->value);
         if (!ret) {
-            return false;
+            return;
         }
         ret_value.Push(ret.Get());
     }
 
     BranchTo(current_function_->end_target, std::move(ret_value));
-    return true;
 }
 
-bool BuilderImpl::EmitBreak(const ast::BreakStatement*) {
+void BuilderImpl::EmitBreak(const ast::BreakStatement*) {
     auto* current_control = FindEnclosingControl(ControlFlags::kNone);
     TINT_ASSERT(IR, current_control);
 
@@ -542,13 +605,10 @@ bool BuilderImpl::EmitBreak(const ast::BreakStatement*) {
         BranchTo(s->merge.target);
     } else {
         TINT_UNREACHABLE(IR, diagnostics_);
-        return false;
     }
-
-    return true;
 }
 
-bool BuilderImpl::EmitContinue(const ast::ContinueStatement*) {
+void BuilderImpl::EmitContinue(const ast::ContinueStatement*) {
     auto* current_control = FindEnclosingControl(ControlFlags::kExcludeSwitch);
     TINT_ASSERT(IR, current_control);
 
@@ -557,17 +617,24 @@ bool BuilderImpl::EmitContinue(const ast::ContinueStatement*) {
     } else {
         TINT_UNREACHABLE(IR, diagnostics_);
     }
-
-    return true;
 }
 
-bool BuilderImpl::EmitBreakIf(const ast::BreakIfStatement* stmt) {
+// Discard is being treated as an instruction. The semantics in WGSL is demote_to_helper, so the
+// code has to continue as before it just predicates writes. If WGSL grows some kind of
+// terminating discard that would probably make sense as a FlowNode but would then require
+// figuring out the multi-level exit that is triggered.
+void BuilderImpl::EmitDiscard(const ast::DiscardStatement*) {
+    auto* inst = builder.Discard();
+    current_flow_block->instructions.Push(inst);
+}
+
+void BuilderImpl::EmitBreakIf(const ast::BreakIfStatement* stmt) {
     auto* if_node = builder.CreateIf();
 
     // Emit the break-if condition into the end of the preceding block
     auto reg = EmitExpression(stmt->condition);
     if (!reg) {
-        return false;
+        return;
     }
     if_node->condition = reg.Get();
 
@@ -592,11 +659,18 @@ bool BuilderImpl::EmitBreakIf(const ast::BreakIfStatement* stmt) {
     // The `break-if` has to be the last item in the continuing block. The false branch of the
     // `break-if` will always take us back to the start of the loop.
     BranchTo(loop->start.target);
-
-    return true;
 }
 
 utils::Result<Value*> BuilderImpl::EmitExpression(const ast::Expression* expr) {
+    // If this is a value that has been const-eval'd return the result.
+    if (auto* sem = program_->Sem().Get(expr)->As<sem::ValueExpression>()) {
+        if (auto* v = sem->ConstantValue()) {
+            if (auto* cv = v->Clone(clone_ctx_)) {
+                return builder.Constant(cv);
+            }
+        }
+    }
+
     return tint::Switch(
         expr,
         // [&](const ast::IndexAccessorExpression* a) {
@@ -615,44 +689,93 @@ utils::Result<Value*> BuilderImpl::EmitExpression(const ast::Expression* expr) {
         // [&](const ast::PhonyExpression*) {
         // TODO(dsinclair): Implement. The call may have side effects so has to be made.
         // },
-        // [&](const ast::UnaryOpExpression* u) {
-        // TODO(dsinclair): Implement
-        // },
+        [&](const ast::UnaryOpExpression* u) { return EmitUnary(u); },
         [&](Default) {
             add_error(expr->source,
                       "unknown expression type: " + std::string(expr->TypeInfo().name));
-            // TODO(dsinclair): This should return utils::Failure; Switch back
-            // once all the above cases are handled.
-            auto* v = builder.ir.types.Get<type::Void>();
-            return builder.Temp(v);
+            return utils::Failure;
         });
 }
 
-bool BuilderImpl::EmitVariable(const ast::Variable* var) {
+void BuilderImpl::EmitVariable(const ast::Variable* var) {
+    auto* sem = program_->Sem().Get(var);
+
     return tint::Switch(  //
         var,
-        // [&](const ast::Var* var) {
-        // TODO(dsinclair): Implement
-        // },
-        // [&](const ast::Let*) {
-        // TODO(dsinclair): Implement
-        // },
+        [&](const ast::Var* v) {
+            auto* ty = sem->Type()->Clone(clone_ctx_.type_ctx);
+            auto* val = builder.Declare(ty, sem->AddressSpace(), sem->Access());
+            current_flow_block->instructions.Push(val);
+
+            if (v->initializer) {
+                auto init = EmitExpression(v->initializer);
+                if (!init) {
+                    return;
+                }
+
+                auto* store = builder.Store(val, init.Get());
+                current_flow_block->instructions.Push(store);
+            }
+            // TODO(dsinclair): Store the mapping from the var name to the `Declare` value
+        },
+        [&](const ast::Let* l) {
+            // A `let` doesn't exist as a standalone item in the IR, it's just the result of the
+            // initializer.
+            auto init = EmitExpression(l->initializer);
+            if (!init) {
+                return;
+            }
+            // TODO(dsinclair): Store the mapping from the let name to the `init` value
+        },
         [&](const ast::Override*) {
             add_error(var->source,
                       "found an `Override` variable. The SubstituteOverrides "
                       "transform must be run before converting to IR");
-            return false;
         },
-        // [&](const ast::Const* c) {
-        // TODO(dsinclair): Implement
-        // },
+        [&](const ast::Const*) {
+            // Skip. This should be handled by const-eval already, so the const will be a
+            // `constant::` value at the usage sites. Can just ignore the `const` variable as it
+            // should never be used.
+            //
+            // TODO(dsinclair): Probably want to store the const variable somewhere and then in
+            // identifier expression log an error if we ever see a const identifier. Add this
+            // when identifiers and variables are supported.
+        },
         [&](Default) {
             add_error(var->source, "unknown variable: " + std::string(var->TypeInfo().name));
-
-            // TODO(dsinclair): This should return `false`, switch back when all
-            // the cases are handled.
-            return true;
         });
+}
+
+utils::Result<Value*> BuilderImpl::EmitUnary(const ast::UnaryOpExpression* expr) {
+    auto val = EmitExpression(expr->expr);
+    if (!val) {
+        return utils::Failure;
+    }
+
+    auto* sem = program_->Sem().Get(expr);
+    auto* ty = sem->Type()->Clone(clone_ctx_.type_ctx);
+
+    Unary* inst = nullptr;
+    switch (expr->op) {
+        case ast::UnaryOp::kAddressOf:
+            inst = builder.AddressOf(ty, val.Get());
+            break;
+        case ast::UnaryOp::kComplement:
+            inst = builder.Complement(ty, val.Get());
+            break;
+        case ast::UnaryOp::kIndirection:
+            inst = builder.Indirection(ty, val.Get());
+            break;
+        case ast::UnaryOp::kNegation:
+            inst = builder.Negation(ty, val.Get());
+            break;
+        case ast::UnaryOp::kNot:
+            inst = builder.Not(ty, val.Get());
+            break;
+    }
+
+    current_flow_block->instructions.Push(inst);
+    return inst;
 }
 
 utils::Result<Value*> BuilderImpl::EmitBinary(const ast::BinaryExpression* expr) {
@@ -669,69 +792,69 @@ utils::Result<Value*> BuilderImpl::EmitBinary(const ast::BinaryExpression* expr)
     auto* sem = program_->Sem().Get(expr);
     auto* ty = sem->Type()->Clone(clone_ctx_.type_ctx);
 
-    Binary* instr = nullptr;
+    Binary* inst = nullptr;
     switch (expr->op) {
         case ast::BinaryOp::kAnd:
-            instr = builder.And(ty, lhs.Get(), rhs.Get());
+            inst = builder.And(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kOr:
-            instr = builder.Or(ty, lhs.Get(), rhs.Get());
+            inst = builder.Or(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kXor:
-            instr = builder.Xor(ty, lhs.Get(), rhs.Get());
+            inst = builder.Xor(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kLogicalAnd:
-            instr = builder.LogicalAnd(ty, lhs.Get(), rhs.Get());
+            inst = builder.LogicalAnd(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kLogicalOr:
-            instr = builder.LogicalOr(ty, lhs.Get(), rhs.Get());
+            inst = builder.LogicalOr(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kEqual:
-            instr = builder.Equal(ty, lhs.Get(), rhs.Get());
+            inst = builder.Equal(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kNotEqual:
-            instr = builder.NotEqual(ty, lhs.Get(), rhs.Get());
+            inst = builder.NotEqual(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kLessThan:
-            instr = builder.LessThan(ty, lhs.Get(), rhs.Get());
+            inst = builder.LessThan(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kGreaterThan:
-            instr = builder.GreaterThan(ty, lhs.Get(), rhs.Get());
+            inst = builder.GreaterThan(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kLessThanEqual:
-            instr = builder.LessThanEqual(ty, lhs.Get(), rhs.Get());
+            inst = builder.LessThanEqual(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kGreaterThanEqual:
-            instr = builder.GreaterThanEqual(ty, lhs.Get(), rhs.Get());
+            inst = builder.GreaterThanEqual(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kShiftLeft:
-            instr = builder.ShiftLeft(ty, lhs.Get(), rhs.Get());
+            inst = builder.ShiftLeft(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kShiftRight:
-            instr = builder.ShiftRight(ty, lhs.Get(), rhs.Get());
+            inst = builder.ShiftRight(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kAdd:
-            instr = builder.Add(ty, lhs.Get(), rhs.Get());
+            inst = builder.Add(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kSubtract:
-            instr = builder.Subtract(ty, lhs.Get(), rhs.Get());
+            inst = builder.Subtract(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kMultiply:
-            instr = builder.Multiply(ty, lhs.Get(), rhs.Get());
+            inst = builder.Multiply(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kDivide:
-            instr = builder.Divide(ty, lhs.Get(), rhs.Get());
+            inst = builder.Divide(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kModulo:
-            instr = builder.Modulo(ty, lhs.Get(), rhs.Get());
+            inst = builder.Modulo(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kNone:
             TINT_ICE(IR, diagnostics_) << "missing binary operand type";
             return utils::Failure;
     }
 
-    current_flow_block->instructions.Push(instr);
-    return instr->Result();
+    current_flow_block->instructions.Push(inst);
+    return inst;
 }
 
 utils::Result<Value*> BuilderImpl::EmitBitcast(const ast::BitcastExpression* expr) {
@@ -742,14 +865,14 @@ utils::Result<Value*> BuilderImpl::EmitBitcast(const ast::BitcastExpression* exp
 
     auto* sem = program_->Sem().Get(expr);
     auto* ty = sem->Type()->Clone(clone_ctx_.type_ctx);
-    auto* instr = builder.Bitcast(ty, val.Get());
+    auto* inst = builder.Bitcast(ty, val.Get());
 
-    current_flow_block->instructions.Push(instr);
-    return instr->Result();
+    current_flow_block->instructions.Push(inst);
+    return inst;
 }
 
-utils::Result<Value*> BuilderImpl::EmitCall(const ast::CallStatement* stmt) {
-    return EmitCall(stmt->expr);
+void BuilderImpl::EmitCall(const ast::CallStatement* stmt) {
+    (void)EmitCall(stmt->expr);
 }
 
 utils::Result<Value*> BuilderImpl::EmitCall(const ast::CallExpression* expr) {
@@ -788,29 +911,29 @@ utils::Result<Value*> BuilderImpl::EmitCall(const ast::CallExpression* expr) {
 
     auto* ty = sem->Target()->ReturnType()->Clone(clone_ctx_.type_ctx);
 
-    Instruction* instr = nullptr;
+    Instruction* inst = nullptr;
 
     // If this is a builtin function, emit the specific builtin value
     if (auto* b = sem->Target()->As<sem::Builtin>()) {
-        instr = builder.Builtin(ty, b->Type(), args);
+        inst = builder.Builtin(ty, b->Type(), args);
     } else if (sem->Target()->As<sem::ValueConstructor>()) {
-        instr = builder.Construct(ty, std::move(args));
+        inst = builder.Construct(ty, std::move(args));
     } else if (auto* conv = sem->Target()->As<sem::ValueConversion>()) {
         auto* from = conv->Source()->Clone(clone_ctx_.type_ctx);
-        instr = builder.Convert(ty, from, std::move(args));
+        inst = builder.Convert(ty, from, std::move(args));
     } else if (expr->target->identifier->Is<ast::TemplatedIdentifier>()) {
         TINT_UNIMPLEMENTED(IR, diagnostics_) << "missing templated ident support";
         return utils::Failure;
     } else {
         // Not a builtin and not a templated call, so this is a user function.
         auto name = CloneSymbol(expr->target->identifier->symbol);
-        instr = builder.UserCall(ty, name, std::move(args));
+        inst = builder.UserCall(ty, name, std::move(args));
     }
-    if (instr == nullptr) {
+    if (inst == nullptr) {
         return utils::Failure;
     }
-    current_flow_block->instructions.Push(instr);
-    return instr->Result();
+    current_flow_block->instructions.Push(inst);
+    return inst;
 }
 
 utils::Result<Value*> BuilderImpl::EmitLiteral(const ast::LiteralExpression* lit) {
@@ -830,17 +953,14 @@ utils::Result<Value*> BuilderImpl::EmitLiteral(const ast::LiteralExpression* lit
     return builder.Constant(cv);
 }
 
-bool BuilderImpl::EmitAttributes(utils::VectorRef<const ast::Attribute*> attrs) {
+void BuilderImpl::EmitAttributes(utils::VectorRef<const ast::Attribute*> attrs) {
     for (auto* attr : attrs) {
-        if (!EmitAttribute(attr)) {
-            return false;
-        }
+        EmitAttribute(attr);
     }
-    return true;
 }
 
-bool BuilderImpl::EmitAttribute(const ast::Attribute* attr) {
-    return tint::Switch(  //
+void BuilderImpl::EmitAttribute(const ast::Attribute* attr) {
+    tint::Switch(  //
         attr,
         // [&](const ast::WorkgroupAttribute* wg) {
         // TODO(dsinclair): Implement
@@ -873,17 +993,14 @@ bool BuilderImpl::EmitAttribute(const ast::Attribute* attr) {
             add_error(attr->source,
                       "found an `Id` attribute. The SubstituteOverrides transform "
                       "must be run before converting to IR");
-            return false;
         },
         [&](const ast::StructMemberSizeAttribute*) {
             TINT_ICE(IR, diagnostics_)
                 << "StructMemberSizeAttribute encountered during IR conversion";
-            return false;
         },
         [&](const ast::StructMemberAlignAttribute*) {
             TINT_ICE(IR, diagnostics_)
                 << "StructMemberAlignAttribute encountered during IR conversion";
-            return false;
         },
         // [&](const ast::StrideAttribute* s) {
         // TODO(dsinclair): Implement
@@ -893,7 +1010,6 @@ bool BuilderImpl::EmitAttribute(const ast::Attribute* attr) {
         // },
         [&](Default) {
             add_error(attr->source, "unknown attribute: " + std::string(attr->TypeInfo().name));
-            return false;
         });
 }
 

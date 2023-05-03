@@ -18,7 +18,6 @@
 #include <memory>
 #include <vector>
 
-#include "dawn/native/Adapter.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/Buffer.h"
@@ -26,6 +25,7 @@
 #include "dawn/native/CommandEncoder.h"
 #include "dawn/native/ComputePipeline.h"
 #include "dawn/native/Device.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/PipelineLayout.h"
 #include "dawn/native/QuerySet.h"
 #include "dawn/native/Queue.h"
@@ -40,13 +40,13 @@
 
 namespace dawn::native::null {
 
-class Adapter;
 class BindGroup;
 class BindGroupLayout;
 class Buffer;
 class CommandBuffer;
 class ComputePipeline;
 class Device;
+class PhysicalDevice;
 using PipelineLayout = PipelineLayoutBase;
 class QuerySet;
 class Queue;
@@ -58,13 +58,13 @@ class Texture;
 using TextureView = TextureViewBase;
 
 struct NullBackendTraits {
-    using AdapterType = Adapter;
     using BindGroupType = BindGroup;
     using BindGroupLayoutType = BindGroupLayout;
     using BufferType = Buffer;
     using CommandBufferType = CommandBuffer;
     using ComputePipelineType = ComputePipeline;
     using DeviceType = Device;
+    using PhysicalDeviceType = PhysicalDevice;
     using PipelineLayoutType = PipelineLayout;
     using QuerySetType = QuerySet;
     using QueueType = Queue;
@@ -88,7 +88,7 @@ struct PendingOperation {
 
 class Device final : public DeviceBase {
   public:
-    static ResultOrError<Ref<Device>> Create(Adapter* adapter,
+    static ResultOrError<Ref<Device>> Create(AdapterBase* adapter,
                                              const DeviceDescriptor* descriptor,
                                              const TogglesState& deviceToggles);
     ~Device() override;
@@ -155,6 +155,9 @@ class Device final : public DeviceBase {
         TextureBase* texture,
         const TextureViewDescriptor* descriptor) override;
 
+    ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
+        const Surface* surface) const override;
+
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
 
     void DestroyImpl() override;
@@ -167,19 +170,19 @@ class Device final : public DeviceBase {
     size_t mMemoryUsage = 0;
 };
 
-class Adapter : public AdapterBase {
+class PhysicalDevice : public PhysicalDeviceBase {
   public:
     // Create null adapter without providing toggles state for testing, only inherit instance's
     // toggles state
-    explicit Adapter(InstanceBase* instance);
-    Adapter(InstanceBase* instance, const TogglesState& adapterToggles);
-    ~Adapter() override;
+    explicit PhysicalDevice(InstanceBase* instance);
+    PhysicalDevice(InstanceBase* instance, const TogglesState& adapterToggles);
+    ~PhysicalDevice() override;
 
-    // AdapterBase Implementation
+    // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override;
 
     // Used for the tests that intend to use an adapter without all features enabled.
-    using AdapterBase::SetSupportedFeaturesForTesting;
+    using PhysicalDeviceBase::SetSupportedFeaturesForTesting;
 
   private:
     MaybeError InitializeImpl() override;
@@ -190,7 +193,8 @@ class Adapter : public AdapterBase {
                                                        const TogglesState& toggles) const override;
 
     void SetupBackendDeviceToggles(TogglesState* deviceToggles) const override;
-    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor,
+    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(AdapterBase* adapter,
+                                                    const DeviceDescriptor* descriptor,
                                                     const TogglesState& deviceToggles) override;
 };
 

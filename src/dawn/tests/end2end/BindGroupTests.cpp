@@ -241,6 +241,8 @@ TEST_P(BindGroupTests, ReusedUBO) {
 // shader. In D3D12 for example, these different types of bindings end up in different namespaces,
 // but the register offsets used must match between the shader module and descriptor range.
 TEST_P(BindGroupTests, UBOSamplerAndTexture) {
+    // TODO(dawn:1768): enable this test once computer shader B2T is supported.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
     utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
 
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
@@ -284,7 +286,7 @@ TEST_P(BindGroupTests, UBOSamplerAndTexture) {
     wgpu::SamplerDescriptor samplerDescriptor = {};
     samplerDescriptor.minFilter = wgpu::FilterMode::Nearest;
     samplerDescriptor.magFilter = wgpu::FilterMode::Nearest;
-    samplerDescriptor.mipmapFilter = wgpu::FilterMode::Nearest;
+    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
     samplerDescriptor.addressModeU = wgpu::AddressMode::ClampToEdge;
     samplerDescriptor.addressModeV = wgpu::AddressMode::ClampToEdge;
     samplerDescriptor.addressModeW = wgpu::AddressMode::ClampToEdge;
@@ -1507,6 +1509,7 @@ TEST_P(BindGroupTests, CreateWithDestroyedResource) {
 }
 
 DAWN_INSTANTIATE_TEST(BindGroupTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

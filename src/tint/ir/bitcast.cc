@@ -19,18 +19,14 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Bitcast);
 
 namespace tint::ir {
 
-Bitcast::Bitcast(Value* result, Value* val) : Base(result), val_(val) {
-    TINT_ASSERT(IR, val_);
-    val_->AddUsage(this);
-}
+Bitcast::Bitcast(uint32_t id, const type::Type* type, Value* val)
+    : Base(id, type, utils::Vector{val}) {}
 
 Bitcast::~Bitcast() = default;
 
-utils::StringStream& Bitcast::ToString(utils::StringStream& out, const SymbolTable& st) const {
-    Result()->ToString(out, st);
-    out << " = bitcast(";
-    val_->ToString(out, st);
-    out << ")";
+utils::StringStream& Bitcast::ToInstruction(utils::StringStream& out) const {
+    ToValue(out) << " = bitcast ";
+    EmitArgs(out);
     return out;
 }
 

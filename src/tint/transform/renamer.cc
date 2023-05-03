@@ -25,7 +25,7 @@
 #include "src/tint/sem/value_constructor.h"
 #include "src/tint/sem/value_conversion.h"
 #include "src/tint/switch.h"
-#include "src/tint/text/unicode.h"
+#include "src/tint/utils/unicode.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Renamer);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::Renamer::Data);
@@ -1281,18 +1281,24 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
                 if (sem->Is<sem::Swizzle>()) {
                     preserved_identifiers.Add(accessor->member);
                 } else if (auto* str_expr = src->Sem().GetVal(accessor->object)) {
-                    if (auto* ty = str_expr->Type()->UnwrapRef()->As<sem::Struct>()) {
-                        if (ty->Declaration() == nullptr) {  // Builtin structure
+                    if (auto* ty = str_expr->Type()->UnwrapRef()->As<type::Struct>()) {
+                        if (!ty->Is<sem::Struct>()) {  // Builtin structure
                             preserved_identifiers.Add(accessor->member);
                         }
                     }
                 }
             },
             [&](const ast::DiagnosticAttribute* diagnostic) {
-                preserved_identifiers.Add(diagnostic->control.rule_name);
+                if (auto* category = diagnostic->control.rule_name->category) {
+                    preserved_identifiers.Add(category);
+                }
+                preserved_identifiers.Add(diagnostic->control.rule_name->name);
             },
             [&](const ast::DiagnosticDirective* diagnostic) {
-                preserved_identifiers.Add(diagnostic->control.rule_name);
+                if (auto* category = diagnostic->control.rule_name->category) {
+                    preserved_identifiers.Add(category);
+                }
+                preserved_identifiers.Add(diagnostic->control.rule_name->name);
             },
             [&](const ast::IdentifierExpression* expr) {
                 Switch(
@@ -1332,8 +1338,8 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
         if (target == Target::kAll) {
             return true;
         }
-        auto name = src->Symbols().NameFor(symbol);
-        if (!text::utf8::IsASCII(name)) {
+        auto name = symbol.Name();
+        if (!utils::utf8::IsASCII(name)) {
             // name is non-ascii. All of the backend keywords are ascii, so rename if we're not
             // preserving unicode symbols.
             return !preserve_unicode;
@@ -1388,7 +1394,7 @@ Transform::ApplyResult Renamer::Apply(const Program* src,
 
     Data::Remappings out;
     for (auto it : remappings) {
-        out[ctx.src->Symbols().NameFor(it.key)] = ctx.dst->Symbols().NameFor(it.value);
+        out[it.key.Name()] = it.value.Name();
     }
     outputs.Add<Data>(std::move(out));
 

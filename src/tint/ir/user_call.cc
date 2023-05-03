@@ -19,17 +19,17 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::UserCall);
 
 namespace tint::ir {
 
-UserCall::UserCall(Value* result, Symbol name, utils::VectorRef<Value*> args)
-    : Base(result, args), name_(name) {}
+UserCall::UserCall(uint32_t id, const type::Type* type, Symbol name, utils::VectorRef<Value*> args)
+    : Base(id, type, args), name_(name) {}
 
 UserCall::~UserCall() = default;
 
-utils::StringStream& UserCall::ToString(utils::StringStream& out, const SymbolTable& st) const {
-    Result()->ToString(out, st);
-    out << " = call(";
-    out << st.NameFor(name_) << ", ";
-    EmitArgs(out, st);
-    out << ")";
+utils::StringStream& UserCall::ToInstruction(utils::StringStream& out) const {
+    ToValue(out) << " = call " << name_.Name();
+    if (Args().Length() > 0) {
+        out << ", ";
+    }
+    EmitArgs(out);
     return out;
 }
 

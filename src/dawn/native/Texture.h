@@ -79,6 +79,9 @@ class TextureBase : public ApiObjectBase {
 
     bool IsMultisampledTexture() const;
 
+    // Returns true if the size covers the whole subresource.
+    bool CoverFullSubresource(uint32_t mipLevel, const Extent3D& size) const;
+
     // For a texture with non-block-compressed texture format, its physical size is always equal
     // to its virtual size. For a texture with block compressed texture format, the physical
     // size is the one with paddings if necessary, which is always a multiple of the block size
@@ -140,9 +143,10 @@ class TextureViewBase : public ApiObjectBase {
     TextureViewBase(TextureBase* texture, const TextureViewDescriptor* descriptor);
     ~TextureViewBase() override;
 
-    static TextureViewBase* MakeError(DeviceBase* device);
+    static TextureViewBase* MakeError(DeviceBase* device, const char* label = nullptr);
 
     ObjectType GetType() const override;
+    void FormatLabel(absl::FormatSink* s) const override;
 
     const TextureBase* GetTexture() const;
     TextureBase* GetTexture();
@@ -160,7 +164,7 @@ class TextureViewBase : public ApiObjectBase {
     void DestroyImpl() override;
 
   private:
-    TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+    TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
 
     ApiObjectList* GetObjectTrackingList() override;
 

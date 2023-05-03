@@ -15,6 +15,7 @@
 #include "dawn/tests/DawnTest.h"
 
 #include <algorithm>
+#include <atomic>
 #include <fstream>
 #include <iomanip>
 #include <regex>
@@ -887,6 +888,14 @@ bool DawnTestBase::IsAsan() const {
 #endif
 }
 
+bool DawnTestBase::IsTsan() const {
+#if defined(THREAD_SANITIZER)
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool DawnTestBase::HasToggleEnabled(const char* toggle) const {
     auto toggles = dawn::native::GetTogglesUsed(backendDevice);
     return std::find_if(toggles.begin(), toggles.end(), [toggle](const char* name) {
@@ -999,8 +1008,8 @@ wgpu::Device DawnTestBase::CreateDevice(std::string isolationKey) {
     // to CreateDeviceImpl.
     mNextIsolationKeyQueue.push(std::move(isolationKey));
 
-    // RequestDevice is overriden by CreateDeviceImpl and device descriptor is ignored by it. Give
-    // an empty descriptor.
+    // RequestDevice is overriden by CreateDeviceImpl and device descriptor is ignored by it.
+    // Give an empty descriptor.
     // TODO(dawn:1684): Replace empty DeviceDescriptor with nullptr after Dawn wire support it.
     wgpu::DeviceDescriptor deviceDesc = {};
     mAdapter.RequestDevice(
@@ -1012,8 +1021,8 @@ wgpu::Device DawnTestBase::CreateDevice(std::string isolationKey) {
     FlushWire();
     ASSERT(apiDevice);
 
-    // Set up the mocks for uncaptured errors and device loss. The loss of the device is expected
-    // to happen at the end of the test so at it directly.
+    // Set up the mocks for uncaptured errors and device loss. The loss of the device is
+    // expected to happen at the end of the test so at it directly.
     apiDevice.SetUncapturedErrorCallback(mDeviceErrorCallback.Callback(),
                                          mDeviceErrorCallback.MakeUserdata(apiDevice.Get()));
     apiDevice.SetDeviceLostCallback(mDeviceLostCallback.Callback(),
@@ -1045,8 +1054,8 @@ wgpu::Device DawnTestBase::CreateDevice(std::string isolationKey) {
 }
 
 void DawnTestBase::SetUp() {
-    // Setup the per-test platform. Tests can provide one by overloading CreateTestPlatform. This is
-    // NOT a thread-safe operation and is allowed here for testing only.
+    // Setup the per-test platform. Tests can provide one by overloading CreateTestPlatform.
+    // This is NOT a thread-safe operation and is allowed here for testing only.
     mTestPlatform = CreateTestPlatform();
     dawn::native::FromAPI(gTestEnv->GetInstance()->Get())
         ->SetPlatformForTesting(mTestPlatform.get());
@@ -1058,9 +1067,10 @@ void DawnTestBase::SetUp() {
         "_" + ::testing::UnitTest::GetInstance()->current_test_info()->name();
     mWireHelper->BeginWireTrace(traceName.c_str());
 
-    // RequestAdapter is overriden to ignore RequestAdapterOptions, but dawn_wire requires a valid
-    // pointer, so give a empty option.
-    // TODO(dawn:1684): Replace empty RequestAdapterOptions with nullptr after Dawn wire support it.
+    // RequestAdapter is overriden to ignore RequestAdapterOptions, but dawn_wire requires a
+    // valid pointer, so give a empty option.
+    // TODO(dawn:1684): Replace empty RequestAdapterOptions with nullptr after Dawn wire support
+    // it.
     wgpu::RequestAdapterOptions options = {};
     mInstance.RequestAdapter(
         &options,
@@ -1094,8 +1104,8 @@ void DawnTestBase::DestroyDevice(wgpu::Device device) {
         resolvedDevice = this->device;
     }
 
-    // No expectation is added because the expectations for this kind of destruction is set up as
-    // soon as the device is created.
+    // No expectation is added because the expectations for this kind of destruction is set up
+    // as soon as the device is created.
     resolvedDevice.Destroy();
 }
 
@@ -1136,6 +1146,9 @@ std::ostringstream& DawnTestBase::AddBufferExpectation(const char* file,
     deferred.readbackOffset = readback.offset;
     deferred.size = size;
     deferred.expectation.reset(expectation);
+
+    // This expectation might be called from multiple threads
+    dawn::Mutex::AutoLock lg(&mMutex);
 
     mDeferredExpectations.push_back(std::move(deferred));
     mDeferredExpectations.back().message = std::make_unique<std::ostringstream>();
@@ -1190,6 +1203,9 @@ std::ostringstream& DawnTestBase::AddTextureExpectationImpl(const char* file,
     deferred.rowBytes = extent.width * dataSize;
     deferred.bytesPerRow = bytesPerRow;
     deferred.expectation.reset(expectation);
+
+    // This expectation might be called from multiple threads
+    dawn::Mutex::AutoLock lg(&mMutex);
 
     mDeferredExpectations.push_back(std::move(deferred));
     mDeferredExpectations.back().message = std::make_unique<std::ostringstream>();
@@ -1495,11 +1511,16 @@ void DawnTestBase::FlushWire() {
 }
 
 void DawnTestBase::WaitForAllOperations() {
-    bool done = false;
+    // Callback might be invoked on another thread that calls the same WaitABit() method, not
+    // necessarily the current thread. So we need to use atomic here.
+    std::atomic<bool> done(false);
     device.GetQueue().OnSubmittedWorkDone(
-        0u, [](WGPUQueueWorkDoneStatus, void* userdata) { *static_cast<bool*>(userdata) = true; },
+        0u,
+        [](WGPUQueueWorkDoneStatus, void* userdata) {
+            *static_cast<std::atomic<bool>*>(userdata) = true;
+        },
         &done);
-    while (!done) {
+    while (!done.load()) {
         WaitABit();
     }
 }
@@ -1516,6 +1537,9 @@ DawnTestBase::ReadbackReservation DawnTestBase::ReserveReadback(wgpu::Device tar
     slot.buffer =
         utils::CreateBufferFromData(targetDevice, initialBufferData.data(), readbackSize,
                                     wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst);
+
+    // This readback might be called from multiple threads
+    dawn::Mutex::AutoLock lg(&mMutex);
 
     ReadbackReservation reservation;
     reservation.device = targetDevice;
@@ -1542,7 +1566,7 @@ void DawnTestBase::MapSlotsSynchronously() {
     }
 
     // Busy wait until all map operations are done.
-    while (mNumPendingMapOperations != 0) {
+    while (mNumPendingMapOperations.load(std::memory_order_acquire) != 0) {
         WaitABit();
     }
 }
@@ -1553,7 +1577,8 @@ void DawnTestBase::SlotMapCallback(WGPUBufferMapAsyncStatus status, void* userda
                 status == WGPUBufferMapAsyncStatus_DeviceLost);
     std::unique_ptr<MapReadUserdata> userdata(static_cast<MapReadUserdata*>(userdata_));
     DawnTestBase* test = userdata->test;
-    test->mNumPendingMapOperations--;
+
+    dawn::Mutex::AutoLock lg(&test->mMutex);
 
     ReadbackSlot* slot = &test->mReadbackSlots[userdata->slot];
     if (status == WGPUBufferMapAsyncStatus_Success) {
@@ -1562,6 +1587,8 @@ void DawnTestBase::SlotMapCallback(WGPUBufferMapAsyncStatus status, void* userda
     } else {
         slot->mappedData = nullptr;
     }
+
+    test->mNumPendingMapOperations.fetch_sub(1, std::memory_order_release);
 }
 
 void DawnTestBase::ResolveExpectations() {
@@ -1620,6 +1647,8 @@ void DawnTestBase::ResolveDeferredExpectationsNow() {
     FlushWire();
 
     MapSlotsSynchronously();
+
+    dawn::Mutex::AutoLock lg(&mMutex);
     ResolveExpectations();
 
     mDeferredExpectations.clear();

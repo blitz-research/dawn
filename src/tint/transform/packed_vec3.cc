@@ -120,7 +120,7 @@ struct PackedVec3::State {
                         // type, to avoid changing the array element stride.
                         return b.ty(packed_vec3_wrapper_struct_names.GetOrCreate(vec, [&]() {
                             auto name = b.Symbols().New(
-                                "tint_packed_vec3_" + vec->type()->FriendlyName(src->Symbols()) +
+                                "tint_packed_vec3_" + vec->type()->FriendlyName() +
                                 (array_element ? "_array_element" : "_struct_member"));
                             auto* member =
                                 b.Member(kStructMemberName, MakePackedVec3(vec),
@@ -159,7 +159,7 @@ struct PackedVec3::State {
                 }
                 return {};
             },
-            [&](const sem::Struct* str) -> ast::Type {
+            [&](const type::Struct* str) -> ast::Type {
                 if (ContainsVec3(str)) {
                     auto name = rewritten_structs.GetOrCreate(str, [&]() {
                         utils::Vector<const ast::StructMember*, 4> members;
@@ -170,12 +170,14 @@ struct PackedVec3::State {
                                 // Copy the member attributes.
                                 bool needs_align = true;
                                 utils::Vector<const ast::Attribute*, 4> attributes;
-                                for (auto* attr : member->Declaration()->attributes) {
-                                    if (attr->IsAnyOf<ast::StructMemberAlignAttribute,
-                                                      ast::StructMemberOffsetAttribute>()) {
-                                        needs_align = false;
+                                if (auto* sem_mem = member->As<sem::StructMember>()) {
+                                    for (auto* attr : sem_mem->Declaration()->attributes) {
+                                        if (attr->IsAnyOf<ast::StructMemberAlignAttribute,
+                                                          ast::StructMemberOffsetAttribute>()) {
+                                            needs_align = false;
+                                        }
+                                        attributes.Push(ctx.Clone(attr));
                                     }
-                                    attributes.Push(ctx.Clone(attr));
                                 }
                                 // If the alignment wasn't already specified, add an attribute to
                                 // make sure that we don't alter the alignment when using the packed
@@ -187,13 +189,17 @@ struct PackedVec3::State {
                                                       std::move(attributes)));
                             } else {
                                 // No vec3s, just clone the member as is.
-                                members.Push(ctx.Clone(member->Declaration()));
+                                if (auto* sem_mem = member->As<sem::StructMember>()) {
+                                    members.Push(ctx.Clone(sem_mem->Declaration()));
+                                } else {
+                                    members.Push(b.Member(ctx.Clone(member->Name()), new_type,
+                                                          utils::Empty));
+                                }
                             }
                         }
                         // Create the new structure.
-                        auto struct_name = b.Symbols().New(
-                            src->Symbols().NameFor(str->Declaration()->name->symbol) +
-                            "_tint_packed_vec3");
+                        auto struct_name =
+                            b.Symbols().New(str->Name().Name() + "_tint_packed_vec3");
                         b.Structure(struct_name, std::move(members));
                         return struct_name;
                     });
@@ -247,7 +253,7 @@ struct PackedVec3::State {
             [&](const type::Matrix* mat) {
                 copy_array_elements(mat->columns(), mat->ColumnType());
             },
-            [&](const sem::Struct* str) {
+            [&](const type::Struct* str) {
                 // Copy the struct members over one at a time, packing/unpacking as necessary.
                 for (auto* member : str->Members()) {
                     const ast::Expression* element =

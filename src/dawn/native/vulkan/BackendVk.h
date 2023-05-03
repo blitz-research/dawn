@@ -55,7 +55,7 @@ class VulkanInstance : public RefCounted {
     const VulkanFunctions& GetFunctions() const;
     VkInstance GetVkInstance() const;
     const VulkanGlobalInfo& GetGlobalInfo() const;
-    const std::vector<VkPhysicalDevice>& GetPhysicalDevices() const;
+    const std::vector<VkPhysicalDevice>& GetVkPhysicalDevices() const;
 
     // TODO(dawn:831): This set of functions guards may need to be adjusted when Dawn is updated
     // to support multithreading.
@@ -78,7 +78,7 @@ class VulkanInstance : public RefCounted {
 
     VkDebugUtilsMessengerEXT mDebugUtilsMessenger = VK_NULL_HANDLE;
 
-    std::vector<VkPhysicalDevice> mPhysicalDevices;
+    std::vector<VkPhysicalDevice> mVkPhysicalDevices;
 
     // Devices keep the VulkanInstance alive, so as long as devices remove themselves from this
     // map on destruction the pointers it contains should remain valid.
@@ -93,9 +93,9 @@ class Backend : public BackendConnection {
 
     MaybeError Initialize();
 
-    std::vector<Ref<AdapterBase>> DiscoverDefaultAdapters(
+    std::vector<Ref<PhysicalDeviceBase>> DiscoverDefaultAdapters(
         const TogglesState& adapterToggles) override;
-    ResultOrError<std::vector<Ref<AdapterBase>>> DiscoverAdapters(
+    ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> DiscoverAdapters(
         const AdapterDiscoveryOptionsBase* optionsBase,
         const TogglesState& adapterToggles) override;
 

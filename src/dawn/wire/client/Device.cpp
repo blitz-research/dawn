@@ -148,12 +148,11 @@ void Device::SetDeviceLostCallback(WGPUDeviceLostCallback callback, void* userda
     mDeviceLostUserdata = userdata;
 }
 
-bool Device::PopErrorScope(WGPUErrorCallback callback, void* userdata) {
-    // TODO(crbug.com/dawn/1324) Replace bool return with void when users are updated.
+void Device::PopErrorScope(WGPUErrorCallback callback, void* userdata) {
     Client* client = GetClient();
     if (client->IsDisconnected()) {
         callback(WGPUErrorType_DeviceLost, "GPU device disconnected", userdata);
-        return true;
+        return;
     }
 
     uint64_t serial = mErrorScopes.Add({callback, userdata});
@@ -161,7 +160,6 @@ bool Device::PopErrorScope(WGPUErrorCallback callback, void* userdata) {
     cmd.deviceId = GetWireId();
     cmd.requestSerial = serial;
     client->SerializeCommand(cmd);
-    return true;
 }
 
 bool Device::OnPopErrorScopeCallback(uint64_t requestSerial,
@@ -219,6 +217,12 @@ WGPUAdapter Device::GetAdapter() {
     // Not implemented in the wire.
     UNREACHABLE();
     return nullptr;
+}
+
+WGPUTextureUsage Device::GetSupportedSurfaceUsage(WGPUSurface) {
+    // Not implemented in the wire.
+    UNREACHABLE();
+    return WGPUTextureUsage_RenderAttachment;
 }
 
 WGPUQueue Device::GetQueue() {

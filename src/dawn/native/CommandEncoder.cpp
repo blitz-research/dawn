@@ -238,6 +238,16 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
     DAWN_TRY(ValidateStoreOp(colorAttachment.storeOp));
     DAWN_INVALID_IF(colorAttachment.loadOp == wgpu::LoadOp::Undefined, "loadOp must be set.");
     DAWN_INVALID_IF(colorAttachment.storeOp == wgpu::StoreOp::Undefined, "storeOp must be set.");
+    if (attachment->GetTexture()->GetUsage() & wgpu::TextureUsage::TransientAttachment) {
+        DAWN_INVALID_IF(colorAttachment.loadOp != wgpu::LoadOp::Clear,
+                        "The color attachment %s has the load op set to %s while its usage (%s) "
+                        "has the transient attachment bit set.",
+                        attachment, wgpu::LoadOp::Load, attachment->GetTexture()->GetUsage());
+        DAWN_INVALID_IF(colorAttachment.storeOp != wgpu::StoreOp::Discard,
+                        "The color attachment %s has the store op set to %s while its usage (%s) "
+                        "has the transient attachment bit set.",
+                        attachment, wgpu::StoreOp::Store, attachment->GetTexture()->GetUsage());
+    }
 
     const dawn::native::Color& clearValue = colorAttachment.clearValue;
     if (colorAttachment.loadOp == wgpu::LoadOp::Clear) {
@@ -298,75 +308,41 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
     // Read only, or depth doesn't exist.
     if (depthStencilAttachment->depthReadOnly ||
         !IsSubset(Aspect::Depth, attachment->GetAspects())) {
-        if (depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Load &&
-            depthStencilAttachment->depthStoreOp == wgpu::StoreOp::Store) {
-            DAWN_TRY(DAWN_MAKE_DEPRECATION_ERROR(
-                device,
-                "depthLoadOp is (%s) and depthStoreOp is (%s) "
-                "when depthReadOnly (%u) or the attachment (%s) has no depth aspect.",
-                depthStencilAttachment->depthLoadOp, depthStencilAttachment->depthStoreOp,
-                depthStencilAttachment->depthReadOnly, attachment));
-        } else {
-            DAWN_INVALID_IF(depthStencilAttachment->depthLoadOp != wgpu::LoadOp::Undefined,
-                            "depthLoadOp (%s) must not be set if the attachment (%s) has "
-                            "no depth aspect or depthReadOnly (%u) is true.",
-                            depthStencilAttachment->depthLoadOp, attachment,
-                            depthStencilAttachment->depthReadOnly);
-            DAWN_INVALID_IF(depthStencilAttachment->depthStoreOp != wgpu::StoreOp::Undefined,
-                            "depthStoreOp (%s) must not be set if the attachment (%s) has no depth "
-                            "aspect or depthReadOnly (%u) is true.",
-                            depthStencilAttachment->depthStoreOp, attachment,
-                            depthStencilAttachment->depthReadOnly);
-        }
+        DAWN_INVALID_IF(depthStencilAttachment->depthLoadOp != wgpu::LoadOp::Undefined ||
+                            depthStencilAttachment->depthStoreOp != wgpu::StoreOp::Undefined,
+                        "Both depthLoadOp (%s) and depthStoreOp (%s) must not be set if the "
+                        "attachment (%s) has no depth aspect or depthReadOnly (%u) is true.",
+                        depthStencilAttachment->depthLoadOp, depthStencilAttachment->depthStoreOp,
+                        attachment, depthStencilAttachment->depthReadOnly);
     } else {
         DAWN_TRY(ValidateLoadOp(depthStencilAttachment->depthLoadOp));
-        DAWN_INVALID_IF(depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Undefined,
-                        "depthLoadOp must be set if the attachment (%s) has a depth aspect "
-                        "and depthReadOnly (%u) is false.",
-                        attachment, depthStencilAttachment->depthReadOnly);
         DAWN_TRY(ValidateStoreOp(depthStencilAttachment->depthStoreOp));
-        DAWN_INVALID_IF(depthStencilAttachment->depthStoreOp == wgpu::StoreOp::Undefined,
-                        "depthStoreOp must be set if the attachment (%s) has a depth "
-                        "aspect and depthReadOnly (%u) is false.",
+        DAWN_INVALID_IF(depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Undefined ||
+                            depthStencilAttachment->depthStoreOp == wgpu::StoreOp::Undefined,
+                        "Both depthLoadOp (%s) and depthStoreOp (%s) must be set if the attachment "
+                        "(%s) has a depth aspect or depthReadOnly (%u) is false.",
+                        depthStencilAttachment->depthLoadOp, depthStencilAttachment->depthStoreOp,
                         attachment, depthStencilAttachment->depthReadOnly);
     }
 
     // Read only, or stencil doesn't exist.
     if (depthStencilAttachment->stencilReadOnly ||
         !IsSubset(Aspect::Stencil, attachment->GetAspects())) {
-        if (depthStencilAttachment->stencilLoadOp == wgpu::LoadOp::Load &&
-            depthStencilAttachment->stencilStoreOp == wgpu::StoreOp::Store) {
-            DAWN_TRY(DAWN_MAKE_DEPRECATION_ERROR(
-                device,
-                "stencilLoadOp is (%s) and stencilStoreOp is (%s) "
-                "when stencilReadOnly (%u) or the attachment (%s) has no stencil aspect.",
-                depthStencilAttachment->stencilLoadOp, depthStencilAttachment->stencilStoreOp,
-                depthStencilAttachment->stencilReadOnly, attachment));
-        } else {
-            DAWN_INVALID_IF(
-                depthStencilAttachment->stencilLoadOp != wgpu::LoadOp::Undefined,
-                "stencilLoadOp (%s) must not be set if the attachment (%s) has no stencil "
-                "aspect or stencilReadOnly (%u) is true.",
-                depthStencilAttachment->stencilLoadOp, attachment,
-                depthStencilAttachment->stencilReadOnly);
-            DAWN_INVALID_IF(
-                depthStencilAttachment->stencilStoreOp != wgpu::StoreOp::Undefined,
-                "stencilStoreOp (%s) must not be set if the attachment (%s) has no stencil "
-                "aspect or stencilReadOnly (%u) is true.",
-                depthStencilAttachment->stencilStoreOp, attachment,
-                depthStencilAttachment->stencilReadOnly);
-        }
+        DAWN_INVALID_IF(depthStencilAttachment->stencilLoadOp != wgpu::LoadOp::Undefined ||
+                            depthStencilAttachment->stencilStoreOp != wgpu::StoreOp::Undefined,
+                        "Both stencilLoadOp (%s) and stencilStoreOp (%s) must not be set if the "
+                        "attachment (%s) has no stencil aspect or stencilReadOnly (%u) is true.",
+                        depthStencilAttachment->stencilLoadOp,
+                        depthStencilAttachment->stencilStoreOp, attachment,
+                        depthStencilAttachment->stencilReadOnly);
     } else {
         DAWN_TRY(ValidateLoadOp(depthStencilAttachment->stencilLoadOp));
-        DAWN_INVALID_IF(depthStencilAttachment->stencilLoadOp == wgpu::LoadOp::Undefined,
-                        "stencilLoadOp (%s) must be set if the attachment (%s) has a stencil "
-                        "aspect and stencilReadOnly (%u) is false.",
-                        depthStencilAttachment->stencilLoadOp, attachment,
-                        depthStencilAttachment->stencilReadOnly);
         DAWN_TRY(ValidateStoreOp(depthStencilAttachment->stencilStoreOp));
-        DAWN_INVALID_IF(depthStencilAttachment->stencilStoreOp == wgpu::StoreOp::Undefined,
-                        "stencilStoreOp (%s) must be set if the attachment (%s) has a stencil "
-                        "aspect and stencilReadOnly (%u) is false.",
+        DAWN_INVALID_IF(depthStencilAttachment->stencilLoadOp == wgpu::LoadOp::Undefined ||
+                            depthStencilAttachment->stencilStoreOp == wgpu::StoreOp::Undefined,
+                        "Both stencilLoadOp (%s) and stencilStoreOp (%s) must be set if the "
+                        "attachment (%s) has a stencil aspect or stencilReadOnly (%u) is false.",
+                        depthStencilAttachment->stencilLoadOp,
                         depthStencilAttachment->stencilStoreOp, attachment,
                         depthStencilAttachment->stencilReadOnly);
     }
@@ -660,10 +636,10 @@ Color ClampClearColorValueToLegalRange(const Color& originalColor, const Format&
     double minValue = 0;
     double maxValue = 0;
     switch (aspectInfo.baseType) {
-        case wgpu::TextureComponentType::Float: {
+        case TextureComponentType::Float: {
             return originalColor;
         }
-        case wgpu::TextureComponentType::Sint: {
+        case TextureComponentType::Sint: {
             const uint32_t bitsPerComponent =
                 (aspectInfo.block.byteSize * 8 / format.componentCount);
             maxValue =
@@ -671,16 +647,12 @@ Color ClampClearColorValueToLegalRange(const Color& originalColor, const Format&
             minValue = -static_cast<double>(static_cast<uint64_t>(1) << (bitsPerComponent - 1));
             break;
         }
-        case wgpu::TextureComponentType::Uint: {
+        case TextureComponentType::Uint: {
             const uint32_t bitsPerComponent =
                 (aspectInfo.block.byteSize * 8 / format.componentCount);
             maxValue = static_cast<double>((static_cast<uint64_t>(1) << bitsPerComponent) - 1);
             break;
         }
-        case wgpu::TextureComponentType::DepthComparison:
-        default:
-            UNREACHABLE();
-            break;
     }
 
     return {std::clamp(originalColor.r, minValue, maxValue),
@@ -710,8 +682,8 @@ Ref<CommandEncoder> CommandEncoder::Create(DeviceBase* device,
 }
 
 // static
-CommandEncoder* CommandEncoder::MakeError(DeviceBase* device) {
-    return new CommandEncoder(device, ObjectBase::kError);
+CommandEncoder* CommandEncoder::MakeError(DeviceBase* device, const char* label) {
+    return new CommandEncoder(device, ObjectBase::kError, label);
 }
 
 CommandEncoder::CommandEncoder(DeviceBase* device, const CommandEncoderDescriptor* descriptor)
@@ -728,8 +700,8 @@ CommandEncoder::CommandEncoder(DeviceBase* device, const CommandEncoderDescripto
     }
 }
 
-CommandEncoder::CommandEncoder(DeviceBase* device, ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag),
+CommandEncoder::CommandEncoder(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label)
+    : ApiObjectBase(device, tag, label),
       mEncodingContext(device, this),
       mUsageValidationMode(UsageValidationMode::Default) {
     mEncodingContext.HandleError(DAWN_VALIDATION_ERROR("%s is invalid.", this));
@@ -830,7 +802,8 @@ Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescri
         return passEncoder;
     }
 
-    return ComputePassEncoder::MakeError(device, this, &mEncodingContext);
+    return ComputePassEncoder::MakeError(device, this, &mEncodingContext,
+                                         descriptor ? descriptor->label : nullptr);
 }
 
 RenderPassEncoder* CommandEncoder::APIBeginRenderPass(const RenderPassDescriptor* descriptor) {
@@ -1011,14 +984,16 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
             MaybeError error =
                 ApplyClearBigIntegerColorValueWithDraw(passEncoder.Get(), descriptor);
             if (error.IsError()) {
-                return RenderPassEncoder::MakeError(device, this, &mEncodingContext);
+                return RenderPassEncoder::MakeError(device, this, &mEncodingContext,
+                                                    descriptor ? descriptor->label : nullptr);
             }
         }
 
         return passEncoder;
     }
 
-    return RenderPassEncoder::MakeError(device, this, &mEncodingContext);
+    return RenderPassEncoder::MakeError(device, this, &mEncodingContext,
+                                        descriptor ? descriptor->label : nullptr);
 }
 
 // This function handles render pass workarounds. Because some cases may require
@@ -1627,7 +1602,10 @@ CommandBufferBase* CommandEncoder::APIFinish(const CommandBufferDescriptor* desc
 
     Ref<CommandBufferBase> commandBuffer;
     if (GetDevice()->ConsumedError(Finish(descriptor), &commandBuffer)) {
-        return CommandBufferBase::MakeError(GetDevice());
+        CommandBufferBase* errorCommandBuffer =
+            CommandBufferBase::MakeError(GetDevice(), descriptor ? descriptor->label : nullptr);
+        errorCommandBuffer->SetEncoderLabel(this->GetLabel());
+        return errorCommandBuffer;
     }
     ASSERT(!IsError());
     return commandBuffer.Detach();

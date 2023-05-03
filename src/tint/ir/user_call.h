@@ -15,37 +15,36 @@
 #ifndef SRC_TINT_IR_USER_CALL_H_
 #define SRC_TINT_IR_USER_CALL_H_
 
-#include "src/tint/castable.h"
 #include "src/tint/ir/call.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/type.h"
+#include "src/tint/symbol.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// A user call instruction in the IR.
-class UserCall : public Castable<UserCall, Call> {
+class UserCall : public utils::Castable<UserCall, Call> {
   public:
     /// Constructor
-    /// @param result the result value
+    /// @param id the instruction id
+    /// @param type the result type
     /// @param name the function name
     /// @param args the function arguments
-    UserCall(Value* result, Symbol name, utils::VectorRef<Value*> args);
-    UserCall(const UserCall& instr) = delete;
-    UserCall(UserCall&& instr) = delete;
+    UserCall(uint32_t id, const type::Type* type, Symbol name, utils::VectorRef<Value*> args);
+    UserCall(const UserCall& inst) = delete;
+    UserCall(UserCall&& inst) = delete;
     ~UserCall() override;
 
-    UserCall& operator=(const UserCall& instr) = delete;
-    UserCall& operator=(UserCall&& instr) = delete;
+    UserCall& operator=(const UserCall& inst) = delete;
+    UserCall& operator=(UserCall&& inst) = delete;
 
     /// @returns the function name
     Symbol Name() const { return name_; }
 
     /// Write the instruction to the given stream
     /// @param out the stream to write to
-    /// @param st the symbol table
     /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out, const SymbolTable& st) const override;
+    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
 
   private:
     Symbol name_{};

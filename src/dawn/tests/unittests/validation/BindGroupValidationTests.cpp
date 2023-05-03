@@ -1650,7 +1650,7 @@ TEST_F(BindGroupLayoutValidationTest, MultisampledTextureViewDimension) {
 
 // Test that multisampled texture bindings are valid
 TEST_F(BindGroupLayoutValidationTest, MultisampledTextureSampleType) {
-    // Multisampled float sample type deprecated.
+    // Multisampled float sample type is not supported.
     ASSERT_DEVICE_ERROR(utils::MakeBindGroupLayout(
         device, {
                     {0, wgpu::ShaderStage::Compute, wgpu::TextureSampleType::Float,
@@ -3033,7 +3033,7 @@ TEST_F(SamplerTypeBindingTest, SamplerAndBindGroupMatches) {
         }
         {
             wgpu::SamplerDescriptor desc;
-            desc.mipmapFilter = wgpu::FilterMode::Linear;
+            desc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
             utils::MakeBindGroup(device, bindGroupLayout, {{0, device.CreateSampler(&desc)}});
         }
 
@@ -3061,7 +3061,7 @@ TEST_F(SamplerTypeBindingTest, SamplerAndBindGroupMatches) {
         }
         {
             wgpu::SamplerDescriptor desc;
-            desc.mipmapFilter = wgpu::FilterMode::Linear;
+            desc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
             ASSERT_DEVICE_ERROR(
                 utils::MakeBindGroup(device, bindGroupLayout, {{0, device.CreateSampler(&desc)}}));
         }

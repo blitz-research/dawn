@@ -22,71 +22,33 @@
 
 #include "dawn/common/Log.h"
 #include "dawn/common/Math.h"
-#include "dawn/native/d3d12/D3D11on12Util.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
-#include "dawn/native/d3d12/ExternalImageDXGIImpl.h"
 #include "dawn/native/d3d12/ResidencyManagerD3D12.h"
 #include "dawn/native/d3d12/TextureD3D12.h"
 
 namespace dawn::native::d3d12 {
 
-ComPtr<ID3D12Device> GetD3D12Device(WGPUDevice device) {
-    return ToBackend(FromAPI(device))->GetD3D12Device();
-}
+// ***** Begin OpenXR *****
 
 DAWN_NATIVE_EXPORT ComPtr<ID3D12CommandQueue> GetD3D12CommandQueue(WGPUDevice device) {
     return ToBackend(FromAPI(device))->GetCommandQueue();
 }
 
-DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor, ID3D12Resource* d3dTexture) {
-    auto texture = Texture::CreateExternalImage(ToBackend(FromAPI(device)), FromAPI(descriptor), d3dTexture, {}, {}, true, true);
-    if(texture.IsSuccess()) return ToAPI(texture.AcquireSuccess().Detach());
+DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
+                                                          const WGPUTextureDescriptor* descriptor,
+                                                          ID3D12Resource* d3dTexture) {
+    auto texture = Texture::CreateExternalImage(ToBackend(FromAPI(device)), FromAPI(descriptor),
+                                                d3dTexture, {}, true, true);
+    if (texture.IsSuccess()) {
+        return ToAPI(texture.AcquireSuccess().Detach());
+    }
     return nullptr;
 }
 
-ExternalImageDescriptorDXGISharedHandle::ExternalImageDescriptorDXGISharedHandle()
-    : ExternalImageDescriptor(ExternalImageType::DXGISharedHandle) {}
+// ***** End OpenXR *****
 
-ExternalImageDXGI::ExternalImageDXGI(std::unique_ptr<ExternalImageDXGIImpl> impl)
-    : mImpl(std::move(impl)) {
-    ASSERT(mImpl != nullptr);
-}
-
-ExternalImageDXGI::~ExternalImageDXGI() = default;
-
-bool ExternalImageDXGI::IsValid() const {
-    return mImpl->IsValid();
-}
-
-WGPUTexture ExternalImageDXGI::ProduceTexture(
-    WGPUDevice device,
-    const ExternalImageDXGIBeginAccessDescriptor* descriptor) {
-    return BeginAccess(descriptor);
-}
-
-WGPUTexture ExternalImageDXGI::BeginAccess(
-    const ExternalImageDXGIBeginAccessDescriptor* descriptor) {
-    return mImpl->BeginAccess(descriptor);
-}
-
-void ExternalImageDXGI::EndAccess(WGPUTexture texture,
-                                  ExternalImageDXGIFenceDescriptor* signalFence) {
-    mImpl->EndAccess(texture, signalFence);
-}
-
-// static
-std::unique_ptr<ExternalImageDXGI> ExternalImageDXGI::Create(
-    WGPUDevice device,
-    const ExternalImageDescriptorDXGISharedHandle* descriptor) {
-    Device* backendDevice = ToBackend(FromAPI(device));
-    auto deviceLock(backendDevice->GetScopedLock());
-    std::unique_ptr<ExternalImageDXGIImpl> impl =
-        backendDevice->CreateExternalImageDXGIImpl(descriptor);
-    if (!impl) {
-        dawn::ErrorLog() << "Failed to create DXGI external image";
-        return nullptr;
-    }
-    return std::unique_ptr<ExternalImageDXGI>(new ExternalImageDXGI(std::move(impl)));
+ComPtr<ID3D12Device> GetD3D12Device(WGPUDevice device) {
+    return ToBackend(FromAPI(device))->GetD3D12Device();
 }
 
 uint64_t SetExternalMemoryReservation(WGPUDevice device,

@@ -24,15 +24,14 @@
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d12/AdapterD3D12.h"
 #include "dawn/native/d3d12/BackendD3D12.h"
 #include "dawn/native/d3d12/BindGroupD3D12.h"
 #include "dawn/native/d3d12/BindGroupLayoutD3D12.h"
 #include "dawn/native/d3d12/CommandAllocatorManager.h"
 #include "dawn/native/d3d12/CommandBufferD3D12.h"
 #include "dawn/native/d3d12/ComputePipelineD3D12.h"
-#include "dawn/native/d3d12/D3D11on12Util.h"
-#include "dawn/native/d3d12/ExternalImageDXGIImpl.h"
+#include "dawn/native/d3d12/ExternalImageDXGIImplD3D12.h"
+#include "dawn/native/d3d12/PhysicalDeviceD3D12.h"
 #include "dawn/native/d3d12/PipelineLayoutD3D12.h"
 #include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/QuerySetD3D12.h"
@@ -62,7 +61,7 @@ static constexpr uint64_t kZeroBufferSize = 1024 * 1024 * 4;  // 4 Mb
 static constexpr uint64_t kMaxDebugMessagesToPrint = 5;
 
 // static
-ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
+ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           const DeviceDescriptor* descriptor,
                                           const TogglesState& deviceToggles) {
     Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
@@ -71,7 +70,7 @@ ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
 }
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
-    mD3d12Device = ToBackend(GetAdapter())->GetDevice();
+    mD3d12Device = ToBackend(GetPhysicalDevice())->GetDevice();
 
     ASSERT(mD3d12Device != nullptr);
 
@@ -234,17 +233,17 @@ ComPtr<ID3D12CommandSignature> Device::GetDrawIndexedIndirectSignature() const {
 // Ensure DXC if use_dxc toggles are set and validated.
 MaybeError Device::EnsureDXCIfRequired() {
     if (IsToggleEnabled(Toggle::UseDXC)) {
-        ASSERT(ToBackend(GetAdapter())->GetBackend()->IsDXCAvailable());
-        DAWN_TRY(ToBackend(GetAdapter())->GetBackend()->EnsureDxcCompiler());
-        DAWN_TRY(ToBackend(GetAdapter())->GetBackend()->EnsureDxcLibrary());
-        DAWN_TRY(ToBackend(GetAdapter())->GetBackend()->EnsureDxcValidator());
+        ASSERT(ToBackend(GetPhysicalDevice())->GetBackend()->IsDXCAvailable());
+        DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcCompiler());
+        DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcLibrary());
+        DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcValidator());
     }
 
     return {};
 }
 
 const PlatformFunctions* Device::GetFunctions() const {
-    return ToBackend(GetAdapter())->GetBackend()->GetFunctions();
+    return ToBackend(GetPhysicalDevice())->GetBackend()->GetFunctions();
 }
 
 CommandAllocatorManager* Device::GetCommandAllocatorManager() const {
@@ -546,8 +545,8 @@ ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
                                                      forceAllocateAsCommittedResource);
 }
 
-std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
-    const ExternalImageDescriptorDXGISharedHandle* descriptor) {
+std::unique_ptr<d3d::ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
+    const d3d::ExternalImageDescriptorDXGISharedHandle* descriptor) {
     // ExternalImageDXGIImpl holds a weak reference to the device. If the device is destroyed before
     // the image is created, the image will have a dangling reference to the device which can cause
     // a use-after-free.
@@ -587,51 +586,29 @@ std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
         }
     }
 
-    auto impl = std::make_unique<ExternalImageDXGIImpl>(
-        this, std::move(d3d12Resource), textureDescriptor, descriptor->useFenceSynchronization);
+    auto impl =
+        std::make_unique<ExternalImageDXGIImpl>(this, std::move(d3d12Resource), textureDescriptor);
     mExternalImageList.Append(impl.get());
     return impl;
 }
 
-Ref<TextureBase> Device::CreateD3D12ExternalTexture(
-    const TextureDescriptor* descriptor,
-    ComPtr<ID3D12Resource> d3d12Texture,
-    std::vector<Ref<Fence>> waitFences,
-    Ref<D3D11on12ResourceCacheEntry> d3d11on12Resource,
-    bool isSwapChainTexture,
-    bool isInitialized) {
+Ref<TextureBase> Device::CreateD3D12ExternalTexture(const TextureDescriptor* descriptor,
+                                                    ComPtr<ID3D12Resource> d3d12Texture,
+                                                    std::vector<Ref<Fence>> waitFences,
+                                                    bool isSwapChainTexture,
+                                                    bool isInitialized) {
     Ref<Texture> dawnTexture;
-    if (ConsumedError(Texture::CreateExternalImage(
-                          this, descriptor, std::move(d3d12Texture), std::move(waitFences),
-                          std::move(d3d11on12Resource), isSwapChainTexture, isInitialized),
-                      &dawnTexture)) {
+    if (ConsumedError(
+            Texture::CreateExternalImage(this, descriptor, std::move(d3d12Texture),
+                                         std::move(waitFences), isSwapChainTexture, isInitialized),
+            &dawnTexture)) {
         return nullptr;
     }
     return {dawnTexture};
 }
 
-ComPtr<ID3D11On12Device> Device::GetOrCreateD3D11on12Device() {
-    if (mD3d11On12Device == nullptr) {
-        ComPtr<ID3D11Device> d3d11Device;
-        D3D_FEATURE_LEVEL d3dFeatureLevel;
-        IUnknown* const iUnknownQueue = mCommandQueue.Get();
-        if (FAILED(GetFunctions()->d3d11on12CreateDevice(mD3d12Device.Get(), 0, nullptr, 0,
-                                                         &iUnknownQueue, 1, 1, &d3d11Device,
-                                                         nullptr, &d3dFeatureLevel))) {
-            return nullptr;
-        }
-
-        ComPtr<ID3D11On12Device> d3d11on12Device;
-        HRESULT hr = d3d11Device.As(&d3d11on12Device);
-        ASSERT(SUCCEEDED(hr));
-
-        mD3d11On12Device = std::move(d3d11on12Device);
-    }
-    return mD3d11On12Device;
-}
-
 const D3D12DeviceInfo& Device::GetDeviceInfo() const {
-    return ToBackend(GetAdapter())->GetDeviceInfo();
+    return ToBackend(GetPhysicalDevice())->GetDeviceInfo();
 }
 
 MaybeError Device::WaitForIdleForDestruction() {
@@ -685,7 +662,7 @@ void AppendDebugLayerMessagesToError(ID3D12InfoQueue* infoQueue,
 }
 
 MaybeError Device::CheckDebugLayerAndGenerateErrors() {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled()) {
         return {};
     }
 
@@ -709,7 +686,7 @@ MaybeError Device::CheckDebugLayerAndGenerateErrors() {
 }
 
 void Device::AppendDebugLayerMessages(ErrorData* error) {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled()) {
         return;
     }
 
@@ -730,7 +707,7 @@ void Device::DestroyImpl() {
     ASSERT(GetState() == State::Disconnected);
 
     while (!mExternalImageList.empty()) {
-        ExternalImageDXGIImpl* externalImage = mExternalImageList.head()->value();
+        d3d::ExternalImageDXGIImpl* externalImage = mExternalImageList.head()->value();
         // ExternalImageDXGIImpl::DestroyInternal() calls RemoveFromList().
         externalImage->DestroyInternal();
     }

@@ -122,20 +122,20 @@ WGPUAdapter Adapter::Get() const {
 }
 
 std::vector<const char*> Adapter::GetSupportedFeatures() const {
-    FeaturesSet supportedFeaturesSet = mImpl->GetSupportedFeatures();
+    FeaturesSet supportedFeaturesSet = mImpl->GetPhysicalDevice()->GetSupportedFeatures();
     return supportedFeaturesSet.GetEnabledFeatureNames();
 }
 
 bool Adapter::GetLimits(WGPUSupportedLimits* limits) const {
-    return mImpl->GetLimits(FromAPI(limits));
+    return mImpl->GetPhysicalDevice()->GetLimits(FromAPI(limits));
 }
 
 void Adapter::SetUseTieredLimits(bool useTieredLimits) {
-    mImpl->SetUseTieredLimits(useTieredLimits);
+    mImpl->GetPhysicalDevice()->SetUseTieredLimits(useTieredLimits);
 }
 
 bool Adapter::SupportsExternalImages() const {
-    return mImpl->SupportsExternalImages();
+    return mImpl->GetPhysicalDevice()->SupportsExternalImages();
 }
 
 Adapter::operator bool() const {
@@ -177,7 +177,7 @@ void Adapter::RequestDevice(const WGPUDeviceDescriptor* descriptor,
 }
 
 void Adapter::ResetInternalDeviceForTesting() {
-    mImpl->ResetInternalDeviceForTesting();
+    mImpl->GetPhysicalDevice()->ResetInternalDeviceForTesting();
 }
 
 // AdapterDiscoverOptionsBase
@@ -332,12 +332,18 @@ bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a, WGPUBindGroup
     return FromAPI(a)->IsLayoutEqual(FromAPI(b), excludePipelineCompatibilityToken);
 }
 
+}  // namespace dawn::native
+
+// ***** Mark was here *****
+
+namespace dawn::native {
+
 WGPUAdapter GetWGPUAdapter(WGPUDevice device) {
     return ToAPI(FromAPI(device)->GetAdapter());
 }
 
 WGPUBackendType GetWGPUBackendType(WGPUAdapter adapter) {
-    return ToAPI(FromAPI(adapter)->GetBackendType());
+    return ToAPI(FromAPI(adapter)->GetPhysicalDevice()->GetBackendType());
 }
 
 }  // namespace dawn::native

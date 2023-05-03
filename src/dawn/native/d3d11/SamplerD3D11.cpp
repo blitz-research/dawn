@@ -44,6 +44,15 @@ D3D11_FILTER_TYPE D3D11FilterType(wgpu::FilterMode mode) {
     }
 }
 
+D3D11_FILTER_TYPE D3D11MipmapFilterType(wgpu::MipmapFilterMode mode) {
+    switch (mode) {
+        case wgpu::MipmapFilterMode::Nearest:
+            return D3D11_FILTER_TYPE_POINT;
+        case wgpu::MipmapFilterMode::Linear:
+            return D3D11_FILTER_TYPE_LINEAR;
+    }
+}
+
 }  // namespace
 
 // static
@@ -57,7 +66,7 @@ MaybeError Sampler::Initialize(const SamplerDescriptor* descriptor) {
     D3D11_SAMPLER_DESC samplerDesc = {};
     D3D11_FILTER_TYPE minFilter = D3D11FilterType(descriptor->minFilter);
     D3D11_FILTER_TYPE magFilter = D3D11FilterType(descriptor->magFilter);
-    D3D11_FILTER_TYPE mipmapFilter = D3D11FilterType(descriptor->mipmapFilter);
+    D3D11_FILTER_TYPE mipmapFilter = D3D11MipmapFilterType(descriptor->mipmapFilter);
 
     D3D11_FILTER_REDUCTION_TYPE reduction = descriptor->compare == wgpu::CompareFunction::Undefined
                                                 ? D3D11_FILTER_REDUCTION_TYPE_STANDARD
@@ -92,11 +101,16 @@ MaybeError Sampler::Initialize(const SamplerDescriptor* descriptor) {
                               ->CreateSamplerState(&samplerDesc, &mD3d11SamplerState),
                           "ID3D11Device::CreateSamplerState"));
 
+    SetLabelImpl();
     return {};
 }
 
 ID3D11SamplerState* Sampler::GetD3D11SamplerState() const {
     return mD3d11SamplerState.Get();
+}
+
+void Sampler::SetLabelImpl() {
+    SetDebugName(ToBackend(GetDevice()), mD3d11SamplerState.Get(), "Dawn_Sampler", GetLabel());
 }
 
 }  // namespace dawn::native::d3d11

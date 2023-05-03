@@ -194,7 +194,7 @@ struct EntryPointMetadata {
 
     // An array to record the basic types (float, int and uint) of the fragment shader outputs.
     struct FragmentOutputVariableInfo {
-        wgpu::TextureComponentType baseType;
+        TextureComponentType baseType;
         uint8_t componentCount;
     };
     ityp::array<ColorAttachmentIndex, FragmentOutputVariableInfo, kMaxColorAttachments>
@@ -258,7 +258,7 @@ class ShaderModuleBase : public ApiObjectBase, public CachedObject {
     ShaderModuleBase(DeviceBase* device, const ShaderModuleDescriptor* descriptor);
     ~ShaderModuleBase() override;
 
-    static Ref<ShaderModuleBase> MakeError(DeviceBase* device);
+    static Ref<ShaderModuleBase> MakeError(DeviceBase* device, const char* label);
 
     ObjectType GetType() const override;
 
@@ -292,7 +292,7 @@ class ShaderModuleBase : public ApiObjectBase, public CachedObject {
                               OwnedCompilationMessages* compilationMessages);
 
   private:
-    ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+    ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
 
     // The original data in the descriptor for caching.
     enum class Type { Undefined, Spirv, Wgsl };

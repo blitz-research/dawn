@@ -21,11 +21,12 @@
 #include <vector>
 
 #include "dawn/native/DawnNative.h"
-#include <functional>
+
+#include <functional>   // For OpenXR
 
 namespace dawn::native::vulkan {
 
-DAWN_NATIVE_EXPORT VkInstance GetInstance(WGPUDevice device);
+// ***** Begin OpenXR *****
 
 DAWN_NATIVE_EXPORT VkPhysicalDevice GetVkPhysicalDevice(WGPUDevice device);
 
@@ -34,27 +35,33 @@ DAWN_NATIVE_EXPORT VkDevice GetVkDevice(WGPUDevice device);
 DAWN_NATIVE_EXPORT uint32_t GetGraphicsQueueFamily(WGPUDevice device);
 
 DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor,
-                                                 VkImage_T* image);
+                                                          VkImage_T* image);
 
-DAWN_NATIVE_EXPORT PFN_vkVoidFunction GetInstanceProcAddr(WGPUDevice device, const char* pName);
+struct DAWN_NATIVE_EXPORT OpenXRConfig {
 
-struct DAWN_NATIVE_EXPORT OpenXRConfig : OpenXRConfigBase {
+    bool enabled = false;
 
     std::function<::VkResult(PFN_vkGetInstanceProcAddr,
-                      const VkInstanceCreateInfo*,
-                      const VkAllocationCallbacks*,
-                      VkInstance*)>
+                             const VkInstanceCreateInfo*,
+                             const VkAllocationCallbacks*,
+                             VkInstance*)>
         CreateVkInstance;
 
     std::function<::VkResult(VkInstance, VkPhysicalDevice*)> GetVkPhysicalDevice;
 
     std::function<::VkResult(PFN_vkGetInstanceProcAddr,
-                      VkPhysicalDevice,
-                      const VkDeviceCreateInfo*,
-                      const VkAllocationCallbacks*,
-                      VkDevice*)>
+                             VkPhysicalDevice,
+                             const VkDeviceCreateInfo*,
+                             const VkAllocationCallbacks*,
+                             VkDevice*)>
         CreateVkDevice;
 };
+
+// ***** End OpenXR *****
+
+DAWN_NATIVE_EXPORT VkInstance GetInstance(WGPUDevice device);
+
+DAWN_NATIVE_EXPORT PFN_vkVoidFunction GetInstanceProcAddr(WGPUDevice device, const char* pName);
 
 struct DAWN_NATIVE_EXPORT AdapterDiscoveryOptions : public AdapterDiscoveryOptionsBase {
     AdapterDiscoveryOptions();

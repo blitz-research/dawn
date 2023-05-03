@@ -39,6 +39,9 @@ class RenderPipeline final : public RenderPipelineBase {
     void ApplyNow(CommandRecordingContext* commandContext,
                   const std::array<float, 4>& blendColor,
                   uint32_t stencilReference);
+    void ApplyBlendState(CommandRecordingContext* commandContext,
+                         const std::array<float, 4>& blendColor);
+    void ApplyDepthStencilState(CommandRecordingContext* commandContext, uint32_t stencilReference);
 
     bool GetUsesVertexOrInstanceIndex() const;
 
@@ -47,7 +50,7 @@ class RenderPipeline final : public RenderPipelineBase {
     ~RenderPipeline() override;
 
     MaybeError Initialize() override;
-    void DestroyImpl() override;
+    void SetLabelImpl() override;
 
     MaybeError InitializeRasterizerState();
     MaybeError InitializeInputLayout(const Blob& vertexShader);

@@ -351,7 +351,7 @@ struct CanonicalizeEntryPointIO::State {
             }
         }
 
-        auto name = ctx.src->Symbols().NameFor(param->Declaration()->name->symbol);
+        auto name = param->Declaration()->name->symbol.Name();
         auto* input_expr = AddInput(name, param->Type(), param->Location(), std::move(attributes));
         inner_call_parameters.Push(input_expr);
     }
@@ -371,17 +371,17 @@ struct CanonicalizeEntryPointIO::State {
         // list to pass them through to the inner function.
         utils::Vector<const ast::Expression*, 8> inner_struct_values;
         for (auto* member : str->Members()) {
-            if (TINT_UNLIKELY(member->Type()->Is<sem::Struct>())) {
+            if (TINT_UNLIKELY(member->Type()->Is<type::Struct>())) {
                 TINT_ICE(Transform, ctx.dst->Diagnostics()) << "nested IO struct";
                 continue;
             }
 
-            auto name = ctx.src->Symbols().NameFor(member->Name());
+            auto name = member->Name().Name();
 
             auto attributes =
                 CloneShaderIOAttributes(member->Declaration()->attributes, do_interpolate);
-            auto* input_expr =
-                AddInput(name, member->Type(), member->Location(), std::move(attributes));
+            auto* input_expr = AddInput(name, member->Type(), member->Attributes().location,
+                                        std::move(attributes));
             inner_struct_values.Push(input_expr);
         }
 
@@ -400,18 +400,18 @@ struct CanonicalizeEntryPointIO::State {
         bool do_interpolate = func_ast->PipelineStage() != ast::PipelineStage::kFragment;
         if (auto* str = inner_ret_type->As<sem::Struct>()) {
             for (auto* member : str->Members()) {
-                if (TINT_UNLIKELY(member->Type()->Is<sem::Struct>())) {
+                if (TINT_UNLIKELY(member->Type()->Is<type::Struct>())) {
                     TINT_ICE(Transform, ctx.dst->Diagnostics()) << "nested IO struct";
                     continue;
                 }
 
-                auto name = ctx.src->Symbols().NameFor(member->Name());
+                auto name = member->Name().Name();
                 auto attributes =
                     CloneShaderIOAttributes(member->Declaration()->attributes, do_interpolate);
 
                 // Extract the original structure member.
-                AddOutput(name, member->Type(), member->Location(), std::move(attributes),
-                          ctx.dst->MemberAccessor(original_result, name));
+                AddOutput(name, member->Type(), member->Attributes().location,
+                          std::move(attributes), ctx.dst->MemberAccessor(original_result, name));
             }
         } else if (!inner_ret_type->Is<type::Void>()) {
             auto attributes =
@@ -530,7 +530,7 @@ struct CanonicalizeEntryPointIO::State {
             } else {
                 name = ctx.dst->Symbols().Register(outval.name);
             }
-            member_names.insert(ctx.dst->Symbols().NameFor(name));
+            member_names.insert(name.Name());
 
             wrapper_struct_output_members.Push({
                 ctx.dst->Member(name, outval.type, std::move(outval.attributes)),
@@ -598,7 +598,7 @@ struct CanonicalizeEntryPointIO::State {
         } else {
             // Add a suffix to the function name, as the wrapper function will take
             // the original entry point name.
-            auto ep_name = ctx.src->Symbols().NameFor(func_ast->name->symbol);
+            auto ep_name = func_ast->name->symbol.Name();
             inner_name = ctx.dst->Symbols().New(ep_name + "_inner");
         }
 
@@ -639,7 +639,7 @@ struct CanonicalizeEntryPointIO::State {
         // aggregated into a single structure.
         if (!func_sem->Parameters().IsEmpty()) {
             for (auto* param : func_sem->Parameters()) {
-                if (param->Type()->Is<sem::Struct>()) {
+                if (param->Type()->Is<type::Struct>()) {
                     ProcessStructParameter(param);
                 } else {
                     ProcessNonStructParameter(param);

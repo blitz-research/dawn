@@ -309,8 +309,7 @@ void Builder::RegisterVariable(const sem::Variable* var, uint32_t id) {
 uint32_t Builder::LookupVariableID(const sem::Variable* var) {
     auto it = var_to_id_.find(var);
     if (it == var_to_id_.end()) {
-        error_ = "unable to find ID for variable: " +
-                 builder_.Symbols().NameFor(var->Declaration()->name->symbol);
+        error_ = "unable to find ID for variable: " + var->Declaration()->name->symbol.Name();
         return 0;
     }
     return it->second;
@@ -498,8 +497,7 @@ bool Builder::GenerateEntryPoint(const ast::Function* func, uint32_t id) {
         return false;
     }
 
-    OperandList operands = {Operand(stage), Operand(id),
-                            Operand(builder_.Symbols().NameFor(func->name->symbol))};
+    OperandList operands = {Operand(stage), Operand(id), Operand(func->name->symbol.Name())};
 
     auto* func_sem = builder_.Sem().Get(func);
     for (const auto* var : func_sem->TransitivelyReferencedGlobals()) {
@@ -512,8 +510,8 @@ bool Builder::GenerateEntryPoint(const ast::Function* func, uint32_t id) {
 
         uint32_t var_id = LookupVariableID(var);
         if (var_id == 0) {
-            error_ = "unable to find ID for global variable: " +
-                     builder_.Symbols().NameFor(var->Declaration()->name->symbol);
+            error_ =
+                "unable to find ID for global variable: " + var->Declaration()->name->symbol.Name();
             return false;
         }
 
@@ -601,8 +599,7 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
     auto func_op = result_op();
     auto func_id = std::get<uint32_t>(func_op);
 
-    push_debug(spv::Op::OpName,
-               {Operand(func_id), Operand(builder_.Symbols().NameFor(func_ast->name->symbol))});
+    push_debug(spv::Op::OpName, {Operand(func_id), Operand(func_ast->name->symbol.Name())});
 
     auto ret_id = GenerateTypeIfNeeded(func->ReturnType());
     if (ret_id == 0) {
@@ -627,8 +624,7 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
         }
 
         push_debug(spv::Op::OpName,
-                   {Operand(param_id),
-                    Operand(builder_.Symbols().NameFor(param->Declaration()->name->symbol))});
+                   {Operand(param_id), Operand(param->Declaration()->name->symbol.Name())});
         params.push_back(
             Instruction{spv::Op::OpFunctionParameter, {Operand(param_type_id), param_op}});
 
@@ -725,8 +721,7 @@ bool Builder::GenerateFunctionVariable(const ast::Variable* v) {
         return false;
     }
 
-    push_debug(spv::Op::OpName,
-               {Operand(var_id), Operand(builder_.Symbols().NameFor(v->name->symbol))});
+    push_debug(spv::Op::OpName, {Operand(var_id), Operand(v->name->symbol.Name())});
 
     // TODO(dsinclair) We could detect if the initializer is fully const and emit
     // an initializer value for the variable instead of doing the OpLoad.
@@ -787,8 +782,7 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
         return false;
     }
 
-    push_debug(spv::Op::OpName,
-               {Operand(var_id), Operand(builder_.Symbols().NameFor(v->name->symbol))});
+    push_debug(spv::Op::OpName, {Operand(var_id), Operand(v->name->symbol.Name())});
 
     OperandList ops = {Operand(type_id), result, U32Operand(ConvertAddressSpace(sc))};
 
@@ -796,8 +790,8 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
         ops.push_back(Operand(init_id));
     } else {
         auto* st = type->As<type::StorageTexture>();
-        if (st || type->Is<sem::Struct>()) {
-            // type is a sem::Struct or a type::StorageTexture
+        if (st || type->Is<type::Struct>()) {
+            // type is a type::Struct or a type::StorageTexture
             auto access = st ? st->access() : sem->Access();
             switch (access) {
                 case builtin::Access::kWrite:
@@ -873,14 +867,14 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
             [&](const ast::BindingAttribute*) {
                 auto bp = sem->BindingPoint();
                 push_annot(spv::Op::OpDecorate, {Operand(var_id), U32Operand(SpvDecorationBinding),
-                                                 Operand(bp.binding)});
+                                                 Operand(bp->binding)});
                 return true;
             },
             [&](const ast::GroupAttribute*) {
                 auto bp = sem->BindingPoint();
                 push_annot(
                     spv::Op::OpDecorate,
-                    {Operand(var_id), U32Operand(SpvDecorationDescriptorSet), Operand(bp.group)});
+                    {Operand(var_id), U32Operand(SpvDecorationDescriptorSet), Operand(bp->group)});
                 return true;
             },
             [&](const ast::IdAttribute*) {
@@ -1163,8 +1157,7 @@ uint32_t Builder::GenerateIdentifierExpression(const ast::IdentifierExpression* 
             return LookupVariableID(user->Variable());
         }
     }
-    error_ = "identifier '" + builder_.Symbols().NameFor(expr->identifier->symbol) +
-             "' does not resolve to a variable";
+    error_ = "identifier '" + expr->identifier->symbol.Name() + "' does not resolve to a variable";
     return 0;
 }
 
@@ -1360,7 +1353,7 @@ uint32_t Builder::GenerateValueConstructorOrConversion(const sem::Call* call,
         // If the result is not a vector then we should have validated that the
         // value type is a correctly sized vector so we can just use it directly.
         if (result_type == value_type || result_type->Is<type::Matrix>() ||
-            result_type->Is<type::Array>() || result_type->Is<sem::Struct>()) {
+            result_type->Is<type::Array>() || result_type->Is<type::Struct>()) {
             ops.push_back(Operand(id));
             continue;
         }
@@ -1597,9 +1590,9 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const type::Type* to_type,
     }
 
     if (op == spv::Op::OpNop) {
-        error_ = "unable to determine conversion type for cast, from: " +
-                 from_type->FriendlyName(builder_.Symbols()) +
-                 " to: " + to_type->FriendlyName(builder_.Symbols());
+        error_ =
+            "unable to determine conversion type for cast, from: " + from_type->FriendlyName() +
+            " to: " + to_type->FriendlyName();
         return 0;
     }
 
@@ -1722,7 +1715,7 @@ uint32_t Builder::GenerateConstantIfNeeded(const constant::Value* constant) {
             }
             return composite(count.value());
         },
-        [&](const sem::Struct* s) { return composite(s->Members().Length()); },
+        [&](const type::Struct* s) { return composite(s->Members().Length()); },
         [&](Default) {
             error_ = "unhandled constant type: " + builder_.FriendlyName(ty);
             return 0;
@@ -2274,7 +2267,7 @@ uint32_t Builder::GenerateFunctionCall(const sem::Call* call, const sem::Functio
 
     auto func_id = func_symbol_to_id_[ident->symbol];
     if (func_id == 0) {
-        error_ = "unable to find called function: " + builder_.Symbols().NameFor(ident->symbol);
+        error_ = "unable to find called function: " + ident->symbol.Name();
         return 0;
     }
     ops.push_back(Operand(func_id));
@@ -2398,14 +2391,12 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::Builtin*
             params.push_back(Operand(struct_id));
 
             auto* type = TypeOf(accessor->object)->UnwrapRef();
-            if (!type->Is<sem::Struct>()) {
-                error_ = "invalid type (" + type->FriendlyName(builder_.Symbols()) +
-                         ") for runtime array length";
+            if (!type->Is<type::Struct>()) {
+                error_ = "invalid type (" + type->FriendlyName() + ") for runtime array length";
                 return 0;
             }
             // Runtime array must be the last member in the structure
-            params.push_back(
-                Operand(uint32_t(type->As<sem::Struct>()->Declaration()->members.Length() - 1)));
+            params.push_back(Operand(uint32_t(type->As<type::Struct>()->Members().Length() - 1)));
 
             if (!push_function_inst(spv::Op::OpArrayLength, params)) {
                 return 0;
@@ -3710,7 +3701,7 @@ uint32_t Builder::GenerateTypeIfNeeded(const type::Type* type) {
             [&](const type::Reference* ref) {  //
                 return GenerateReferenceType(ref, result);
             },
-            [&](const sem::Struct* str) {  //
+            [&](const type::Struct* str) {  //
                 return GenerateStructType(str, result);
             },
             [&](const type::U32*) {
@@ -3756,7 +3747,7 @@ uint32_t Builder::GenerateTypeIfNeeded(const type::Type* type) {
                 return true;
             },
             [&](Default) {
-                error_ = "unable to convert type: " + type->FriendlyName(builder_.Symbols());
+                error_ = "unable to convert type: " + type->FriendlyName();
                 return false;
             });
 
@@ -3922,20 +3913,21 @@ bool Builder::GenerateReferenceType(const type::Reference* ref, const Operand& r
     return true;
 }
 
-bool Builder::GenerateStructType(const sem::Struct* struct_type, const Operand& result) {
+bool Builder::GenerateStructType(const type::Struct* struct_type, const Operand& result) {
     auto struct_id = std::get<uint32_t>(result);
 
     if (struct_type->Name().IsValid()) {
-        push_debug(spv::Op::OpName,
-                   {Operand(struct_id), Operand(builder_.Symbols().NameFor(struct_type->Name()))});
+        push_debug(spv::Op::OpName, {Operand(struct_id), Operand(struct_type->Name().Name())});
     }
 
     OperandList ops;
     ops.push_back(result);
 
-    auto* decl = struct_type->Declaration();
-    if (decl && ast::HasAttribute<transform::AddBlockAttribute::BlockAttribute>(decl->attributes)) {
-        push_annot(spv::Op::OpDecorate, {Operand(struct_id), U32Operand(SpvDecorationBlock)});
+    if (auto* sem_str = struct_type->As<sem::Struct>()) {
+        auto* decl = sem_str->Declaration();
+        if (ast::HasAttribute<transform::AddBlockAttribute::BlockAttribute>(decl->attributes)) {
+            push_annot(spv::Op::OpDecorate, {Operand(struct_id), U32Operand(SpvDecorationBlock)});
+        }
     }
 
     for (uint32_t i = 0; i < struct_type->Members().Length(); ++i) {
@@ -3953,9 +3945,9 @@ bool Builder::GenerateStructType(const sem::Struct* struct_type, const Operand& 
 
 uint32_t Builder::GenerateStructMember(uint32_t struct_id,
                                        uint32_t idx,
-                                       const sem::StructMember* member) {
-    push_debug(spv::Op::OpMemberName, {Operand(struct_id), Operand(idx),
-                                       Operand(builder_.Symbols().NameFor(member->Name()))});
+                                       const type::StructMember* member) {
+    push_debug(spv::Op::OpMemberName,
+               {Operand(struct_id), Operand(idx), Operand(member->Name().Name())});
 
     // Note: This will generate layout annotations for *all* structs, whether or
     // not they are used in host-shareable variables. This is officially ok in

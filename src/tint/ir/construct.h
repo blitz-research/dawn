@@ -15,33 +15,31 @@
 #ifndef SRC_TINT_IR_CONSTRUCT_H_
 #define SRC_TINT_IR_CONSTRUCT_H_
 
-#include "src/tint/castable.h"
 #include "src/tint/ir/call.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/type.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// A constructor instruction in the IR.
-class Construct : public Castable<Construct, Call> {
+class Construct : public utils::Castable<Construct, Call> {
   public:
     /// Constructor
-    /// @param result the result value
+    /// @param id the instruction id
+    /// @param type the result type
     /// @param args the constructor arguments
-    Construct(Value* result, utils::VectorRef<Value*> args);
-    Construct(const Construct& instr) = delete;
-    Construct(Construct&& instr) = delete;
+    Construct(uint32_t id, const type::Type* type, utils::VectorRef<Value*> args);
+    Construct(const Construct& inst) = delete;
+    Construct(Construct&& inst) = delete;
     ~Construct() override;
 
-    Construct& operator=(const Construct& instr) = delete;
-    Construct& operator=(Construct&& instr) = delete;
+    Construct& operator=(const Construct& inst) = delete;
+    Construct& operator=(Construct&& inst) = delete;
 
     /// Write the instruction to the given stream
     /// @param out the stream to write to
-    /// @param st the symbol table
     /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out, const SymbolTable& st) const override;
+    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
 };
 
 }  // namespace tint::ir

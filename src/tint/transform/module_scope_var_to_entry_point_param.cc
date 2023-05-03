@@ -54,7 +54,7 @@ bool ContainsMatrix(const type::Type* type) {
         return true;
     } else if (auto* ary = type->As<type::Array>()) {
         return ContainsMatrix(ary->ElemType());
-    } else if (auto* str = type->As<sem::Struct>()) {
+    } else if (auto* str = type->As<type::Struct>()) {
         for (auto* member : str->Members()) {
             if (ContainsMatrix(member->Type())) {
                 return true;

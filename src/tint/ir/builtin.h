@@ -16,37 +16,38 @@
 #define SRC_TINT_IR_BUILTIN_H_
 
 #include "src/tint/builtin/function.h"
-#include "src/tint/castable.h"
 #include "src/tint/ir/call.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/type.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// A value conversion instruction in the IR.
-class Builtin : public Castable<Builtin, Call> {
+class Builtin : public utils::Castable<Builtin, Call> {
   public:
     /// Constructor
-    /// @param result the result value
+    /// @param id the instruction id
+    /// @param type the result type
     /// @param func the builtin function
     /// @param args the conversion arguments
-    Builtin(Value* result, builtin::Function func, utils::VectorRef<Value*> args);
-    Builtin(const Builtin& instr) = delete;
-    Builtin(Builtin&& instr) = delete;
+    Builtin(uint32_t id,
+            const type::Type* type,
+            builtin::Function func,
+            utils::VectorRef<Value*> args);
+    Builtin(const Builtin& inst) = delete;
+    Builtin(Builtin&& inst) = delete;
     ~Builtin() override;
 
-    Builtin& operator=(const Builtin& instr) = delete;
-    Builtin& operator=(Builtin&& instr) = delete;
+    Builtin& operator=(const Builtin& inst) = delete;
+    Builtin& operator=(Builtin&& inst) = delete;
 
     /// @returns the builtin function
     builtin::Function Func() const { return func_; }
 
     /// Write the instruction to the given stream
     /// @param out the stream to write to
-    /// @param st the symbol table
     /// @returns the stream
-    utils::StringStream& ToString(utils::StringStream& out, const SymbolTable& st) const override;
+    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
 
   private:
     const builtin::Function func_;

@@ -15,35 +15,37 @@
 #ifndef SRC_TINT_IR_CALL_H_
 #define SRC_TINT_IR_CALL_H_
 
-#include "src/tint/castable.h"
 #include "src/tint/ir/instruction.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/type.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
 /// A Call instruction in the IR.
-class Call : public Castable<Call, Instruction> {
+class Call : public utils::Castable<Call, Instruction> {
   public:
-    /// Constructor
-    /// @param result the result value
-    /// @param args the constructor arguments
-    Call(Value* result, utils::VectorRef<Value*> args);
-    Call(const Call& instr) = delete;
-    Call(Call&& instr) = delete;
+    Call(const Call& inst) = delete;
+    Call(Call&& inst) = delete;
     ~Call() override;
 
-    Call& operator=(const Call& instr) = delete;
-    Call& operator=(Call&& instr) = delete;
+    Call& operator=(const Call& inst) = delete;
+    Call& operator=(Call&& inst) = delete;
 
     /// @returns the constructor arguments
     utils::VectorRef<Value*> Args() const { return args_; }
 
     /// Writes the call arguments to the given stream.
     /// @param out the output stream
-    /// @param st the symbol table
-    void EmitArgs(utils::StringStream& out, const SymbolTable& st) const;
+    void EmitArgs(utils::StringStream& out) const;
+
+  protected:
+    /// Constructor
+    Call();
+    /// Constructor
+    /// @param id the instruction id
+    /// @param type the result type
+    /// @param args the constructor arguments
+    Call(uint32_t id, const type::Type* type, utils::VectorRef<Value*> args);
 
   private:
     utils::Vector<Value*, 1> args_;

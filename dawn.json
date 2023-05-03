@@ -164,18 +164,6 @@
             {"name": "default queue", "type": "queue descriptor"}
         ]
     },
-    "dawn toggles device descriptor": {
-        "tags": ["dawn", "native", "deprecated"],
-        "category": "structure",
-        "chained": "in",
-        "chain roots": ["device descriptor"],
-        "members": [
-            {"name": "force enabled toggles count", "type": "uint32_t", "default": 0},
-            {"name": "force enabled toggles", "type": "char", "annotation": "const*const*", "length": "force enabled toggles count"},
-            {"name": "force disabled toggles count", "type": "uint32_t", "default": 0},
-            {"name": "force disabled toggles", "type": "char", "annotation": "const*const*", "length": "force disabled toggles count"}
-        ]
-    },
     "dawn toggles descriptor": {
         "tags": ["dawn", "native"],
         "category": "structure",
@@ -501,7 +489,11 @@
             {"value": 2, "name": "unknown"},
             {"value": 3, "name": "device lost"},
             {"value": 4, "name": "destroyed before callback"},
-            {"value": 5, "name": "unmapped before callback"}
+            {"value": 5, "name": "unmapped before callback"},
+            {"value": 6, "name": "mapping already pending"},
+            {"value": 7, "name": "offset out of range"},
+            {"value": 8, "name": "size out of range"},
+            {"value": 9, "name": "validation error"}
         ]
     },
     "buffer map state": {
@@ -844,28 +836,11 @@
                 ]
             },
             {
-                "name": "dispatch",
-                "tags": ["deprecated"],
-                "args": [
-                    {"name": "workgroupCountX", "type": "uint32_t"},
-                    {"name": "workgroupCountY", "type": "uint32_t", "default": "1"},
-                    {"name": "workgroupCountZ", "type": "uint32_t", "default": "1"}
-                ]
-            },
-            {
                 "name": "dispatch workgroups",
                 "args": [
                     {"name": "workgroupCountX", "type": "uint32_t"},
                     {"name": "workgroupCountY", "type": "uint32_t", "default": "1"},
                     {"name": "workgroupCountZ", "type": "uint32_t", "default": "1"}
-                ]
-            },
-            {
-                "name": "dispatch indirect",
-                "tags": ["deprecated"],
-                "args": [
-                  {"name": "indirect buffer", "type": "buffer"},
-                  {"name": "indirect offset", "type": "uint64_t"}
                 ]
             },
             {
@@ -877,10 +852,6 @@
             },
             {
                 "name": "end"
-            },
-            {
-                "name": "end pass",
-                "tags": ["deprecated"]
             },
             {
                 "name": "end pipeline statistics query",
@@ -1232,7 +1203,6 @@
             },
             {
                 "name": "pop error scope",
-                "returns": "bool",
                 "args": [
                     {"name": "callback", "type": "error callback"},
                     {"name": "userdata", "type": "void", "annotation": "*"}
@@ -1250,6 +1220,13 @@
                 "tags": ["dawn"],
                 "args": [
                     {"name": "descriptor", "type": "texture descriptor", "annotation": "const*"}
+                ]
+            },
+            {
+                "name": "get supported surface usage",
+                "returns": "texture usage",
+                "args": [
+                    {"name": "surface", "type": "surface"}
                 ]
             }
         ]
@@ -1314,8 +1291,7 @@
             {"name": "max compute workgroup size x", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup size y", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max compute workgroup size z", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
-            {"name": "max compute workgroups per dimension", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
-            {"name": "max fragment combined output resources", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"}
+            {"name": "max compute workgroups per dimension", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"}
         ]
     },
     "required limits": {
@@ -1467,7 +1443,9 @@
             {"value": 1004, "name": "dawn native", "tags": ["dawn", "native"]},
             {"value": 1005, "name": "chromium experimental dp4a", "tags": ["dawn"]},
             {"value": 1006, "name": "timestamp query inside passes", "tags": ["dawn"]},
-            {"value": 1007, "name": "implicit device synchronization", "tags": ["dawn", "native"]}
+            {"value": 1007, "name": "implicit device synchronization", "tags": ["dawn", "native"]},
+            {"value": 1008, "name": "surface capabilities", "tags": ["dawn", "native"]},
+            {"value": 1009, "name": "transient attachments", "tags": ["dawn"]}
         ]
     },
     "filter mode": {
@@ -1607,7 +1585,6 @@
     },
     "mipmap filter mode": {
         "category": "enum",
-        "tags": ["upstream"],
         "values": [
             {"value": 0, "name": "nearest"},
             {"value": 1, "name": "linear"}
@@ -2179,10 +2156,6 @@
                 "name": "end"
             },
             {
-                "name": "end pass",
-                "tags": ["deprecated"]
-            },
-            {
                 "name": "end pipeline statistics query",
                 "tags": ["upstream", "emscripten"]
             },
@@ -2377,8 +2350,7 @@
             {"name": "address mode w", "type": "address mode", "default": "clamp to edge"},
             {"name": "mag filter", "type": "filter mode", "default": "nearest"},
             {"name": "min filter", "type": "filter mode", "default": "nearest"},
-            {"name": "mipmap filter", "type": "filter mode", "default": "nearest", "tags": ["dawn", "emscripten"]},
-            {"name": "mipmap filter", "type": "mipmap filter mode", "default": "nearest", "tags": ["upstream"]},
+            {"name": "mipmap filter", "type": "mipmap filter mode", "default": "nearest"},
             {"name": "lod min clamp", "type": "float", "default": "0.0f"},
             {"name": "lod max clamp", "type": "float", "default": "1000.0f"},
             {"name": "compare", "type": "compare function", "default": "undefined"},
@@ -2436,8 +2408,8 @@
         "chained": "in",
         "chain roots": ["shader module descriptor"],
         "members": [
-            {"name": "source", "type": "char", "annotation": "const*", "length": "strlen", "tags": ["dawn", "emscripten"]},
-            {"name": "code", "type": "char", "annotation": "const*", "length": "strlen", "tags": ["upstream"]}
+            {"name": "source", "type": "char", "annotation": "const*", "length": "strlen", "default": "nullptr", "optional": true, "tags": ["dawn", "emscripten"]},
+            {"name": "code", "type": "char", "annotation": "const*", "length": "strlen", "default": "nullptr", "optional": true}
         ]
     },
     "dawn shader module SPIRV options descriptor": {
@@ -2626,7 +2598,6 @@
             {"value": 14, "name": "surface descriptor from windows swap chain panel", "tags": ["dawn"]},
             {"value": 15, "name": "render pass descriptor max draw count"},
             {"value": 1000, "name": "dawn texture internal usage descriptor", "tags": ["dawn"]},
-            {"value": 1002, "name": "dawn toggles device descriptor", "tags": ["dawn", "native", "deprecated"]},
             {"value": 1003, "name": "dawn encoder internal usage descriptor", "tags": ["dawn"]},
             {"value": 1004, "name": "dawn instance descriptor", "tags": ["dawn", "native"]},
             {"value": 1005, "name": "dawn cache device descriptor", "tags": ["dawn", "native"]},
@@ -2698,16 +2669,6 @@
             {"value": 2, "name": "depth only"},
             {"value": 3, "name": "plane 0 only", "tags": ["dawn"]},
             {"value": 4, "name": "plane 1 only", "tags": ["dawn"]}
-        ]
-    },
-    "texture component type": {
-        "category": "enum",
-        "tags": ["dawn"],
-        "values": [
-            {"value": 0, "name": "float"},
-            {"value": 1, "name": "sint"},
-            {"value": 2, "name": "uint"},
-            {"value": 3, "name": "depth comparison"}
         ]
     },
     "texture data layout": {
@@ -2862,7 +2823,8 @@
             {"value": 4, "name": "texture binding"},
             {"value": 8, "name": "storage binding"},
             {"value": 16, "name": "render attachment"},
-            {"value": 32, "name": "present", "tags": ["dawn"]}
+            {"value": 32, "name": "present", "tags": ["dawn"]},
+            {"value": 64, "name": "transient attachment", "tags": ["dawn"]}
         ]
     },
     "texture view descriptor": {

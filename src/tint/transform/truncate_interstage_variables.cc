@@ -24,7 +24,7 @@
 #include "src/tint/sem/member_accessor_expression.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/variable.h"
-#include "src/tint/text/unicode.h"
+#include "src/tint/utils/unicode.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::TruncateInterstageVariables);
 TINT_INSTANTIATE_TYPEINFO(tint::transform::TruncateInterstageVariables::Config);
@@ -57,7 +57,7 @@ Transform::ApplyResult TruncateInterstageVariables::Apply(const Program* src,
         b.Diagnostics().add_error(
             diag::System::Transform,
             "missing transform data for " +
-                std::string(TypeInfo::Of<TruncateInterstageVariables>().name));
+                std::string(utils::TypeInfo::Of<TruncateInterstageVariables>().name));
         return Program(std::move(b));
     }
 
@@ -83,6 +83,8 @@ Transform::ApplyResult TruncateInterstageVariables::Apply(const Program* src,
         auto* func_sem = sem.Get(func_ast);
         auto* str = func_sem->ReturnType()->As<sem::Struct>();
 
+        // This transform is run after CanonicalizeEntryPointIO transform,
+        // So it is guaranteed that entry point inputs are already grouped in a struct.
         if (TINT_UNLIKELY(!str)) {
             TINT_ICE(Transform, ctx.dst->Diagnostics())
                 << "Entrypoint function return type is non-struct.\n"
@@ -91,20 +93,14 @@ Transform::ApplyResult TruncateInterstageVariables::Apply(const Program* src,
             continue;
         }
 
-        // This transform is run after CanonicalizeEntryPointIO transform,
-        // So it is guaranteed that entry point inputs are already grouped in a struct.
-        const ast::Struct* struct_ty = str->Declaration();
-
         // A prepass to check if any interstage variable locations in the entry point needs
         // truncating. If not we don't really need to handle this entry point.
         utils::Hashset<const sem::StructMember*, 16u> omit_members;
 
-        for (auto* member : struct_ty->members) {
-            if (ast::GetAttribute<ast::LocationAttribute>(member->attributes)) {
-                auto* m = sem.Get(member);
-                uint32_t location = m->Location().value();
-                if (!data->interstage_locations.test(location)) {
-                    omit_members.Add(m);
+        for (auto* member : str->Members()) {
+            if (auto location = member->Attributes().location) {
+                if (!data->interstage_locations.test(location.value())) {
+                    omit_members.Add(member);
                 }
             }
         }

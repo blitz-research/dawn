@@ -385,7 +385,7 @@ struct VertexPulling::State {
                     err << "VertexAttributeDescriptor for location "
                         << std::to_string(attribute_desc.shader_location) << " has format "
                         << attribute_desc.format << " but shader expects "
-                        << var.type->FriendlyName(src->Symbols());
+                        << var.type->FriendlyName();
                     b.Diagnostics().add_error(diag::System::Transform, err.str());
                     return nullptr;
                 }
@@ -826,8 +826,8 @@ struct VertexPulling::State {
                 auto* sem = src->Sem().Get(member);
                 info.type = sem->Type();
 
-                TINT_ASSERT(Transform, sem->Location().has_value());
-                location_info[sem->Location().value()] = info;
+                TINT_ASSERT(Transform, sem->Attributes().location.has_value());
+                location_info[sem->Attributes().location.value()] = info;
                 has_locations = true;
             } else {
                 auto* builtin_attr = ast::GetAttribute<ast::BuiltinAttribute>(member->attributes);

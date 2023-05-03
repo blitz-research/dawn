@@ -20,19 +20,18 @@
 #include <utility>
 
 #include "dawn/common/GPUInfo.h"
-#include "dawn/native/Buffer.h"
-#include "dawn/native/ComputePipeline.h"
 #include "dawn/native/D3D11Backend.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Instance.h"
-#include "dawn/native/RenderPipeline.h"
-#include "dawn/native/Texture.h"
 #include "dawn/native/d3d/D3DError.h"
-#include "dawn/native/d3d11/AdapterD3D11.h"
+#include "dawn/native/d3d/ExternalImageDXGIImpl.h"
 #include "dawn/native/d3d11/BackendD3D11.h"
 #include "dawn/native/d3d11/BindGroupD3D11.h"
 #include "dawn/native/d3d11/BindGroupLayoutD3D11.h"
+#include "dawn/native/d3d11/BufferD3D11.h"
+#include "dawn/native/d3d11/CommandBufferD3D11.h"
 #include "dawn/native/d3d11/ComputePipelineD3D11.h"
+#include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
 #include "dawn/native/d3d11/QueueD3D11.h"
@@ -91,7 +90,7 @@ void AppendDebugLayerMessagesToError(ID3D11InfoQueue* infoQueue,
 }  // namespace
 
 // static
-ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
+ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           const DeviceDescriptor* descriptor,
                                           const TogglesState& deviceToggles) {
     Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
@@ -100,7 +99,7 @@ ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
 }
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
-    DAWN_TRY_ASSIGN(mD3d11Device, ToBackend(GetAdapter())->CreateD3D11Device());
+    DAWN_TRY_ASSIGN(mD3d11Device, ToBackend(GetPhysicalDevice())->CreateD3D11Device());
     ASSERT(mD3d11Device != nullptr);
 
     DAWN_TRY(DeviceBase::Initialize(Queue::Create(this, &descriptor->defaultQueue)));
@@ -119,6 +118,8 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
 
     // Create the fence event.
     mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+    DAWN_TRY(PreparePendingCommandContext());
 
     SetLabelImpl();
 
@@ -145,17 +146,22 @@ ID3D11Device5* Device::GetD3D11Device5() const {
     return mD3d11Device5.Get();
 }
 
-ResultOrError<CommandRecordingContext*> Device::GetPendingCommandContext(
-    Device::SubmitMode submitMode) {
+CommandRecordingContext* Device::GetPendingCommandContext(Device::SubmitMode submitMode) {
     // Callers of GetPendingCommandList do so to record commands. Only reserve a command
     // allocator when it is needed so we don't submit empty command lists
-    if (!mPendingCommands.IsOpen()) {
-        DAWN_TRY(mPendingCommands.Open(this));
-    }
-    if (submitMode == Device::SubmitMode::Normal) {
+    DAWN_ASSERT(mPendingCommands.IsOpen());
+
+    if (submitMode == SubmitMode::Normal) {
         mPendingCommands.SetNeedsSubmit();
     }
     return &mPendingCommands;
+}
+
+MaybeError Device::PreparePendingCommandContext() {
+    if (!mPendingCommands.IsOpen()) {
+        DAWN_TRY(mPendingCommands.Open(this));
+    }
+    return {};
 }
 
 MaybeError Device::TickImpl() {
@@ -178,9 +184,8 @@ MaybeError Device::NextSerial() {
     TRACE_EVENT1(GetPlatform(), General, "D3D11Device::SignalFence", "serial",
                  uint64_t(GetLastSubmittedCommandSerial()));
 
-    CommandRecordingContext* commandContext;
-    DAWN_TRY_ASSIGN(commandContext, GetPendingCommandContext());
-
+    CommandRecordingContext* commandContext =
+        GetPendingCommandContext(DeviceBase::SubmitMode::Passive);
     DAWN_TRY(CheckHRESULT(commandContext->GetD3D11DeviceContext4()->Signal(
                               mFence.Get(), uint64_t(GetLastSubmittedCommandSerial())),
                           "D3D11 command queue signal fence"));
@@ -225,14 +230,10 @@ bool Device::HasPendingCommands() const {
     return mPendingCommands.NeedsSubmit();
 }
 
-void Device::ForceEventualFlushOfCommands() {
-    if (mPendingCommands.IsOpen()) {
-        mPendingCommands.SetNeedsSubmit();
-    }
-}
+void Device::ForceEventualFlushOfCommands() {}
 
 MaybeError Device::ExecutePendingCommandContext() {
-    return {};
+    return mPendingCommands.ExecuteCommandList(this);
 }
 
 ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
@@ -247,13 +248,13 @@ ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
 }
 
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
-    return DAWN_UNIMPLEMENTED_ERROR("CreateBufferImpl");
+    return Buffer::Create(this, descriptor);
 }
 
 ResultOrError<Ref<CommandBufferBase>> Device::CreateCommandBuffer(
     CommandEncoder* encoder,
     const CommandBufferDescriptor* descriptor) {
-    return DAWN_UNIMPLEMENTED_ERROR("CreateCommandBuffer");
+    return CommandBuffer::Create(encoder, descriptor);
 }
 
 Ref<ComputePipelineBase> Device::CreateUninitializedComputePipelineImpl(
@@ -320,7 +321,9 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
-    return DAWN_UNIMPLEMENTED_ERROR("CopyFromStagingToBufferImpl");
+    CommandRecordingContext* commandContext = GetPendingCommandContext();
+    return Buffer::Copy(commandContext, ToBackend(source), sourceOffset, size,
+                        ToBackend(destination), destinationOffset);
 }
 
 MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
@@ -331,13 +334,10 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 }
 
 const DeviceInfo& Device::GetDeviceInfo() const {
-    return ToBackend(GetAdapter())->GetDeviceInfo();
+    return ToBackend(GetPhysicalDevice())->GetDeviceInfo();
 }
 
 MaybeError Device::WaitForIdleForDestruction() {
-    // Immediately forget about all pending commands
-    mPendingCommands.Release();
-
     DAWN_TRY(NextSerial());
     // Wait for all in-flight commands to finish executing
     DAWN_TRY(WaitForSerial(GetLastSubmittedCommandSerial()));
@@ -346,7 +346,7 @@ MaybeError Device::WaitForIdleForDestruction() {
 }
 
 MaybeError Device::CheckDebugLayerAndGenerateErrors() {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled()) {
         return {};
     }
 
@@ -370,7 +370,7 @@ MaybeError Device::CheckDebugLayerAndGenerateErrors() {
 }
 
 void Device::AppendDebugLayerMessages(ErrorData* error) {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled()) {
         return;
     }
 
@@ -394,6 +394,8 @@ void Device::DestroyImpl() {
         ::CloseHandle(mFenceEvent);
         mFenceEvent = nullptr;
     }
+
+    mPendingCommands.Release();
 }
 
 uint32_t Device::GetOptimalBytesPerRowAlignment() const {
@@ -409,6 +411,13 @@ float Device::GetTimestampPeriodInNS() const {
 }
 
 void Device::SetLabelImpl() {}
+
+std::unique_ptr<d3d::ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
+    const d3d::ExternalImageDescriptorDXGISharedHandle* descriptor) {
+    // TODO(dawn:1724): Implement this
+    UNREACHABLE();
+    return {};
+}
 
 bool Device::MayRequireDuplicationOfIndirectParameters() const {
     return true;

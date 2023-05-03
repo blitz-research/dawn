@@ -36,10 +36,6 @@ namespace dawn::native {
 class InstanceBase;
 class AdapterBase;
 
-struct DAWN_NATIVE_EXPORT OpenXRConfigBase {
-    bool enabled  = false;
-};
-
 // An optional parameter of Adapter::CreateDevice() to send additional information when creating
 // a Device. For example, we can use it to enable a workaround, optimization or feature.
 struct DAWN_NATIVE_EXPORT DawnDeviceDescriptor {

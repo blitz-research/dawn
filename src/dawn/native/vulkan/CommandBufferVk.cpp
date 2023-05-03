@@ -24,13 +24,13 @@
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/RenderBundle.h"
-#include "dawn/native/vulkan/AdapterVk.h"
 #include "dawn/native/vulkan/BindGroupVk.h"
 #include "dawn/native/vulkan/BufferVk.h"
 #include "dawn/native/vulkan/CommandRecordingContext.h"
 #include "dawn/native/vulkan/ComputePipelineVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
+#include "dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "dawn/native/vulkan/PipelineLayoutVk.h"
 #include "dawn/native/vulkan/QuerySetVk.h"
 #include "dawn/native/vulkan/RenderPassCache.h"
@@ -252,7 +252,7 @@ MaybeError RecordBeginRenderPass(CommandRecordingContext* recordingContext,
             attachments[attachmentCount] = view->GetHandle();
 
             switch (view->GetFormat().GetAspectInfo(Aspect::Color).baseType) {
-                case wgpu::TextureComponentType::Float: {
+                case TextureComponentType::Float: {
                     const std::array<float, 4> appliedClearColor =
                         ConvertToFloatColor(attachmentInfo.clearColor);
                     for (uint32_t i = 0; i < 4; ++i) {
@@ -260,7 +260,7 @@ MaybeError RecordBeginRenderPass(CommandRecordingContext* recordingContext,
                     }
                     break;
                 }
-                case wgpu::TextureComponentType::Uint: {
+                case TextureComponentType::Uint: {
                     const std::array<uint32_t, 4> appliedClearColor =
                         ConvertToUnsignedIntegerColor(attachmentInfo.clearColor);
                     for (uint32_t i = 0; i < 4; ++i) {
@@ -268,7 +268,7 @@ MaybeError RecordBeginRenderPass(CommandRecordingContext* recordingContext,
                     }
                     break;
                 }
-                case wgpu::TextureComponentType::Sint: {
+                case TextureComponentType::Sint: {
                     const std::array<int32_t, 4> appliedClearColor =
                         ConvertToSignedIntegerColor(attachmentInfo.clearColor);
                     for (uint32_t i = 0; i < 4; ++i) {
@@ -276,9 +276,6 @@ MaybeError RecordBeginRenderPass(CommandRecordingContext* recordingContext,
                     }
                     break;
                 }
-
-                case wgpu::TextureComponentType::DepthComparison:
-                    UNREACHABLE();
             }
             attachmentCount++;
         }

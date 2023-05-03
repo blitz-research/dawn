@@ -155,6 +155,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     MaybeError ValidateObject(const ApiObjectBase* object) const;
 
     AdapterBase* GetAdapter() const;
+    PhysicalDeviceBase* GetPhysicalDevice() const;
     virtual dawn::platform::Platform* GetPlatform() const;
 
     // Returns the Format corresponding to the wgpu::TextureFormat or an error if the format
@@ -261,6 +262,8 @@ class DeviceBase : public RefCountedWithExternalCount {
     ResultOrError<Ref<TextureViewBase>> CreateTextureView(TextureBase* texture,
                                                           const TextureViewDescriptor* descriptor);
 
+    ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsage(const Surface* surface) const;
+
     // Implementation of API object creation methods. DO NOT use them in a reentrant manner.
     BindGroupBase* APICreateBindGroup(const BindGroupDescriptor* descriptor);
     BindGroupLayoutBase* APICreateBindGroupLayout(const BindGroupLayoutDescriptor* descriptor);
@@ -284,6 +287,8 @@ class DeviceBase : public RefCountedWithExternalCount {
     SwapChainBase* APICreateSwapChain(Surface* surface, const SwapChainDescriptor* descriptor);
     TextureBase* APICreateTexture(const TextureDescriptor* descriptor);
 
+    wgpu::TextureUsage APIGetSupportedSurfaceUsage(Surface* surface);
+
     InternalPipelineStore* GetInternalPipelineStore();
 
     // For Dawn Wire
@@ -305,7 +310,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void APISetUncapturedErrorCallback(wgpu::ErrorCallback callback, void* userdata);
     void APISetLoggingCallback(wgpu::LoggingCallback callback, void* userdata);
     void APIPushErrorScope(wgpu::ErrorFilter filter);
-    bool APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata);
+    void APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata);
 
     MaybeError ValidateIsAlive() const;
 
@@ -491,6 +496,9 @@ class DeviceBase : public RefCountedWithExternalCount {
     virtual Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) = 0;
     virtual void SetLabelImpl();
+
+    virtual ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
+        const Surface* surface) const = 0;
 
     virtual MaybeError TickImpl() = 0;
     void FlushCallbackTaskQueue();

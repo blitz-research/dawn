@@ -16,6 +16,7 @@
 
 #include "dawn/common/GPUInfo.h"
 #include "dawn/common/Platform.h"
+#include "dawn/native/Adapter.h"
 #include "dawn/native/BackendConnection.h"
 #include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/Commands.h"
@@ -155,7 +156,7 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     if (mIsTimestampQueryEnabled && !IsToggleEnabled(Toggle::DisableTimestampQueryConversion)) {
         // Make a best guess of timestamp period based on device vendor info, and converge it to
         // an accurate value by the following calculations.
-        mTimestampPeriod = gpu_info::IsIntel(GetAdapter()->GetVendorId()) ? 83.333f : 1.0f;
+        mTimestampPeriod = gpu_info::IsIntel(GetPhysicalDevice()->GetVendorId()) ? 83.333f : 1.0f;
 
         // Initialize kalman filter parameters
         mKalmanInfo = std::make_unique<KalmanInfo>();
@@ -238,6 +239,13 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPip
                                                WGPUCreateRenderPipelineAsyncCallback callback,
                                                void* userdata) {
     RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
+}
+
+ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
+    const Surface* surface) const {
+    wgpu::TextureUsage usages =
+        wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+    return usages;
 }
 
 ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
