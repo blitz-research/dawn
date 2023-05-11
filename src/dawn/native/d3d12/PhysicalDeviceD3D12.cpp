@@ -29,17 +29,19 @@
 
 namespace dawn::native::d3d12 {
 
-PhysicalDevice::PhysicalDevice(Backend* backend,
-                               ComPtr<IDXGIAdapter3> hardwareAdapter,
-                               const TogglesState& adapterToggles)
-    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D12, adapterToggles) {}
+PhysicalDevice::PhysicalDevice(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter)
+    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D12) {}
 
 PhysicalDevice::~PhysicalDevice() {
     CleanUpDebugLayerFilters();
 }
 
 bool PhysicalDevice::SupportsExternalImages() const {
-    // Via dawn::native::d3d12::ExternalImageDXGI::Create
+    // Via dawn::native::d3d::ExternalImageDXGI::Create
+    return true;
+}
+
+bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel) const {
     return true;
 }
 
@@ -305,7 +307,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Max number of "constants" where each constant is a 16-byte float4
     limits->v1.maxUniformBufferBindingSize = D3D12_REQ_CONSTANT_BUFFER_ELEMENT_COUNT * 16;
     // D3D12 has no documented limit on the size of a storage buffer binding.
-    limits->v1.maxStorageBufferBindingSize = 4294967295;
+    limits->v1.maxStorageBufferBindingSize = kAssumedMaxBufferSize;
     // D3D12 has no documented limit on the buffer size.
     limits->v1.maxBufferSize = kAssumedMaxBufferSize;
 
@@ -547,14 +549,18 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     // Currently this toggle is only needed on Intel Gen9 and Gen9.5 GPUs.
     // See http://crbug.com/dawn/1579 for more information.
     if (gpu_info::IsIntelGen9(vendorId, deviceId)) {
-        // We can add workaround when the blending operation is "Add", DstFactor is "Zero" and
-        // SrcFactor is "DstAlpha".
-        deviceToggles->ForceSet(
-            Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha, true);
+        const gpu_info::DriverVersion kFixedDriverVersion = {31, 0, 101, 2121};
+        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetDriverVersion(),
+                                                  kFixedDriverVersion) < 0) {
+            // We can add workaround when the blending operation is "Add", DstFactor is "Zero" and
+            // SrcFactor is "DstAlpha".
+            deviceToggles->ForceSet(
+                Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha, true);
 
-        // Unfortunately we cannot add workaround for other cases.
-        deviceToggles->ForceSet(
-            Toggle::NoWorkaroundDstAlphaAsSrcBlendFactorForBothColorAndAlphaDoesNotWork, true);
+            // Unfortunately we cannot add workaround for other cases.
+            deviceToggles->ForceSet(
+                Toggle::NoWorkaroundDstAlphaAsSrcBlendFactorForBothColorAndAlphaDoesNotWork, true);
+        }
     }
 
 #if D3D12_SDK_VERSION >= 602

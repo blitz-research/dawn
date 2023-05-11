@@ -320,9 +320,9 @@ TEST_P(ComputeStorageBufferBarrierTests, UniformToStorageAddPingPongInOnePass) {
 
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
-    for (uint32_t i = 0, b = 0; i < kIterations; ++i, b = 1 - b) {
+    for (uint32_t i = 0; i < kIterations; ++i) {
         pass.SetPipeline(pipeline);
-        pass.SetBindGroup(0, bindGroups[b]);
+        pass.SetBindGroup(0, bindGroups[i % 2]);
         pass.DispatchWorkgroups(kNumValues / 4);
     }
     pass.End();
@@ -409,6 +409,7 @@ TEST_P(ComputeStorageBufferBarrierTests, IndirectBufferCorrectBarrier) {
 }
 
 DAWN_INSTANTIATE_TEST(ComputeStorageBufferBarrierTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),

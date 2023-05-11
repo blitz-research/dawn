@@ -32,12 +32,12 @@ class PhysicalDevice : public PhysicalDeviceBase {
     PhysicalDevice(InstanceBase* instance,
                    VulkanInstance* vulkanInstance,
                    VkPhysicalDevice physicalDevice,
-                   const TogglesState& adapterToggles,
                    const OpenXRConfig& config);
     ~PhysicalDevice() override;
 
     // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override;
+    bool SupportsFeatureLevel(FeatureLevel featureLevel) const override;
 
     const VulkanDeviceInfo& GetDeviceInfo() const;
     VkPhysicalDevice GetVkPhysicalDevice() const;

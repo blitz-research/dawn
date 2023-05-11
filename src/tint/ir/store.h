@@ -17,7 +17,6 @@
 
 #include "src/tint/ir/instruction.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -35,19 +34,10 @@ class Store : public utils::Castable<Store, Instruction> {
     Store& operator=(const Store& inst) = delete;
     Store& operator=(Store&& inst) = delete;
 
-    /// @returns the value being stored too
-    const Value* to() const { return to_; }
-    /// @returns the value being stored
-    const Value* from() const { return from_; }
-
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
-
-  private:
-    Value* to_ = nullptr;
-    Value* from_ = nullptr;
+    /// the value being stored to
+    Value* to = nullptr;
+    /// the value being stored
+    Value* from = nullptr;
 };
 
 }  // namespace tint::ir

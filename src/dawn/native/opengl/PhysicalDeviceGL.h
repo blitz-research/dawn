@@ -23,9 +23,7 @@ namespace dawn::native::opengl {
 
 class PhysicalDevice : public PhysicalDeviceBase {
   public:
-    PhysicalDevice(InstanceBase* instance,
-                   wgpu::BackendType backendType,
-                   const TogglesState& adapterToggle);
+    PhysicalDevice(InstanceBase* instance, wgpu::BackendType backendType);
 
     MaybeError InitializeGLFunctions(void* (*getProc)(const char*));
 
@@ -33,6 +31,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
 
     // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override;
+    bool SupportsFeatureLevel(FeatureLevel featureLevel) const override;
 
   private:
     MaybeError InitializeImpl() override;

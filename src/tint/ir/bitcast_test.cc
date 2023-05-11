@@ -14,7 +14,6 @@
 
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/test_helper.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 namespace {
@@ -31,15 +30,11 @@ TEST_F(IR_InstructionTest, Bitcast) {
     ASSERT_TRUE(inst->Is<ir::Bitcast>());
     ASSERT_NE(inst->Type(), nullptr);
 
-    ASSERT_EQ(inst->Args().Length(), 1u);
-    ASSERT_TRUE(inst->Args()[0]->Is<Constant>());
-    auto val = inst->Args()[0]->As<Constant>()->value;
+    ASSERT_EQ(inst->args.Length(), 1u);
+    ASSERT_TRUE(inst->args[0]->Is<Constant>());
+    auto val = inst->args[0]->As<Constant>()->value;
     ASSERT_TRUE(val->Is<constant::Scalar<i32>>());
     EXPECT_EQ(4_i, val->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = bitcast 4i");
 }
 
 TEST_F(IR_InstructionTest, Bitcast_Usage) {
@@ -47,10 +42,10 @@ TEST_F(IR_InstructionTest, Bitcast_Usage) {
     const auto* inst =
         b.builder.Bitcast(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
 
-    ASSERT_EQ(inst->Args().Length(), 1u);
-    ASSERT_NE(inst->Args()[0], nullptr);
-    ASSERT_EQ(inst->Args()[0]->Usage().Length(), 1u);
-    EXPECT_EQ(inst->Args()[0]->Usage()[0], inst);
+    ASSERT_EQ(inst->args.Length(), 1u);
+    ASSERT_NE(inst->args[0], nullptr);
+    ASSERT_EQ(inst->args[0]->Usage().Length(), 1u);
+    EXPECT_EQ(inst->args[0]->Usage()[0], inst);
 }
 
 }  // namespace

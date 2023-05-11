@@ -26,12 +26,13 @@
 #include "src/tint/ir/convert.h"
 #include "src/tint/ir/discard.h"
 #include "src/tint/ir/function.h"
+#include "src/tint/ir/function_terminator.h"
 #include "src/tint/ir/if.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/root_terminator.h"
 #include "src/tint/ir/store.h"
 #include "src/tint/ir/switch.h"
-#include "src/tint/ir/terminator.h"
 #include "src/tint/ir/unary.h"
 #include "src/tint/ir/user_call.h"
 #include "src/tint/ir/value.h"
@@ -59,8 +60,11 @@ class Builder {
     /// @returns a new block flow node
     Block* CreateBlock();
 
-    /// @returns a new terminator flow node
-    Terminator* CreateTerminator();
+    /// @returns a new root terminator flow node
+    RootTerminator* CreateRootTerminator();
+
+    /// @returns a new function terminator flow node
+    FunctionTerminator* CreateFunctionTerminator();
 
     /// Creates a function flow node
     /// @returns the flow node
@@ -169,20 +173,6 @@ class Builder {
     /// @param rhs the rhs of the add
     /// @returns the operation
     Binary* Xor(const type::Type* type, Value* lhs, Value* rhs);
-
-    /// Creates an LogicalAnd operation
-    /// @param type the result type of the expression
-    /// @param lhs the lhs of the add
-    /// @param rhs the rhs of the add
-    /// @returns the operation
-    Binary* LogicalAnd(const type::Type* type, Value* lhs, Value* rhs);
-
-    /// Creates an LogicalOr operation
-    /// @param type the result type of the expression
-    /// @param lhs the lhs of the add
-    /// @param rhs the rhs of the add
-    /// @returns the operation
-    Binary* LogicalOr(const type::Type* type, Value* lhs, Value* rhs);
 
     /// Creates an Equal operation
     /// @param type the result type of the expression
@@ -310,7 +300,7 @@ class Builder {
     /// @param type the result type of the expression
     /// @param val the value
     /// @returns the operation
-    Unary* Not(const type::Type* type, Value* val);
+    Binary* Not(const type::Type* type, Value* val);
 
     /// Creates a bitcast instruction
     /// @param type the result type of the bitcast
@@ -374,11 +364,6 @@ class Builder {
 
     /// The IR module.
     Module ir;
-
-  private:
-    uint32_t next_inst_id() { return next_instruction_id_++; }
-
-    uint32_t next_instruction_id_ = 1;
 };
 
 }  // namespace tint::ir

@@ -132,10 +132,11 @@ Ref<InstanceBase> InstanceBase::Create(const InstanceDescriptor* descriptor) {
     // Set up the instance toggle state from toggles descriptor
     TogglesState instanceToggles =
         TogglesState::CreateFromTogglesDescriptor(instanceTogglesDesc, ToggleStage::Instance);
-    // By default enable the DisallowUnsafeAPIs instance toggle, it will be inherited to adapters
+    // By default disable the AllowUnsafeAPIs instance toggle, it will be inherited to adapters
     // and devices created by this instance if not overriden.
-    // TODO(dawn:1685): Rename DisallowUnsafeAPIs to AllowUnsafeAPIs, and change relating logic.
+    // TODO(dawn:1685): Remove DisallowUnsafeAPIs.
     instanceToggles.Default(Toggle::DisallowUnsafeAPIs, true);
+    instanceToggles.Default(Toggle::AllowUnsafeAPIs, false);
 
     Ref<InstanceBase> instance = AcquireRef(new InstanceBase(instanceToggles));
     if (instance->ConsumedError(instance->Initialize(descriptor))) {
@@ -156,7 +157,7 @@ void InstanceBase::WillDropLastExternalRef() {
     // In order to break this cycle and prevent leaks, when the application drops the last external
     // ref and WillDropLastExternalRef is called, the instance clears out any member refs to
     // adapters that hold back-refs to the instance - thus breaking any reference cycles.
-    mAdapters.clear();
+    mPhysicalDevices.clear();
 }
 
 // TODO(crbug.com/dawn/832): make the platform an initialization parameter of the instance.
@@ -250,20 +251,27 @@ ResultOrError<Ref<AdapterBase>> InstanceBase::RequestAdapterInternal(
     std::optional<size_t> cpuAdapterIndex;
     std::optional<size_t> unknownAdapterIndex;
 
-    for (size_t i = 0; i < mAdapters.size(); ++i) {
-        AdapterProperties properties;
-        mAdapters[i]->APIGetProperties(&properties);
+    Ref<PhysicalDeviceBase> selectedPhysicalDevice;
+    FeatureLevel featureLevel =
+        options->compatibilityMode ? FeatureLevel::Compatibility : FeatureLevel::Core;
+    for (size_t i = 0; i < mPhysicalDevices.size(); ++i) {
+        if (!mPhysicalDevices[i]->SupportsFeatureLevel(featureLevel)) {
+            continue;
+        }
 
         if (options->forceFallbackAdapter) {
-            if (!gpu_info::IsGoogleSwiftshader(properties.vendorID, properties.deviceID)) {
+            if (!gpu_info::IsGoogleSwiftshader(mPhysicalDevices[i]->GetVendorId(),
+                                               mPhysicalDevices[i]->GetDeviceId())) {
                 continue;
             }
-            return mAdapters[i];
+            selectedPhysicalDevice = mPhysicalDevices[i];
+            break;
         }
-        if (properties.adapterType == preferredType) {
-            return mAdapters[i];
+        if (mPhysicalDevices[i]->GetAdapterType() == preferredType) {
+            selectedPhysicalDevice = mPhysicalDevices[i];
+            break;
         }
-        switch (properties.adapterType) {
+        switch (mPhysicalDevices[i]->GetAdapterType()) {
             case wgpu::AdapterType::DiscreteGPU:
                 discreteGPUAdapterIndex = i;
                 break;
@@ -280,20 +288,30 @@ ResultOrError<Ref<AdapterBase>> InstanceBase::RequestAdapterInternal(
     }
 
     // For now, we always prefer the discrete GPU
-    if (discreteGPUAdapterIndex) {
-        return mAdapters[*discreteGPUAdapterIndex];
-    }
-    if (integratedGPUAdapterIndex) {
-        return mAdapters[*integratedGPUAdapterIndex];
-    }
-    if (cpuAdapterIndex) {
-        return mAdapters[*cpuAdapterIndex];
-    }
-    if (unknownAdapterIndex) {
-        return mAdapters[*unknownAdapterIndex];
+    if (selectedPhysicalDevice == nullptr) {
+        if (discreteGPUAdapterIndex) {
+            selectedPhysicalDevice = mPhysicalDevices[*discreteGPUAdapterIndex];
+        } else if (integratedGPUAdapterIndex) {
+            selectedPhysicalDevice = mPhysicalDevices[*integratedGPUAdapterIndex];
+        } else if (cpuAdapterIndex) {
+            selectedPhysicalDevice = mPhysicalDevices[*cpuAdapterIndex];
+        } else if (unknownAdapterIndex) {
+            selectedPhysicalDevice = mPhysicalDevices[*unknownAdapterIndex];
+        }
     }
 
-    return Ref<AdapterBase>(nullptr);
+    if (selectedPhysicalDevice == nullptr) {
+        return Ref<AdapterBase>(nullptr);
+    }
+
+    // Set up toggles state for default adapters, currently adapter don't have a toggles
+    // descriptor so just inherit from instance toggles.
+    // TODO(dawn:1495): Handle the adapter toggles descriptor after implemented.
+    TogglesState adapterToggles = TogglesState(ToggleStage::Adapter);
+    adapterToggles.InheritFrom(mToggles);
+
+    return AcquireRef(
+        new AdapterBase(std::move(selectedPhysicalDevice), featureLevel, adapterToggles));
 }
 
 void InstanceBase::DiscoverDefaultAdapters() {
@@ -307,19 +325,12 @@ void InstanceBase::DiscoverDefaultAdapters() {
 
     // Query and merge all default adapters for all backends
     for (std::unique_ptr<BackendConnection>& backend : mBackends) {
-        // Set up toggles state for default adapters, currently adapter don't have a toggles
-        // descriptor so just inherit from instance toggles.
-        // TODO(dawn:1495): Handle the adapter toggles descriptor after implemented.
-        TogglesState adapterToggles = TogglesState(ToggleStage::Adapter);
-        adapterToggles.InheritFrom(mToggles);
-
-        std::vector<Ref<PhysicalDeviceBase>> physicalDevices =
-            backend->DiscoverDefaultAdapters(adapterToggles);
+        std::vector<Ref<PhysicalDeviceBase>> physicalDevices = backend->DiscoverDefaultAdapters();
 
         for (Ref<PhysicalDeviceBase>& physicalDevice : physicalDevices) {
             ASSERT(physicalDevice->GetBackendType() == backend->GetType());
             ASSERT(physicalDevice->GetInstance() == this);
-            mAdapters.push_back(AcquireRef(new AdapterBase(std::move(physicalDevice))));
+            mPhysicalDevices.push_back(std::move(physicalDevice));
         }
     }
 
@@ -356,8 +367,23 @@ const FeatureInfo* InstanceBase::GetFeatureInfo(wgpu::FeatureName feature) {
     return mFeaturesInfo.GetFeatureInfo(feature);
 }
 
-const std::vector<Ref<AdapterBase>>& InstanceBase::GetAdapters() const {
-    return mAdapters;
+std::vector<Ref<AdapterBase>> InstanceBase::GetAdapters() const {
+    // Set up toggles state for default adapters, currently adapter don't have a toggles
+    // descriptor so just inherit from instance toggles.
+    // TODO(dawn:1495): Handle the adapter toggles descriptor after implemented.
+    TogglesState adapterToggles = TogglesState(ToggleStage::Adapter);
+    adapterToggles.InheritFrom(mToggles);
+
+    std::vector<Ref<AdapterBase>> adapters;
+    for (const auto& physicalDevice : mPhysicalDevices) {
+        for (FeatureLevel featureLevel : {FeatureLevel::Compatibility, FeatureLevel::Core}) {
+            if (physicalDevice->SupportsFeatureLevel(featureLevel)) {
+                adapters.push_back(
+                    AcquireRef(new AdapterBase(physicalDevice, featureLevel, adapterToggles)));
+            }
+        }
+    }
+    return adapters;
 }
 
 void InstanceBase::EnsureBackendConnection(wgpu::BackendType backendType) {
@@ -441,19 +467,13 @@ MaybeError InstanceBase::DiscoverAdaptersInternal(const AdapterDiscoveryOptionsB
         }
         foundBackend = true;
 
-        // Set up toggles state for default adapters, currently adapter don't have a toggles
-        // descriptor so just inherit from instance toggles.
-        // TODO(dawn:1495): Handle the adapter toggles descriptor after implemented.
-        TogglesState adapterToggles = TogglesState(ToggleStage::Adapter);
-        adapterToggles.InheritFrom(mToggles);
-
         std::vector<Ref<PhysicalDeviceBase>> newPhysicalDevices;
-        DAWN_TRY_ASSIGN(newPhysicalDevices, backend->DiscoverAdapters(options, adapterToggles));
+        DAWN_TRY_ASSIGN(newPhysicalDevices, backend->DiscoverAdapters(options));
 
         for (Ref<PhysicalDeviceBase>& physicalDevice : newPhysicalDevices) {
             ASSERT(physicalDevice->GetBackendType() == backend->GetType());
             ASSERT(physicalDevice->GetInstance() == this);
-            mAdapters.push_back(AcquireRef(new AdapterBase(std::move(physicalDevice))));
+            mPhysicalDevices.push_back(std::move(physicalDevice));
         }
     }
 

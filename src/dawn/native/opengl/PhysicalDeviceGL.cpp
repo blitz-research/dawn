@@ -53,10 +53,8 @@ uint32_t GetVendorIdFromVendors(const char* vendor) {
 
 }  // anonymous namespace
 
-PhysicalDevice::PhysicalDevice(InstanceBase* instance,
-                               wgpu::BackendType backendType,
-                               const TogglesState& adapterToggle)
-    : PhysicalDeviceBase(instance, backendType, adapterToggle) {}
+PhysicalDevice::PhysicalDevice(InstanceBase* instance, wgpu::BackendType backendType)
+    : PhysicalDeviceBase(instance, backendType) {}
 
 MaybeError PhysicalDevice::InitializeGLFunctions(void* (*getProc)(const char*)) {
     // Use getProc to populate the dispatch table
@@ -225,6 +223,10 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* ada
     std::unique_ptr<Device::Context> context;
     DAWN_TRY_ASSIGN(context, ContextEGL::Create(mEGLFunctions, api));
     return Device::Create(adapter, descriptor, mFunctions, std::move(context), deviceToggles);
+}
+
+bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel featureLevel) const {
+    return featureLevel == FeatureLevel::Compatibility;
 }
 
 MaybeError PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(

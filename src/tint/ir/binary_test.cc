@@ -14,7 +14,6 @@
 
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/test_helper.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 namespace {
@@ -30,7 +29,8 @@ TEST_F(IR_InstructionTest, CreateAnd) {
                                      b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kAnd);
+    EXPECT_EQ(inst->kind, Binary::Kind::kAnd);
+    ASSERT_NE(inst->result_type, nullptr);
     ASSERT_NE(inst->Type(), nullptr);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
@@ -42,10 +42,6 @@ TEST_F(IR_InstructionTest, CreateAnd) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = bit_and 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateOr) {
@@ -55,7 +51,7 @@ TEST_F(IR_InstructionTest, CreateOr) {
                                     b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kOr);
+    EXPECT_EQ(inst->kind, Binary::Kind::kOr);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -66,10 +62,6 @@ TEST_F(IR_InstructionTest, CreateOr) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = bit_or 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateXor) {
@@ -79,7 +71,7 @@ TEST_F(IR_InstructionTest, CreateXor) {
                                      b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kXor);
+    EXPECT_EQ(inst->kind, Binary::Kind::kXor);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -90,58 +82,6 @@ TEST_F(IR_InstructionTest, CreateXor) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = bit_xor 4i, 2i");
-}
-
-TEST_F(IR_InstructionTest, CreateLogicalAnd) {
-    auto& b = CreateEmptyBuilder();
-
-    const auto* inst = b.builder.LogicalAnd(b.builder.ir.types.Get<type::Bool>(),
-                                            b.builder.Constant(4_i), b.builder.Constant(2_i));
-
-    ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kLogicalAnd);
-
-    ASSERT_TRUE(inst->LHS()->Is<Constant>());
-    auto lhs = inst->LHS()->As<Constant>()->value;
-    ASSERT_TRUE(lhs->Is<constant::Scalar<i32>>());
-    EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    ASSERT_TRUE(inst->RHS()->Is<Constant>());
-    auto rhs = inst->RHS()->As<Constant>()->value;
-    ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
-    EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = log_and 4i, 2i");
-}
-
-TEST_F(IR_InstructionTest, CreateLogicalOr) {
-    auto& b = CreateEmptyBuilder();
-
-    const auto* inst = b.builder.LogicalOr(b.builder.ir.types.Get<type::Bool>(),
-                                           b.builder.Constant(4_i), b.builder.Constant(2_i));
-
-    ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kLogicalOr);
-
-    ASSERT_TRUE(inst->LHS()->Is<Constant>());
-    auto lhs = inst->LHS()->As<Constant>()->value;
-    ASSERT_TRUE(lhs->Is<constant::Scalar<i32>>());
-    EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    ASSERT_TRUE(inst->RHS()->Is<Constant>());
-    auto rhs = inst->RHS()->As<Constant>()->value;
-    ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
-    EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = log_or 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateEqual) {
@@ -151,7 +91,7 @@ TEST_F(IR_InstructionTest, CreateEqual) {
                                        b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kEqual);
+    EXPECT_EQ(inst->kind, Binary::Kind::kEqual);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -162,10 +102,6 @@ TEST_F(IR_InstructionTest, CreateEqual) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = eq 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateNotEqual) {
@@ -175,7 +111,7 @@ TEST_F(IR_InstructionTest, CreateNotEqual) {
                                           b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kNotEqual);
+    EXPECT_EQ(inst->kind, Binary::Kind::kNotEqual);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -186,10 +122,6 @@ TEST_F(IR_InstructionTest, CreateNotEqual) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = neq 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateLessThan) {
@@ -199,7 +131,7 @@ TEST_F(IR_InstructionTest, CreateLessThan) {
                                           b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kLessThan);
+    EXPECT_EQ(inst->kind, Binary::Kind::kLessThan);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -210,10 +142,6 @@ TEST_F(IR_InstructionTest, CreateLessThan) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = lt 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateGreaterThan) {
@@ -223,7 +151,7 @@ TEST_F(IR_InstructionTest, CreateGreaterThan) {
                                              b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kGreaterThan);
+    EXPECT_EQ(inst->kind, Binary::Kind::kGreaterThan);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -234,10 +162,6 @@ TEST_F(IR_InstructionTest, CreateGreaterThan) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = gt 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateLessThanEqual) {
@@ -247,7 +171,7 @@ TEST_F(IR_InstructionTest, CreateLessThanEqual) {
                                                b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kLessThanEqual);
+    EXPECT_EQ(inst->kind, Binary::Kind::kLessThanEqual);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -258,10 +182,6 @@ TEST_F(IR_InstructionTest, CreateLessThanEqual) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = lte 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateGreaterThanEqual) {
@@ -271,7 +191,7 @@ TEST_F(IR_InstructionTest, CreateGreaterThanEqual) {
                                                   b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kGreaterThanEqual);
+    EXPECT_EQ(inst->kind, Binary::Kind::kGreaterThanEqual);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -282,10 +202,25 @@ TEST_F(IR_InstructionTest, CreateGreaterThanEqual) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
+}
 
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = gte 4i, 2i");
+TEST_F(IR_InstructionTest, CreateNot) {
+    auto& b = CreateEmptyBuilder();
+    const auto* inst =
+        b.builder.Not(b.builder.ir.types.Get<type::Bool>(), b.builder.Constant(true));
+
+    ASSERT_TRUE(inst->Is<Binary>());
+    EXPECT_EQ(inst->kind, Binary::Kind::kEqual);
+
+    ASSERT_TRUE(inst->LHS()->Is<Constant>());
+    auto lhs = inst->LHS()->As<Constant>()->value;
+    ASSERT_TRUE(lhs->Is<constant::Scalar<bool>>());
+    EXPECT_TRUE(lhs->As<constant::Scalar<bool>>()->ValueAs<bool>());
+
+    ASSERT_TRUE(inst->RHS()->Is<Constant>());
+    auto rhs = inst->RHS()->As<Constant>()->value;
+    ASSERT_TRUE(rhs->Is<constant::Scalar<bool>>());
+    EXPECT_FALSE(rhs->As<constant::Scalar<bool>>()->ValueAs<bool>());
 }
 
 TEST_F(IR_InstructionTest, CreateShiftLeft) {
@@ -295,7 +230,7 @@ TEST_F(IR_InstructionTest, CreateShiftLeft) {
                                            b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kShiftLeft);
+    EXPECT_EQ(inst->kind, Binary::Kind::kShiftLeft);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -306,10 +241,6 @@ TEST_F(IR_InstructionTest, CreateShiftLeft) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = shiftl 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateShiftRight) {
@@ -319,7 +250,7 @@ TEST_F(IR_InstructionTest, CreateShiftRight) {
                                             b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kShiftRight);
+    EXPECT_EQ(inst->kind, Binary::Kind::kShiftRight);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -330,10 +261,6 @@ TEST_F(IR_InstructionTest, CreateShiftRight) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = shiftr 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateAdd) {
@@ -343,7 +270,7 @@ TEST_F(IR_InstructionTest, CreateAdd) {
                                      b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kAdd);
+    EXPECT_EQ(inst->kind, Binary::Kind::kAdd);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -354,10 +281,6 @@ TEST_F(IR_InstructionTest, CreateAdd) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = add 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateSubtract) {
@@ -367,7 +290,7 @@ TEST_F(IR_InstructionTest, CreateSubtract) {
                                           b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kSubtract);
+    EXPECT_EQ(inst->kind, Binary::Kind::kSubtract);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -378,10 +301,6 @@ TEST_F(IR_InstructionTest, CreateSubtract) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = sub 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateMultiply) {
@@ -391,7 +310,7 @@ TEST_F(IR_InstructionTest, CreateMultiply) {
                                           b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kMultiply);
+    EXPECT_EQ(inst->kind, Binary::Kind::kMultiply);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -402,10 +321,6 @@ TEST_F(IR_InstructionTest, CreateMultiply) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = mul 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateDivide) {
@@ -415,7 +330,7 @@ TEST_F(IR_InstructionTest, CreateDivide) {
                                         b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kDivide);
+    EXPECT_EQ(inst->kind, Binary::Kind::kDivide);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -426,10 +341,6 @@ TEST_F(IR_InstructionTest, CreateDivide) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = div 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, CreateModulo) {
@@ -439,7 +350,7 @@ TEST_F(IR_InstructionTest, CreateModulo) {
                                         b.builder.Constant(4_i), b.builder.Constant(2_i));
 
     ASSERT_TRUE(inst->Is<Binary>());
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kModulo);
+    EXPECT_EQ(inst->kind, Binary::Kind::kModulo);
 
     ASSERT_TRUE(inst->LHS()->Is<Constant>());
     auto lhs = inst->LHS()->As<Constant>()->value;
@@ -450,10 +361,6 @@ TEST_F(IR_InstructionTest, CreateModulo) {
     auto rhs = inst->RHS()->As<Constant>()->value;
     ASSERT_TRUE(rhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(2_i, rhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = mod 4i, 2i");
 }
 
 TEST_F(IR_InstructionTest, Binary_Usage) {
@@ -461,7 +368,7 @@ TEST_F(IR_InstructionTest, Binary_Usage) {
     const auto* inst = b.builder.And(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i),
                                      b.builder.Constant(2_i));
 
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kAnd);
+    EXPECT_EQ(inst->kind, Binary::Kind::kAnd);
 
     ASSERT_NE(inst->LHS(), nullptr);
     ASSERT_EQ(inst->LHS()->Usage().Length(), 1u);
@@ -477,7 +384,7 @@ TEST_F(IR_InstructionTest, Binary_Usage_DuplicateValue) {
     auto val = b.builder.Constant(4_i);
     const auto* inst = b.builder.And(b.builder.ir.types.Get<type::I32>(), val, val);
 
-    EXPECT_EQ(inst->GetKind(), Binary::Kind::kAnd);
+    EXPECT_EQ(inst->kind, Binary::Kind::kAnd);
     ASSERT_EQ(inst->LHS(), inst->RHS());
 
     ASSERT_NE(inst->LHS(), nullptr);

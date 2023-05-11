@@ -61,16 +61,17 @@ MaybeError InitializeDebugLayerFilters(ComPtr<ID3D11Device> d3d11Device) {
 
 }  // namespace
 
-PhysicalDevice::PhysicalDevice(Backend* backend,
-                               ComPtr<IDXGIAdapter3> hardwareAdapter,
-                               const TogglesState& adapterToggles)
-    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D11, adapterToggles) {}
+PhysicalDevice::PhysicalDevice(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter)
+    : Base(backend, std::move(hardwareAdapter), wgpu::BackendType::D3D11) {}
 
 PhysicalDevice::~PhysicalDevice() = default;
 
 bool PhysicalDevice::SupportsExternalImages() const {
-    // TODO(dawn:1724): Implement external images on D3D11.
-    return false;
+    return true;
+}
+
+bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel featureLevel) const {
+    return featureLevel == FeatureLevel::Compatibility;
 }
 
 const DeviceInfo& PhysicalDevice::GetDeviceInfo() const {
@@ -156,7 +157,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Allocate half of the UAVs to storage buffers, and half to storage textures.
     limits->v1.maxStorageTexturesPerShaderStage = maxUAVsPerStage / 2;
     limits->v1.maxStorageBuffersPerShaderStage = maxUAVsPerStage - maxUAVsPerStage / 2;
-    limits->v1.maxSampledTexturesPerShaderStage = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
+    limits->v1.maxSampledTexturesPerShaderStage = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
     limits->v1.maxSamplersPerShaderStage = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
     limits->v1.maxColorAttachments = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
 
@@ -181,7 +182,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Max number of "constants" where each constant is a 16-byte float4
     limits->v1.maxUniformBufferBindingSize = D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT * 16;
     // D3D11 has no documented limit on the size of a storage buffer binding.
-    limits->v1.maxStorageBufferBindingSize = 4294967295;
+    limits->v1.maxStorageBufferBindingSize = kAssumedMaxBufferSize;
     // D3D11 has no documented limit on the buffer size.
     limits->v1.maxBufferSize = kAssumedMaxBufferSize;
 

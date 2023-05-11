@@ -29,6 +29,25 @@
 #include "src/tint/ast/id_attribute.h"
 #include "src/tint/ast/interpolate_attribute.h"
 #include "src/tint/ast/module.h"
+#include "src/tint/ast/transform/array_length_from_uniform.h"
+#include "src/tint/ast/transform/binding_remapper.h"
+#include "src/tint/ast/transform/builtin_polyfill.h"
+#include "src/tint/ast/transform/canonicalize_entry_point_io.h"
+#include "src/tint/ast/transform/demote_to_helper.h"
+#include "src/tint/ast/transform/disable_uniformity_analysis.h"
+#include "src/tint/ast/transform/expand_compound_assignment.h"
+#include "src/tint/ast/transform/module_scope_var_to_entry_point_param.h"
+#include "src/tint/ast/transform/multiplanar_external_texture.h"
+#include "src/tint/ast/transform/packed_vec3.h"
+#include "src/tint/ast/transform/preserve_padding.h"
+#include "src/tint/ast/transform/promote_initializers_to_let.h"
+#include "src/tint/ast/transform/promote_side_effects_to_decl.h"
+#include "src/tint/ast/transform/remove_phonies.h"
+#include "src/tint/ast/transform/robustness.h"
+#include "src/tint/ast/transform/simplify_pointers.h"
+#include "src/tint/ast/transform/unshadow.h"
+#include "src/tint/ast/transform/vectorize_scalar_matrix_initializers.h"
+#include "src/tint/ast/transform/zero_init_workgroup_memory.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/constant/value.h"
 #include "src/tint/sem/call.h"
@@ -41,26 +60,7 @@
 #include "src/tint/sem/value_conversion.h"
 #include "src/tint/sem/variable.h"
 #include "src/tint/switch.h"
-#include "src/tint/transform/array_length_from_uniform.h"
-#include "src/tint/transform/binding_remapper.h"
-#include "src/tint/transform/builtin_polyfill.h"
-#include "src/tint/transform/canonicalize_entry_point_io.h"
-#include "src/tint/transform/demote_to_helper.h"
-#include "src/tint/transform/disable_uniformity_analysis.h"
-#include "src/tint/transform/expand_compound_assignment.h"
 #include "src/tint/transform/manager.h"
-#include "src/tint/transform/module_scope_var_to_entry_point_param.h"
-#include "src/tint/transform/multiplanar_external_texture.h"
-#include "src/tint/transform/packed_vec3.h"
-#include "src/tint/transform/preserve_padding.h"
-#include "src/tint/transform/promote_initializers_to_let.h"
-#include "src/tint/transform/promote_side_effects_to_decl.h"
-#include "src/tint/transform/remove_phonies.h"
-#include "src/tint/transform/robustness.h"
-#include "src/tint/transform/simplify_pointers.h"
-#include "src/tint/transform/unshadow.h"
-#include "src/tint/transform/vectorize_scalar_matrix_initializers.h"
-#include "src/tint/transform/zero_init_workgroup_memory.h"
 #include "src/tint/type/array.h"
 #include "src/tint/type/atomic.h"
 #include "src/tint/type/bool.h"
@@ -167,58 +167,58 @@ SanitizedResult::SanitizedResult(SanitizedResult&&) = default;
 
 SanitizedResult Sanitize(const Program* in, const Options& options) {
     transform::Manager manager;
-    transform::DataMap data;
+    ast::transform::DataMap data;
 
-    manager.Add<transform::DisableUniformityAnalysis>();
+    manager.Add<ast::transform::DisableUniformityAnalysis>();
 
     // ExpandCompoundAssignment must come before BuiltinPolyfill
-    manager.Add<transform::ExpandCompoundAssignment>();
+    manager.Add<ast::transform::ExpandCompoundAssignment>();
 
     // Build the configs for the internal CanonicalizeEntryPointIO transform.
-    auto entry_point_io_cfg = transform::CanonicalizeEntryPointIO::Config(
-        transform::CanonicalizeEntryPointIO::ShaderStyle::kMsl, options.fixed_sample_mask,
+    auto entry_point_io_cfg = ast::transform::CanonicalizeEntryPointIO::Config(
+        ast::transform::CanonicalizeEntryPointIO::ShaderStyle::kMsl, options.fixed_sample_mask,
         options.emit_vertex_point_size);
 
-    manager.Add<transform::PreservePadding>();
+    manager.Add<ast::transform::PreservePadding>();
 
-    manager.Add<transform::Unshadow>();
+    manager.Add<ast::transform::Unshadow>();
 
-    manager.Add<transform::PromoteSideEffectsToDecl>();
+    manager.Add<ast::transform::PromoteSideEffectsToDecl>();
 
     if (!options.disable_robustness) {
         // Robustness must come after PromoteSideEffectsToDecl
         // Robustness must come before BuiltinPolyfill and CanonicalizeEntryPointIO
         // Robustness must come before ArrayLengthFromUniform
-        manager.Add<transform::Robustness>();
+        manager.Add<ast::transform::Robustness>();
     }
 
     {  // Builtin polyfills
-        transform::BuiltinPolyfill::Builtins polyfills;
-        polyfills.acosh = transform::BuiltinPolyfill::Level::kRangeCheck;
-        polyfills.atanh = transform::BuiltinPolyfill::Level::kRangeCheck;
+        ast::transform::BuiltinPolyfill::Builtins polyfills;
+        polyfills.acosh = ast::transform::BuiltinPolyfill::Level::kRangeCheck;
+        polyfills.atanh = ast::transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.bitshift_modulo = true;  // crbug.com/tint/1543
         polyfills.clamp_int = true;
         polyfills.conv_f32_to_iu32 = true;
-        polyfills.extract_bits = transform::BuiltinPolyfill::Level::kClampParameters;
+        polyfills.extract_bits = ast::transform::BuiltinPolyfill::Level::kClampParameters;
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
-        polyfills.insert_bits = transform::BuiltinPolyfill::Level::kClampParameters;
+        polyfills.insert_bits = ast::transform::BuiltinPolyfill::Level::kClampParameters;
         polyfills.int_div_mod = true;
         polyfills.sign_int = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
-        data.Add<transform::BuiltinPolyfill::Config>(polyfills);
-        manager.Add<transform::BuiltinPolyfill>();
+        data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
+        manager.Add<ast::transform::BuiltinPolyfill>();
     }
 
     // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
-    data.Add<transform::MultiplanarExternalTexture::NewBindingPoints>(
+    data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
         options.external_texture_options.bindings_map);
-    manager.Add<transform::MultiplanarExternalTexture>();
+    manager.Add<ast::transform::MultiplanarExternalTexture>();
 
     // BindingRemapper must come after MultiplanarExternalTexture
-    manager.Add<transform::BindingRemapper>();
-    data.Add<transform::BindingRemapper::Remappings>(
+    manager.Add<ast::transform::BindingRemapper>();
+    data.Add<ast::transform::BindingRemapper::Remappings>(
         options.binding_remapper_options.binding_points,
         options.binding_remapper_options.access_controls,
         options.binding_remapper_options.allow_collisions);
@@ -226,36 +226,36 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     if (!options.disable_workgroup_init) {
         // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
         // ZeroInitWorkgroupMemory may inject new builtin parameters.
-        manager.Add<transform::ZeroInitWorkgroupMemory>();
+        manager.Add<ast::transform::ZeroInitWorkgroupMemory>();
     }
 
     // CanonicalizeEntryPointIO must come after Robustness
-    manager.Add<transform::CanonicalizeEntryPointIO>();
-    data.Add<transform::CanonicalizeEntryPointIO::Config>(std::move(entry_point_io_cfg));
+    manager.Add<ast::transform::CanonicalizeEntryPointIO>();
+    data.Add<ast::transform::CanonicalizeEntryPointIO::Config>(std::move(entry_point_io_cfg));
 
-    manager.Add<transform::PromoteInitializersToLet>();
+    manager.Add<ast::transform::PromoteInitializersToLet>();
 
     // DemoteToHelper must come after PromoteSideEffectsToDecl and ExpandCompoundAssignment.
     // TODO(crbug.com/tint/1752): This is only necessary for Metal versions older than 2.3.
-    manager.Add<transform::DemoteToHelper>();
+    manager.Add<ast::transform::DemoteToHelper>();
 
-    manager.Add<transform::VectorizeScalarMatrixInitializers>();
-    manager.Add<transform::RemovePhonies>();
-    manager.Add<transform::SimplifyPointers>();
+    manager.Add<ast::transform::VectorizeScalarMatrixInitializers>();
+    manager.Add<ast::transform::RemovePhonies>();
+    manager.Add<ast::transform::SimplifyPointers>();
 
     // ArrayLengthFromUniform must come after SimplifyPointers, as
     // it assumes that the form of the array length argument is &var.array.
-    manager.Add<transform::ArrayLengthFromUniform>();
+    manager.Add<ast::transform::ArrayLengthFromUniform>();
 
-    transform::ArrayLengthFromUniform::Config array_length_cfg(
+    ast::transform::ArrayLengthFromUniform::Config array_length_cfg(
         std::move(options.array_length_from_uniform.ubo_binding));
     array_length_cfg.bindpoint_to_size_index =
         std::move(options.array_length_from_uniform.bindpoint_to_size_index);
-    data.Add<transform::ArrayLengthFromUniform::Config>(array_length_cfg);
+    data.Add<ast::transform::ArrayLengthFromUniform::Config>(array_length_cfg);
 
     // PackedVec3 must come after ExpandCompoundAssignment.
-    manager.Add<transform::PackedVec3>();
-    manager.Add<transform::ModuleScopeVarToEntryPointParam>();
+    manager.Add<ast::transform::PackedVec3>();
+    manager.Add<ast::transform::ModuleScopeVarToEntryPointParam>();
 
     auto out = manager.Run(in, data);
 
@@ -264,7 +264,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     if (!result.program.IsValid()) {
         return result;
     }
-    if (auto* res = out.data.Get<transform::ArrayLengthFromUniform::Result>()) {
+    if (auto* res = out.data.Get<ast::transform::ArrayLengthFromUniform::Result>()) {
         result.used_array_length_from_uniform_indices = std::move(res->used_size_indices);
     }
     result.needs_storage_buffer_sizes = !result.used_array_length_from_uniform_indices.empty();
@@ -1788,9 +1788,8 @@ bool GeneratorImpl::EmitConstant(utils::StringStream& out, const constant::Value
             return true;
         },
         [&](Default) {
-            diagnostics_.add_error(
-                diag::System::Writer,
-                "unhandled constant type: " + builder_.FriendlyName(constant->Type()));
+            diagnostics_.add_error(diag::System::Writer,
+                                   "unhandled constant type: " + constant->Type()->FriendlyName());
             return false;
         });
 }
@@ -2254,7 +2253,7 @@ bool GeneratorImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
                 out << cond_buf.str() << "; ";
 
                 if (!cont_buf.lines.empty()) {
-                    out << TrimSuffix(cont_buf.lines[0].content, ";");
+                    out << utils::TrimSuffix(cont_buf.lines[0].content, ";");
                 }
             }
             out << " {";

@@ -59,9 +59,8 @@ gpu_info::DriverVersion DecodeVulkanDriverVersion(uint32_t vendorID, uint32_t ve
 PhysicalDevice::PhysicalDevice(InstanceBase* instance,
                                VulkanInstance* vulkanInstance,
                                VkPhysicalDevice physicalDevice,
-                               const TogglesState& adapterToggles,
                                const OpenXRConfig& openXRConfig)
-    : PhysicalDeviceBase(instance, wgpu::BackendType::Vulkan, adapterToggles),
+    : PhysicalDeviceBase(instance, wgpu::BackendType::Vulkan),
       mVkPhysicalDevice(physicalDevice),
       mVulkanInstance(vulkanInstance),
       mOpenXRConfig(openXRConfig) {}
@@ -271,6 +270,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 #endif  // DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
 
     EnableFeature(Feature::SurfaceCapabilities);
+    EnableFeature(Feature::TransientAttachments);
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -433,6 +433,10 @@ bool PhysicalDevice::SupportsExternalImages() const {
     return external_memory::Service::CheckSupport(mDeviceInfo) &&
            external_semaphore::Service::CheckSupport(mDeviceInfo, mVkPhysicalDevice,
                                                      mVulkanInstance->GetFunctions());
+}
+
+bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel) const {
+    return true;
 }
 
 void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {

@@ -19,36 +19,12 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Unary);
 
 namespace tint::ir {
 
-Unary::Unary(uint32_t id, Kind kind, const type::Type* type, Value* val)
-    : Base(id, type), kind_(kind), val_(val) {
+Unary::Unary(Kind k, const type::Type* res_ty, Value* val)
+    : kind(k), result_type(res_ty), val_(val) {
     TINT_ASSERT(IR, val_);
     val_->AddUsage(this);
 }
 
 Unary::~Unary() = default;
-
-utils::StringStream& Unary::ToInstruction(utils::StringStream& out) const {
-    ToValue(out) << " = ";
-    switch (GetKind()) {
-        case Unary::Kind::kAddressOf:
-            out << "addr_of";
-            break;
-        case Unary::Kind::kComplement:
-            out << "bit_complement";
-            break;
-        case Unary::Kind::kIndirection:
-            out << "indirection";
-            break;
-        case Unary::Kind::kNegation:
-            out << "negation";
-            break;
-        case Unary::Kind::kNot:
-            out << "log_not";
-            break;
-    }
-    out << " ";
-    val_->ToValue(out);
-    return out;
-}
 
 }  // namespace tint::ir

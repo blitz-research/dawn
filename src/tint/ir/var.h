@@ -19,7 +19,6 @@
 #include "src/tint/builtin/address_space.h"
 #include "src/tint/ir/instruction.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -27,14 +26,10 @@ namespace tint::ir {
 class Var : public utils::Castable<Var, Instruction> {
   public:
     /// Constructor
-    /// @param id the instruction id
-    /// @param type the type
+    /// @param type the type of the var
     /// @param address_space the address space of the var
     /// @param access the access mode of the var
-    Var(uint32_t id,
-        const type::Type* type,
-        builtin::AddressSpace address_space,
-        builtin::Access access);
+    Var(const type::Type* type, builtin::AddressSpace address_space, builtin::Access access);
     Var(const Var& inst) = delete;
     Var(Var&& inst) = delete;
     ~Var() override;
@@ -42,20 +37,20 @@ class Var : public utils::Castable<Var, Instruction> {
     Var& operator=(const Var& inst) = delete;
     Var& operator=(Var&& inst) = delete;
 
-    /// @returns the address space
-    builtin::AddressSpace AddressSpace() const { return address_space_; }
+    /// @returns the type of the var
+    const type::Type* Type() const override { return type; }
 
-    /// @returns the access mode
-    builtin::Access Access() const { return access_; }
+    /// the result type of the instruction
+    const type::Type* type = nullptr;
 
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
+    /// The variable address space
+    builtin::AddressSpace address_space = builtin::AddressSpace::kUndefined;
 
-  private:
-    builtin::AddressSpace address_space_;
-    builtin::Access access_;
+    /// The variable access mode
+    builtin::Access access = builtin::Access::kUndefined;
+
+    /// The optional initializer
+    Value* initializer = nullptr;
 };
 
 }  // namespace tint::ir

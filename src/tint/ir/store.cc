@@ -19,20 +19,13 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Store);
 
 namespace tint::ir {
 
-Store::Store(Value* to, Value* from) : Base(), to_(to), from_(from) {
-    TINT_ASSERT(IR, to_);
-    TINT_ASSERT(IR, from_);
-    to_->AddUsage(this);
-    from_->AddUsage(this);
+Store::Store(Value* t, Value* f) : Base(), to(t), from(f) {
+    TINT_ASSERT(IR, to);
+    TINT_ASSERT(IR, from);
+    to->AddUsage(this);
+    from->AddUsage(this);
 }
 
 Store::~Store() = default;
-
-utils::StringStream& Store::ToInstruction(utils::StringStream& out) const {
-    out << "store ";
-    to_->ToValue(out) << ", ";
-    from_->ToValue(out);
-    return out;
-}
 
 }  // namespace tint::ir

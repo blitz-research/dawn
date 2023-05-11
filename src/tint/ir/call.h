@@ -17,7 +17,6 @@
 
 #include "src/tint/ir/instruction.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -31,24 +30,22 @@ class Call : public utils::Castable<Call, Instruction> {
     Call& operator=(const Call& inst) = delete;
     Call& operator=(Call&& inst) = delete;
 
-    /// @returns the constructor arguments
-    utils::VectorRef<Value*> Args() const { return args_; }
+    /// @returns the type of the value
+    const type::Type* Type() const override { return result_type; }
 
-    /// Writes the call arguments to the given stream.
-    /// @param out the output stream
-    void EmitArgs(utils::StringStream& out) const;
+    /// The instruction type
+    const type::Type* result_type = nullptr;
+
+    /// The constructor arguments
+    utils::Vector<Value*, 1> args;
 
   protected:
     /// Constructor
-    Call();
+    Call() = delete;
     /// Constructor
-    /// @param id the instruction id
-    /// @param type the result type
+    /// @param result_type the result type
     /// @param args the constructor arguments
-    Call(uint32_t id, const type::Type* type, utils::VectorRef<Value*> args);
-
-  private:
-    utils::Vector<Value*, 1> args_;
+    Call(const type::Type* result_type, utils::VectorRef<Value*> args);
 };
 
 }  // namespace tint::ir

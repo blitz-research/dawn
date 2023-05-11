@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gmock/gmock.h"
 #include "src/tint/ast/stage_attribute.h"
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/writer/spirv/spv_dump.h"
@@ -32,8 +33,8 @@ TEST_F(BuilderTest, Attribute_Stage) {
 
     spirv::Builder& b = Build();
 
-    ASSERT_TRUE(b.GenerateFunction(func)) << b.error();
-    EXPECT_EQ(DumpInstructions(b.entry_points()),
+    ASSERT_TRUE(b.GenerateFunction(func)) << b.Diagnostics();
+    EXPECT_EQ(DumpInstructions(b.Module().EntryPoints()),
               R"(OpEntryPoint Fragment %3 "main"
 )");
 }
@@ -72,11 +73,11 @@ TEST_P(Attribute_StageTest, Emit) {
     spirv::Builder& b = Build();
 
     if (var) {
-        ASSERT_TRUE(b.GenerateGlobalVariable(var)) << b.error();
+        ASSERT_TRUE(b.GenerateGlobalVariable(var)) << b.Diagnostics();
     }
-    ASSERT_TRUE(b.GenerateFunction(func)) << b.error();
+    ASSERT_TRUE(b.GenerateFunction(func)) << b.Diagnostics();
 
-    auto preamble = b.entry_points();
+    auto preamble = b.Module().EntryPoints();
     ASSERT_GE(preamble.size(), 1u);
     EXPECT_EQ(preamble[0].opcode(), spv::Op::OpEntryPoint);
 
@@ -98,8 +99,8 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_Fragment_OriginUpperLeft) {
 
     spirv::Builder& b = Build();
 
-    ASSERT_TRUE(b.GenerateExecutionModes(func, 3)) << b.error();
-    EXPECT_EQ(DumpInstructions(b.execution_modes()),
+    ASSERT_TRUE(b.GenerateExecutionModes(func, 3)) << b.Diagnostics();
+    EXPECT_EQ(DumpInstructions(b.Module().ExecutionModes()),
               R"(OpExecutionMode %3 OriginUpperLeft
 )");
 }
@@ -110,8 +111,8 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_Default) {
 
     spirv::Builder& b = Build();
 
-    ASSERT_TRUE(b.GenerateExecutionModes(func, 3)) << b.error();
-    EXPECT_EQ(DumpInstructions(b.execution_modes()),
+    ASSERT_TRUE(b.GenerateExecutionModes(func, 3)) << b.Diagnostics();
+    EXPECT_EQ(DumpInstructions(b.Module().ExecutionModes()),
               R"(OpExecutionMode %3 LocalSize 1 1 1
 )");
 }
@@ -125,8 +126,8 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_Literals) {
 
     spirv::Builder& b = Build();
 
-    ASSERT_TRUE(b.GenerateExecutionModes(func, 3)) << b.error();
-    EXPECT_EQ(DumpInstructions(b.execution_modes()),
+    ASSERT_TRUE(b.GenerateExecutionModes(func, 3)) << b.Diagnostics();
+    EXPECT_EQ(DumpInstructions(b.Module().ExecutionModes()),
               R"(OpExecutionMode %3 LocalSize 2 4 6
 )");
 }
@@ -143,8 +144,8 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_Const) {
 
     spirv::Builder& b = Build();
 
-    ASSERT_TRUE(b.GenerateExecutionModes(func, 3)) << b.error();
-    EXPECT_EQ(DumpInstructions(b.execution_modes()),
+    ASSERT_TRUE(b.GenerateExecutionModes(func, 3)) << b.Diagnostics();
+    EXPECT_EQ(DumpInstructions(b.Module().ExecutionModes()),
               R"(OpExecutionMode %3 LocalSize 2 3 4
 )");
 }
@@ -161,10 +162,13 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_OverridableConst) {
 
     spirv::Builder& b = Build();
 
-    EXPECT_FALSE(b.GenerateExecutionModes(func, 3)) << b.error();
-    EXPECT_EQ(
-        b.error(),
-        R"(override-expressions should have been removed with the SubstituteOverride transform)");
+    tint::SetInternalCompilerErrorReporter(nullptr);
+
+    EXPECT_FALSE(b.GenerateExecutionModes(func, 3)) << b.Diagnostics();
+    EXPECT_THAT(
+        b.Diagnostics().str(),
+        ::testing::HasSubstr(
+            "override-expressions should have been removed with the SubstituteOverride transform"));
 }
 
 TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_LiteralAndConst) {
@@ -178,10 +182,13 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_WorkgroupSize_LiteralAndConst) {
 
     spirv::Builder& b = Build();
 
-    EXPECT_FALSE(b.GenerateExecutionModes(func, 3)) << b.error();
-    EXPECT_EQ(
-        b.error(),
-        R"(override-expressions should have been removed with the SubstituteOverride transform)");
+    tint::SetInternalCompilerErrorReporter(nullptr);
+
+    EXPECT_FALSE(b.GenerateExecutionModes(func, 3)) << b.Diagnostics();
+    EXPECT_THAT(
+        b.Diagnostics().str(),
+        ::testing::HasSubstr(
+            "override-expressions should have been removed with the SubstituteOverride transform"));
 }
 
 TEST_F(BuilderTest, Decoration_ExecutionMode_MultipleFragment) {
@@ -197,8 +204,8 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_MultipleFragment) {
 
     spirv::Builder& b = Build();
 
-    ASSERT_TRUE(b.GenerateFunction(func1)) << b.error();
-    ASSERT_TRUE(b.GenerateFunction(func2)) << b.error();
+    ASSERT_TRUE(b.GenerateFunction(func1)) << b.Diagnostics();
+    ASSERT_TRUE(b.GenerateFunction(func2)) << b.Diagnostics();
     EXPECT_EQ(DumpBuilder(b),
               R"(OpEntryPoint Fragment %3 "main1"
 OpEntryPoint Fragment %5 "main2"
@@ -235,7 +242,7 @@ TEST_F(BuilderTest, Decoration_ExecutionMode_FragDepth) {
 
     ASSERT_TRUE(b.Build());
 
-    EXPECT_EQ(DumpInstructions(b.execution_modes()),
+    EXPECT_EQ(DumpInstructions(b.Module().ExecutionModes()),
               R"(OpExecutionMode %11 OriginUpperLeft
 OpExecutionMode %11 DepthReplacing
 )");

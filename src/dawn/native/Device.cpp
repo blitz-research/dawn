@@ -1111,7 +1111,7 @@ ComputePipelineBase* DeviceBase::APICreateComputePipeline(
                  utils::GetLabelForTrace(descriptor->label));
 
     Ref<ComputePipelineBase> result;
-    if (ConsumedError(CreateComputePipeline(descriptor), &result,
+    if (ConsumedError(CreateComputePipeline(descriptor), &result, InternalErrorType::Internal,
                       "calling %s.CreateComputePipeline(%s).", this, descriptor)) {
         return ComputePipelineBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
@@ -1201,7 +1201,7 @@ RenderPipelineBase* DeviceBase::APICreateRenderPipeline(
                  utils::GetLabelForTrace(descriptor->label));
 
     Ref<RenderPipelineBase> result;
-    if (ConsumedError(CreateRenderPipeline(descriptor), &result,
+    if (ConsumedError(CreateRenderPipeline(descriptor), &result, InternalErrorType::Internal,
                       "calling %s.CreateRenderPipeline(%s).", this, descriptor)) {
         return RenderPipelineBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     }
@@ -1395,7 +1395,7 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
         mWGSLExtensionAllowList.insert("f16");
     }
-    if (!IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
+    if (AllowUnsafeAPIs()) {
         mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
     }
 }
@@ -1410,6 +1410,11 @@ bool DeviceBase::IsValidationEnabled() const {
 
 bool DeviceBase::IsRobustnessEnabled() const {
     return !IsToggleEnabled(Toggle::DisableRobustness);
+}
+
+bool DeviceBase::AllowUnsafeAPIs() const {
+    // TODO(dawn:1685) Currently allows if either toggle are set accordingly.
+    return IsToggleEnabled(Toggle::AllowUnsafeAPIs) || !IsToggleEnabled(Toggle::DisallowUnsafeAPIs);
 }
 
 size_t DeviceBase::GetLazyClearCountForTesting() {
@@ -1428,6 +1433,12 @@ void DeviceBase::EmitDeprecationWarning(const std::string& message) {
     mDeprecationWarnings->count++;
     if (mDeprecationWarnings->emitted.insert(message).second) {
         dawn::WarningLog() << message;
+    }
+}
+
+void DeviceBase::EmitWarningOnce(const std::string& message) {
+    if (mWarnings.insert(message).second) {
+        this->EmitLog(WGPULoggingType_Warning, message.c_str());
     }
 }
 

@@ -17,7 +17,6 @@
 
 #include "src/tint/ir/instruction.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -36,9 +35,6 @@ class Binary : public utils::Castable<Binary, Instruction> {
         kOr,
         kXor,
 
-        kLogicalAnd,
-        kLogicalOr,
-
         kEqual,
         kNotEqual,
         kLessThan,
@@ -51,12 +47,11 @@ class Binary : public utils::Castable<Binary, Instruction> {
     };
 
     /// Constructor
-    /// @param id the instruction id
     /// @param kind the kind of binary instruction
     /// @param type the result type
     /// @param lhs the lhs of the instruction
     /// @param rhs the rhs of the instruction
-    Binary(uint32_t id, Kind kind, const type::Type* type, Value* lhs, Value* rhs);
+    Binary(Kind kind, const type::Type* type, Value* lhs, Value* rhs);
     Binary(const Binary& inst) = delete;
     Binary(Binary&& inst) = delete;
     ~Binary() override;
@@ -64,8 +59,8 @@ class Binary : public utils::Castable<Binary, Instruction> {
     Binary& operator=(const Binary& inst) = delete;
     Binary& operator=(Binary&& inst) = delete;
 
-    /// @returns the kind of instruction
-    Kind GetKind() const { return kind_; }
+    /// @returns the type of the value
+    const type::Type* Type() const override { return result_type; }
 
     /// @returns the left-hand-side value for the instruction
     const Value* LHS() const { return lhs_; }
@@ -73,13 +68,13 @@ class Binary : public utils::Castable<Binary, Instruction> {
     /// @returns the right-hand-side value for the instruction
     const Value* RHS() const { return rhs_; }
 
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
+    /// the kind of binary instruction
+    Kind kind = Kind::kAdd;
+
+    /// the result type of the instruction
+    const type::Type* result_type = nullptr;
 
   private:
-    Kind kind_;
     Value* lhs_ = nullptr;
     Value* rhs_ = nullptr;
 };

@@ -39,6 +39,7 @@
 #include "src/tint/ast/identifier_expression.h"
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ast/int_literal_expression.h"
+#include "src/tint/ast/invariant_attribute.h"
 #include "src/tint/ast/let.h"
 #include "src/tint/ast/literal_expression.h"
 #include "src/tint/ast/loop_statement.h"
@@ -60,11 +61,11 @@
 #include "src/tint/ir/module.h"
 #include "src/tint/ir/store.h"
 #include "src/tint/ir/switch.h"
-#include "src/tint/ir/terminator.h"
 #include "src/tint/ir/value.h"
 #include "src/tint/program.h"
 #include "src/tint/sem/builtin.h"
 #include "src/tint/sem/call.h"
+#include "src/tint/sem/function.h"
 #include "src/tint/sem/materialize.h"
 #include "src/tint/sem/module.h"
 #include "src/tint/sem/switch_statement.h"
@@ -74,6 +75,7 @@
 #include "src/tint/sem/variable.h"
 #include "src/tint/switch.h"
 #include "src/tint/type/void.h"
+#include "src/tint/utils/defer.h"
 #include "src/tint/utils/scoped_assignment.h"
 
 namespace tint::ir {
@@ -209,19 +211,85 @@ void BuilderImpl::EmitFunction(const ast::Function* ast_func) {
 
     ast_to_flow_[ast_func] = ir_func;
 
+    const auto* sem = program_->Sem().Get(ast_func);
     if (ast_func->IsEntryPoint()) {
         builder.ir.entry_points.Push(ir_func);
+
+        switch (ast_func->PipelineStage()) {
+            case ast::PipelineStage::kVertex:
+                ir_func->pipeline_stage = Function::PipelineStage::kVertex;
+                break;
+            case ast::PipelineStage::kFragment:
+                ir_func->pipeline_stage = Function::PipelineStage::kFragment;
+                break;
+            case ast::PipelineStage::kCompute: {
+                ir_func->pipeline_stage = Function::PipelineStage::kCompute;
+
+                auto wg_size = sem->WorkgroupSize();
+                ir_func->workgroup_size = {
+                    wg_size[0].value(),
+                    wg_size[1].value_or(1),
+                    wg_size[2].value_or(1),
+                };
+                break;
+            }
+            default: {
+                TINT_ICE(IR, diagnostics_) << "Invalid pipeline stage";
+                return;
+            }
+        }
+
+        for (auto* attr : ast_func->return_type_attributes) {
+            tint::Switch(
+                attr,  //
+                [&](const ast::LocationAttribute*) {
+                    ir_func->return_attributes.Push(Function::ReturnAttribute::kLocation);
+                },
+                [&](const ast::InvariantAttribute*) {
+                    ir_func->return_attributes.Push(Function::ReturnAttribute::kInvariant);
+                },
+                [&](const ast::BuiltinAttribute* b) {
+                    if (auto* ident_sem =
+                            program_->Sem()
+                                .Get(b)
+                                ->As<sem::BuiltinEnumExpression<builtin::BuiltinValue>>()) {
+                        switch (ident_sem->Value()) {
+                            case builtin::BuiltinValue::kPosition:
+                                ir_func->return_attributes.Push(
+                                    Function::ReturnAttribute::kPosition);
+                                break;
+                            case builtin::BuiltinValue::kFragDepth:
+                                ir_func->return_attributes.Push(
+                                    Function::ReturnAttribute::kFragDepth);
+                                break;
+                            case builtin::BuiltinValue::kSampleMask:
+                                ir_func->return_attributes.Push(
+                                    Function::ReturnAttribute::kSampleMask);
+                                break;
+                            default:
+                                TINT_ICE(IR, diagnostics_)
+                                    << "Unknown builtin value in return attributes "
+                                    << ident_sem->Value();
+                                return;
+                        }
+                    } else {
+                        TINT_ICE(IR, diagnostics_) << "Builtin attribute sem invalid";
+                        return;
+                    }
+                });
+        }
     }
+    ir_func->return_type = sem->ReturnType()->Clone(clone_ctx_.type_ctx);
+    ir_func->return_location = sem->ReturnLocation();
 
     {
         FlowStackScope scope(this, ir_func);
 
         current_flow_block = ir_func->start_target;
-        EmitStatements(ast_func->body->statements);
+        EmitBlock(ast_func->body);
 
         // TODO(dsinclair): Store return type and attributes
         // TODO(dsinclair): Store parameters
-        // TODO(dsinclair): Store attributes
 
         // If the branch target has already been set then a `return` was called. Only set in the
         // case where `return` wasn't called.
@@ -309,30 +377,6 @@ void BuilderImpl::EmitCompoundAssignment(const ast::CompoundAssignmentStatement*
         case ast::BinaryOp::kXor:
             inst = builder.Xor(ty, lhs.Get(), rhs.Get());
             break;
-        case ast::BinaryOp::kLogicalAnd:
-            inst = builder.LogicalAnd(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kLogicalOr:
-            inst = builder.LogicalOr(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kEqual:
-            inst = builder.Equal(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kNotEqual:
-            inst = builder.NotEqual(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kLessThan:
-            inst = builder.LessThan(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kGreaterThan:
-            inst = builder.GreaterThan(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kLessThanEqual:
-            inst = builder.LessThanEqual(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kGreaterThanEqual:
-            inst = builder.GreaterThanEqual(ty, lhs.Get(), rhs.Get());
-            break;
         case ast::BinaryOp::kShiftLeft:
             inst = builder.ShiftLeft(ty, lhs.Get(), rhs.Get());
             break;
@@ -354,6 +398,16 @@ void BuilderImpl::EmitCompoundAssignment(const ast::CompoundAssignmentStatement*
         case ast::BinaryOp::kModulo:
             inst = builder.Modulo(ty, lhs.Get(), rhs.Get());
             break;
+        case ast::BinaryOp::kLessThanEqual:
+        case ast::BinaryOp::kGreaterThanEqual:
+        case ast::BinaryOp::kGreaterThan:
+        case ast::BinaryOp::kLessThan:
+        case ast::BinaryOp::kNotEqual:
+        case ast::BinaryOp::kEqual:
+        case ast::BinaryOp::kLogicalAnd:
+        case ast::BinaryOp::kLogicalOr:
+            TINT_ICE(IR, diagnostics_) << "invalid compound assignment";
+            return;
         case ast::BinaryOp::kNone:
             TINT_ICE(IR, diagnostics_) << "missing binary operand type";
             return;
@@ -365,9 +419,12 @@ void BuilderImpl::EmitCompoundAssignment(const ast::CompoundAssignmentStatement*
 }
 
 void BuilderImpl::EmitBlock(const ast::BlockStatement* block) {
-    // Note, this doesn't need to emit a Block as the current block flow node should be
-    // sufficient as the blocks all get flattened. Each flow control node will inject the basic
-    // blocks it requires.
+    scopes_.Push();
+    TINT_DEFER(scopes_.Pop());
+
+    // Note, this doesn't need to emit a Block as the current block flow node should be sufficient
+    // as the blocks all get flattened. Each flow control node will inject the basic blocks it
+    // requires.
     EmitStatements(block->statements);
 }
 
@@ -389,7 +446,7 @@ void BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
         FlowStackScope scope(this, if_node);
 
         current_flow_block = if_node->true_.target->As<Block>();
-        EmitStatement(stmt->body);
+        EmitBlock(stmt->body);
 
         // If the true branch did not execute control flow, then go to the merge target
         BranchToIfNeeded(if_node->merge.target);
@@ -404,9 +461,8 @@ void BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
     }
     current_flow_block = nullptr;
 
-    // If both branches went somewhere, then they both returned, continued or broke. So,
-    // there is no need for the if merge-block and there is nothing to branch to the merge
-    // block anyway.
+    // If both branches went somewhere, then they both returned, continued or broke. So, there is no
+    // need for the if merge-block and there is nothing to branch to the merge block anyway.
     if (IsConnected(if_node->merge.target)) {
         current_flow_block = if_node->merge.target->As<Block>();
     }
@@ -423,22 +479,22 @@ void BuilderImpl::EmitLoop(const ast::LoopStatement* stmt) {
         FlowStackScope scope(this, loop_node);
 
         current_flow_block = loop_node->start.target->As<Block>();
-        EmitStatement(stmt->body);
+        EmitBlock(stmt->body);
 
         // The current block didn't `break`, `return` or `continue`, go to the continuing block.
         BranchToIfNeeded(loop_node->continuing.target);
 
         current_flow_block = loop_node->continuing.target->As<Block>();
         if (stmt->continuing) {
-            EmitStatement(stmt->continuing);
+            EmitBlock(stmt->continuing);
         }
 
         // Branch back to the start node if the continue target didn't branch out already
         BranchToIfNeeded(loop_node->start.target);
     }
 
-    // The loop merge can get disconnected if the loop returns directly, or the continuing
-    // target branches, eventually, to the merge, but nothing branched to the continuing target.
+    // The loop merge can get disconnected if the loop returns directly, or the continuing target
+    // branches, eventually, to the merge, but nothing branched to the continuing target.
     current_flow_block = loop_node->merge.target->As<Block>();
     if (!IsConnected(loop_node->merge.target)) {
         current_flow_block = nullptr;
@@ -479,7 +535,7 @@ void BuilderImpl::EmitWhile(const ast::WhileStatement* stmt) {
         BranchTo(if_node);
 
         current_flow_block = if_node->merge.target->As<Block>();
-        EmitStatement(stmt->body);
+        EmitBlock(stmt->body);
 
         BranchToIfNeeded(loop_node->continuing.target);
     }
@@ -493,6 +549,10 @@ void BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
     TINT_ASSERT(IR, loop_node->continuing.target->Is<Block>());
     builder.Branch(loop_node->continuing.target->As<Block>(), loop_node->start.target,
                    utils::Empty);
+
+    // Make sure the initializer ends up in a contained scope
+    scopes_.Push();
+    TINT_DEFER(scopes_.Pop());
 
     if (stmt->initializer) {
         // Emit the for initializer before branching to the loop
@@ -529,7 +589,7 @@ void BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
             current_flow_block = if_node->merge.target->As<Block>();
         }
 
-        EmitStatement(stmt->body);
+        EmitBlock(stmt->body);
         BranchToIfNeeded(loop_node->continuing.target);
 
         if (stmt->continuing) {
@@ -537,6 +597,7 @@ void BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
             EmitStatement(stmt->continuing);
         }
     }
+
     // The while loop always has a path to the merge target as the break statement comes before
     // anything inside the loop.
     current_flow_block = loop_node->merge.target->As<Block>();
@@ -571,7 +632,8 @@ void BuilderImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
             }
 
             current_flow_block = builder.CreateCase(switch_node, selectors);
-            EmitStatement(c->Body()->Declaration());
+            EmitBlock(c->Body()->Declaration());
+
             BranchToIfNeeded(switch_node->merge.target);
         }
     }
@@ -620,9 +682,9 @@ void BuilderImpl::EmitContinue(const ast::ContinueStatement*) {
 }
 
 // Discard is being treated as an instruction. The semantics in WGSL is demote_to_helper, so the
-// code has to continue as before it just predicates writes. If WGSL grows some kind of
-// terminating discard that would probably make sense as a FlowNode but would then require
-// figuring out the multi-level exit that is triggered.
+// code has to continue as before it just predicates writes. If WGSL grows some kind of terminating
+// discard that would probably make sense as a FlowNode but would then require figuring out the
+// multi-level exit that is triggered.
 void BuilderImpl::EmitDiscard(const ast::DiscardStatement*) {
     auto* inst = builder.Discard();
     current_flow_block->instructions.Push(inst);
@@ -679,9 +741,10 @@ utils::Result<Value*> BuilderImpl::EmitExpression(const ast::Expression* expr) {
         [&](const ast::BinaryExpression* b) { return EmitBinary(b); },
         [&](const ast::BitcastExpression* b) { return EmitBitcast(b); },
         [&](const ast::CallExpression* c) { return EmitCall(c); },
-        // [&](const ast::IdentifierExpression* i) {
-        // TODO(dsinclair): Implement
-        // },
+        [&](const ast::IdentifierExpression* i) {
+            auto* v = scopes_.Get(i->identifier->symbol);
+            return utils::Result<Value*>{v};
+        },
         [&](const ast::LiteralExpression* l) { return EmitLiteral(l); },
         // [&](const ast::MemberAccessorExpression* m) {
         // TODO(dsinclair): Implement
@@ -712,11 +775,13 @@ void BuilderImpl::EmitVariable(const ast::Variable* var) {
                 if (!init) {
                     return;
                 }
-
-                auto* store = builder.Store(val, init.Get());
-                current_flow_block->instructions.Push(store);
+                val->initializer = init.Get();
             }
-            // TODO(dsinclair): Store the mapping from the var name to the `Declare` value
+            // Store the declaration so we can get the instruction to store too
+            scopes_.Set(v->name->symbol, val);
+
+            // Record the original name of the var
+            builder.ir.SetName(val, v->name->symbol.Name());
         },
         [&](const ast::Let* l) {
             // A `let` doesn't exist as a standalone item in the IR, it's just the result of the
@@ -725,7 +790,12 @@ void BuilderImpl::EmitVariable(const ast::Variable* var) {
             if (!init) {
                 return;
             }
-            // TODO(dsinclair): Store the mapping from the let name to the `init` value
+
+            // Store the results of the initialization
+            scopes_.Set(l->name->symbol, init.Get());
+
+            // Record the original name of the let
+            builder.ir.SetName(init.Get(), l->name->symbol.Name());
         },
         [&](const ast::Override*) {
             add_error(var->source,
@@ -738,8 +808,8 @@ void BuilderImpl::EmitVariable(const ast::Variable* var) {
             // should never be used.
             //
             // TODO(dsinclair): Probably want to store the const variable somewhere and then in
-            // identifier expression log an error if we ever see a const identifier. Add this
-            // when identifiers and variables are supported.
+            // identifier expression log an error if we ever see a const identifier. Add this when
+            // identifiers and variables are supported.
         },
         [&](Default) {
             add_error(var->source, "unknown variable: " + std::string(var->TypeInfo().name));
@@ -755,7 +825,7 @@ utils::Result<Value*> BuilderImpl::EmitUnary(const ast::UnaryOpExpression* expr)
     auto* sem = program_->Sem().Get(expr);
     auto* ty = sem->Type()->Clone(clone_ctx_.type_ctx);
 
-    Unary* inst = nullptr;
+    Instruction* inst = nullptr;
     switch (expr->op) {
         case ast::UnaryOp::kAddressOf:
             inst = builder.AddressOf(ty, val.Get());
@@ -778,7 +848,68 @@ utils::Result<Value*> BuilderImpl::EmitUnary(const ast::UnaryOpExpression* expr)
     return inst;
 }
 
+// A short-circut needs special treatment. The short-circuit is decomposed into the relevant if
+// statements and declarations.
+utils::Result<Value*> BuilderImpl::EmitShortCircuit(const ast::BinaryExpression* expr) {
+    switch (expr->op) {
+        case ast::BinaryOp::kLogicalAnd:
+        case ast::BinaryOp::kLogicalOr:
+            break;
+        default:
+            TINT_ICE(IR, diagnostics_) << "invalid operation type for short-circut decomposition";
+            return utils::Failure;
+    }
+
+    // Evaluate the LHS of the short-circuit
+    auto lhs = EmitExpression(expr->lhs);
+    if (!lhs) {
+        return utils::Failure;
+    }
+
+    // Generate a variable to store the short-circut into
+    auto* ty = builder.ir.types.Get<type::Bool>();
+    auto* result_var =
+        builder.Declare(ty, builtin::AddressSpace::kFunction, builtin::Access::kReadWrite);
+    current_flow_block->instructions.Push(result_var);
+
+    auto* lhs_store = builder.Store(result_var, lhs.Get());
+    current_flow_block->instructions.Push(lhs_store);
+
+    auto* if_node = builder.CreateIf();
+    if_node->condition = lhs.Get();
+    BranchTo(if_node);
+
+    utils::Result<Value*> rhs;
+    {
+        FlowStackScope scope(this, if_node);
+
+        // If this is an `&&` then we only evaluate the RHS expression in the true block.
+        // If this is an `||` then we only evaluate the RHS expression in the false block.
+        if (expr->op == ast::BinaryOp::kLogicalAnd) {
+            current_flow_block = if_node->true_.target->As<Block>();
+        } else {
+            current_flow_block = if_node->false_.target->As<Block>();
+        }
+
+        rhs = EmitExpression(expr->rhs);
+        if (!rhs) {
+            return utils::Failure;
+        }
+        auto* rhs_store = builder.Store(result_var, rhs.Get());
+        current_flow_block->instructions.Push(rhs_store);
+
+        BranchTo(if_node->merge.target);
+    }
+    current_flow_block = if_node->merge.target->As<Block>();
+
+    return result_var;
+}
+
 utils::Result<Value*> BuilderImpl::EmitBinary(const ast::BinaryExpression* expr) {
+    if (expr->op == ast::BinaryOp::kLogicalAnd || expr->op == ast::BinaryOp::kLogicalOr) {
+        return EmitShortCircuit(expr);
+    }
+
     auto lhs = EmitExpression(expr->lhs);
     if (!lhs) {
         return utils::Failure;
@@ -802,12 +933,6 @@ utils::Result<Value*> BuilderImpl::EmitBinary(const ast::BinaryExpression* expr)
             break;
         case ast::BinaryOp::kXor:
             inst = builder.Xor(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kLogicalAnd:
-            inst = builder.LogicalAnd(ty, lhs.Get(), rhs.Get());
-            break;
-        case ast::BinaryOp::kLogicalOr:
-            inst = builder.LogicalOr(ty, lhs.Get(), rhs.Get());
             break;
         case ast::BinaryOp::kEqual:
             inst = builder.Equal(ty, lhs.Get(), rhs.Get());
@@ -848,6 +973,10 @@ utils::Result<Value*> BuilderImpl::EmitBinary(const ast::BinaryExpression* expr)
         case ast::BinaryOp::kModulo:
             inst = builder.Modulo(ty, lhs.Get(), rhs.Get());
             break;
+        case ast::BinaryOp::kLogicalAnd:
+        case ast::BinaryOp::kLogicalOr:
+            TINT_ICE(IR, diagnostics_) << "short circuit op should have already been handled";
+            return utils::Failure;
         case ast::BinaryOp::kNone:
             TINT_ICE(IR, diagnostics_) << "missing binary operand type";
             return utils::Failure;

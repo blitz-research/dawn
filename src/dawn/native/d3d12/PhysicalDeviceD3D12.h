@@ -27,13 +27,12 @@ class Backend;
 
 class PhysicalDevice : public d3d::PhysicalDevice {
   public:
-    PhysicalDevice(Backend* backend,
-                   ComPtr<IDXGIAdapter3> hardwareAdapter,
-                   const TogglesState& adapterToggles);
+    PhysicalDevice(Backend* backend, ComPtr<IDXGIAdapter3> hardwareAdapter);
     ~PhysicalDevice() override;
 
     // PhysicalDeviceBase Implementation
     bool SupportsExternalImages() const override;
+    bool SupportsFeatureLevel(FeatureLevel featureLevel) const override;
 
     const D3D12DeviceInfo& GetDeviceInfo() const;
     Backend* GetBackend() const;

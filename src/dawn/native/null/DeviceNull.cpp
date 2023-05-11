@@ -32,11 +32,7 @@ namespace dawn::native::null {
 // Connect()
 
 PhysicalDevice::PhysicalDevice(InstanceBase* instance)
-    : PhysicalDevice(instance,
-                     TogglesState(ToggleStage::Adapter).InheritFrom(instance->GetTogglesState())) {}
-
-PhysicalDevice::PhysicalDevice(InstanceBase* instance, const TogglesState& adapterToggles)
-    : PhysicalDeviceBase(instance, wgpu::BackendType::Null, adapterToggles) {
+    : PhysicalDeviceBase(instance, wgpu::BackendType::Null) {
     mVendorId = 0;
     mDeviceId = 0;
     mName = "Null backend";
@@ -49,6 +45,10 @@ PhysicalDevice::~PhysicalDevice() = default;
 
 bool PhysicalDevice::SupportsExternalImages() const {
     return false;
+}
+
+bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel) const {
+    return true;
 }
 
 MaybeError PhysicalDevice::InitializeImpl() {
@@ -86,13 +86,11 @@ class Backend : public BackendConnection {
     explicit Backend(InstanceBase* instance)
         : BackendConnection(instance, wgpu::BackendType::Null) {}
 
-    std::vector<Ref<PhysicalDeviceBase>> DiscoverDefaultAdapters(
-        const TogglesState& adapterToggles) override {
+    std::vector<Ref<PhysicalDeviceBase>> DiscoverDefaultAdapters() override {
         // There is always a single Null adapter because it is purely CPU based and doesn't
         // depend on the system.
         std::vector<Ref<PhysicalDeviceBase>> physicalDevices;
-        Ref<PhysicalDevice> physicalDevice =
-            AcquireRef(new PhysicalDevice(GetInstance(), adapterToggles));
+        Ref<PhysicalDevice> physicalDevice = AcquireRef(new PhysicalDevice(GetInstance()));
         physicalDevices.push_back(std::move(physicalDevice));
         return physicalDevices;
     }
@@ -393,17 +391,17 @@ MaybeError ComputePipeline::Initialize() {
     tint::Program transformedProgram;
     const tint::Program* program;
     tint::transform::Manager transformManager;
-    tint::transform::DataMap transformInputs;
+    tint::ast::transform::DataMap transformInputs;
 
     if (!computeStage.metadata->overrides.empty()) {
-        transformManager.Add<tint::transform::SingleEntryPoint>();
-        transformInputs.Add<tint::transform::SingleEntryPoint::Config>(
+        transformManager.Add<tint::ast::transform::SingleEntryPoint>();
+        transformInputs.Add<tint::ast::transform::SingleEntryPoint::Config>(
             computeStage.entryPoint.c_str());
 
         // This needs to run after SingleEntryPoint transform which removes unused overrides for
         // current entry point.
-        transformManager.Add<tint::transform::SubstituteOverride>();
-        transformInputs.Add<tint::transform::SubstituteOverride::Config>(
+        transformManager.Add<tint::ast::transform::SubstituteOverride>();
+        transformInputs.Add<tint::ast::transform::SubstituteOverride::Config>(
             BuildSubstituteOverridesTransformConfig(computeStage));
     }
 

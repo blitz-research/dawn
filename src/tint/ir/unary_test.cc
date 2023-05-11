@@ -14,7 +14,6 @@
 
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/test_helper.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 namespace {
@@ -34,7 +33,7 @@ TEST_F(IR_InstructionTest, CreateAddressOf) {
                             b.builder.Constant(4_i));
 
     ASSERT_TRUE(inst->Is<Unary>());
-    EXPECT_EQ(inst->GetKind(), Unary::Kind::kAddressOf);
+    EXPECT_EQ(inst->kind, Unary::Kind::kAddressOf);
 
     ASSERT_NE(inst->Type(), nullptr);
 
@@ -42,10 +41,6 @@ TEST_F(IR_InstructionTest, CreateAddressOf) {
     auto lhs = inst->Val()->As<Constant>()->value;
     ASSERT_TRUE(lhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(ptr<private, i32, read_write>) = addr_of 4i");
 }
 
 TEST_F(IR_InstructionTest, CreateComplement) {
@@ -54,16 +49,12 @@ TEST_F(IR_InstructionTest, CreateComplement) {
         b.builder.Complement(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
 
     ASSERT_TRUE(inst->Is<Unary>());
-    EXPECT_EQ(inst->GetKind(), Unary::Kind::kComplement);
+    EXPECT_EQ(inst->kind, Unary::Kind::kComplement);
 
     ASSERT_TRUE(inst->Val()->Is<Constant>());
     auto lhs = inst->Val()->As<Constant>()->value;
     ASSERT_TRUE(lhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = bit_complement 4i");
 }
 
 TEST_F(IR_InstructionTest, CreateIndirection) {
@@ -74,16 +65,12 @@ TEST_F(IR_InstructionTest, CreateIndirection) {
         b.builder.Indirection(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
 
     ASSERT_TRUE(inst->Is<Unary>());
-    EXPECT_EQ(inst->GetKind(), Unary::Kind::kIndirection);
+    EXPECT_EQ(inst->kind, Unary::Kind::kIndirection);
 
     ASSERT_TRUE(inst->Val()->Is<Constant>());
     auto lhs = inst->Val()->As<Constant>()->value;
     ASSERT_TRUE(lhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = indirection 4i");
 }
 
 TEST_F(IR_InstructionTest, CreateNegation) {
@@ -92,34 +79,12 @@ TEST_F(IR_InstructionTest, CreateNegation) {
         b.builder.Negation(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
 
     ASSERT_TRUE(inst->Is<Unary>());
-    EXPECT_EQ(inst->GetKind(), Unary::Kind::kNegation);
+    EXPECT_EQ(inst->kind, Unary::Kind::kNegation);
 
     ASSERT_TRUE(inst->Val()->Is<Constant>());
     auto lhs = inst->Val()->As<Constant>()->value;
     ASSERT_TRUE(lhs->Is<constant::Scalar<i32>>());
     EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(i32) = negation 4i");
-}
-
-TEST_F(IR_InstructionTest, CreateNot) {
-    auto& b = CreateEmptyBuilder();
-    const auto* inst =
-        b.builder.Not(b.builder.ir.types.Get<type::Bool>(), b.builder.Constant(true));
-
-    ASSERT_TRUE(inst->Is<Unary>());
-    EXPECT_EQ(inst->GetKind(), Unary::Kind::kNot);
-
-    ASSERT_TRUE(inst->Val()->Is<Constant>());
-    auto lhs = inst->Val()->As<Constant>()->value;
-    ASSERT_TRUE(lhs->Is<constant::Scalar<bool>>());
-    EXPECT_TRUE(lhs->As<constant::Scalar<bool>>()->ValueAs<bool>());
-
-    utils::StringStream str;
-    inst->ToInstruction(str);
-    EXPECT_EQ(str.str(), "%1(bool) = log_not true");
 }
 
 TEST_F(IR_InstructionTest, Unary_Usage) {
@@ -127,7 +92,7 @@ TEST_F(IR_InstructionTest, Unary_Usage) {
     const auto* inst =
         b.builder.Negation(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
 
-    EXPECT_EQ(inst->GetKind(), Unary::Kind::kNegation);
+    EXPECT_EQ(inst->kind, Unary::Kind::kNegation);
 
     ASSERT_NE(inst->Val(), nullptr);
     ASSERT_EQ(inst->Val()->Usage().Length(), 1u);

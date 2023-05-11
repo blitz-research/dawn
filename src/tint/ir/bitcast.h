@@ -17,7 +17,6 @@
 
 #include "src/tint/ir/call.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -25,21 +24,15 @@ namespace tint::ir {
 class Bitcast : public utils::Castable<Bitcast, Call> {
   public:
     /// Constructor
-    /// @param id the instruction id
     /// @param type the result type
     /// @param val the value being bitcast
-    Bitcast(uint32_t id, const type::Type* type, Value* val);
+    Bitcast(const type::Type* type, Value* val);
     Bitcast(const Bitcast& inst) = delete;
     Bitcast(Bitcast&& inst) = delete;
     ~Bitcast() override;
 
     Bitcast& operator=(const Bitcast& inst) = delete;
     Bitcast& operator=(Bitcast&& inst) = delete;
-
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
 };
 
 }  // namespace tint::ir

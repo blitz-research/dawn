@@ -49,9 +49,9 @@
 #include "tint/tint.h"
 
 #if TINT_BUILD_IR
-#include "src/tint/ir/converter.h"     // nogncheck
 #include "src/tint/ir/debug.h"         // nogncheck
 #include "src/tint/ir/disassembler.h"  // nogncheck
+#include "src/tint/ir/from_program.h"  // nogncheck
 #include "src/tint/ir/module.h"        // nogncheck
 #endif                                 // TINT_BUILD_IR
 
@@ -111,6 +111,7 @@ struct Options {
 #if TINT_BUILD_IR
     bool dump_ir = false;
     bool dump_ir_graph = false;
+    bool use_ir = false;
 #endif  // TINT_BUILD_IR
 
 #if TINT_BUILD_SYNTAX_TREE_WRITER
@@ -204,47 +205,34 @@ Format parse_format(const std::string& fmt) {
     return Format::kUnknown;
 }
 
-#if TINT_BUILD_SPV_WRITER || TINT_BUILD_WGSL_WRITER || TINT_BUILD_MSL_WRITER || \
-    TINT_BUILD_HLSL_WRITER
-/// @param input input string
-/// @param suffix potential suffix string
-/// @returns true if input ends with the given suffix.
-bool ends_with(const std::string& input, const std::string& suffix) {
-    const auto input_len = input.size();
-    const auto suffix_len = suffix.size();
-    // Avoid integer overflow.
-    return (input_len >= suffix_len) && (input_len - suffix_len == input.rfind(suffix));
-}
-#endif
-
 /// @param filename the filename to inspect
 /// @returns the inferred format for the filename suffix
 Format infer_format(const std::string& filename) {
     (void)filename;
 
 #if TINT_BUILD_SPV_WRITER
-    if (ends_with(filename, ".spv")) {
+    if (tint::utils::HasSuffix(filename, ".spv")) {
         return Format::kSpirv;
     }
-    if (ends_with(filename, ".spvasm")) {
+    if (tint::utils::HasSuffix(filename, ".spvasm")) {
         return Format::kSpvAsm;
     }
 #endif  // TINT_BUILD_SPV_WRITER
 
 #if TINT_BUILD_WGSL_WRITER
-    if (ends_with(filename, ".wgsl")) {
+    if (tint::utils::HasSuffix(filename, ".wgsl")) {
         return Format::kWgsl;
     }
 #endif  // TINT_BUILD_WGSL_WRITER
 
 #if TINT_BUILD_MSL_WRITER
-    if (ends_with(filename, ".metal")) {
+    if (tint::utils::HasSuffix(filename, ".metal")) {
         return Format::kMsl;
     }
 #endif  // TINT_BUILD_MSL_WRITER
 
 #if TINT_BUILD_HLSL_WRITER
-    if (ends_with(filename, ".hlsl")) {
+    if (tint::utils::HasSuffix(filename, ".hlsl")) {
         return Format::kHlsl;
     }
 #endif  // TINT_BUILD_HLSL_WRITER
@@ -388,6 +376,8 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             opts->dump_ir = true;
         } else if (arg == "--dump-ir-graph") {
             opts->dump_ir_graph = true;
+        } else if (arg == "--use-ir") {
+            opts->use_ir = true;
 #endif  // TINT_BUILD_IR
 #if TINT_BUILD_SYNTAX_TREE_WRITER
         } else if (arg == "--dump-ast") {
@@ -548,6 +538,9 @@ bool GenerateSpirv(const tint::Program* program, const Options& options) {
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
     gen_options.external_texture_options.bindings_map =
         tint::cmd::GenerateExternalTextureBindings(program);
+#if TINT_BUILD_IR
+    gen_options.use_tint_ir = options.use_ir;
+#endif
     auto result = tint::writer::spirv::Generate(program, gen_options);
     if (!result.success) {
         tint::cmd::PrintWGSL(std::cerr, *program);
@@ -954,31 +947,33 @@ int main(int argc, const char** argv) {
         /// Returns true on success, false on error (program will immediately exit)
         std::function<bool(tint::inspector::Inspector& inspector,
                            tint::transform::Manager& manager,
-                           tint::transform::DataMap& inputs)>
+                           tint::ast::transform::DataMap& inputs)>
             make;
     };
     std::vector<TransformFactory> transforms = {
         {"first_index_offset",
-         [](tint::inspector::Inspector&, tint::transform::Manager& m, tint::transform::DataMap& i) {
-             i.Add<tint::transform::FirstIndexOffset::BindingPoint>(0, 0);
-             m.Add<tint::transform::FirstIndexOffset>();
+         [](tint::inspector::Inspector&, tint::transform::Manager& m,
+            tint::ast::transform::DataMap& i) {
+             i.Add<tint::ast::transform::FirstIndexOffset::BindingPoint>(0, 0);
+             m.Add<tint::ast::transform::FirstIndexOffset>();
              return true;
          }},
         {"renamer",
-         [](tint::inspector::Inspector&, tint::transform::Manager& m, tint::transform::DataMap&) {
-             m.Add<tint::transform::Renamer>();
+         [](tint::inspector::Inspector&, tint::transform::Manager& m,
+            tint::ast::transform::DataMap&) {
+             m.Add<tint::ast::transform::Renamer>();
              return true;
          }},
         {"robustness",
          [&](tint::inspector::Inspector&, tint::transform::Manager&,
-             tint::transform::DataMap&) {  // enabled via writer option
+             tint::ast::transform::DataMap&) {  // enabled via writer option
              options.enable_robustness = true;
              return true;
          }},
         {"substitute_override",
          [&](tint::inspector::Inspector& inspector, tint::transform::Manager& m,
-             tint::transform::DataMap& i) {
-             tint::transform::SubstituteOverride::Config cfg;
+             tint::ast::transform::DataMap& i) {
+             tint::ast::transform::SubstituteOverride::Config cfg;
 
              std::unordered_map<tint::OverrideId, double> values;
              values.reserve(options.overrides.size());
@@ -1005,8 +1000,8 @@ int main(int argc, const char** argv) {
 
              cfg.map = std::move(values);
 
-             i.Add<tint::transform::SubstituteOverride::Config>(cfg);
-             m.Add<tint::transform::SubstituteOverride>();
+             i.Add<tint::ast::transform::SubstituteOverride::Config>(cfg);
+             m.Add<tint::ast::transform::SubstituteOverride>();
              return true;
          }},
     };
@@ -1023,7 +1018,8 @@ int main(int argc, const char** argv) {
 #if TINT_BUILD_IR
         usage +=
             "  --dump-ir                 -- Writes the IR to stdout\n"
-            "  --dump-ir-graph           -- Writes the IR graph to 'tint.dot' as a dot graph\n";
+            "  --dump-ir-graph           -- Writes the IR graph to 'tint.dot' as a dot graph\n"
+            "  --use-ir                  -- Use the IR for writers and transforms when possible\n";
 #endif  // TINT_BUILD_IR
 #if TINT_BUILD_SYNTAX_TREE_WRITER
         usage += "  --dump-ast                -- Writes the AST to stdout\n";
@@ -1079,7 +1075,7 @@ int main(int argc, const char** argv) {
 
 #if TINT_BUILD_IR
     if (options.dump_ir || options.dump_ir_graph) {
-        auto result = tint::ir::Converter::FromProgram(program.get());
+        auto result = tint::ir::FromProgram(program.get());
         if (!result) {
             std::cerr << "Failed to build IR from program: " << result.Failure() << std::endl;
         } else {
@@ -1102,43 +1098,43 @@ int main(int argc, const char** argv) {
     }
 
     tint::transform::Manager transform_manager;
-    tint::transform::DataMap transform_inputs;
+    tint::ast::transform::DataMap transform_inputs;
 
     // Renaming must always come first
     switch (options.format) {
         case Format::kMsl: {
 #if TINT_BUILD_MSL_WRITER
-            transform_inputs.Add<tint::transform::Renamer::Config>(
-                options.rename_all ? tint::transform::Renamer::Target::kAll
-                                   : tint::transform::Renamer::Target::kMslKeywords,
+            transform_inputs.Add<tint::ast::transform::Renamer::Config>(
+                options.rename_all ? tint::ast::transform::Renamer::Target::kAll
+                                   : tint::ast::transform::Renamer::Target::kMslKeywords,
                 /* preserve_unicode */ false);
-            transform_manager.Add<tint::transform::Renamer>();
+            transform_manager.Add<tint::ast::transform::Renamer>();
 #endif  // TINT_BUILD_MSL_WRITER
             break;
         }
 #if TINT_BUILD_GLSL_WRITER
         case Format::kGlsl: {
-            transform_inputs.Add<tint::transform::Renamer::Config>(
-                options.rename_all ? tint::transform::Renamer::Target::kAll
-                                   : tint::transform::Renamer::Target::kGlslKeywords,
+            transform_inputs.Add<tint::ast::transform::Renamer::Config>(
+                options.rename_all ? tint::ast::transform::Renamer::Target::kAll
+                                   : tint::ast::transform::Renamer::Target::kGlslKeywords,
                 /* preserve_unicode */ false);
-            transform_manager.Add<tint::transform::Renamer>();
+            transform_manager.Add<tint::ast::transform::Renamer>();
             break;
         }
 #endif  // TINT_BUILD_GLSL_WRITER
         case Format::kHlsl: {
 #if TINT_BUILD_HLSL_WRITER
-            transform_inputs.Add<tint::transform::Renamer::Config>(
-                options.rename_all ? tint::transform::Renamer::Target::kAll
-                                   : tint::transform::Renamer::Target::kHlslKeywords,
+            transform_inputs.Add<tint::ast::transform::Renamer::Config>(
+                options.rename_all ? tint::ast::transform::Renamer::Target::kAll
+                                   : tint::ast::transform::Renamer::Target::kHlslKeywords,
                 /* preserve_unicode */ false);
-            transform_manager.Add<tint::transform::Renamer>();
+            transform_manager.Add<tint::ast::transform::Renamer>();
 #endif  // TINT_BUILD_HLSL_WRITER
             break;
         }
         default: {
             if (options.rename_all) {
-                transform_manager.Add<tint::transform::Renamer>();
+                transform_manager.Add<tint::ast::transform::Renamer>();
             }
             break;
         }
@@ -1173,8 +1169,8 @@ int main(int argc, const char** argv) {
     }
 
     if (options.emit_single_entry_point) {
-        transform_manager.append(std::make_unique<tint::transform::SingleEntryPoint>());
-        transform_inputs.Add<tint::transform::SingleEntryPoint::Config>(options.ep_name);
+        transform_manager.append(std::make_unique<tint::ast::transform::SingleEntryPoint>());
+        transform_inputs.Add<tint::ast::transform::SingleEntryPoint::Config>(options.ep_name);
     }
 
     auto out = transform_manager.Run(program.get(), std::move(transform_inputs));

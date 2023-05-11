@@ -18,7 +18,6 @@
 #include "src/tint/builtin/function.h"
 #include "src/tint/ir/call.h"
 #include "src/tint/utils/castable.h"
-#include "src/tint/utils/string_stream.h"
 
 namespace tint::ir {
 
@@ -26,14 +25,10 @@ namespace tint::ir {
 class Builtin : public utils::Castable<Builtin, Call> {
   public:
     /// Constructor
-    /// @param id the instruction id
-    /// @param type the result type
+    /// @param res_type the result type
     /// @param func the builtin function
     /// @param args the conversion arguments
-    Builtin(uint32_t id,
-            const type::Type* type,
-            builtin::Function func,
-            utils::VectorRef<Value*> args);
+    Builtin(const type::Type* res_type, builtin::Function func, utils::VectorRef<Value*> args);
     Builtin(const Builtin& inst) = delete;
     Builtin(Builtin&& inst) = delete;
     ~Builtin() override;
@@ -43,11 +38,6 @@ class Builtin : public utils::Castable<Builtin, Call> {
 
     /// @returns the builtin function
     builtin::Function Func() const { return func_; }
-
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @returns the stream
-    utils::StringStream& ToInstruction(utils::StringStream& out) const override;
 
   private:
     const builtin::Function func_;

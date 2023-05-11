@@ -19,13 +19,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Discard);
 
 namespace tint::ir {
 
-Discard::Discard() : Base() {}
+Discard::Discard() : Base(nullptr, utils::Empty) {}
 
 Discard::~Discard() = default;
-
-utils::StringStream& Discard::ToInstruction(utils::StringStream& out) const {
-    out << "discard";
-    return out;
-}
 
 }  // namespace tint::ir

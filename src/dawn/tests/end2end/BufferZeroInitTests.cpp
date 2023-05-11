@@ -1382,6 +1382,7 @@ TEST_P(BufferZeroInitTest, ResolveQuerySet) {
 }
 
 DAWN_INSTANTIATE_TEST(BufferZeroInitTest,
+                      D3D11Backend({"nonzero_clear_resources_on_creation_for_testing"}),
                       D3D12Backend({"nonzero_clear_resources_on_creation_for_testing"}),
                       MetalBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       OpenGLBackend({"nonzero_clear_resources_on_creation_for_testing"}),

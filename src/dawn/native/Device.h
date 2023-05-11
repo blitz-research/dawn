@@ -359,10 +359,12 @@ class DeviceBase : public RefCountedWithExternalCount {
     bool IsToggleEnabled(Toggle toggle) const;
     bool IsValidationEnabled() const;
     bool IsRobustnessEnabled() const;
+    bool AllowUnsafeAPIs() const;
     size_t GetLazyClearCountForTesting();
     void IncrementLazyClearCountForTesting();
     size_t GetDeprecationWarningCountForTesting();
     void EmitDeprecationWarning(const std::string& warning);
+    void EmitWarningOnce(const std::string& message);
     void EmitLog(const char* message);
     void EmitLog(WGPULoggingType loggingType, const char* message);
     void APIForceLoss(wgpu::DeviceLostReason reason, const char* message);
@@ -595,6 +597,8 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     struct DeprecationWarnings;
     std::unique_ptr<DeprecationWarnings> mDeprecationWarnings;
+
+    std::unordered_set<std::string> mWarnings;
 
     State mState = State::BeingCreated;
 

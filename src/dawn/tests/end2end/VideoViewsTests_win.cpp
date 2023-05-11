@@ -44,21 +44,13 @@ class VideoViewsTestBackendWin : public VideoViewsTestBackend {
         mWGPUDevice = device;
 
         // Create the D3D11 device/contexts that will be used in subsequent tests
-        ComPtr<ID3D12Device> d3d12Device = dawn::native::d3d12::GetD3D12Device(device);
-
-        const LUID adapterLuid = d3d12Device->GetAdapterLuid();
-
-        ComPtr<IDXGIFactory4> dxgiFactory;
-        HRESULT hr = ::CreateDXGIFactory2(0, IID_PPV_ARGS(&dxgiFactory));
-        ASSERT_EQ(hr, S_OK);
-
-        ComPtr<IDXGIAdapter> dxgiAdapter;
-        hr = dxgiFactory->EnumAdapterByLuid(adapterLuid, IID_PPV_ARGS(&dxgiAdapter));
-        ASSERT_EQ(hr, S_OK);
+        ComPtr<IDXGIAdapter> dxgiAdapter =
+            dawn::native::d3d::GetDXGIAdapter(wgpuDeviceGetAdapter(device));
 
         ComPtr<ID3D11Device> d3d11Device;
         D3D_FEATURE_LEVEL d3dFeatureLevel;
         ComPtr<ID3D11DeviceContext> d3d11DeviceContext;
+        HRESULT hr;
         hr = ::D3D11CreateDevice(dxgiAdapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0, nullptr, 0,
                                  D3D11_SDK_VERSION, &d3d11Device, &d3dFeatureLevel,
                                  &d3d11DeviceContext);
@@ -169,22 +161,22 @@ class VideoViewsTestBackendWin : public VideoViewsTestBackend {
         ASSERT(hr == S_OK);
 
         // Open the DX11 texture in Dawn from the shared handle and return it as a WebGPU texture.
-        dawn::native::d3d12::ExternalImageDescriptorDXGISharedHandle externalImageDesc;
+        dawn::native::d3d::ExternalImageDescriptorDXGISharedHandle externalImageDesc;
         externalImageDesc.cTextureDescriptor =
             reinterpret_cast<const WGPUTextureDescriptor*>(&textureDesc);
         externalImageDesc.sharedHandle = sharedHandle;
 
-        std::unique_ptr<dawn::native::d3d12::ExternalImageDXGI> externalImage =
-            dawn::native::d3d12::ExternalImageDXGI::Create(mWGPUDevice, &externalImageDesc);
+        std::unique_ptr<dawn::native::d3d::ExternalImageDXGI> externalImage =
+            dawn::native::d3d::ExternalImageDXGI::Create(mWGPUDevice, &externalImageDesc);
 
         // Handle is no longer needed once resources are created.
         ::CloseHandle(sharedHandle);
 
-        dawn::native::d3d12::ExternalImageDXGIFenceDescriptor fenceDesc;
+        dawn::native::d3d::ExternalImageDXGIFenceDescriptor fenceDesc;
         fenceDesc.fenceHandle = fenceSharedHandle;
         fenceDesc.fenceValue = 1;
 
-        dawn::native::d3d12::ExternalImageDXGIBeginAccessDescriptor externalAccessDesc;
+        dawn::native::d3d::ExternalImageDXGIBeginAccessDescriptor externalAccessDesc;
         externalAccessDesc.isInitialized = true;
         externalAccessDesc.usage = static_cast<WGPUTextureUsageFlags>(textureDesc.usage);
         externalAccessDesc.waitFences = {};
