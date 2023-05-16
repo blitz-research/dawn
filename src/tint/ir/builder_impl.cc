@@ -31,6 +31,7 @@
 #include "src/tint/ast/const_assert.h"
 #include "src/tint/ast/continue_statement.h"
 #include "src/tint/ast/discard_statement.h"
+#include "src/tint/ast/enable.h"
 #include "src/tint/ast/float_literal_expression.h"
 #include "src/tint/ast/for_loop_statement.h"
 #include "src/tint/ast/function.h"
@@ -182,10 +183,10 @@ ResultType BuilderImpl::Build() {
                 EmitVariable(var);
             },
             [&](const ast::Function* func) { EmitFunction(func); },
-            // [&](const ast::Enable*) {
-            // TODO(dsinclair): Implement? I think these need to be passed along so further stages
-            // know what is enabled.
-            // },
+            [&](const ast::Enable*) {
+                // TODO(dsinclair): Implement? I think these need to be passed along so further
+                // stages know what is enabled.
+            },
             [&](const ast::ConstAssert*) {
                 // Evaluated by the resolver, drop from the IR.
             },
@@ -197,21 +198,23 @@ ResultType BuilderImpl::Build() {
         return utils::Failure;
     }
 
-    return ResultType{std::move(builder.ir)};
+    return ResultType{std::move(mod)};
 }
 
 void BuilderImpl::EmitFunction(const ast::Function* ast_func) {
     // The flow stack should have been emptied when the previous function finished building.
     TINT_ASSERT(IR, flow_stack.IsEmpty());
 
-    auto* ir_func = builder.CreateFunction();
-    ir_func->name = CloneSymbol(ast_func->name->symbol);
+    const auto* sem = program_->Sem().Get(ast_func);
+
+    auto* ir_func = builder.CreateFunction(CloneSymbol(ast_func->name->symbol),
+                                           sem->ReturnType()->Clone(clone_ctx_.type_ctx));
+
     current_function_ = ir_func;
     builder.ir.functions.Push(ir_func);
 
     ast_to_flow_[ast_func] = ir_func;
 
-    const auto* sem = program_->Sem().Get(ast_func);
     if (ast_func->IsEntryPoint()) {
         builder.ir.entry_points.Push(ir_func);
 
@@ -279,7 +282,6 @@ void BuilderImpl::EmitFunction(const ast::Function* ast_func) {
                 });
         }
     }
-    ir_func->return_type = sem->ReturnType()->Clone(clone_ctx_.type_ctx);
     ir_func->return_location = sem->ReturnLocation();
 
     {
@@ -429,14 +431,12 @@ void BuilderImpl::EmitBlock(const ast::BlockStatement* block) {
 }
 
 void BuilderImpl::EmitIf(const ast::IfStatement* stmt) {
-    auto* if_node = builder.CreateIf();
-
     // Emit the if condition into the end of the preceding block
     auto reg = EmitExpression(stmt->condition);
     if (!reg) {
         return;
     }
-    if_node->condition = reg.Get();
+    auto* if_node = builder.CreateIf(reg.Get());
 
     BranchTo(if_node);
 
@@ -524,13 +524,12 @@ void BuilderImpl::EmitWhile(const ast::WhileStatement* stmt) {
         }
 
         // Create an `if (cond) {} else {break;}` control flow
-        auto* if_node = builder.CreateIf();
+        auto* if_node = builder.CreateIf(reg.Get());
         TINT_ASSERT(IR, if_node->true_.target->Is<Block>());
         builder.Branch(if_node->true_.target->As<Block>(), if_node->merge.target, utils::Empty);
 
         TINT_ASSERT(IR, if_node->false_.target->Is<Block>());
         builder.Branch(if_node->false_.target->As<Block>(), loop_node->merge.target, utils::Empty);
-        if_node->condition = reg.Get();
 
         BranchTo(if_node);
 
@@ -576,14 +575,14 @@ void BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
             }
 
             // Create an `if (cond) {} else {break;}` control flow
-            auto* if_node = builder.CreateIf();
+            auto* if_node = builder.CreateIf(reg.Get());
+
             TINT_ASSERT(IR, if_node->true_.target->Is<Block>());
             builder.Branch(if_node->true_.target->As<Block>(), if_node->merge.target, utils::Empty);
 
             TINT_ASSERT(IR, if_node->false_.target->Is<Block>());
             builder.Branch(if_node->false_.target->As<Block>(), loop_node->merge.target,
                            utils::Empty);
-            if_node->condition = reg.Get();
 
             BranchTo(if_node);
             current_flow_block = if_node->merge.target->As<Block>();
@@ -604,14 +603,12 @@ void BuilderImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
 }
 
 void BuilderImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
-    auto* switch_node = builder.CreateSwitch();
-
     // Emit the condition into the preceding block
     auto reg = EmitExpression(stmt->condition);
     if (!reg) {
         return;
     }
-    switch_node->condition = reg.Get();
+    auto* switch_node = builder.CreateSwitch(reg.Get());
 
     BranchTo(switch_node);
 
@@ -691,14 +688,12 @@ void BuilderImpl::EmitDiscard(const ast::DiscardStatement*) {
 }
 
 void BuilderImpl::EmitBreakIf(const ast::BreakIfStatement* stmt) {
-    auto* if_node = builder.CreateIf();
-
     // Emit the break-if condition into the end of the preceding block
     auto reg = EmitExpression(stmt->condition);
     if (!reg) {
         return;
     }
-    if_node->condition = reg.Get();
+    auto* if_node = builder.CreateIf(reg.Get());
 
     BranchTo(if_node);
 
@@ -875,8 +870,7 @@ utils::Result<Value*> BuilderImpl::EmitShortCircuit(const ast::BinaryExpression*
     auto* lhs_store = builder.Store(result_var, lhs.Get());
     current_flow_block->instructions.Push(lhs_store);
 
-    auto* if_node = builder.CreateIf();
-    if_node->condition = lhs.Get();
+    auto* if_node = builder.CreateIf(lhs.Get());
     BranchTo(if_node);
 
     utils::Result<Value*> rhs;
