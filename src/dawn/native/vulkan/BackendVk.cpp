@@ -516,7 +516,7 @@ ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> Backend::DiscoverAdapters(
         }
         const std::vector<VkPhysicalDevice>& vkPhysicalDevices =
             mVulkanInstances[icd]->GetVkPhysicalDevices();
-        for (uint32_t i = 0; i < physicalDevices.size(); ++i) {
+        for (uint32_t i = 0; i < vkPhysicalDevices.size(); ++i) {
             Ref<PhysicalDevice> physicalDevice = AcquireRef(
                 new PhysicalDevice(instance, mVulkanInstances[icd].Get(), vkPhysicalDevices[i],
                                    options->openXRConfig));
