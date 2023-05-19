@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef SRC_TINT_WRITER_SPIRV_GENERATOR_IMPL_IR_H_
-#define SRC_TINT_WRITER_SPIRV_GENERATOR_IMPL_IR_H_
+#ifndef SRC_TINT_WRITER_SPIRV_IR_GENERATOR_IMPL_IR_H_
+#define SRC_TINT_WRITER_SPIRV_IR_GENERATOR_IMPL_IR_H_
 
 #include <vector>
 
@@ -30,9 +30,13 @@
 namespace tint::ir {
 class Binary;
 class Block;
+class If;
 class Function;
+class Load;
 class Module;
+class Store;
 class Value;
+class Var;
 }  // namespace tint::ir
 namespace tint::type {
 class Type;
@@ -47,7 +51,7 @@ class GeneratorImplIr {
     /// @param module the Tint IR module to generate
     /// @param zero_init_workgroup_memory `true` to initialize all the variables in the Workgroup
     ///                                   storage class with OpConstantNull
-    GeneratorImplIr(const ir::Module* module, bool zero_init_workgroup_memory);
+    GeneratorImplIr(ir::Module* module, bool zero_init_workgroup_memory);
 
     /// @returns true on successful generation; false otherwise
     bool Generate();
@@ -76,6 +80,11 @@ class GeneratorImplIr {
     /// @returns the result ID of the value
     uint32_t Value(const ir::Value* value);
 
+    /// Get the ID of the label for `block`.
+    /// @param block the block to get the label ID for
+    /// @returns the ID of the block's label
+    uint32_t Label(const ir::Block* block);
+
     /// Emit a function.
     /// @param func the function to emit
     void EmitFunction(const ir::Function* func);
@@ -89,13 +98,36 @@ class GeneratorImplIr {
     /// @param block the block to emit
     void EmitBlock(const ir::Block* block);
 
+    /// Emit an `if` flow node.
+    /// @param i the if node to emit
+    void EmitIf(const ir::If* i);
+
     /// Emit a binary instruction.
     /// @param binary the binary instruction to emit
     /// @returns the result ID of the instruction
     uint32_t EmitBinary(const ir::Binary* binary);
 
+    /// Emit a load instruction.
+    /// @param load the load instruction to emit
+    /// @returns the result ID of the instruction
+    uint32_t EmitLoad(const ir::Load* load);
+
+    /// Emit a store instruction.
+    /// @param store the store instruction to emit
+    void EmitStore(const ir::Store* store);
+
+    /// Emit a var instruction.
+    /// @param var the var instruction to emit
+    /// @returns the result ID of the instruction
+    uint32_t EmitVar(const ir::Var* var);
+
   private:
-    const ir::Module* ir_;
+    /// Get the result ID of the constant `constant`, emitting its instruction if necessary.
+    /// @param constant the constant to get the ID for
+    /// @returns the result ID of the constant
+    uint32_t Constant(const constant::Value* constant);
+
+    ir::Module* ir_;
     spirv::Module module_;
     BinaryWriter writer_;
     diag::List diagnostics_;
@@ -125,25 +157,6 @@ class GeneratorImplIr {
         }
     };
 
-    /// ConstantHasher provides a hash function for an ir::Constant pointer, hashing the value
-    /// instead of the pointer itself.
-    struct ConstantHasher {
-        /// @param c the ir::Constant pointer to create a hash for
-        /// @return the hash value
-        inline std::size_t operator()(const ir::Constant* c) const { return c->value->Hash(); }
-    };
-
-    /// ConstantEquals provides an equality function for two ir::Constant pointers, comparing their
-    /// values instead of the pointers.
-    struct ConstantEquals {
-        /// @param a the first ir::Constant pointer to compare
-        /// @param b the second ir::Constant pointer to compare
-        /// @return the hash value
-        inline bool operator()(const ir::Constant* a, const ir::Constant* b) const {
-            return a->value->Equal(b->value);
-        }
-    };
-
     /// The map of types to their result IDs.
     utils::Hashmap<const type::Type*, uint32_t, 8> types_;
 
@@ -151,10 +164,13 @@ class GeneratorImplIr {
     utils::Hashmap<FunctionType, uint32_t, 8, FunctionType::Hasher> function_types_;
 
     /// The map of constants to their result IDs.
-    utils::Hashmap<const ir::Constant*, uint32_t, 16, ConstantHasher, ConstantEquals> constants_;
+    utils::Hashmap<const constant::Value*, uint32_t, 16> constants_;
 
     /// The map of instructions to their result IDs.
     utils::Hashmap<const ir::Instruction*, uint32_t, 8> instructions_;
+
+    /// The map of blocks to the IDs of their label instructions.
+    utils::Hashmap<const ir::Block*, uint32_t, 8> block_labels_;
 
     /// The current function that is being emitted.
     Function current_function_;
@@ -164,4 +180,4 @@ class GeneratorImplIr {
 
 }  // namespace tint::writer::spirv
 
-#endif  // SRC_TINT_WRITER_SPIRV_GENERATOR_IMPL_IR_H_
+#endif  // SRC_TINT_WRITER_SPIRV_IR_GENERATOR_IMPL_IR_H_

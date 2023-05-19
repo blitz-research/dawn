@@ -127,11 +127,11 @@
 
 struct GLFWwindow;
 
-namespace utils {
+namespace dawn::utils {
 class PlatformDebugLogger;
 class TerribleCommandBuffer;
 class WireHelper;
-}  // namespace utils
+}  // namespace dawn::utils
 
 namespace detail {
 class Expectation;
@@ -183,11 +183,12 @@ class DawnTestEnvironment : public testing::Environment {
     bool RunSuppressedTests() const;
 
   protected:
+    std::unique_ptr<dawn::native::Instance> CreateInstanceAndDiscoverAdapters(
+        dawn::platform::Platform* platform = nullptr);
     std::unique_ptr<dawn::native::Instance> mInstance;
 
   private:
     void ParseArgs(int argc, char** argv);
-    std::unique_ptr<dawn::native::Instance> CreateInstanceAndDiscoverAdapters();
     void SelectPreferredAdapterProperties(const dawn::native::Instance* instance);
     void PrintTestConfigurationAndAdapterInfo(dawn::native::Instance* instance) const;
 
@@ -213,7 +214,7 @@ class DawnTestEnvironment : public testing::Environment {
     std::vector<wgpu::AdapterType> mDevicePreferences;
     std::vector<TestAdapterProperties> mAdapterProperties;
 
-    std::unique_ptr<utils::PlatformDebugLogger> mPlatformDebugLogger;
+    std::unique_ptr<dawn::utils::PlatformDebugLogger> mPlatformDebugLogger;
 };
 
 class DawnTestBase {
@@ -351,8 +352,9 @@ class DawnTestBase {
                                               uint32_t level = 0,
                                               wgpu::TextureAspect aspect = wgpu::TextureAspect::All,
                                               uint32_t bytesPerRow = 0) {
-        uint32_t texelBlockSize = utils::GetTexelBlockSizeInBytes(format);
-        uint32_t texelComponentCount = utils::GetWGSLRenderableColorTextureComponentCount(format);
+        uint32_t texelBlockSize = dawn::utils::GetTexelBlockSizeInBytes(format);
+        uint32_t texelComponentCount =
+            dawn::utils::GetWGSLRenderableColorTextureComponentCount(format);
 
         return AddTextureExpectationImpl(
             file, line, std::move(targetDevice),
@@ -579,19 +581,24 @@ class DawnTestBase {
     wgpu::SupportedLimits GetAdapterLimits();
     wgpu::SupportedLimits GetSupportedLimits();
 
+    void* GetUniqueUserdata();
+
   private:
-    utils::ScopedAutoreleasePool mObjCAutoreleasePool;
+    dawn::utils::ScopedAutoreleasePool mObjCAutoreleasePool;
     AdapterTestParam mParam;
-    std::unique_ptr<utils::WireHelper> mWireHelper;
+    std::unique_ptr<dawn::utils::WireHelper> mWireHelper;
     wgpu::Instance mInstance;
     wgpu::Adapter mAdapter;
+
+    // Helps generate unique userdata values passed to deviceLostUserdata.
+    std::atomic<uintptr_t> mNextUniqueUserdata = 0;
 
     // Isolation keys are not exposed to the wire client. Device creation in the tests from
     // the client first push the key into this queue, which is then consumed by the server.
     std::queue<std::string> mNextIsolationKeyQueue;
 
     // Internal device creation function for default device creation with some optional overrides.
-    WGPUDevice CreateDeviceImpl(std::string isolationKey);
+    WGPUDevice CreateDeviceImpl(std::string isolationKey, const WGPUDeviceDescriptor* descriptor);
 
     std::ostringstream& AddTextureExpectationImpl(const char* file,
                                                   int line,
@@ -830,7 +837,7 @@ extern template class ExpectEq<uint8_t>;
 extern template class ExpectEq<int16_t>;
 extern template class ExpectEq<uint32_t>;
 extern template class ExpectEq<uint64_t>;
-extern template class ExpectEq<utils::RGBA8>;
+extern template class ExpectEq<dawn::utils::RGBA8>;
 extern template class ExpectEq<float>;
 extern template class ExpectEq<float, uint16_t>;
 
@@ -852,7 +859,7 @@ class ExpectBetweenColors : public Expectation {
 // A color is considered between color0 and color1 when all channel values are within range of
 // each counterparts. It doesn't matter which value is higher or lower. Essentially color =
 // lerp(color0, color1, t) where t is [0,1]. But I don't want to be too strict here.
-extern template class ExpectBetweenColors<utils::RGBA8>;
+extern template class ExpectBetweenColors<dawn::utils::RGBA8>;
 
 class CustomTextureExpectation : public Expectation {
   public:

@@ -18,6 +18,7 @@
 #include <string>
 
 #include "src/tint/constant/value.h"
+#include "src/tint/ir/constant.h"
 #include "src/tint/ir/function.h"
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/value.h"
@@ -67,16 +68,12 @@ class Module {
     /// The flow node allocator
     utils::BlockAllocator<FlowNode> flow_nodes;
     /// The constant allocator
-    utils::BlockAllocator<constant::Value> constants;
+    utils::BlockAllocator<constant::Value> constants_arena;
     /// The value allocator
     utils::BlockAllocator<Value> values;
-    /// The instruction allocator
-    utils::BlockAllocator<Instruction> instructions;
 
     /// List of functions in the program
     utils::Vector<Function*, 8> functions;
-    /// List of indexes into the functions list for the entry points
-    utils::Vector<Function*, 8> entry_points;
 
     /// The block containing module level declarations, if any exist.
     Block* root_block = nullptr;
@@ -86,6 +83,29 @@ class Module {
 
     /// The symbol table for the module
     SymbolTable symbols{prog_id_};
+
+    /// ConstantHasher provides a hash function for a constant::Value pointer, hashing the value
+    /// instead of the pointer itself.
+    struct ConstantHasher {
+        /// @param c the constant pointer to create a hash for
+        /// @return the hash value
+        inline std::size_t operator()(const constant::Value* c) const { return c->Hash(); }
+    };
+
+    /// ConstantEquals provides an equality function for two constant::Value pointers, comparing
+    /// their values instead of the pointers.
+    struct ConstantEquals {
+        /// @param a the first constant pointer to compare
+        /// @param b the second constant pointer to compare
+        /// @return the hash value
+        inline bool operator()(const constant::Value* a, const constant::Value* b) const {
+            return a->Equal(b);
+        }
+    };
+
+    /// The map of constant::Value to their ir::Constant.
+    utils::Hashmap<const constant::Value*, ir::Constant*, 16, ConstantHasher, ConstantEquals>
+        constants;
 };
 
 }  // namespace tint::ir

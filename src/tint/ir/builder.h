@@ -20,14 +20,17 @@
 #include "src/tint/constant/scalar.h"
 #include "src/tint/ir/binary.h"
 #include "src/tint/ir/bitcast.h"
+#include "src/tint/ir/block_param.h"
 #include "src/tint/ir/builtin.h"
 #include "src/tint/ir/constant.h"
 #include "src/tint/ir/construct.h"
 #include "src/tint/ir/convert.h"
 #include "src/tint/ir/discard.h"
 #include "src/tint/ir/function.h"
+#include "src/tint/ir/function_param.h"
 #include "src/tint/ir/function_terminator.h"
 #include "src/tint/ir/if.h"
+#include "src/tint/ir/load.h"
 #include "src/tint/ir/loop.h"
 #include "src/tint/ir/module.h"
 #include "src/tint/ir/root_terminator.h"
@@ -67,8 +70,13 @@ class Builder {
     /// Creates a function flow node
     /// @param name the function name
     /// @param return_type the function return type
+    /// @param stage the function stage
+    /// @param wg_size the workgroup_size
     /// @returns the flow node
-    Function* CreateFunction(Symbol name, type::Type* return_type);
+    Function* CreateFunction(Symbol name,
+                             type::Type* return_type,
+                             Function::PipelineStage stage = Function::PipelineStage::kUndefined,
+                             std::optional<std::array<uint32_t, 3>> wg_size = {});
 
     /// Creates an if flow node
     /// @param condition the if condition
@@ -90,26 +98,20 @@ class Builder {
     /// @returns the start block for the case flow node
     Block* CreateCase(Switch* s, utils::VectorRef<Switch::CaseSelector> selectors);
 
-    /// Branches the given block to the given flow node.
-    /// @param from the block to branch from
-    /// @param to the node to branch too
-    /// @param args arguments to the branch
-    void Branch(Block* from, FlowNode* to, utils::VectorRef<Value*> args);
-
     /// Creates a constant::Value
     /// @param args the arguments
     /// @returns the new constant value
     template <typename T, typename... ARGS>
     utils::traits::EnableIf<utils::traits::IsTypeOrDerived<T, constant::Value>, const T>* create(
         ARGS&&... args) {
-        return ir.constants.Create<T>(std::forward<ARGS>(args)...);
+        return ir.constants_arena.Create<T>(std::forward<ARGS>(args)...);
     }
 
     /// Creates a new ir::Constant
     /// @param val the constant value
     /// @returns the new constant
     ir::Constant* Constant(const constant::Value* val) {
-        return ir.values.Create<ir::Constant>(val);
+        return ir.constants.GetOrCreate(val, [&]() { return ir.values.Create<ir::Constant>(val); });
     }
 
     /// Creates a ir::Constant for an i32 Scalar
@@ -153,7 +155,7 @@ class Builder {
     /// @param lhs the left-hand-side of the operation
     /// @param rhs the right-hand-side of the operation
     /// @returns the operation
-    Binary* CreateBinary(Binary::Kind kind, const type::Type* type, Value* lhs, Value* rhs);
+    Binary* CreateBinary(enum Binary::Kind kind, const type::Type* type, Value* lhs, Value* rhs);
 
     /// Creates an And operation
     /// @param type the result type of the expression
@@ -272,25 +274,13 @@ class Builder {
     /// @param type the result type of the binary expression
     /// @param val the value of the operation
     /// @returns the operation
-    Unary* CreateUnary(Unary::Kind kind, const type::Type* type, Value* val);
-
-    /// Creates an AddressOf operation
-    /// @param type the result type of the expression
-    /// @param val the value
-    /// @returns the operation
-    Unary* AddressOf(const type::Type* type, Value* val);
+    Unary* CreateUnary(enum Unary::Kind kind, const type::Type* type, Value* val);
 
     /// Creates a Complement operation
     /// @param type the result type of the expression
     /// @param val the value
     /// @returns the operation
     Unary* Complement(const type::Type* type, Value* val);
-
-    /// Creates an Indirection operation
-    /// @param type the result type of the expression
-    /// @param val the value
-    /// @returns the operation
-    Unary* Indirection(const type::Type* type, Value* val);
 
     /// Creates a Negation operation
     /// @param type the result type of the expression
@@ -345,7 +335,12 @@ class Builder {
                          builtin::Function func,
                          utils::VectorRef<Value*> args);
 
-    /// Creates an store instruction
+    /// Creates a load instruction
+    /// @param from the expression being loaded from
+    /// @returns the instruction
+    ir::Load* Load(Value* from);
+
+    /// Creates a store instruction
     /// @param to the expression being stored too
     /// @param from the expression being stored
     /// @returns the instruction
@@ -353,12 +348,18 @@ class Builder {
 
     /// Creates a new `var` declaration
     /// @param type the var type
-    /// @param address_space the address space
-    /// @param access the access mode
     /// @returns the instruction
-    ir::Var* Declare(const type::Type* type,
-                     builtin::AddressSpace address_space,
-                     builtin::Access access);
+    ir::Var* Declare(const type::Type* type);
+
+    /// Creates a new `BlockParam`
+    /// @param type the parameter type
+    /// @returns the value
+    ir::BlockParam* BlockParam(const type::Type* type);
+
+    /// Creates a new `FunctionParam`
+    /// @param type the parameter type
+    /// @returns the value
+    ir::FunctionParam* FunctionParam(const type::Type* type);
 
     /// Retrieves the root block for the module, creating if necessary
     /// @returns the root block

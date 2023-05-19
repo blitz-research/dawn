@@ -19,9 +19,13 @@
 #include "dawn/tests/unittests/validation/ValidationTest.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class ComputePipelineOverridableConstantsValidationTest : public ValidationTest {
   protected:
-    WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter) override {
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor deviceDescriptor) override {
         std::vector<const char*> enabledToggles;
         std::vector<const char*> disabledToggles;
 
@@ -35,7 +39,6 @@ class ComputePipelineOverridableConstantsValidationTest : public ValidationTest 
 
         const wgpu::FeatureName requiredFeatures[] = {wgpu::FeatureName::ShaderF16};
 
-        wgpu::DeviceDescriptor deviceDescriptor;
         deviceDescriptor.nextInChain = &deviceTogglesDesc;
         deviceDescriptor.requiredFeatures = requiredFeatures;
         deviceDescriptor.requiredFeaturesCount = 1;
@@ -385,3 +388,6 @@ TEST_F(ComputePipelineOverridableConstantsValidationTest, OutofRangeValue) {
         ASSERT_DEVICE_ERROR(TestCreatePipeline(constants));
     }
 }
+
+}  // anonymous namespace
+}  // namespace dawn

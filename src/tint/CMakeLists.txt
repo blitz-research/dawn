@@ -452,6 +452,8 @@ list(APPEND TINT_LIB_SRCS
   ast/transform/zero_init_workgroup_memory.h
   transform/manager.cc
   transform/manager.h
+  transform/transform.cc
+  transform/transform.h
   type/abstract_float.cc
   type/abstract_float.h
   type/abstract_int.cc
@@ -654,8 +656,8 @@ if(${TINT_BUILD_SPV_WRITER})
 
   if(${TINT_BUILD_IR})
     list(APPEND TINT_LIB_SRCS
-      writer/spirv/generator_impl_ir.cc
-      writer/spirv/generator_impl_ir.h
+      writer/spirv/ir/generator_impl_ir.cc
+      writer/spirv/ir/generator_impl_ir.h
     )
   endif()
 endif()
@@ -714,10 +716,10 @@ if(${TINT_BUILD_IR})
     ir/bitcast.h
     ir/block.cc
     ir/block.h
+    ir/block_param.cc
+    ir/block_param.h
     ir/builder.cc
     ir/builder.h
-    ir/builder_impl.cc
-    ir/builder_impl.h
     ir/builtin.cc
     ir/builtin.h
     ir/call.cc
@@ -740,12 +742,16 @@ if(${TINT_BUILD_IR})
     ir/flow_node.h
     ir/function.cc
     ir/function.h
+    ir/function_param.cc
+    ir/function_param.h
     ir/function_terminator.cc
     ir/function_terminator.h
     ir/if.cc
     ir/if.h
     ir/instruction.cc
     ir/instruction.h
+    ir/load.cc
+    ir/load.h
     ir/loop.cc
     ir/loop.h
     ir/module.cc
@@ -756,6 +762,8 @@ if(${TINT_BUILD_IR})
     ir/store.h
     ir/switch.cc
     ir/switch.h
+    ir/to_program.cc
+    ir/to_program.h
     ir/unary.cc
     ir/unary.h
     ir/user_call.cc
@@ -764,6 +772,10 @@ if(${TINT_BUILD_IR})
     ir/value.h
     ir/var.cc
     ir/var.h
+    ir/transform/add_empty_entry_point.cc
+    ir/transform/add_empty_entry_point.h
+    ir/transform/transform.cc
+    ir/transform/transform.h
   )
 endif()
 
@@ -994,6 +1006,7 @@ if(TINT_BUILD_TESTS)
     symbol_test.cc
     test_main.cc
     ast/transform/transform_test.cc
+    transform/manager_test.cc
     type/array_test.cc
     type/atomic_test.cc
     type/bool_test.cc
@@ -1229,12 +1242,14 @@ if(TINT_BUILD_TESTS)
 
     if(${TINT_BUILD_IR})
       list(APPEND TINT_TEST_SRCS
-        writer/spirv/generator_impl_binary_test.cc
-        writer/spirv/generator_impl_constant_test.cc
-        writer/spirv/generator_impl_function_test.cc
-        writer/spirv/generator_impl_ir_test.cc
-        writer/spirv/generator_impl_type_test.cc
-        writer/spirv/test_helper_ir.h
+        writer/spirv/ir/generator_impl_ir_binary_test.cc
+        writer/spirv/ir/generator_impl_ir_constant_test.cc
+        writer/spirv/ir/generator_impl_ir_function_test.cc
+        writer/spirv/ir/generator_impl_ir_if_test.cc
+        writer/spirv/ir/generator_impl_ir_test.cc
+        writer/spirv/ir/generator_impl_ir_type_test.cc
+        writer/spirv/ir/generator_impl_ir_var_test.cc
+        writer/spirv/ir/test_helper_ir.h
       )
     endif()
   endif()
@@ -1447,22 +1462,31 @@ if(TINT_BUILD_TESTS)
     list(APPEND TINT_TEST_SRCS
       ir/binary_test.cc
       ir/bitcast_test.cc
-      ir/builder_impl_binary_test.cc
-      ir/builder_impl_call_test.cc
-      ir/builder_impl_literal_test.cc
-      ir/builder_impl_materialize_test.cc
-      ir/builder_impl_store_test.cc
-      ir/builder_impl_test.cc
-      ir/builder_impl_unary_test.cc
-      ir/builder_impl_var_test.cc
       ir/constant_test.cc
       ir/discard_test.cc
+      ir/from_program_binary_test.cc
+      ir/from_program_call_test.cc
+      ir/from_program_literal_test.cc
+      ir/from_program_materialize_test.cc
+      ir/from_program_store_test.cc
+      ir/from_program_test.cc
+      ir/from_program_unary_test.cc
+      ir/from_program_var_test.cc
+      ir/load_test.cc
       ir/module_test.cc
       ir/store_test.cc
       ir/test_helper.h
+      ir/transform/add_empty_entry_point_test.cc
       ir/unary_test.cc
     )
   endif()
+
+  if (${TINT_BUILD_IR} AND ${TINT_BUILD_WGSL_READER} AND ${TINT_BUILD_WGSL_WRITER})
+    list(APPEND TINT_TEST_SRCS
+      ir/to_program_roundtrip_test.cc
+    )
+  endif()
+
 
   if (${TINT_BUILD_FUZZERS})
     list(APPEND TINT_TEST_SRCS

@@ -18,6 +18,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 // Clear the content of the result buffer into 0xFFFFFFFF.
 constexpr static uint64_t kSentinelValue = ~uint64_t(0u);
 constexpr static uint64_t kZero = 0u;
@@ -1088,10 +1091,6 @@ TEST_P(TimestampQueryTests, ResolveToBufferWithOffset) {
 // Test resolving a query set twice into the same destination buffer with potentially overlapping
 // ranges
 TEST_P(TimestampQueryTests, ResolveTwiceToSameBuffer) {
-    // TODO(dawn:1546): Intel D3D driver regression on Gen12 GPUs. The compute shader in two
-    // ResolveQuerySet execute wrong.
-    DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsIntelGen12());
-
     constexpr uint32_t kQueryCount = kMinCount + 2;
 
     wgpu::QuerySet querySet = CreateQuerySetForTimestamp(kQueryCount);
@@ -1112,6 +1111,9 @@ TEST_P(TimestampQueryTests, ResolveTwiceToSameBuffer) {
 // Test calling WriteTimestamp many times into separate query sets.
 // Regression test for crbug.com/dawn/1603.
 TEST_P(TimestampQueryTests, ManyWriteTimestampDistinctQuerySets) {
+    // TODO(crbug.com/dawn/1829): Avoid OOM on Apple GPUs.
+    DAWN_SUPPRESS_TEST_IF(IsApple());
+
     constexpr uint32_t kQueryCount = 100;
     // Write timestamp with a different query sets many times
     for (uint32_t i = 0; i < kQueryCount; ++i) {
@@ -1283,3 +1285,6 @@ DAWN_INSTANTIATE_TEST(TimestampQueryInsidePassesTests,
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

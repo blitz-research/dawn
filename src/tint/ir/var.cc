@@ -19,9 +19,14 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Var);
 
 namespace tint::ir {
 
-Var::Var(const type::Type* ty, builtin::AddressSpace addr_space, builtin::Access acc)
-    : type(ty), address_space(addr_space), access(acc) {}
+Var::Var(const type::Type* ty) : type_(ty) {}
 
 Var::~Var() = default;
+
+void Var::SetInitializer(Value* initializer) {
+    initializer_ = initializer;
+    initializer_->AddUsage(this);
+    // TODO(dsinclair): Probably should do a RemoveUsage on an existing initializer if set
+}
 
 }  // namespace tint::ir

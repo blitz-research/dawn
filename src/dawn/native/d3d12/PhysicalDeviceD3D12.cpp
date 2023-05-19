@@ -124,6 +124,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::RG11B10UfloatRenderable);
     EnableFeature(Feature::DepthClipControl);
     EnableFeature(Feature::SurfaceCapabilities);
+    EnableFeature(Feature::Float32Filterable);
 
     if (AreTimestampQueriesSupported()) {
         EnableFeature(Feature::TimestampQuery);
@@ -531,6 +532,18 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
             -1) {
             deviceToggles->Default(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
                                    true);
+        }
+    }
+
+    // D3D driver has a bug resolving overlapping queries to a same buffer on Intel Gen12 GPUs. This
+    // workaround is needed on the driver version >= 30.0.101.3413.
+    // TODO(crbug.com/dawn/1546): Remove the workaround when the bug is fixed in D3D driver.
+    if (gpu_info::IsIntelGen12LP(vendorId, deviceId) ||
+        gpu_info::IsIntelGen12HP(vendorId, deviceId)) {
+        const gpu_info::DriverVersion kDriverVersion = {30, 0, 101, 3413};
+        if (gpu_info::CompareWindowsDriverVersion(vendorId, GetDriverVersion(), kDriverVersion) !=
+            -1) {
+            deviceToggles->Default(Toggle::ClearBufferBeforeResolveQueries, true);
         }
     }
 

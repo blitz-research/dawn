@@ -356,6 +356,48 @@ libtint_source_set("libtint_inspector_src") {
 
 libtint_source_set("libtint_transform_src") {
   sources = [
+    "transform/transform.cc",
+    "transform/transform.h",
+  ]
+  deps = [ ":libtint_utils_src" ]
+}
+
+libtint_source_set("libtint_ast_transform_base_src") {
+  sources = [
+    "ast/transform/transform.cc",
+    "ast/transform/transform.h",
+  ]
+  deps = [
+    ":libtint_builtins_src",
+    ":libtint_program_src",
+    ":libtint_sem_src",
+    ":libtint_transform_src",
+    ":libtint_type_src",
+    ":libtint_utils_src",
+  ]
+}
+
+libtint_source_set("libtint_transform_manager_src") {
+  sources = [
+    "transform/manager.cc",
+    "transform/manager.h",
+  ]
+  deps = [
+    ":libtint_ast_transform_base_src",
+    ":libtint_program_src",
+    ":libtint_transform_src",
+  ]
+
+  if (tint_build_ir) {
+    deps += [
+      ":libtint_ir_builder_src",
+      ":libtint_ir_src",
+    ]
+  }
+}
+
+libtint_source_set("libtint_ast_transform_src") {
+  sources = [
     "ast/transform/add_block_attribute.cc",
     "ast/transform/add_block_attribute.h",
     "ast/transform/add_empty_entry_point.cc",
@@ -434,8 +476,6 @@ libtint_source_set("libtint_transform_src") {
     "ast/transform/substitute_override.h",
     "ast/transform/texture_1d_to_2d.cc",
     "ast/transform/texture_1d_to_2d.h",
-    "ast/transform/transform.cc",
-    "ast/transform/transform.h",
     "ast/transform/truncate_interstage_variables.cc",
     "ast/transform/truncate_interstage_variables.h",
     "ast/transform/unshadow.cc",
@@ -456,18 +496,34 @@ libtint_source_set("libtint_transform_src") {
     "ast/transform/while_to_loop.h",
     "ast/transform/zero_init_workgroup_memory.cc",
     "ast/transform/zero_init_workgroup_memory.h",
-    "transform/manager.cc",
-    "transform/manager.h",
   ]
   deps = [
     ":libtint_ast_src",
+    ":libtint_ast_transform_base_src",
     ":libtint_builtins_src",
     ":libtint_program_src",
     ":libtint_sem_src",
     ":libtint_symbols_src",
+    ":libtint_transform_manager_src",
     ":libtint_type_src",
     ":libtint_utils_src",
   ]
+}
+
+if (tint_build_ir) {
+  libtint_source_set("libtint_ir_transform_src") {
+    sources = [
+      "ir/transform/add_empty_entry_point.cc",
+      "ir/transform/add_empty_entry_point.h",
+    ]
+    deps = [
+      ":libtint_builtins_src",
+      ":libtint_ir_src",
+      ":libtint_symbols_src",
+      ":libtint_type_src",
+      ":libtint_utils_src",
+    ]
+  }
 }
 
 libtint_source_set("libtint_ast_hdrs") {
@@ -860,10 +916,7 @@ libtint_source_set("libtint_reader_src") {
     "reader/reader.h",
   ]
 
-  public_deps = [
-    ":libtint_program_src",
-    ":libtint_transform_src",
-  ]
+  public_deps = [ ":libtint_program_src" ]
 }
 
 libtint_source_set("libtint_spv_reader_src") {
@@ -892,11 +945,13 @@ libtint_source_set("libtint_spv_reader_src") {
 
   deps = [
     ":libtint_ast_src",
+    ":libtint_ast_transform_src",
     ":libtint_builtins_src",
     ":libtint_program_src",
     ":libtint_reader_src",
     ":libtint_sem_src",
     ":libtint_symbols_src",
+    ":libtint_transform_manager_src",
     ":libtint_type_src",
     ":libtint_utils_src",
     "${tint_spirv_tools_dir}/:spvtools_opt",
@@ -932,11 +987,12 @@ libtint_source_set("libtint_writer_src") {
 
   deps = [
     ":libtint_ast_src",
+    ":libtint_ast_transform_src",
     ":libtint_builtins_src",
     ":libtint_inspector_src",
     ":libtint_program_src",
     ":libtint_sem_src",
-    ":libtint_transform_src",
+    ":libtint_transform_manager_src",
     ":libtint_type_src",
     ":libtint_utils_src",
   ]
@@ -965,12 +1021,13 @@ libtint_source_set("libtint_spv_writer_src") {
 
   deps = [
     ":libtint_ast_src",
+    ":libtint_ast_transform_src",
     ":libtint_builtins_src",
     ":libtint_constant_src",
     ":libtint_program_src",
     ":libtint_sem_src",
     ":libtint_symbols_src",
-    ":libtint_transform_src",
+    ":libtint_transform_manager_src",
     ":libtint_type_src",
     ":libtint_utils_src",
     ":libtint_writer_src",
@@ -978,12 +1035,13 @@ libtint_source_set("libtint_spv_writer_src") {
 
   if (tint_build_ir) {
     sources += [
-      "writer/spirv/generator_impl_ir.cc",
-      "writer/spirv/generator_impl_ir.h",
+      "writer/spirv/ir/generator_impl_ir.cc",
+      "writer/spirv/ir/generator_impl_ir.h",
     ]
     deps += [
       ":libtint_ir_builder_src",
       ":libtint_ir_src",
+      ":libtint_ir_transform_src",
     ]
   }
 }
@@ -1044,12 +1102,13 @@ libtint_source_set("libtint_msl_writer_src") {
 
   deps = [
     ":libtint_ast_src",
+    ":libtint_ast_transform_src",
     ":libtint_builtins_src",
     ":libtint_constant_src",
     ":libtint_program_src",
     ":libtint_sem_src",
     ":libtint_symbols_src",
-    ":libtint_transform_src",
+    ":libtint_transform_manager_src",
     ":libtint_type_src",
     ":libtint_utils_src",
     ":libtint_writer_src",
@@ -1066,12 +1125,13 @@ libtint_source_set("libtint_hlsl_writer_src") {
 
   deps = [
     ":libtint_ast_src",
+    ":libtint_ast_transform_src",
     ":libtint_builtins_src",
     ":libtint_constant_src",
     ":libtint_program_src",
     ":libtint_sem_src",
     ":libtint_symbols_src",
-    ":libtint_transform_src",
+    ":libtint_transform_manager_src",
     ":libtint_type_src",
     ":libtint_utils_src",
     ":libtint_writer_src",
@@ -1088,12 +1148,13 @@ libtint_source_set("libtint_glsl_writer_src") {
 
   deps = [
     ":libtint_ast_src",
+    ":libtint_ast_transform_src",
     ":libtint_builtins_src",
     ":libtint_constant_src",
     ":libtint_program_src",
     ":libtint_sem_src",
     ":libtint_symbols_src",
-    ":libtint_transform_src",
+    ":libtint_transform_manager_src",
     ":libtint_type_src",
     ":libtint_utils_src",
     ":libtint_writer_src",
@@ -1119,100 +1180,112 @@ libtint_source_set("libtint_syntax_tree_writer_src") {
   ]
 }
 
-libtint_source_set("libtint_ir_builder_src") {
-  sources = [
-    "ir/builder_impl.cc",
-    "ir/builder_impl.h",
-    "ir/from_program.cc",
-    "ir/from_program.h",
-  ]
-  deps = [
-    ":libtint_ast_src",
-    ":libtint_constant_src",
-    ":libtint_ir_src",
-    ":libtint_program_src",
-    ":libtint_sem_src",
-    ":libtint_symbols_src",
-    ":libtint_type_src",
-    ":libtint_utils_src",
-  ]
-}
+if (tint_build_ir) {
+  libtint_source_set("libtint_ir_builder_src") {
+    sources = [
+      "ir/from_program.cc",
+      "ir/from_program.h",
+      "ir/to_program.cc",
+      "ir/to_program.h",
+    ]
+    deps = [
+      ":libtint_ast_src",
+      ":libtint_constant_src",
+      ":libtint_ir_src",
+      ":libtint_program_src",
+      ":libtint_sem_src",
+      ":libtint_symbols_src",
+      ":libtint_type_src",
+      ":libtint_utils_src",
+    ]
+  }
 
-libtint_source_set("libtint_ir_src") {
-  sources = [
-    "ir/binary.cc",
-    "ir/binary.h",
-    "ir/bitcast.cc",
-    "ir/bitcast.h",
-    "ir/block.cc",
-    "ir/block.h",
-    "ir/builder.cc",
-    "ir/builder.h",
-    "ir/builtin.cc",
-    "ir/builtin.h",
-    "ir/call.cc",
-    "ir/call.h",
-    "ir/constant.cc",
-    "ir/constant.h",
-    "ir/construct.cc",
-    "ir/construct.h",
-    "ir/convert.cc",
-    "ir/convert.h",
-    "ir/debug.cc",
-    "ir/debug.h",
-    "ir/disassembler.cc",
-    "ir/disassembler.h",
-    "ir/discard.cc",
-    "ir/discard.h",
-    "ir/flow_node.cc",
-    "ir/flow_node.h",
-    "ir/function.cc",
-    "ir/function.h",
-    "ir/function_terminator.cc",
-    "ir/function_terminator.h",
-    "ir/if.cc",
-    "ir/if.h",
-    "ir/instruction.cc",
-    "ir/instruction.h",
-    "ir/loop.cc",
-    "ir/loop.h",
-    "ir/module.cc",
-    "ir/module.h",
-    "ir/root_terminator.cc",
-    "ir/root_terminator.h",
-    "ir/store.cc",
-    "ir/store.h",
-    "ir/switch.cc",
-    "ir/switch.h",
-    "ir/unary.cc",
-    "ir/unary.h",
-    "ir/user_call.cc",
-    "ir/user_call.h",
-    "ir/value.cc",
-    "ir/value.h",
-    "ir/var.cc",
-    "ir/var.h",
-  ]
+  libtint_source_set("libtint_ir_src") {
+    sources = [
+      "ir/binary.cc",
+      "ir/binary.h",
+      "ir/bitcast.cc",
+      "ir/bitcast.h",
+      "ir/block.cc",
+      "ir/block.h",
+      "ir/block_param.cc",
+      "ir/block_param.h",
+      "ir/builder.cc",
+      "ir/builder.h",
+      "ir/builtin.cc",
+      "ir/builtin.h",
+      "ir/call.cc",
+      "ir/call.h",
+      "ir/constant.cc",
+      "ir/constant.h",
+      "ir/construct.cc",
+      "ir/construct.h",
+      "ir/convert.cc",
+      "ir/convert.h",
+      "ir/debug.cc",
+      "ir/debug.h",
+      "ir/disassembler.cc",
+      "ir/disassembler.h",
+      "ir/discard.cc",
+      "ir/discard.h",
+      "ir/flow_node.cc",
+      "ir/flow_node.h",
+      "ir/function.cc",
+      "ir/function.h",
+      "ir/function_param.cc",
+      "ir/function_param.h",
+      "ir/function_terminator.cc",
+      "ir/function_terminator.h",
+      "ir/if.cc",
+      "ir/if.h",
+      "ir/instruction.cc",
+      "ir/instruction.h",
+      "ir/load.cc",
+      "ir/load.h",
+      "ir/loop.cc",
+      "ir/loop.h",
+      "ir/module.cc",
+      "ir/module.h",
+      "ir/root_terminator.cc",
+      "ir/root_terminator.h",
+      "ir/store.cc",
+      "ir/store.h",
+      "ir/switch.cc",
+      "ir/switch.h",
+      "ir/transform/transform.cc",
+      "ir/transform/transform.h",
+      "ir/unary.cc",
+      "ir/unary.h",
+      "ir/user_call.cc",
+      "ir/user_call.h",
+      "ir/value.cc",
+      "ir/value.h",
+      "ir/var.cc",
+      "ir/var.h",
+    ]
 
-  deps = [
-    ":libtint_builtins_src",
-    ":libtint_constant_src",
-    ":libtint_symbols_src",
-    ":libtint_type_src",
-    ":libtint_utils_src",
-  ]
+    deps = [
+      ":libtint_builtins_src",
+      ":libtint_constant_src",
+      ":libtint_symbols_src",
+      ":libtint_transform_src",
+      ":libtint_type_src",
+      ":libtint_utils_src",
+    ]
+  }
 }
 
 source_set("libtint") {
   public_deps = [
     ":libtint_ast_src",
+    ":libtint_ast_transform_base_src",
+    ":libtint_ast_transform_src",
     ":libtint_constant_src",
     ":libtint_initializer_src",
     ":libtint_inspector_src",
     ":libtint_program_src",
     ":libtint_sem_src",
     ":libtint_symbols_src",
-    ":libtint_transform_src",
     ":libtint_type_src",
     ":libtint_utils_src",
     ":libtint_writer_src",
@@ -1470,8 +1543,8 @@ if (tint_build_unittests) {
     ]
     deps = [
       ":libtint_ast_src",
+      ":libtint_ast_transform_src",
       ":libtint_builtins_src",
-      ":libtint_transform_src",
       ":libtint_unittests_ast_helper",
       ":libtint_utils_src",
     ]
@@ -1587,8 +1660,8 @@ if (tint_build_unittests) {
       "resolver/variable_validation_test.cc",
     ]
     deps = [
+      ":libtint_ast_transform_src",
       ":libtint_builtins_src",
-      ":libtint_transform_src",
       ":libtint_utils_src",
       ":tint_unittests_ast_src",
     ]
@@ -1638,7 +1711,7 @@ if (tint_build_unittests) {
     deps = [ ":libtint_builtins_src" ]
   }
 
-  tint_unittests_source_set("tint_unittests_transform_src") {
+  tint_unittests_source_set("tint_unittests_ast_transform_src") {
     sources = [
       "ast/transform/add_block_attribute_test.cc",
       "ast/transform/add_empty_entry_point_test.cc",
@@ -1697,13 +1770,30 @@ if (tint_build_unittests) {
     ]
 
     deps = [
+      ":libtint_ast_transform_base_src",
+      ":libtint_ast_transform_src",
       ":libtint_builtins_src",
-      ":libtint_transform_src",
+      ":libtint_transform_manager_src",
       ":libtint_unittests_ast_helper",
       ":libtint_utils_src",
       ":libtint_wgsl_reader_src",
       ":libtint_wgsl_writer_src",
     ]
+  }
+
+  if (tint_build_ir) {
+    tint_unittests_source_set("tint_unittests_ir_transform_src") {
+      sources = [
+        "ir/transform/add_empty_entry_point_test.cc",
+        "ir/transform/test_helper.h",
+      ]
+
+      deps = [
+        ":libtint_ir_src",
+        ":libtint_ir_transform_src",
+        ":libtint_transform_manager_src",
+      ]
+    }
   }
 
   tint_unittests_source_set("tint_unittests_utils_src") {
@@ -1862,11 +1952,14 @@ if (tint_build_unittests) {
 
     if (tint_build_ir) {
       sources += [
-        "writer/spirv/generator_impl_binary_test.cc",
-        "writer/spirv/generator_impl_constant_test.cc",
-        "writer/spirv/generator_impl_function_test.cc",
-        "writer/spirv/generator_impl_ir_test.cc",
-        "writer/spirv/generator_impl_type_test.cc",
+        "writer/spirv/ir/generator_impl_ir_binary_test.cc",
+        "writer/spirv/ir/generator_impl_ir_constant_test.cc",
+        "writer/spirv/ir/generator_impl_ir_function_test.cc",
+        "writer/spirv/ir/generator_impl_ir_if_test.cc",
+        "writer/spirv/ir/generator_impl_ir_test.cc",
+        "writer/spirv/ir/generator_impl_ir_type_test.cc",
+        "writer/spirv/ir/generator_impl_ir_var_test.cc",
+        "writer/spirv/ir/test_helper_ir.h",
       ]
       deps += [ ":libtint_ir_src" ]
     }
@@ -2071,8 +2164,9 @@ if (tint_build_unittests) {
     ]
 
     deps = [
+      ":libtint_ast_transform_src",
       ":libtint_hlsl_writer_src",
-      ":libtint_transform_src",
+      ":libtint_transform_manager_src",
       ":libtint_utils_src",
       ":tint_unittests_ast_src",
     ]
@@ -2115,9 +2209,10 @@ if (tint_build_unittests) {
     ]
 
     deps = [
+      ":libtint_ast_transform_src",
       ":libtint_glsl_writer_src",
       ":libtint_symbols_src",
-      ":libtint_transform_src",
+      ":libtint_transform_manager_src",
       ":libtint_utils_src",
       ":tint_unittests_ast_src",
     ]
@@ -2139,38 +2234,54 @@ if (tint_build_unittests) {
       "clone_context_test.cc",
       "program_builder_test.cc",
       "program_test.cc",
+      "transform/manager_test.cc",
     ]
 
     deps = [
+      ":libtint_ast_transform_base_src",
+      ":libtint_program_src",
+      ":libtint_transform_manager_src",
       ":libtint_unittests_ast_helper",
       ":tint_unittests_ast_src",
     ]
+
+    if (tint_build_ir) {
+      deps += [
+        ":libtint_ir_builder_src",
+        ":libtint_ir_src",
+      ]
+    }
   }
 
-  tint_unittests_source_set("tint_unittests_ir_src") {
-    sources = [
-      "ir/binary_test.cc",
-      "ir/bitcast_test.cc",
-      "ir/builder_impl_binary_test.cc",
-      "ir/builder_impl_call_test.cc",
-      "ir/builder_impl_literal_test.cc",
-      "ir/builder_impl_materialize_test.cc",
-      "ir/builder_impl_store_test.cc",
-      "ir/builder_impl_test.cc",
-      "ir/builder_impl_unary_test.cc",
-      "ir/builder_impl_var_test.cc",
-      "ir/constant_test.cc",
-      "ir/discard_test.cc",
-      "ir/module_test.cc",
-      "ir/store_test.cc",
-      "ir/test_helper.h",
-      "ir/unary_test.cc",
-    ]
+  if (tint_build_ir) {
+    tint_unittests_source_set("tint_unittests_ir_src") {
+      sources = [
+        "ir/binary_test.cc",
+        "ir/bitcast_test.cc",
+        "ir/constant_test.cc",
+        "ir/discard_test.cc",
+        "ir/from_program_binary_test.cc",
+        "ir/from_program_call_test.cc",
+        "ir/from_program_literal_test.cc",
+        "ir/from_program_materialize_test.cc",
+        "ir/from_program_store_test.cc",
+        "ir/from_program_test.cc",
+        "ir/from_program_unary_test.cc",
+        "ir/from_program_var_test.cc",
+        "ir/load_test.cc",
+        "ir/module_test.cc",
+        "ir/store_test.cc",
+        "ir/test_helper.h",
+        "ir/to_program_roundtrip_test.cc",
+        "ir/transform/add_empty_entry_point_test.cc",
+        "ir/unary_test.cc",
+      ]
 
-    deps = [
-      ":libtint_ir_builder_src",
-      ":libtint_ir_src",
-    ]
+      deps = [
+        ":libtint_ir_builder_src",
+        ":libtint_ir_src",
+      ]
+    }
   }
 
   if (build_with_chromium) {
@@ -2191,6 +2302,7 @@ if (tint_build_unittests) {
       ":libtint_wgsl_reader_src",
       ":libtint_wgsl_writer_src",
       ":tint_unittests_ast_src",
+      ":tint_unittests_ast_transform_src",
       ":tint_unittests_builtins_src",
       ":tint_unittests_cmd_src",
       ":tint_unittests_constant_src",
@@ -2200,7 +2312,6 @@ if (tint_build_unittests) {
       ":tint_unittests_resolver_src",
       ":tint_unittests_sem_src",
       ":tint_unittests_symbols_src",
-      ":tint_unittests_transform_src",
       ":tint_unittests_type_src",
       ":tint_unittests_utils_src",
       ":tint_unittests_writer_src",
@@ -2235,7 +2346,10 @@ if (tint_build_unittests) {
     }
 
     if (tint_build_ir) {
-      deps += [ ":tint_unittests_ir_src" ]
+      deps += [
+        ":tint_unittests_ir_src",
+        ":tint_unittests_ir_transform_src",
+      ]
     }
 
     if (build_with_chromium) {

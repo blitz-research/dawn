@@ -12,30 +12,72 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/writer/spirv/generator_impl_ir.h"
+#include "src/tint/writer/spirv/ir/generator_impl_ir.h"
 
 #include "spirv/unified1/spirv.h"
 #include "src/tint/ir/binary.h"
 #include "src/tint/ir/block.h"
 #include "src/tint/ir/function_terminator.h"
+#include "src/tint/ir/if.h"
+#include "src/tint/ir/load.h"
 #include "src/tint/ir/module.h"
+#include "src/tint/ir/store.h"
+#include "src/tint/ir/transform/add_empty_entry_point.h"
+#include "src/tint/ir/var.h"
 #include "src/tint/switch.h"
+#include "src/tint/transform/manager.h"
 #include "src/tint/type/bool.h"
 #include "src/tint/type/f16.h"
 #include "src/tint/type/f32.h"
 #include "src/tint/type/i32.h"
+#include "src/tint/type/pointer.h"
 #include "src/tint/type/type.h"
 #include "src/tint/type/u32.h"
 #include "src/tint/type/vector.h"
 #include "src/tint/type/void.h"
+#include "src/tint/writer/spirv/generator.h"
 #include "src/tint/writer/spirv/module.h"
 
 namespace tint::writer::spirv {
 
-GeneratorImplIr::GeneratorImplIr(const ir::Module* module, bool zero_init_workgroup_mem)
+namespace {
+
+void Sanitize(ir::Module* module) {
+    transform::Manager manager;
+    transform::DataMap data;
+
+    manager.Add<ir::transform::AddEmptyEntryPoint>();
+
+    transform::DataMap outputs;
+    manager.Run(module, data, outputs);
+}
+
+SpvStorageClass StorageClass(builtin::AddressSpace addrspace) {
+    switch (addrspace) {
+        case builtin::AddressSpace::kFunction:
+            return SpvStorageClassFunction;
+        case builtin::AddressSpace::kPrivate:
+            return SpvStorageClassPrivate;
+        case builtin::AddressSpace::kStorage:
+            return SpvStorageClassStorageBuffer;
+        case builtin::AddressSpace::kUniform:
+            return SpvStorageClassUniform;
+        case builtin::AddressSpace::kWorkgroup:
+            return SpvStorageClassWorkgroup;
+        default:
+            return SpvStorageClassMax;
+    }
+}
+
+}  // namespace
+
+GeneratorImplIr::GeneratorImplIr(ir::Module* module, bool zero_init_workgroup_mem)
     : ir_(module), zero_init_workgroup_memory_(zero_init_workgroup_mem) {}
 
 bool GeneratorImplIr::Generate() {
+    // Run the IR transformations to prepare for SPIR-V emission.
+    Sanitize(ir_);
+
     // TODO(crbug.com/tint/1906): Check supported extensions.
 
     module_.PushCapability(SpvCapabilityShader);
@@ -68,31 +110,41 @@ bool GeneratorImplIr::Generate() {
 }
 
 uint32_t GeneratorImplIr::Constant(const ir::Constant* constant) {
+    return Constant(constant->Value());
+}
+
+uint32_t GeneratorImplIr::Constant(const constant::Value* constant) {
     return constants_.GetOrCreate(constant, [&]() {
         auto id = module_.NextId();
         auto* ty = constant->Type();
-        auto* value = constant->value;
         Switch(
             ty,  //
             [&](const type::Bool*) {
                 module_.PushType(
-                    value->ValueAs<bool>() ? spv::Op::OpConstantTrue : spv::Op::OpConstantFalse,
+                    constant->ValueAs<bool>() ? spv::Op::OpConstantTrue : spv::Op::OpConstantFalse,
                     {Type(ty), id});
             },
             [&](const type::I32*) {
-                module_.PushType(spv::Op::OpConstant, {Type(ty), id, value->ValueAs<u32>()});
+                module_.PushType(spv::Op::OpConstant, {Type(ty), id, constant->ValueAs<u32>()});
             },
             [&](const type::U32*) {
                 module_.PushType(spv::Op::OpConstant,
-                                 {Type(ty), id, U32Operand(value->ValueAs<i32>())});
+                                 {Type(ty), id, U32Operand(constant->ValueAs<i32>())});
             },
             [&](const type::F32*) {
-                module_.PushType(spv::Op::OpConstant, {Type(ty), id, value->ValueAs<f32>()});
+                module_.PushType(spv::Op::OpConstant, {Type(ty), id, constant->ValueAs<f32>()});
             },
             [&](const type::F16*) {
                 module_.PushType(
                     spv::Op::OpConstant,
-                    {Type(ty), id, U32Operand(value->ValueAs<f16>().BitsRepresentation())});
+                    {Type(ty), id, U32Operand(constant->ValueAs<f16>().BitsRepresentation())});
+            },
+            [&](const type::Vector* vec) {
+                OperandList operands = {Type(ty), id};
+                for (uint32_t i = 0; i < vec->Width(); i++) {
+                    operands.push_back(Constant(constant->Index(i)));
+                }
+                module_.PushType(spv::Op::OpConstantComposite, operands);
             },
             [&](Default) {
                 TINT_ICE(Writer, diagnostics_) << "unhandled constant type: " << ty->FriendlyName();
@@ -123,6 +175,11 @@ uint32_t GeneratorImplIr::Type(const type::Type* ty) {
             [&](const type::Vector* vec) {
                 module_.PushType(spv::Op::OpTypeVector, {id, Type(vec->type()), vec->Width()});
             },
+            [&](const type::Pointer* ptr) {
+                module_.PushType(
+                    spv::Op::OpTypePointer,
+                    {id, U32Operand(StorageClass(ptr->AddressSpace())), Type(ptr->StoreType())});
+            },
             [&](Default) {
                 TINT_ICE(Writer, diagnostics_) << "unhandled type: " << ty->FriendlyName();
             });
@@ -148,20 +205,24 @@ uint32_t GeneratorImplIr::Value(const ir::Value* value) {
         });
 }
 
+uint32_t GeneratorImplIr::Label(const ir::Block* block) {
+    return block_labels_.GetOrCreate(block, [&]() { return module_.NextId(); });
+}
+
 void GeneratorImplIr::EmitFunction(const ir::Function* func) {
     // Make an ID for the function.
     auto id = module_.NextId();
 
     // Emit the function name.
-    module_.PushDebug(spv::Op::OpName, {id, Operand(func->name.Name())});
+    module_.PushDebug(spv::Op::OpName, {id, Operand(func->Name().Name())});
 
     // Emit OpEntryPoint and OpExecutionMode declarations if needed.
-    if (func->pipeline_stage != ir::Function::PipelineStage::kUndefined) {
+    if (func->Stage() != ir::Function::PipelineStage::kUndefined) {
         EmitEntryPoint(func, id);
     }
 
     // Get the ID for the return type.
-    auto return_type_id = Type(func->return_type);
+    auto return_type_id = Type(func->ReturnType());
 
     // Get the ID for the function type (creating it if needed).
     // TODO(jrprice): Add the parameter types when they are supported in the IR.
@@ -187,7 +248,7 @@ void GeneratorImplIr::EmitFunction(const ir::Function* func) {
     TINT_DEFER(current_function_ = Function());
 
     // Emit the body of the function.
-    EmitBlock(func->start_target);
+    EmitBlock(func->StartTarget());
 
     // Add the function to the module.
     module_.PushFunction(current_function_);
@@ -195,13 +256,13 @@ void GeneratorImplIr::EmitFunction(const ir::Function* func) {
 
 void GeneratorImplIr::EmitEntryPoint(const ir::Function* func, uint32_t id) {
     SpvExecutionModel stage = SpvExecutionModelMax;
-    switch (func->pipeline_stage) {
+    switch (func->Stage()) {
         case ir::Function::PipelineStage::kCompute: {
             stage = SpvExecutionModelGLCompute;
             module_.PushExecutionMode(
                 spv::Op::OpExecutionMode,
-                {id, U32Operand(SpvExecutionModeLocalSize), func->workgroup_size->at(0),
-                 func->workgroup_size->at(1), func->workgroup_size->at(2)});
+                {id, U32Operand(SpvExecutionModeLocalSize), func->WorkgroupSize()->at(0),
+                 func->WorkgroupSize()->at(1), func->WorkgroupSize()->at(2)});
             break;
         }
         case ir::Function::PipelineStage::kFragment: {
@@ -221,15 +282,27 @@ void GeneratorImplIr::EmitEntryPoint(const ir::Function* func, uint32_t id) {
     }
 
     // TODO(jrprice): Add the interface list of all referenced global variables.
-    module_.PushEntryPoint(spv::Op::OpEntryPoint, {U32Operand(stage), id, func->name.Name()});
+    module_.PushEntryPoint(spv::Op::OpEntryPoint, {U32Operand(stage), id, func->Name().Name()});
 }
 
 void GeneratorImplIr::EmitBlock(const ir::Block* block) {
+    // Emit the label.
+    // Skip if this is the function's entry block, as it will be emitted by the function object.
+    if (!current_function_.instructions().empty()) {
+        current_function_.push_inst(spv::Op::OpLabel, {Label(block)});
+    }
+
     // Emit the instructions.
-    for (auto* inst : block->instructions) {
+    for (const auto* inst : block->Instructions()) {
         auto result = Switch(
             inst,  //
             [&](const ir::Binary* b) { return EmitBinary(b); },
+            [&](const ir::Load* l) { return EmitLoad(l); },
+            [&](const ir::Store* s) {
+                EmitStore(s);
+                return 0u;
+            },
+            [&](const ir::Var* v) { return EmitVar(v); },
             [&](Default) {
                 TINT_ICE(Writer, diagnostics_)
                     << "unimplemented instruction: " << inst->TypeInfo().name;
@@ -240,15 +313,62 @@ void GeneratorImplIr::EmitBlock(const ir::Block* block) {
 
     // Handle the branch at the end of the block.
     Switch(
-        block->branch.target,
+        block->Branch().target,
+        [&](const ir::Block* b) { current_function_.push_inst(spv::Op::OpBranch, {Label(b)}); },
+        [&](const ir::If* i) { EmitIf(i); },
         [&](const ir::FunctionTerminator*) {
             // TODO(jrprice): Handle the return value, which will be a branch argument.
-            if (!block->branch.args.IsEmpty()) {
+            if (!block->Branch().args.IsEmpty()) {
                 TINT_ICE(Writer, diagnostics_) << "unimplemented return value";
             }
             current_function_.push_inst(spv::Op::OpReturn, {});
         },
-        [&](Default) { TINT_ICE(Writer, diagnostics_) << "unimplemented branch target"; });
+        [&](Default) {
+            if (!block->Branch().target) {
+                // A block may not have an outward branch (e.g. an unreachable merge block).
+                current_function_.push_inst(spv::Op::OpUnreachable, {});
+            } else {
+                TINT_ICE(Writer, diagnostics_)
+                    << "unimplemented branch target: " << block->Branch().target->TypeInfo().name;
+            }
+        });
+}
+
+void GeneratorImplIr::EmitIf(const ir::If* i) {
+    auto* merge_block = i->Merge().target->As<ir::Block>();
+    auto* true_block = i->True().target->As<ir::Block>();
+    auto* false_block = i->False().target->As<ir::Block>();
+
+    // Generate labels for the blocks. We emit the true or false block if it:
+    // 1. contains instructions, or
+    // 2. branches somewhere other then the Merge().target.
+    // Otherwise we skip them and branch straight to the merge block.
+    uint32_t merge_label = Label(merge_block);
+    uint32_t true_label = merge_label;
+    uint32_t false_label = merge_label;
+    if (!true_block->Instructions().IsEmpty() || true_block->Branch().target != merge_block) {
+        true_label = Label(true_block);
+    }
+    if (!false_block->Instructions().IsEmpty() || false_block->Branch().target != merge_block) {
+        false_label = Label(false_block);
+    }
+
+    // Emit the OpSelectionMerge and OpBranchConditional instructions.
+    current_function_.push_inst(spv::Op::OpSelectionMerge,
+                                {merge_label, U32Operand(SpvSelectionControlMaskNone)});
+    current_function_.push_inst(spv::Op::OpBranchConditional,
+                                {Value(i->Condition()), true_label, false_label});
+
+    // Emit the `true` and `false` blocks, if they're not being skipped.
+    if (true_label != merge_label) {
+        EmitBlock(true_block);
+    }
+    if (false_label != merge_label) {
+        EmitBlock(false_block);
+    }
+
+    // Emit the merge block.
+    EmitBlock(merge_block);
 }
 
 uint32_t GeneratorImplIr::EmitBinary(const ir::Binary* binary) {
@@ -256,20 +376,60 @@ uint32_t GeneratorImplIr::EmitBinary(const ir::Binary* binary) {
 
     // Determine the opcode.
     spv::Op op = spv::Op::Max;
-    switch (binary->kind) {
+    switch (binary->Kind()) {
         case ir::Binary::Kind::kAdd: {
             op = binary->Type()->is_integer_scalar_or_vector() ? spv::Op::OpIAdd : spv::Op::OpFAdd;
             break;
         }
+        case ir::Binary::Kind::kSubtract: {
+            op = binary->Type()->is_integer_scalar_or_vector() ? spv::Op::OpISub : spv::Op::OpFSub;
+            break;
+        }
         default: {
             TINT_ICE(Writer, diagnostics_)
-                << "unimplemented binary instruction: " << static_cast<uint32_t>(binary->kind);
+                << "unimplemented binary instruction: " << static_cast<uint32_t>(binary->Kind());
         }
     }
 
     // Emit the instruction.
     current_function_.push_inst(
         op, {Type(binary->Type()), id, Value(binary->LHS()), Value(binary->RHS())});
+
+    return id;
+}
+
+uint32_t GeneratorImplIr::EmitLoad(const ir::Load* load) {
+    auto id = module_.NextId();
+    current_function_.push_inst(spv::Op::OpLoad, {Type(load->Type()), id, Value(load->From())});
+    return id;
+}
+
+void GeneratorImplIr::EmitStore(const ir::Store* store) {
+    current_function_.push_inst(spv::Op::OpStore, {Value(store->To()), Value(store->From())});
+}
+
+uint32_t GeneratorImplIr::EmitVar(const ir::Var* var) {
+    auto id = module_.NextId();
+    auto* ptr = var->Type()->As<type::Pointer>();
+    TINT_ASSERT(Writer, ptr);
+    auto ty = Type(ptr);
+
+    if (ptr->AddressSpace() == builtin::AddressSpace::kFunction) {
+        TINT_ASSERT(Writer, current_function_);
+        current_function_.push_var({ty, id, U32Operand(SpvStorageClassFunction)});
+        if (var->Initializer()) {
+            current_function_.push_inst(spv::Op::OpStore, {id, Value(var->Initializer())});
+        }
+    } else {
+        TINT_ICE(Writer, diagnostics_)
+            << "unimplemented variable address space " << ptr->AddressSpace();
+        return 0u;
+    }
+
+    // Set the name if present.
+    if (auto name = ir_->NameOf(var)) {
+        module_.PushDebug(spv::Op::OpName, {id, Operand(name.Name())});
+    }
 
     return id;
 }

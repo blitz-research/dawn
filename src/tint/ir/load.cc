@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/writer/spirv/test_helper_ir.h"
+#include "src/tint/ir/load.h"
+#include "src/tint/debug.h"
 
-namespace tint::writer::spirv {
-namespace {
+TINT_INSTANTIATE_TYPEINFO(tint::ir::Load);
 
-TEST_F(SpvGeneratorImplTest, ModuleHeader) {
-    ASSERT_TRUE(generator_.Generate()) << generator_.Diagnostics().str();
-    auto got = Disassemble(generator_.Result());
-    EXPECT_EQ(got, R"(OpCapability Shader
-OpMemoryModel Logical GLSL450
-)");
+namespace tint::ir {
+
+Load::Load(const type::Type* type, Value* f) : Base(), result_type_(type), from_(f) {
+    TINT_ASSERT(IR, result_type_);
+    TINT_ASSERT(IR, from_);
+    from_->AddUsage(this);
 }
 
-}  // namespace
-}  // namespace tint::writer::spirv
+Load::~Load() = default;
+
+}  // namespace tint::ir

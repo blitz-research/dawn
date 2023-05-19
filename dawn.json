@@ -54,7 +54,7 @@
             {"name": "compatible surface", "type": "surface", "optional": true},
             {"name": "power preference", "type": "power preference", "default": "undefined"},
             {"name": "force fallback adapter", "type": "bool", "default": "false"},
-            {"name": "compatibility mode", "type": "bool", "default": "false"}
+            {"name": "compatibility mode", "type": "bool", "default": "false", "tags": ["dawn", "emscripten"]}
         ]
     },
     "request adapter status": {
@@ -142,7 +142,7 @@
             {"name": "driver description", "type": "char", "annotation": "const*", "length": "strlen"},
             {"name": "adapter type", "type": "adapter type"},
             {"name": "backend type", "type": "backend type"},
-            {"name": "compatibility mode", "type": "bool", "default": "false"}
+            {"name": "compatibility mode", "type": "bool", "default": "false", "tags": ["dawn", "emscripten"]}
         ]
     },
     "adapter type": {
@@ -163,7 +163,9 @@
             {"name": "required features count", "type": "uint32_t", "default": 0},
             {"name": "required features", "type": "feature name", "annotation": "const*", "length": "required features count", "default": "nullptr"},
             {"name": "required limits", "type": "required limits", "annotation": "const*", "optional": true},
-            {"name": "default queue", "type": "queue descriptor"}
+            {"name": "default queue", "type": "queue descriptor"},
+            {"name": "device lost callback", "type": "device lost callback", "default": "nullptr"},
+            {"name": "device lost userdata", "type": "void *", "default": "nullptr"}
         ]
     },
     "dawn toggles descriptor": {
@@ -1191,6 +1193,7 @@
             {
                 "name": "set device lost callback",
                 "no autolock": true,
+                "tags": ["deprecated"],
                 "args": [
                     {"name": "callback", "type": "device lost callback"},
                     {"name": "userdata", "type": "void", "annotation": "*"}
@@ -1225,6 +1228,7 @@
             },
             {
                 "name": "get supported surface usage",
+                "tags": ["dawn"],
                 "returns": "texture usage",
                 "args": [
                     {"name": "surface", "type": "surface"}
@@ -1438,6 +1442,7 @@
             {"value": 9, "name": "shader f16"},
             {"value": 10, "name": "RG11B10 ufloat renderable"},
             {"value": 11, "name": "BGRA8 unorm storage"},
+            {"value": 12, "name": "float32 filterable"},
             {"value": 1001, "name": "dawn shader float 16", "tags": ["dawn"]},
             {"value": 1002, "name": "dawn internal usages", "tags": ["dawn"]},
             {"value": 1003, "name": "dawn multi planar formats", "tags": ["dawn"]},
@@ -1445,7 +1450,7 @@
             {"value": 1005, "name": "chromium experimental dp4a", "tags": ["dawn"]},
             {"value": 1006, "name": "timestamp query inside passes", "tags": ["dawn"]},
             {"value": 1007, "name": "implicit device synchronization", "tags": ["dawn", "native"]},
-            {"value": 1008, "name": "surface capabilities", "tags": ["dawn", "native"]},
+            {"value": 1008, "name": "surface capabilities", "tags": ["dawn"]},
             {"value": 1009, "name": "transient attachments", "tags": ["dawn"]}
         ]
     },
@@ -1530,16 +1535,6 @@
         "category": "structure",
         "extensible": "in",
         "members": []
-    },
-    "dawn instance descriptor": {
-        "tags": ["dawn", "native"],
-        "category": "structure",
-        "chained": "in",
-        "chain roots": ["instance descriptor"],
-        "members": [
-            {"name": "additional runtime search paths count", "type": "uint32_t", "default": 0},
-            {"name": "additional runtime search paths", "type": "char", "annotation": "const*const*", "length": "additional runtime search paths count"}
-        ]
     },
     "vertex attribute": {
         "category": "structure",
@@ -2410,7 +2405,8 @@
         "chain roots": ["shader module descriptor"],
         "members": [
             {"name": "source", "type": "char", "annotation": "const*", "length": "strlen", "default": "nullptr", "optional": true, "tags": ["dawn", "emscripten"]},
-            {"name": "code", "type": "char", "annotation": "const*", "length": "strlen", "default": "nullptr", "optional": true}
+            {"name": "code", "type": "char", "annotation": "const*", "length": "strlen", "default": "nullptr", "optional": true, "tags": ["dawn", "emscripten"]},
+            {"name": "code", "type": "char", "annotation": "const*", "length": "strlen", "default": "nullptr", "tags": ["upstream"]}
         ]
     },
     "dawn shader module SPIRV options descriptor": {

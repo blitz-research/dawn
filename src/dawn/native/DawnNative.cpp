@@ -135,6 +135,19 @@ void Adapter::ResetInternalDeviceForTesting() {
 AdapterDiscoveryOptionsBase::AdapterDiscoveryOptionsBase(WGPUBackendType type)
     : backendType(type) {}
 
+// DawnInstanceDescriptor
+
+DawnInstanceDescriptor::DawnInstanceDescriptor() {
+    sType = wgpu::SType::DawnInstanceDescriptor;
+}
+
+bool DawnInstanceDescriptor::operator==(const DawnInstanceDescriptor& rhs) const {
+    return (nextInChain == rhs.nextInChain) &&
+           std::tie(additionalRuntimeSearchPathsCount, additionalRuntimeSearchPaths, platform) ==
+               std::tie(rhs.additionalRuntimeSearchPathsCount, rhs.additionalRuntimeSearchPaths,
+                        rhs.platform);
+}
+
 // Instance
 
 Instance::Instance(const WGPUInstanceDescriptor* desc)
@@ -190,11 +203,6 @@ void Instance::EnableBeginCaptureOnStartup(bool beginCaptureOnStartup) {
 
 void Instance::EnableAdapterBlocklist(bool enable) {
     mImpl->EnableAdapterBlocklist(enable);
-}
-
-// TODO(dawn:1374) Deprecate this once it is passed via the descriptor.
-void Instance::SetPlatform(dawn::platform::Platform* platform) {
-    mImpl->SetPlatform(platform);
 }
 
 uint64_t Instance::GetDeviceCountForTesting() const {

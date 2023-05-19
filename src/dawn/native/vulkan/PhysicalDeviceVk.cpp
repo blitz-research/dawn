@@ -261,6 +261,24 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::BGRA8UnormStorage);
     }
 
+    // 32 bit float channel formats.
+    VkFormatProperties r32Properties;
+    VkFormatProperties rg32Properties;
+    VkFormatProperties rgba32Properties;
+    mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+        mVkPhysicalDevice, VK_FORMAT_R32_SFLOAT, &r32Properties);
+    mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+        mVkPhysicalDevice, VK_FORMAT_R32G32_SFLOAT, &rg32Properties);
+    mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+        mVkPhysicalDevice, VK_FORMAT_R32G32B32A32_SFLOAT, &rgba32Properties);
+    if ((r32Properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) &&
+        (rg32Properties.optimalTilingFeatures &
+         VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) &&
+        (rgba32Properties.optimalTilingFeatures &
+         VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+        EnableFeature(Feature::Float32Filterable);
+    }
+
 #if DAWN_PLATFORM_IS(ANDROID) || DAWN_PLATFORM_IS(CHROMEOS)
     // TODO(chromium:1258986): Precisely enable the feature by querying the device's format
     // features.
@@ -470,6 +488,19 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
         const gpu_info::DriverVersion kFixedDriverVersion = {23, 1, 0, 0};
         if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kFixedDriverVersion) < 0) {
             deviceToggles->Default(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation, true);
+        }
+    }
+
+    if (IsIntelMesa() && (gpu_info::IsIntelGen12LP(GetVendorId(), GetDeviceId()) ||
+                          gpu_info::IsIntelGen12HP(GetVendorId(), GetDeviceId()))) {
+        // Intel Mesa driver has a bug where vkCmdCopyQueryPoolResults fails to write overlapping
+        // queries to a same buffer after the buffer is accessed by a compute shader with correct
+        // resource barriers, which may caused by flush and memory coherency issue on Intel Gen12
+        // GPUs. Workaround for it to clear the buffer before vkCmdCopyQueryPoolResults.
+        // TODO(crbug.com/dawn/1823): Remove the workaround when the bug is fixed in Mesa driver.
+        const gpu_info::DriverVersion kBuggyDriverVersion = {21, 2, 0, 0};
+        if (gpu_info::CompareIntelMesaDriverVersion(GetDriverVersion(), kBuggyDriverVersion) >= 0) {
+            deviceToggles->Default(Toggle::ClearBufferBeforeResolveQueries, true);
         }
     }
 

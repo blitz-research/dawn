@@ -26,18 +26,25 @@ using namespace tint::number_suffixes;  // NOLINT
 
 using IR_BuilderImplTest = TestHelper;
 
-TEST_F(IR_BuilderImplTest, EmitExpression_MaterializedCall) {
-    auto* expr = Return(Call("trunc", 2.5_f));
+TEST_F(IR_BuilderImplTest, EmitStatement_Assign) {
+    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate);
 
-    Func("test_function", {}, ty.f32(), expr, utils::Empty);
+    auto* expr = Assign("a", 4_u);
+    WrapInFunction(expr);
 
     auto m = Build();
     ASSERT_TRUE(m) << (!m ? m.Failure() : "");
 
-    EXPECT_EQ(Disassemble(m.Get()), R"(%fn1 = func test_function():f32
-  %fn2 = block
-  ret 2.0f
-func_end
+    EXPECT_EQ(Disassemble(m.Get()), R"(%fn1 = block {
+  %a:ptr<private, u32, read_write> = var
+}
+
+
+%fn2 = func test_function():void [@compute @workgroup_size(1, 1, 1)] {
+  %fn3 = block {
+    store %a, 4u
+  } -> %func_end # return
+} %func_end
 
 )");
 }

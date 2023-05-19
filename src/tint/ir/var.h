@@ -27,9 +27,7 @@ class Var : public utils::Castable<Var, Instruction> {
   public:
     /// Constructor
     /// @param type the type of the var
-    /// @param address_space the address space of the var
-    /// @param access the access mode of the var
-    Var(const type::Type* type, builtin::AddressSpace address_space, builtin::Access access);
+    explicit Var(const type::Type* type);
     Var(const Var& inst) = delete;
     Var(Var&& inst) = delete;
     ~Var() override;
@@ -38,19 +36,17 @@ class Var : public utils::Castable<Var, Instruction> {
     Var& operator=(Var&& inst) = delete;
 
     /// @returns the type of the var
-    const type::Type* Type() const override { return type; }
+    const type::Type* Type() const override { return type_; }
 
-    /// the result type of the instruction
-    const type::Type* type = nullptr;
+    /// Sets the var initializer
+    /// @param initializer the initializer
+    void SetInitializer(Value* initializer);
+    /// @returns the initializer
+    const Value* Initializer() const { return initializer_; }
 
-    /// The variable address space
-    builtin::AddressSpace address_space = builtin::AddressSpace::kUndefined;
-
-    /// The variable access mode
-    builtin::Access access = builtin::Access::kUndefined;
-
-    /// The optional initializer
-    Value* initializer = nullptr;
+  private:
+    const type::Type* type_;
+    Value* initializer_ = nullptr;
 };
 
 }  // namespace tint::ir
