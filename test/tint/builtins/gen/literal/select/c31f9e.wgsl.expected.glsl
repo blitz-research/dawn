@@ -1,7 +1,12 @@
 #version 310 es
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  int inner;
+} prevent_dce;
+
 void select_c31f9e() {
   bool res = true;
+  prevent_dce.inner = ((res == false) ? 1 : 0);
 }
 
 vec4 vertex_main() {
@@ -18,10 +23,15 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
+
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  int inner;
+} prevent_dce;
 
 void select_c31f9e() {
   bool res = true;
+  prevent_dce.inner = ((res == false) ? 1 : 0);
 }
 
 void fragment_main() {
@@ -34,8 +44,13 @@ void main() {
 }
 #version 310 es
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  int inner;
+} prevent_dce;
+
 void select_c31f9e() {
   bool res = true;
+  prevent_dce.inner = ((res == false) ? 1 : 0);
 }
 
 void compute_main() {

@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/glsl/test_helper.h"
+
+#include "gmock/gmock.h"
 
 namespace tint::writer::glsl {
 namespace {
@@ -20,15 +23,16 @@ namespace {
 using GlslGeneratorImplTest_Identifier = TestHelper;
 
 TEST_F(GlslGeneratorImplTest_Identifier, EmitIdentifierExpression) {
-    GlobalVar("foo", ty.i32(), ast::AddressSpace::kPrivate);
+    GlobalVar("foo", ty.i32(), builtin::AddressSpace::kPrivate);
 
     auto* i = Expr("foo");
     WrapInFunction(i);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, i)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "foo");
 }
 

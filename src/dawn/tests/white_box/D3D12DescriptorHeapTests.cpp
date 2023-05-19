@@ -27,6 +27,7 @@
 #include "dawn/utils/WGPUHelpers.h"
 
 namespace dawn::native::d3d12 {
+namespace {
 
 constexpr uint32_t kRTSize = 4;
 
@@ -46,22 +47,22 @@ class D3D12DescriptorHeapTests : public DawnTest {
 
             @vertex fn main(
                 @builtin(vertex_index) VertexIndex : u32
-            ) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 3>(
-                    vec2<f32>(-1.0,  1.0),
-                    vec2<f32>( 1.0,  1.0),
-                    vec2<f32>(-1.0, -1.0)
+            ) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f(-1.0,  1.0),
+                    vec2f( 1.0,  1.0),
+                    vec2f(-1.0, -1.0)
                 );
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             })");
 
         mSimpleFSModule = utils::CreateShaderModule(device, R"(
             struct U {
-                color : vec4<f32>
+                color : vec4f
             }
             @group(0) @binding(0) var<uniform> colorBuffer : U;
 
-            @fragment fn main() -> @location(0) vec4<f32> {
+            @fragment fn main() -> @location(0) vec4f {
                 return colorBuffer.color;
             })");
     }
@@ -110,7 +111,7 @@ class PlaceholderStagingDescriptorAllocator {
                      D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER) {}
 
     CPUDescriptorHeapAllocation AllocateCPUDescriptors() {
-        dawn::native::ResultOrError<CPUDescriptorHeapAllocation> result =
+        native::ResultOrError<CPUDescriptorHeapAllocation> result =
             mAllocator.AllocateCPUDescriptors();
         return (result.IsSuccess()) ? result.AcquireSuccess() : CPUDescriptorHeapAllocation{};
     }
@@ -123,8 +124,8 @@ class PlaceholderStagingDescriptorAllocator {
 
 // Verify the shader visible view heaps switch over within a single submit.
 TEST_P(D3D12DescriptorHeapTests, SwitchOverViewHeap) {
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
 
@@ -176,15 +177,15 @@ TEST_P(D3D12DescriptorHeapTests, NoSwitchOverSamplerHeap) {
     // a sampler bindgroup each draw. After HEAP_SIZE + 1 draws, the heaps WILL NOT switch over
     // because the sampler heap allocations are de-duplicated.
     renderPipelineDescriptor.vertex.module = utils::CreateShaderModule(device, R"(
-            @vertex fn main() -> @builtin(position) vec4<f32> {
-                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            @vertex fn main() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
             })");
 
     renderPipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
             @group(0) @binding(0) var sampler0 : sampler;
-            @fragment fn main() -> @location(0) vec4<f32> {
+            @fragment fn main() -> @location(0) vec4f {
                 _ = sampler0;
-                return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+                return vec4f(0.0, 0.0, 0.0, 0.0);
             })");
 
     wgpu::RenderPipeline renderPipeline = device.CreateRenderPipeline(&renderPipelineDescriptor);
@@ -223,8 +224,8 @@ TEST_P(D3D12DescriptorHeapTests, NoSwitchOverSamplerHeap) {
 // Verify shader-visible heaps can be recycled for multiple submits.
 TEST_P(D3D12DescriptorHeapTests, PoolHeapsInMultipleSubmits) {
     // Use small heaps to count only pool-allocated switches.
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     ShaderVisibleDescriptorAllocator* allocator =
         mD3DDevice->GetSamplerShaderVisibleDescriptorAllocator();
@@ -265,8 +266,8 @@ TEST_P(D3D12DescriptorHeapTests, PoolHeapsInMultipleSubmits) {
 // Verify shader-visible heaps do not recycle in a pending submit.
 TEST_P(D3D12DescriptorHeapTests, PoolHeapsInPendingSubmit) {
     // Use small heaps to count only pool-allocated switches.
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     constexpr uint32_t kNumOfSwitches = 5;
 
@@ -297,8 +298,8 @@ TEST_P(D3D12DescriptorHeapTests, PoolHeapsInPendingSubmit) {
 // once no longer pending.
 TEST_P(D3D12DescriptorHeapTests, PoolHeapsInPendingAndMultipleSubmits) {
     // Use small heaps to count only pool-allocated switches.
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     constexpr uint32_t kNumOfSwitches = 5;
 
@@ -432,8 +433,8 @@ TEST_P(D3D12DescriptorHeapTests, EncodeManyUBO) {
     // draws, the result is the arithmetic sum of the sequence after the framebuffer is blended
     // by accumulation. By checking for this sum, we ensure each bindgroup was encoded
     // correctly.
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     utils::BasicRenderPass renderPass =
         MakeRenderPass(kRTSize, kRTSize, wgpu::TextureFormat::R16Float);
@@ -447,8 +448,8 @@ TEST_P(D3D12DescriptorHeapTests, EncodeManyUBO) {
         }
         @group(0) @binding(0) var<uniform> buffer0 : U;
 
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(buffer0.heapSize, 0.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(buffer0.heapSize, 0.0, 0.0, 1.0);
         })");
 
     wgpu::BlendState blend;
@@ -506,8 +507,8 @@ TEST_P(D3D12DescriptorHeapTests, EncodeManyUBO) {
 // The first descriptor's memory will be reused when the second submit encodes |heapSize|
 // descriptors.
 TEST_P(D3D12DescriptorHeapTests, EncodeUBOOverflowMultipleSubmit) {
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     // TODO(crbug.com/dawn/742): Test output is wrong with D3D12 + WARP.
     DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsWARP());
@@ -594,8 +595,8 @@ TEST_P(D3D12DescriptorHeapTests, EncodeUBOOverflowMultipleSubmit) {
 // Shader-visible heaps should switch out once then re-encode the first descriptor at a new
 // offset in the heap.
 TEST_P(D3D12DescriptorHeapTests, EncodeReuseUBOOverflow) {
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
 
@@ -655,8 +656,8 @@ TEST_P(D3D12DescriptorHeapTests, EncodeReuseUBOOverflow) {
 // Shader-visible heaps should switch out once then re-encode the
 // first descriptor at the same offset in the heap.
 TEST_P(D3D12DescriptorHeapTests, EncodeReuseUBOMultipleSubmits) {
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
 
@@ -735,8 +736,8 @@ TEST_P(D3D12DescriptorHeapTests, EncodeReuseUBOMultipleSubmits) {
 // Verify encoding many sampler and ubo worth of bindgroups.
 // Shader-visible heaps should switch out |kNumOfViewHeaps| times.
 TEST_P(D3D12DescriptorHeapTests, EncodeManyUBOAndSamplers) {
-    DAWN_TEST_UNSUPPORTED_IF(!mD3DDevice->IsToggleEnabled(
-        dawn::native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
+    DAWN_TEST_UNSUPPORTED_IF(
+        !mD3DDevice->IsToggleEnabled(native::Toggle::UseD3D12SmallShaderVisibleHeapForTesting));
 
     // Create a solid filled texture.
     wgpu::TextureDescriptor descriptor;
@@ -782,25 +783,25 @@ TEST_P(D3D12DescriptorHeapTests, EncodeManyUBOAndSamplers) {
 
             @vertex fn main(
                 @builtin(vertex_index) VertexIndex : u32
-            ) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 3>(
-                    vec2<f32>(-1.0,  1.0),
-                    vec2<f32>( 1.0,  1.0),
-                    vec2<f32>(-1.0, -1.0)
+            ) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f(-1.0,  1.0),
+                    vec2f( 1.0,  1.0),
+                    vec2f(-1.0, -1.0)
                 );
-                return vec4<f32>(buffer0.transform * (pos[VertexIndex]), 0.0, 1.0);
+                return vec4f(buffer0.transform * (pos[VertexIndex]), 0.0, 1.0);
             })");
         pipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
             struct U {
-                color : vec4<f32>
+                color : vec4f
             }
             @group(0) @binding(1) var sampler0 : sampler;
             @group(0) @binding(2) var texture0 : texture_2d<f32>;
             @group(0) @binding(3) var<uniform> buffer0 : U;
 
             @fragment fn main(
-                @builtin(position) FragCoord : vec4<f32>
-            ) -> @location(0) vec4<f32> {
+                @builtin(position) FragCoord : vec4f
+            ) -> @location(0) vec4f {
                 return textureSample(texture0, sampler0, FragCoord.xy) + buffer0.color;
             })");
 
@@ -1043,8 +1044,29 @@ TEST_P(D3D12DescriptorHeapTests, AllocateDeallocateMany) {
     }
 }
 
+// Verifies that gpu descriptor heap allocations are only valid during the serial they were created
+// on.
+TEST_P(D3D12DescriptorHeapTests, InvalidateAllocationAfterSerial) {
+    Device* d3dDevice = reinterpret_cast<Device*>(device.Get());
+    ShaderVisibleDescriptorAllocator* gpuAllocator =
+        d3dDevice->GetViewShaderVisibleDescriptorAllocator();
+
+    GPUDescriptorHeapAllocation gpuHeapDescAllocation;
+
+    D3D12_CPU_DESCRIPTOR_HANDLE baseCPUDescriptor;
+    gpuAllocator->AllocateGPUDescriptors(1, d3dDevice->GetPendingCommandSerial(),
+                                         &baseCPUDescriptor, &gpuHeapDescAllocation);
+
+    EXPECT_TRUE(gpuAllocator->IsAllocationStillValid(gpuHeapDescAllocation));
+
+    EXPECT_TRUE(d3dDevice->NextSerial().IsSuccess());
+
+    EXPECT_FALSE(gpuAllocator->IsAllocationStillValid(gpuHeapDescAllocation));
+}
+
 DAWN_INSTANTIATE_TEST(D3D12DescriptorHeapTests,
                       D3D12Backend(),
                       D3D12Backend({"use_d3d12_small_shader_visible_heap"}));
 
+}  // anonymous namespace
 }  // namespace dawn::native::d3d12

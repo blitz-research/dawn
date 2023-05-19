@@ -1,8 +1,13 @@
 #version 310 es
 
 layout(r32ui) uniform highp writeonly uimage2DArray arg_0;
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uint inner;
+} prevent_dce;
+
 void textureNumLayers_87faad() {
   uint res = uint(imageSize(arg_0).z);
+  prevent_dce.inner = res;
 }
 
 vec4 vertex_main() {
@@ -19,11 +24,16 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 layout(r32ui) uniform highp writeonly uimage2DArray arg_0;
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uint inner;
+} prevent_dce;
+
 void textureNumLayers_87faad() {
   uint res = uint(imageSize(arg_0).z);
+  prevent_dce.inner = res;
 }
 
 void fragment_main() {
@@ -37,8 +47,13 @@ void main() {
 #version 310 es
 
 layout(r32ui) uniform highp writeonly uimage2DArray arg_0;
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uint inner;
+} prevent_dce;
+
 void textureNumLayers_87faad() {
   uint res = uint(imageSize(arg_0).z);
+  prevent_dce.inner = res;
 }
 
 void compute_main() {

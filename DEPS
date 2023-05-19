@@ -19,7 +19,7 @@ vars = {
   'dawn_gn_version': 'git_revision:bd99dbf98cbdefe18a4128189665c5761263bcfb',
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
-  'dawn_ninja_version': 'version:2@1.8.2.chromium.3',
+  'dawn_ninja_version': 'version:2@1.11.1.chromium.6',
   'dawn_go_version': 'version:2@1.18.4',
 
   'node_darwin_arm64_sha': '31859fc1fa0994a95f44f09c367d6ff63607cfde',
@@ -37,11 +37,11 @@ vars = {
 deps = {
   # Dependencies required to use GN/Clang in standalone
   'build': {
-    'url': '{chromium_git}/chromium/src/build@01569374d46a14b225586c564146a8e1749520b6',
+    'url': '{chromium_git}/chromium/src/build@1103ef535ca1e100db5d4e59781a4e59369a9818',
     'condition': 'dawn_standalone',
   },
   'buildtools': {
-    'url': '{chromium_git}/chromium/src/buildtools@cccaf48c82bcf4ddafa6f8aa9f06014a1ef434bf',
+    'url': '{chromium_git}/chromium/src/buildtools@2ff42d2008f09f65de12e70c6ff0ad58ddb090ad',
     'condition': 'dawn_standalone',
   },
   'buildtools/clang_format/script': {
@@ -74,17 +74,17 @@ deps = {
   },
 
   'buildtools/third_party/libc++/trunk': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@26d0ab4151fd10c523fdbb5bbdb59aa5a5774820',
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@c1341b9a1a7de7c193a23bf003d5479c48957f7d',
     'condition': 'dawn_standalone',
   },
 
   'buildtools/third_party/libc++abi/trunk': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@5c3e02e92ae8bbc1bf1001bd9ef0d76e044ddb86',
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@f7460fc60ab56553f0b3b0853f1ea60aa51b9478',
     'condition': 'dawn_standalone',
   },
 
   'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang@a5e0d72349d028a4023927d6d166a8478355fac3',
+    'url': '{chromium_git}/chromium/src/tools/clang@effd9257d456f2d42e9e22fa4f37a24d8cf0b5b5',
     'condition': 'dawn_standalone',
   },
   'tools/clang/dsymutil': {
@@ -98,16 +98,20 @@ deps = {
 
   # Testing, GTest and GMock
   'testing': {
-    'url': '{chromium_git}/chromium/src/testing@e3e8c19554e8f47da85d35e4f990cdc30a061196',
+    'url': '{chromium_git}/chromium/src/testing@166db27fd0d53afc0c716b1ae9c15725e380871f',
     'condition': 'dawn_standalone',
   },
   'third_party/googletest': {
-    'url': '{chromium_git}/external/github.com/google/googletest@d1a0039b97291dd1dc14f123b906bb7622ffe07c',
+    'url': '{chromium_git}/external/github.com/google/googletest@7a7231c442484be389fdf01594310349ca0e42a8',
     'condition': 'dawn_standalone',
   },
   # This is a dependency of //testing
   'third_party/catapult': {
-    'url': '{chromium_git}/catapult.git@4a0e6f034e9756605cfc837c8526588d6c13436b',
+    'url': '{chromium_git}/catapult.git@c1e70d412ce01fb194f73f7abfdac710aae87dae',
+    'condition': 'dawn_standalone',
+  },
+  'third_party/google_benchmark/src': {
+    'url': '{chromium_git}/external/github.com/google/benchmark.git' + '@' + 'efc89f0b524780b1994d5dddd83a92718e5be492',
     'condition': 'dawn_standalone',
   },
 
@@ -132,17 +136,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@8964933f60561b22a1e1340d9e6cdc79901f527e',
+    'url': '{chromium_git}/angle/angle@c9029ddff73f199bb112cde529cdfa8834cd219f',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@aae98adc2222dcada4aa952cccad48ab08e34004',
+    'url': '{swiftshader_git}/SwiftShader@f549d5e6c6635ec8b75fb544a6bdc9f48bfb1dd3',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@d52b983a8d1023512b507f5712352fc782e71c38',
+    'url': '{chromium_git}/vulkan-deps@303074feac1525ccb32137047cb4bdb6b21d1b7e',
     'condition': 'dawn_standalone',
   },
 
@@ -158,7 +162,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@c0d64c2382f2675fcfb9038eae6367cd2b08f700',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@4fd26fe4abb31b74e8b5cc9ea6ff0e36970eb7bf',
     'condition': 'build_with_chromium',
   },
 
@@ -172,7 +176,7 @@ deps = {
     'condition': 'dawn_node',
   },
   'third_party/gpuweb': {
-    'url': '{github_git}/gpuweb/gpuweb.git@0f5fc665a0d5b281e8119f0201e9067b05cf7927',
+    'url': '{github_git}/gpuweb/gpuweb.git@2e75d5e68e80e4c28575c7836ee00ca22cf4ca63',
     'condition': 'dawn_node',
   },
 
@@ -204,10 +208,6 @@ deps = {
   },
 
   # Misc dependencies inherited from Tint
-  'third_party/benchmark': {
-    'url': '{chromium_git}/external/github.com/google/benchmark.git@e991355c02b93fe17713efe04cbc2e278e00fdbd',
-    'condition': 'dawn_standalone',
-  },
   'third_party/protobuf': {
     'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@fde7cf7358ec7cd69e8db9be4f1fa6a5c431386a',
     'condition': 'dawn_standalone',
@@ -237,6 +237,18 @@ hooks = [
     'pattern': '.',
     'condition': 'dawn_standalone and checkout_mac',
     'action': ['python3', 'build/mac_toolchain.py'],
+  },
+  {
+    # Case-insensitivity for the Win SDK. Must run before win_toolchain below.
+    'name': 'ciopfs_linux',
+    'pattern': '.',
+    'condition': 'dawn_standalone and checkout_win and host_os == "linux"',
+    'action': [ 'download_from_google_storage',
+                '--no_resume',
+                '--no_auth',
+                '--bucket', 'chromium-browser-clang/ciopfs',
+                '-s', 'build/ciopfs.sha1',
+    ]
   },
   {
     # Update the Windows toolchain if necessary. Must run before 'clang' below.
@@ -272,6 +284,17 @@ hooks = [
                 '--bucket', 'chromium-browser-clang/rc',
                 '-s', 'build/toolchain/win/rc/win/rc.exe.sha1',
     ],
+  },
+  {
+    'name': 'rc_linux',
+    'pattern': '.',
+    'condition': 'dawn_standalone and checkout_win and host_os == "linux"',
+    'action': [ 'download_from_google_storage',
+                '--no_resume',
+                '--no_auth',
+                '--bucket', 'chromium-browser-clang/rc',
+                '-s', 'build/toolchain/win/rc/linux64/rc.sha1',
+    ]
   },
   # Pull clang-format binaries using checked-in hashes.
   {

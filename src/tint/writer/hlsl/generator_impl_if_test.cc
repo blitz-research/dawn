@@ -20,7 +20,7 @@ namespace {
 using HlslGeneratorImplTest_If = TestHelper;
 
 TEST_F(HlslGeneratorImplTest_If, Emit_If) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* cond = Expr("cond");
     auto* body = Block(Return());
@@ -30,7 +30,7 @@ TEST_F(HlslGeneratorImplTest_If, Emit_If) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    ASSERT_TRUE(gen.EmitStatement(i)) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   }
@@ -38,8 +38,8 @@ TEST_F(HlslGeneratorImplTest_If, Emit_If) {
 }
 
 TEST_F(HlslGeneratorImplTest_If, Emit_IfWithElseIf) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
-    GlobalVar("else_cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
+    GlobalVar("else_cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_cond = Expr("else_cond");
     auto* else_body = Block(Return());
@@ -53,7 +53,7 @@ TEST_F(HlslGeneratorImplTest_If, Emit_IfWithElseIf) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    ASSERT_TRUE(gen.EmitStatement(i)) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else {
@@ -65,7 +65,7 @@ TEST_F(HlslGeneratorImplTest_If, Emit_IfWithElseIf) {
 }
 
 TEST_F(HlslGeneratorImplTest_If, Emit_IfWithElse) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_body = Block(Return());
 
@@ -78,7 +78,7 @@ TEST_F(HlslGeneratorImplTest_If, Emit_IfWithElse) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    ASSERT_TRUE(gen.EmitStatement(i)) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else {
@@ -88,8 +88,8 @@ TEST_F(HlslGeneratorImplTest_If, Emit_IfWithElse) {
 }
 
 TEST_F(HlslGeneratorImplTest_If, Emit_IfWithMultiple) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
-    GlobalVar("else_cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
+    GlobalVar("else_cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_cond = Expr("else_cond");
 
@@ -106,7 +106,7 @@ TEST_F(HlslGeneratorImplTest_If, Emit_IfWithMultiple) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    ASSERT_TRUE(gen.EmitStatement(i)) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else {

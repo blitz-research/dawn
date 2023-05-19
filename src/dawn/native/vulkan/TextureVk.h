@@ -84,8 +84,8 @@ class Texture final : public TextureBase {
     void TransitionEagerlyForExport(CommandRecordingContext* recordingContext);
     std::vector<VkSemaphore> AcquireWaitRequirements();
 
-    void EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
-                                             const SubresourceRange& range);
+    MaybeError EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
+                                                   const SubresourceRange& range);
 
     VkImageLayout GetCurrentLayoutForSwapChain() const;
 
@@ -193,6 +193,7 @@ class TextureView final : public TextureViewBase {
     static ResultOrError<Ref<TextureView>> Create(TextureBase* texture,
                                                   const TextureViewDescriptor* descriptor);
     VkImageView GetHandle() const;
+    VkImageView GetHandleForBGRA8UnormStorage() const;
 
   private:
     ~TextureView() override;
@@ -204,6 +205,7 @@ class TextureView final : public TextureViewBase {
     void SetLabelImpl() override;
 
     VkImageView mHandle = VK_NULL_HANDLE;
+    VkImageView mHandleForBGRA8UnormStorage = VK_NULL_HANDLE;
 };
 
 }  // namespace dawn::native::vulkan

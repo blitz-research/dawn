@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/msl/test_helper.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -22,13 +23,13 @@ namespace {
 using MslGeneratorImplTest = TestHelper;
 
 TEST_F(MslGeneratorImplTest, EmitExpression_Cast_Scalar) {
-    auto* cast = Construct<f32>(1_i);
+    auto* cast = Call<f32>(1_i);
     WrapInFunction(cast);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "1.0f");
 }
 
@@ -38,19 +39,19 @@ TEST_F(MslGeneratorImplTest, EmitExpression_Cast_Vector) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "float3(1.0f, 2.0f, 3.0f)");
 }
 
 TEST_F(MslGeneratorImplTest, EmitExpression_Cast_IntMin) {
-    auto* cast = Construct<u32>(i32(std::numeric_limits<int32_t>::min()));
+    auto* cast = Call<u32>(i32(std::numeric_limits<int32_t>::min()));
     WrapInFunction(cast);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, cast)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "2147483648u");
 }
 

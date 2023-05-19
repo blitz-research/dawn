@@ -22,6 +22,10 @@
 #include "dawn/common/RefCounted.h"
 #include "dawn/native/Forward.h"
 
+namespace absl {
+class FormatSink;
+}
+
 namespace dawn::native {
 
 class ApiObjectBase;
@@ -79,11 +83,13 @@ class ApiObjectBase : public ObjectBase, public LinkNode<ApiObjectBase> {
 
     ApiObjectBase(DeviceBase* device, LabelNotImplementedTag tag);
     ApiObjectBase(DeviceBase* device, const char* label);
-    ApiObjectBase(DeviceBase* device, ErrorTag tag);
+    ApiObjectBase(DeviceBase* device, ErrorTag tag, const char* label = nullptr);
     ~ApiObjectBase() override;
 
     virtual ObjectType GetType() const = 0;
     const std::string& GetLabel() const;
+
+    virtual void FormatLabel(absl::FormatSink* s) const;
 
     // The ApiObjectBase is considered alive if it is tracked in a respective linked list owned
     // by the owning device.
@@ -94,6 +100,7 @@ class ApiObjectBase : public ObjectBase, public LinkNode<ApiObjectBase> {
 
     // Dawn API
     void APISetLabel(const char* label);
+    void APIRelease();
 
   protected:
     // Overriding of the RefCounted's DeleteThis function ensures that instances of objects
@@ -107,6 +114,7 @@ class ApiObjectBase : public ObjectBase, public LinkNode<ApiObjectBase> {
     // and they should ensure that their overriding versions call this underlying version
     // somewhere.
     void DeleteThis() override;
+    void LockAndDeleteThis() override;
 
     // Returns the list where this object may be tracked for future destruction. This can be
     // overrided to create hierarchical object tracking ownership:

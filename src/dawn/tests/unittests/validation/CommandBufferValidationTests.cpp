@@ -20,6 +20,9 @@
 
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 using ::testing::HasSubstr;
 
 class CommandBufferValidationTest : public ValidationTest {};
@@ -59,7 +62,7 @@ TEST_F(CommandBufferValidationTest, EndedMidRenderPass) {
             encoder.Finish(),
             HasSubstr("Command buffer recording ended before [RenderPassEncoder] was ended."));
         ASSERT_DEVICE_ERROR(
-            pass.End(), HasSubstr("Recording in an error or already ended [RenderPassEncoder]."));
+            pass.End(), HasSubstr("Parent encoder of [RenderPassEncoder] is already finished."));
     }
 }
 
@@ -91,7 +94,7 @@ TEST_F(CommandBufferValidationTest, EndedMidComputePass) {
             encoder.Finish(),
             HasSubstr("Command buffer recording ended before [ComputePassEncoder] was ended."));
         ASSERT_DEVICE_ERROR(
-            pass.End(), HasSubstr("Recording in an error or already ended [ComputePassEncoder]."));
+            pass.End(), HasSubstr("Parent encoder of [ComputePassEncoder] is already finished."));
     }
 }
 
@@ -112,10 +115,8 @@ TEST_F(CommandBufferValidationTest, RenderPassEndedTwice) {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&placeholderRenderPass);
         pass.End();
-        pass.End();
-        ASSERT_DEVICE_ERROR(
-            encoder.Finish(),
-            HasSubstr("Recording in an error or already ended [RenderPassEncoder]."));
+        ASSERT_DEVICE_ERROR(pass.End(), HasSubstr("[RenderPassEncoder] was already ended."));
+        encoder.Finish();
     }
 }
 
@@ -134,10 +135,35 @@ TEST_F(CommandBufferValidationTest, ComputePassEndedTwice) {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
         pass.End();
-        pass.End();
-        ASSERT_DEVICE_ERROR(
-            encoder.Finish(),
-            HasSubstr("Recording in an error or already ended [ComputePassEncoder]."));
+        ASSERT_DEVICE_ERROR(pass.End(), HasSubstr("[ComputePassEncoder] was already ended."));
+        encoder.Finish();
+    }
+}
+
+// Test that a pass cannot be ended again in another pass
+TEST_F(CommandBufferValidationTest, PassEndedAgainMidAnotherPass) {
+    // Error case, render pass ended again in another render pass
+    {
+        PlaceholderRenderPass placeholderRenderPass(device);
+
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass0 = encoder.BeginRenderPass(&placeholderRenderPass);
+        pass0.End();
+        wgpu::RenderPassEncoder pass1 = encoder.BeginRenderPass(&placeholderRenderPass);
+        ASSERT_DEVICE_ERROR(pass0.End(), HasSubstr("[RenderPassEncoder] was already ended."));
+        pass1.End();
+        encoder.Finish();
+    }
+
+    // Error case, compute pass ended again in another compute pass
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::ComputePassEncoder pass0 = encoder.BeginComputePass();
+        pass0.End();
+        wgpu::ComputePassEncoder pass1 = encoder.BeginComputePass();
+        ASSERT_DEVICE_ERROR(pass0.End(), HasSubstr("[ComputePassEncoder] was already ended."));
+        pass1.End();
+        encoder.Finish();
     }
 }
 
@@ -202,7 +228,8 @@ TEST_F(CommandBufferValidationTest, CallsAfterASuccessfulFinish) {
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     encoder.Finish();
 
-    ASSERT_DEVICE_ERROR(encoder.CopyBufferToBuffer(copyBuffer, 0, copyBuffer, 0, 0));
+    ASSERT_DEVICE_ERROR(encoder.CopyBufferToBuffer(copyBuffer, 0, copyBuffer, 0, 0),
+                        HasSubstr("[CommandEncoder] is already finished."));
 }
 
 // Test that encoding command after a failed finish produces an error
@@ -223,7 +250,8 @@ TEST_F(CommandBufferValidationTest, CallsAfterAFailedFinish) {
     encoder.CopyBufferToBuffer(buffer, 0, buffer, 0, 0);
     ASSERT_DEVICE_ERROR(encoder.Finish());
 
-    ASSERT_DEVICE_ERROR(encoder.CopyBufferToBuffer(copyBuffer, 0, copyBuffer, 0, 0));
+    ASSERT_DEVICE_ERROR(encoder.CopyBufferToBuffer(copyBuffer, 0, copyBuffer, 0, 0),
+                        HasSubstr("[CommandEncoder] is already finished."));
 }
 
 // Test that passes which are de-referenced prior to ending still allow the correct errors to be
@@ -316,7 +344,7 @@ TEST_F(CommandBufferValidationTest, DestroyEncoder) {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&placeholderRenderPass);
         pass.End();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
         ASSERT_DEVICE_ERROR(encoder.Finish(), HasSubstr("Destroyed encoder cannot be finished."));
     }
 
@@ -325,13 +353,13 @@ TEST_F(CommandBufferValidationTest, DestroyEncoder) {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&placeholderRenderPass);
         pass.End();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
     }
 
     // Destroyed encoder should allow encoding, and emit error on finish.
     {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&placeholderRenderPass);
         pass.End();
         ASSERT_DEVICE_ERROR(encoder.Finish(), HasSubstr("Destroyed encoder cannot be finished."));
@@ -340,7 +368,7 @@ TEST_F(CommandBufferValidationTest, DestroyEncoder) {
     // Destroyed encoder should allow encoding and shouldn't emit an error if never finished.
     {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&placeholderRenderPass);
         pass.End();
     }
@@ -351,21 +379,21 @@ TEST_F(CommandBufferValidationTest, DestroyEncoder) {
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&placeholderRenderPass);
         pass.End();
         encoder.Finish();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
     }
 
     // Destroying an encoder twice should not emit any errors.
     {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
     }
 
     // Destroying an encoder twice and then calling finish should fail.
     {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
-        dawn::native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
+        native::FromAPI(encoder.Get())->Destroy();
         ASSERT_DEVICE_ERROR(encoder.Finish(), HasSubstr("Destroyed encoder cannot be finished."));
     }
 }
@@ -398,3 +426,6 @@ TEST_F(CommandBufferValidationTest, EncodeAfterDeviceDestroyed) {
         ASSERT_DEVICE_ERROR(encoder.Finish(), HasSubstr("[Invalid CommandEncoder] is invalid."));
     }
 }
+
+}  // anonymous namespace
+}  // namespace dawn

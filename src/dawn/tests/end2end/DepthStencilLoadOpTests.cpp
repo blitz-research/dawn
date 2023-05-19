@@ -19,6 +19,7 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
 
 using Format = wgpu::TextureFormat;
@@ -115,6 +116,8 @@ class DepthStencilLoadOpTests : public DawnTestWithParams<DepthStencilLoadOpTest
 
         switch (GetParam().mCheck) {
             case Check::SampleDepth: {
+                DAWN_TEST_UNSUPPORTED_IF(utils::IsStencilOnlyFormat(GetParam().mFormat));
+
                 std::vector<float> expectedDepth(mipSize * mipSize, kDepthValues[mipLevel]);
                 ExpectSampledDepthData(
                     texture, mipSize, mipSize, 0, mipLevel,
@@ -124,6 +127,8 @@ class DepthStencilLoadOpTests : public DawnTestWithParams<DepthStencilLoadOpTest
             }
 
             case Check::CopyDepth: {
+                DAWN_TEST_UNSUPPORTED_IF(utils::IsStencilOnlyFormat(GetParam().mFormat));
+
                 if (GetParam().mFormat == wgpu::TextureFormat::Depth16Unorm) {
                     std::vector<uint16_t> expectedDepth(mipSize * mipSize,
                                                         kU16DepthValues[mipLevel]);
@@ -150,6 +155,8 @@ class DepthStencilLoadOpTests : public DawnTestWithParams<DepthStencilLoadOpTest
             }
 
             case Check::DepthTest: {
+                DAWN_TEST_UNSUPPORTED_IF(utils::IsStencilOnlyFormat(GetParam().mFormat));
+
                 std::vector<float> expectedDepth(mipSize * mipSize, kDepthValues[mipLevel]);
                 ExpectAttachmentDepthTestData(texture, GetParam().mFormat, mipSize, mipSize, 0,
                                               mipLevel, expectedDepth)
@@ -179,6 +186,9 @@ class DepthStencilLoadOpTests : public DawnTestWithParams<DepthStencilLoadOpTest
 
 // Check that clearing a mip level works at all.
 TEST_P(DepthStencilLoadOpTests, ClearMip0) {
+    // TODO(crbug.com/dawn/1828): depth16unorm broken on Apple GPUs.
+    DAWN_SUPPRESS_TEST_IF(IsApple() && GetParam().mFormat == wgpu::TextureFormat::Depth16Unorm);
+
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     encoder.BeginRenderPass(&renderPassDescriptors[0]).End();
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
@@ -199,6 +209,9 @@ TEST_P(DepthStencilLoadOpTests, ClearMip1) {
 
 // Clear first mip then the second mip.  Check both mip levels.
 TEST_P(DepthStencilLoadOpTests, ClearBothMip0Then1) {
+    // TODO(crbug.com/dawn/1828): depth16unorm broken on Apple GPUs.
+    DAWN_SUPPRESS_TEST_IF(IsApple() && GetParam().mFormat == wgpu::TextureFormat::Depth16Unorm);
+
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     encoder.BeginRenderPass(&renderPassDescriptors[0]).End();
     encoder.BeginRenderPass(&renderPassDescriptors[1]).End();
@@ -211,6 +224,9 @@ TEST_P(DepthStencilLoadOpTests, ClearBothMip0Then1) {
 
 // Clear second mip then the first mip. Check both mip levels.
 TEST_P(DepthStencilLoadOpTests, ClearBothMip1Then0) {
+    // TODO(crbug.com/dawn/1828): depth16unorm broken on Apple GPUs.
+    DAWN_SUPPRESS_TEST_IF(IsApple() && GetParam().mFormat == wgpu::TextureFormat::Depth16Unorm);
+
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     encoder.BeginRenderPass(&renderPassDescriptors[1]).End();
     encoder.BeginRenderPass(&renderPassDescriptors[0]).End();
@@ -232,8 +248,12 @@ auto GenerateParam() {
 
     auto params2 = MakeParamGenerator<DepthStencilLoadOpTestParams>(
         {D3D12Backend(), D3D12Backend({}, {"use_d3d12_render_pass"}), MetalBackend(),
+         MetalBackend({"metal_use_combined_depth_stencil_format_for_stencil8"}),
+         MetalBackend(
+             {"metal_use_both_depth_and_stencil_attachments_for_combined_depth_stencil_formats"}),
          OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
-        {wgpu::TextureFormat::Depth24PlusStencil8, wgpu::TextureFormat::Depth32FloatStencil8},
+        {wgpu::TextureFormat::Depth24PlusStencil8, wgpu::TextureFormat::Depth32FloatStencil8,
+         wgpu::TextureFormat::Stencil8},
         {Check::CopyStencil, Check::StencilTest, Check::DepthTest, Check::SampleDepth});
 
     std::vector<DepthStencilLoadOpTestParams> allParams;
@@ -410,4 +430,5 @@ DAWN_INSTANTIATE_TEST_P(DepthTextureClearTwiceTest,
                          wgpu::TextureFormat::Depth24PlusStencil8},
                         {true, false});
 
-}  // namespace
+}  // anonymous namespace
+}  // namespace dawn

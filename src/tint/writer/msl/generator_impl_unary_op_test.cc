@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/msl/test_helper.h"
 
 namespace tint::writer::msl {
@@ -20,63 +21,63 @@ namespace {
 using MslUnaryOpTest = TestHelper;
 
 TEST_F(MslUnaryOpTest, AddressOf) {
-    GlobalVar("expr", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("expr", ty.f32(), builtin::AddressSpace::kPrivate);
     auto* op = create<ast::UnaryOpExpression>(ast::UnaryOp::kAddressOf, Expr("expr"));
     WrapInFunction(op);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "&(expr)");
 }
 
 TEST_F(MslUnaryOpTest, Complement) {
-    GlobalVar("expr", ty.i32(), ast::AddressSpace::kPrivate);
+    GlobalVar("expr", ty.i32(), builtin::AddressSpace::kPrivate);
     auto* op = create<ast::UnaryOpExpression>(ast::UnaryOp::kComplement, Expr("expr"));
     WrapInFunction(op);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "~(expr)");
 }
 
 TEST_F(MslUnaryOpTest, Indirection) {
-    GlobalVar("G", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("G", ty.f32(), builtin::AddressSpace::kPrivate);
     auto* p = Let("expr", create<ast::UnaryOpExpression>(ast::UnaryOp::kAddressOf, Expr("G")));
     auto* op = create<ast::UnaryOpExpression>(ast::UnaryOp::kIndirection, Expr("expr"));
     WrapInFunction(p, op);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "*(expr)");
 }
 
 TEST_F(MslUnaryOpTest, Not) {
-    GlobalVar("expr", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("expr", ty.bool_(), builtin::AddressSpace::kPrivate);
     auto* op = create<ast::UnaryOpExpression>(ast::UnaryOp::kNot, Expr("expr"));
     WrapInFunction(op);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "!(expr)");
 }
 
 TEST_F(MslUnaryOpTest, Negation) {
-    GlobalVar("expr", ty.i32(), ast::AddressSpace::kPrivate);
+    GlobalVar("expr", ty.i32(), builtin::AddressSpace::kPrivate);
     auto* op = create<ast::UnaryOpExpression>(ast::UnaryOp::kNegation, Expr("expr"));
     WrapInFunction(op);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "tint_unary_minus(expr)");
 }
 
@@ -86,8 +87,8 @@ TEST_F(MslUnaryOpTest, IntMin) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, op)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "(-2147483647 - 1)");
 }
 

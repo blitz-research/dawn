@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -42,6 +41,7 @@ import (
 	"dawn.googlesource.com/dawn/tools/src/cov"
 	"dawn.googlesource.com/dawn/tools/src/fileutils"
 	"dawn.googlesource.com/dawn/tools/src/git"
+	"dawn.googlesource.com/dawn/tools/src/progressbar"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 )
@@ -100,6 +100,31 @@ func (f *dawnNodeFlags) Set(value string) error {
 	return nil
 }
 
+// Consolidates all the delimiter separated flags with a given prefix into a single flag.
+// Example:
+// Given the flags: ["foo=a", "bar", "foo=b,c"]
+// GlobListFlags("foo=", ",") will transform the flags to: ["bar", "foo=a,b,c"]
+func (f *dawnNodeFlags) GlobListFlags(prefix string, delimiter string) {
+	list := []string{}
+	i := 0
+	for _, flag := range *f {
+		if strings.HasPrefix(flag, prefix) {
+			// Trim the prefix.
+			value := flag[len(prefix):]
+			// Extract the deliminated values.
+			list = append(list, strings.Split(value, delimiter)...)
+		} else {
+			(*f)[i] = flag
+			i++
+		}
+	}
+	(*f) = (*f)[:i]
+	if len(list) > 0 {
+		// Append back the consolidated flags.
+		f.Set(prefix + strings.Join(list, delimiter))
+	}
+}
+
 func makeCtx() context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
 	sigs := make(chan os.Signal, 1)
@@ -132,7 +157,7 @@ func run() error {
 	unrollConstEvalLoopsDefault := runtime.GOOS != "windows"
 
 	var dawnNode, cts, node, npx, resultsPath, expectationsPath, logFilename, backend, adapterName, coverageFile string
-	var verbose, isolated, build, dumpShaders, unrollConstEvalLoops, genCoverage bool
+	var verbose, isolated, build, validate, dumpShaders, unrollConstEvalLoops, genCoverage bool
 	var numRunners int
 	var flags dawnNodeFlags
 	flag.StringVar(&dawnNode, "dawn-node", "", "path to dawn.node module")
@@ -142,8 +167,9 @@ func run() error {
 	flag.StringVar(&resultsPath, "output", "", "path to write test results file")
 	flag.StringVar(&expectationsPath, "expect", "", "path to expectations file")
 	flag.BoolVar(&verbose, "verbose", false, "print extra information while testing")
-	flag.BoolVar(&build, "build", true, "attempt to build the CTS before running")
 	flag.BoolVar(&isolated, "isolate", false, "run each test in an isolated process")
+	flag.BoolVar(&build, "build", true, "attempt to build the CTS before running")
+	flag.BoolVar(&validate, "validate", false, "enable backend validation")
 	flag.BoolVar(&colors, "colors", colors, "enable / disable colors")
 	flag.IntVar(&numRunners, "j", runtime.NumCPU()/2, "number of concurrent runners. 0 runs serially")
 	flag.StringVar(&logFilename, "log", "", "path to log file of tests run and result")
@@ -217,24 +243,20 @@ func run() error {
 	if adapterName != "" {
 		flags.Set("adapter=" + adapterName)
 	}
+	if validate {
+		flags.Set("validate=1")
+	}
 
 	// While running the CTS, always allow unsafe APIs so they can be tested.
-	disableDawnFeaturesFound := false
-	for i, flag := range flags {
-		if strings.HasPrefix(flag, "disable-dawn-features=") {
-			flags[i] = flag + ",disallow_unsafe_apis"
-			disableDawnFeaturesFound = true
-		}
-	}
-	if !disableDawnFeaturesFound {
-		flags = append(flags, "disable-dawn-features=disallow_unsafe_apis")
-	}
+	flags.Set("enable-dawn-features=allow_unsafe_apis")
 	if dumpShaders {
-		flags = append(flags, "enable-dawn-features=dump_shaders")
 		verbose = true
+		flags.Set("enable-dawn-features=dump_shaders,disable_symbol_renaming")
 	}
+	flags.GlobListFlags("enable-dawn-features=", ",")
 
 	r := runner{
+		query:                query,
 		numRunners:           numRunners,
 		verbose:              verbose,
 		node:                 node,
@@ -258,17 +280,36 @@ func run() error {
 	}
 
 	if genCoverage {
-		llvmCov, err := exec.LookPath("llvm-cov")
+		dawnOutDir := filepath.Dir(dawnNode)
+
+		profdata, err := exec.LookPath("llvm-profdata")
 		if err != nil {
-			return fmt.Errorf("failed to find LLVM, required for --coverage")
+			profdata = ""
+			if runtime.GOOS == "darwin" {
+				profdata = "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-profdata"
+				if !fileutils.IsExe(profdata) {
+					profdata = ""
+				}
+			}
 		}
-		turboCov := filepath.Join(filepath.Dir(dawnNode), "turbo-cov"+fileutils.ExeExt)
+		if profdata == "" {
+			return fmt.Errorf("failed to find llvm-profdata, required for --coverage")
+		}
+
+		llvmCov := ""
+		turboCov := filepath.Join(dawnOutDir, "turbo-cov"+fileutils.ExeExt)
 		if !fileutils.IsExe(turboCov) {
 			turboCov = ""
+			if path, err := exec.LookPath("llvm-cov"); err == nil {
+				llvmCov = path
+			} else {
+				return fmt.Errorf("failed to find turbo-cov or llvm-cov")
+			}
 		}
 		r.covEnv = &cov.Env{
-			LLVMBin:  filepath.Dir(llvmCov),
+			Profdata: profdata,
 			Binary:   dawnNode,
+			Cov:      llvmCov,
 			TurboCov: turboCov,
 		}
 	}
@@ -328,8 +369,8 @@ func run() error {
 	}
 
 	if numRunners > 0 {
-		// Find all the test cases that match the given queries.
-		if err := r.gatherTestCases(query, verbose); err != nil {
+		// Find all the test cases that match r.query.
+		if err := r.gatherTestCases(verbose); err != nil {
 			return fmt.Errorf("failed to gather test cases: %w", err)
 		}
 
@@ -416,6 +457,7 @@ func (c *cache) save(path string) error {
 }
 
 type runner struct {
+	query                string
 	numRunners           int
 	verbose              bool
 	node                 string
@@ -486,9 +528,9 @@ func (r *runner) buildCTS(verbose bool) error {
 	return nil
 }
 
-// gatherTestCases() queries the CTS for all test cases that match the given
-// query. On success, gatherTestCases() populates r.testcases.
-func (r *runner) gatherTestCases(query string, verbose bool) error {
+// gatherTestCases() queries the CTS for all test cases that match r.query.
+// On success, gatherTestCases() populates r.testcases.
+func (r *runner) gatherTestCases(verbose bool) error {
 	if verbose {
 		start := time.Now()
 		fmt.Fprintln(r.stdout, "Gathering test cases...")
@@ -505,7 +547,7 @@ func (r *runner) gatherTestCases(query string, verbose bool) error {
 		// start at 1, so just inject a placeholder argument.
 		"placeholder-arg",
 		"--list",
-	}, query)
+	}, r.query)
 
 	cmd := exec.Command(r.node, args...)
 	cmd.Dir = r.cts
@@ -695,12 +737,27 @@ func (r *runner) runServer(ctx context.Context, id int, caseIndices <-chan int, 
 
 		select {
 		case port = <-pl.port:
-			return nil // success
+			break // success
 		case <-time.After(time.Second * 10):
 			return fmt.Errorf("timeout waiting for server port:\n%v", pl.buffer.String())
 		case <-ctx.Done(): // cancelled
 			return ctx.Err()
 		}
+
+		// Load the cases
+		postResp, postErr := http.Post(fmt.Sprintf("http://localhost:%v/load?%v", port, r.query), "", &bytes.Buffer{})
+		if postErr != nil || postResp.StatusCode != http.StatusOK {
+			msg := &strings.Builder{}
+			fmt.Println(msg, "failed to load test cases: ", postErr)
+			if body, err := ioutil.ReadAll(postResp.Body); err == nil {
+				fmt.Println(msg, string(body))
+			} else {
+				fmt.Println(msg, err)
+			}
+			return fmt.Errorf("%v", msg.String())
+		}
+
+		return nil
 	}
 	stopServer = func() {
 		if port > 0 {
@@ -764,6 +821,7 @@ func (r *runner) runServer(ctx context.Context, id int, caseIndices <-chan int, 
 
 			if resp.CoverageData != "" {
 				coverage, covErr := r.covEnv.Import(resp.CoverageData)
+				os.Remove(resp.CoverageData)
 				if covErr != nil {
 					if res.message != "" {
 						res.message += "\n"
@@ -809,16 +867,10 @@ func (r *runner) runParallelIsolated(ctx context.Context) error {
 	for i := 0; i < r.numRunners; i++ {
 		wg.Add(1)
 
-		profraw := ""
-		if r.covEnv != nil {
-			profraw = filepath.Join(r.tmpDir, fmt.Sprintf("cts-%v.profraw", i))
-			defer os.Remove(profraw)
-		}
-
 		go func() {
 			defer wg.Done()
 			for idx := range caseIndices {
-				res := r.runTestcase(ctx, r.testcases[idx], profraw)
+				res := r.runTestcase(ctx, r.testcases[idx])
 				res.index = idx
 				results <- res
 
@@ -859,7 +911,7 @@ func (r *runner) streamResults(ctx context.Context, wg *sync.WaitGroup, results 
 	// Helper function for printing a progress bar.
 	lastStatusUpdate, animFrame := time.Now(), 0
 	updateProgress := func() {
-		fmt.Fprint(r.stdout, ansiProgressBar(animFrame, numTests, numByExpectedStatus))
+		drawProgressBar(r.stdout, animFrame, numTests, numByExpectedStatus)
 		animFrame++
 		lastStatusUpdate = time.Now()
 	}
@@ -919,7 +971,7 @@ func (r *runner) streamResults(ctx context.Context, wg *sync.WaitGroup, results 
 			covTree.Add(SplitCTSQuery(res.testcase), res.coverage)
 		}
 	}
-	fmt.Fprint(r.stdout, ansiProgressBar(animFrame, numTests, numByExpectedStatus))
+	drawProgressBar(r.stdout, animFrame, numTests, numByExpectedStatus)
 
 	// All done. Print final stats.
 	fmt.Fprintf(r.stdout, "\nCompleted in %v\n", timeTaken)
@@ -1012,17 +1064,11 @@ func (r *runner) streamResults(ctx context.Context, wg *sync.WaitGroup, results 
 	return nil
 }
 
-// runSerially() calls the CTS test runner to run the test query in a single
-// process.
+// runSerially() calls the CTS test runner to run the test query in a single process.
 // TODO(bclayton): Support comparing against r.expectations
 func (r *runner) runSerially(ctx context.Context, query string) error {
-	profraw := ""
-	if r.covEnv != nil {
-		profraw = filepath.Join(r.tmpDir, "cts.profraw")
-	}
-
 	start := time.Now()
-	result := r.runTestcase(ctx, query, profraw)
+	result := r.runTestcase(ctx, query)
 	timeTaken := time.Since(start)
 
 	if r.verbose {
@@ -1055,6 +1101,14 @@ var statusColor = map[status]string{
 	fail:    red,
 }
 
+var pbStatusColor = map[status]progressbar.Color{
+	pass:    progressbar.Green,
+	warn:    progressbar.Yellow,
+	skip:    progressbar.Cyan,
+	timeout: progressbar.Yellow,
+	fail:    progressbar.Red,
+}
+
 // expectedStatus is a test status, along with a boolean to indicate whether the
 // status matches the test expectations
 type expectedStatus struct {
@@ -1074,7 +1128,7 @@ type result struct {
 
 // runTestcase() runs the CTS testcase with the given query, returning the test
 // result.
-func (r *runner) runTestcase(ctx context.Context, query string, profraw string) result {
+func (r *runner) runTestcase(ctx context.Context, query string) result {
 	ctx, cancel := context.WithTimeout(ctx, testTimeout)
 	defer cancel()
 
@@ -1093,6 +1147,9 @@ func (r *runner) runTestcase(ctx context.Context, query string, profraw string) 
 	if r.verbose {
 		args = append(args, "--gpu-provider-flag", "verbose=1")
 	}
+	if r.covEnv != nil {
+		args = append(args, "--coverage")
+	}
 	if r.colors {
 		args = append(args, "--colors")
 	}
@@ -1107,11 +1164,6 @@ func (r *runner) runTestcase(ctx context.Context, query string, profraw string) 
 	cmd := exec.CommandContext(ctx, r.node, args...)
 	cmd.Dir = r.cts
 
-	if profraw != "" {
-		cmd.Env = os.Environ()
-		cmd.Env = append(cmd.Env, cov.RuntimeEnv(cmd.Env, profraw))
-	}
-
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
@@ -1119,18 +1171,33 @@ func (r *runner) runTestcase(ctx context.Context, query string, profraw string) 
 	err := cmd.Run()
 
 	msg := buf.String()
-	res := result{testcase: query,
-		status:  pass,
-		message: msg,
-		error:   err,
+	res := result{
+		testcase: query,
+		status:   pass,
+		message:  msg,
+		error:    err,
 	}
 
-	if r.covEnv != nil {
-		coverage, covErr := r.covEnv.Import(profraw)
-		if covErr != nil {
-			err = fmt.Errorf("could not import coverage data: %v", err)
+	if err == nil && r.covEnv != nil {
+		const header = "Code-coverage: [["
+		const footer = "]]"
+		if headerStart := strings.Index(msg, header); headerStart >= 0 {
+			if footerStart := strings.Index(msg[headerStart:], footer); footerStart >= 0 {
+				footerStart += headerStart
+				path := msg[headerStart+len(header) : footerStart]
+				res.message = msg[:headerStart] + msg[footerStart+len(footer):] // Strip out the coverage from the message
+				coverage, covErr := r.covEnv.Import(path)
+				os.Remove(path)
+				if covErr == nil {
+					res.coverage = coverage
+				} else {
+					err = fmt.Errorf("could not import coverage data from '%v': %v", path, covErr)
+				}
+			}
 		}
-		res.coverage = coverage
+		if err == nil && res.coverage == nil {
+			err = fmt.Errorf("failed to parse code coverage from output")
+		}
 	}
 
 	switch {
@@ -1215,69 +1282,26 @@ func alignRight(val interface{}, width int) string {
 	return strings.Repeat(" ", padding) + s
 }
 
-// ansiProgressBar returns a string with an ANSI-colored progress bar, providing
-// realtime information about the status of the CTS run.
+// drawProgressBar draws an ANSI-colored progress bar, providing realtime
+// information about the status of the CTS run.
 // Note: We'll want to skip this if !isatty or if we're running on windows.
-func ansiProgressBar(animFrame int, numTests int, numByExpectedStatus map[expectedStatus]int) string {
-	const barWidth = 50
-
-	animSymbols := []rune{'⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'}
-	blockSymbols := []rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉'}
-
-	numBlocksPrinted := 0
-
-	buf := &strings.Builder{}
-	fmt.Fprint(buf, string(animSymbols[animFrame%len(animSymbols)]), " [")
-	animFrame++
-
-	numFinished := 0
-
+func drawProgressBar(out io.Writer, animFrame int, numTests int, numByExpectedStatus map[expectedStatus]int) {
+	bar := progressbar.Status{Total: numTests}
 	for _, status := range statuses {
 		for _, expected := range []bool{true, false} {
-			color := statusColor[status]
-			if expected {
-				color += bold
+			if num := numByExpectedStatus[expectedStatus{status, expected}]; num > 0 {
+				bar.Segments = append(bar.Segments,
+					progressbar.Segment{
+						Count:       num,
+						Color:       pbStatusColor[status],
+						Bold:        expected,
+						Transparent: expected,
+					})
 			}
-
-			num := numByExpectedStatus[expectedStatus{status, expected}]
-			numFinished += num
-			statusFrac := float64(num) / float64(numTests)
-			fNumBlocks := barWidth * statusFrac
-			fmt.Fprint(buf, color)
-			numBlocks := int(math.Ceil(fNumBlocks))
-			if expected {
-				if numBlocks > 1 {
-					fmt.Fprint(buf, strings.Repeat(string("░"), numBlocks))
-				}
-			} else {
-				if numBlocks > 1 {
-					fmt.Fprint(buf, strings.Repeat(string("▉"), numBlocks))
-				}
-				if numBlocks > 0 {
-					frac := fNumBlocks - math.Floor(fNumBlocks)
-					symbol := blockSymbols[int(math.Round(frac*float64(len(blockSymbols)-1)))]
-					fmt.Fprint(buf, string(symbol))
-				}
-			}
-			numBlocksPrinted += numBlocks
 		}
 	}
-
-	if barWidth > numBlocksPrinted {
-		fmt.Fprint(buf, strings.Repeat(string(" "), barWidth-numBlocksPrinted))
-	}
-	fmt.Fprint(buf, ansiReset)
-	fmt.Fprint(buf, "] ", percentage(numFinished, numTests))
-
-	if colors {
-		// move cursor to start of line so the bar is overridden
-		fmt.Fprint(buf, positionLeft)
-	} else {
-		// cannot move cursor, so newline
-		fmt.Fprintln(buf)
-	}
-
-	return buf.String()
+	const width = 50
+	bar.Draw(out, width, colors, animFrame)
 }
 
 // testcaseStatus is a pair of testcase name and result status
@@ -1459,6 +1483,9 @@ func SplitCTSQuery(testcase string) cov.Path {
 			out = append(out, testcase[s:e+1])
 			s = e + 1
 		}
+	}
+	if end := testcase[s:]; end != "" {
+		out = append(out, end)
 	}
 	return out
 }

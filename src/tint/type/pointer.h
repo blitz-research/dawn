@@ -17,20 +17,20 @@
 
 #include <string>
 
-#include "src/tint/ast/access.h"
-#include "src/tint/ast/address_space.h"
+#include "src/tint/builtin/access.h"
+#include "src/tint/builtin/address_space.h"
 #include "src/tint/type/type.h"
 
 namespace tint::type {
 
 /// A pointer type.
-class Pointer final : public Castable<Pointer, Type> {
+class Pointer final : public utils::Castable<Pointer, Type> {
   public:
     /// Constructor
     /// @param subtype the pointee type
     /// @param address_space the address space of the pointer
     /// @param access the resolved access control of the reference
-    Pointer(const Type* subtype, ast::AddressSpace address_space, ast::Access access);
+    Pointer(const Type* subtype, builtin::AddressSpace address_space, builtin::Access access);
 
     /// Destructor
     ~Pointer() override;
@@ -43,15 +43,14 @@ class Pointer final : public Castable<Pointer, Type> {
     const Type* StoreType() const { return subtype_; }
 
     /// @returns the address space of the pointer
-    ast::AddressSpace AddressSpace() const { return address_space_; }
+    builtin::AddressSpace AddressSpace() const { return address_space_; }
 
     /// @returns the access control of the reference
-    ast::Access Access() const { return access_; }
+    builtin::Access Access() const { return access_; }
 
-    /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const SymbolTable& symbols) const override;
+    std::string FriendlyName() const override;
 
     /// @param ctx the clone context
     /// @returns a clone of this type
@@ -59,8 +58,8 @@ class Pointer final : public Castable<Pointer, Type> {
 
   private:
     Type const* const subtype_;
-    ast::AddressSpace const address_space_;
-    ast::Access const access_;
+    builtin::AddressSpace const address_space_;
+    builtin::Access const access_;
 };
 
 }  // namespace tint::type

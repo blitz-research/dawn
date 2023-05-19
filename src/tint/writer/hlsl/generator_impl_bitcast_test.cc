@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/hlsl/test_helper.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -23,37 +24,37 @@ using HlslGeneratorImplTest_Bitcast = TestHelper;
 
 TEST_F(HlslGeneratorImplTest_Bitcast, EmitExpression_Bitcast_Float) {
     auto* a = Let("a", Expr(1_i));
-    auto* bitcast = create<ast::BitcastExpression>(ty.f32(), Expr("a"));
+    auto* bitcast = Bitcast<f32>(Expr("a"));
     WrapInFunction(a, bitcast);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, bitcast)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, bitcast)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "asfloat(a)");
 }
 
 TEST_F(HlslGeneratorImplTest_Bitcast, EmitExpression_Bitcast_Int) {
     auto* a = Let("a", Expr(1_u));
-    auto* bitcast = create<ast::BitcastExpression>(ty.i32(), Expr("a"));
+    auto* bitcast = Bitcast<i32>(Expr("a"));
     WrapInFunction(a, bitcast);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, bitcast)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, bitcast)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "asint(a)");
 }
 
 TEST_F(HlslGeneratorImplTest_Bitcast, EmitExpression_Bitcast_Uint) {
     auto* a = Let("a", Expr(1_i));
-    auto* bitcast = create<ast::BitcastExpression>(ty.u32(), Expr("a"));
+    auto* bitcast = Bitcast<u32>(Expr("a"));
     WrapInFunction(a, bitcast);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, bitcast)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, bitcast)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "asuint(a)");
 }
 

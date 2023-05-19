@@ -16,14 +16,17 @@
 #include <vector>
 
 #include "dawn/dawn_proc.h"
+#include "dawn/native/Adapter.h"
 #include "dawn/native/DawnNative.h"
 #include "dawn/native/Device.h"
+#include "dawn/native/Toggles.h"
 #include "dawn/native/dawn_platform.h"
 #include "dawn/tests/MockCallback.h"
 #include "dawn/utils/SystemUtils.h"
 #include "dawn/utils/WGPUHelpers.h"
 #include "gtest/gtest.h"
 
+namespace dawn::native {
 namespace {
 
 using testing::Contains;
@@ -37,7 +40,9 @@ class DeviceCreationTest : public testing::Test {
     void SetUp() override {
         dawnProcSetProcs(&dawn::native::GetProcs());
 
-        instance = std::make_unique<dawn::native::Instance>();
+        // Create an instance with default toggles and create an adapter from it.
+        WGPUInstanceDescriptor safeInstanceDesc = {};
+        instance = std::make_unique<dawn::native::Instance>(&safeInstanceDesc);
         instance->DiscoverDefaultAdapters();
         for (dawn::native::Adapter& nativeAdapter : instance->GetAdapters()) {
             wgpu::AdapterProperties properties;
@@ -48,17 +53,79 @@ class DeviceCreationTest : public testing::Test {
                 break;
             }
         }
+
+        {
+            // Create an instance with toggle DisallowUnsafeAPIs disabled, and create an unsafe
+            // adapter from it.
+            // TODO(dawn:1685) Remove this block once DisallowUnsafeAPIs is fully removed.
+            const char* disallowUnsafeApisToggle = "disallow_unsafe_apis";
+            WGPUDawnTogglesDescriptor unsafeInstanceTogglesDesc = {};
+            unsafeInstanceTogglesDesc.chain.sType = WGPUSType::WGPUSType_DawnTogglesDescriptor;
+            unsafeInstanceTogglesDesc.disabledTogglesCount = 1;
+            unsafeInstanceTogglesDesc.disabledToggles = &disallowUnsafeApisToggle;
+            WGPUInstanceDescriptor unsafeInstanceDesc = {};
+            unsafeInstanceDesc.nextInChain = &unsafeInstanceTogglesDesc.chain;
+
+            unsafeInstanceDisallow = std::make_unique<dawn::native::Instance>(&unsafeInstanceDesc);
+            unsafeInstanceDisallow->DiscoverDefaultAdapters();
+            for (dawn::native::Adapter& nativeAdapter : unsafeInstanceDisallow->GetAdapters()) {
+                wgpu::AdapterProperties properties;
+                nativeAdapter.GetProperties(&properties);
+
+                if (properties.backendType == wgpu::BackendType::Null) {
+                    unsafeAdapterDisallow = wgpu::Adapter(nativeAdapter.Get());
+                    break;
+                }
+            }
+        }
+
+        // Create an instance with toggle AllowUnsafeAPIs enabled, and create an unsafe adapter
+        // from it.
+        const char* allowUnsafeApisToggle = "allow_unsafe_apis";
+        WGPUDawnTogglesDescriptor unsafeInstanceTogglesDesc = {};
+        unsafeInstanceTogglesDesc.chain.sType = WGPUSType::WGPUSType_DawnTogglesDescriptor;
+        unsafeInstanceTogglesDesc.enabledTogglesCount = 1;
+        unsafeInstanceTogglesDesc.enabledToggles = &allowUnsafeApisToggle;
+        WGPUInstanceDescriptor unsafeInstanceDesc = {};
+        unsafeInstanceDesc.nextInChain = &unsafeInstanceTogglesDesc.chain;
+
+        unsafeInstance = std::make_unique<dawn::native::Instance>(&unsafeInstanceDesc);
+        unsafeInstance->DiscoverDefaultAdapters();
+        for (dawn::native::Adapter& nativeAdapter : unsafeInstance->GetAdapters()) {
+            wgpu::AdapterProperties properties;
+            nativeAdapter.GetProperties(&properties);
+
+            if (properties.backendType == wgpu::BackendType::Null) {
+                unsafeAdapter = wgpu::Adapter(nativeAdapter.Get());
+                break;
+            }
+        }
+
         ASSERT_NE(adapter, nullptr);
+        ASSERT_NE(unsafeAdapterDisallow, nullptr);
+        ASSERT_NE(unsafeAdapter, nullptr);
     }
 
     void TearDown() override {
         adapter = nullptr;
+        unsafeAdapterDisallow = nullptr;
+        unsafeAdapter = nullptr;
         instance = nullptr;
+        unsafeInstanceDisallow = nullptr;
+        unsafeInstance = nullptr;
         dawnProcSetProcs(nullptr);
     }
 
+    static constexpr size_t kTotalFeaturesCount =
+        static_cast<size_t>(dawn::native::Feature::EnumCount);
+
     std::unique_ptr<dawn::native::Instance> instance;
+    std::unique_ptr<dawn::native::Instance> unsafeInstanceDisallow;
+    std::unique_ptr<dawn::native::Instance> unsafeInstance;
     wgpu::Adapter adapter;
+    wgpu::Adapter unsafeAdapterDisallow;
+    wgpu::Adapter unsafeAdapter;
+    dawn::native::FeaturesInfo featuresInfo;
 };
 
 // Test successful call to CreateDevice with no descriptor
@@ -77,12 +144,12 @@ TEST_F(DeviceCreationTest, CreateDeviceSuccess) {
 // Test successful call to CreateDevice with toggle descriptor.
 TEST_F(DeviceCreationTest, CreateDeviceWithTogglesSuccess) {
     wgpu::DeviceDescriptor desc = {};
-    wgpu::DawnTogglesDeviceDescriptor togglesDesc = {};
-    desc.nextInChain = &togglesDesc;
+    wgpu::DawnTogglesDescriptor deviceTogglesDesc = {};
+    desc.nextInChain = &deviceTogglesDesc;
 
     const char* toggle = "skip_validation";
-    togglesDesc.forceEnabledToggles = &toggle;
-    togglesDesc.forceEnabledTogglesCount = 1;
+    deviceTogglesDesc.enabledToggles = &toggle;
+    deviceTogglesDesc.enabledTogglesCount = 1;
 
     wgpu::Device device = adapter.CreateDevice(&desc);
     EXPECT_NE(device, nullptr);
@@ -91,41 +158,176 @@ TEST_F(DeviceCreationTest, CreateDeviceWithTogglesSuccess) {
     EXPECT_THAT(toggles, Contains(StrEq(toggle)));
 }
 
-// Test features guarded by toggles are validated when creating devices.
-TEST_F(DeviceCreationTest, CreateDeviceRequiringFeaturesGuardedByToggle) {
-    std::vector<wgpu::FeatureName> featuresGuardedByToggle = {
-        wgpu::FeatureName::ShaderF16, wgpu::FeatureName::ChromiumExperimentalDp4a};
+// Test experimental features are guarded by DisallowUnsafeApis adapter toggle, it is inherited from
+// instance but can be overriden by device toggles.
+// TODO(dawn:1685) Remove clang format disabling after the DisallowUnsafeAPI block below is removed.
+// clang-format off
+TEST_F(DeviceCreationTest, CreateDeviceRequiringExperimentalFeatures) {
+    // Ensure that unsafe apis are disallowed on safe adapter.
+    ASSERT_FALSE(dawn::native::FromAPI(adapter.Get())->AllowUnsafeAPIs());
+    // Ensure that unsafe apis are allowed unsafe adapter(s).
+    ASSERT_TRUE(dawn::native::FromAPI(unsafeAdapterDisallow.Get())->AllowUnsafeAPIs());
+    ASSERT_TRUE(dawn::native::FromAPI(unsafeAdapter.Get())->AllowUnsafeAPIs());
 
-    for (auto feature : featuresGuardedByToggle) {
+    for (size_t i = 0; i < kTotalFeaturesCount; i++) {
+        dawn::native::Feature feature = static_cast<dawn::native::Feature>(i);
+        wgpu::FeatureName featureName = dawn::native::FeatureEnumToAPIFeature(feature);
+
+        // Only test experimental features.
+        if (featuresInfo.GetFeatureInfo(featureName)->featureState ==
+            dawn::native::FeatureInfo::FeatureState::Stable) {
+            continue;
+        }
+
         wgpu::DeviceDescriptor deviceDescriptor;
-        deviceDescriptor.requiredFeatures = &feature;
+        deviceDescriptor.requiredFeatures = &featureName;
         deviceDescriptor.requiredFeaturesCount = 1;
 
-        // Test creating device without toggle would fail.
+        // Test creating device on default adapter would fail.
         {
             wgpu::Device device = adapter.CreateDevice(&deviceDescriptor);
             EXPECT_EQ(device, nullptr);
         }
 
-        // Test creating device without DisallowUnsafeApis toggle disabled.
+        // TODO(dawn:1685): Remove this block once DisallowUnsafeAPIs is removed.
         {
-            const char* const disableToggles[] = {"disallow_unsafe_apis"};
-            wgpu::DawnTogglesDeviceDescriptor toggleDesc;
-            toggleDesc.forceDisabledToggles = disableToggles;
-            toggleDesc.forceDisabledTogglesCount = 1;
-            deviceDescriptor.nextInChain = &toggleDesc;
+            // Test creating device on the adapter with DisallowUnsafeApis toggle disabled would
+            // succeed.
+            {
+                wgpu::Device device = unsafeAdapterDisallow.CreateDevice(&deviceDescriptor);
+                EXPECT_NE(device, nullptr);
 
-            wgpu::Device device = adapter.CreateDevice(&deviceDescriptor);
+                ASSERT_EQ(1u, device.EnumerateFeatures(nullptr));
+                wgpu::FeatureName enabledFeature;
+                device.EnumerateFeatures(&enabledFeature);
+                EXPECT_EQ(enabledFeature, featureName);
+            }
+
+            // Test creating device with DisallowUnsafeApis disabled in device toggle descriptor
+            // will success on both adapter, as device toggles will override the inherited adapter
+            // toggles.
+            {
+                const char* const disableToggles[] = {"disallow_unsafe_apis"};
+                wgpu::DawnTogglesDescriptor deviceTogglesDesc;
+                deviceTogglesDesc.disabledToggles = disableToggles;
+                deviceTogglesDesc.disabledTogglesCount = 1;
+                deviceDescriptor.nextInChain = &deviceTogglesDesc;
+
+                // Test on adapter with DisallowUnsafeApis enabled.
+                {
+                    wgpu::Device device = adapter.CreateDevice(&deviceDescriptor);
+                    EXPECT_NE(device, nullptr);
+
+                    ASSERT_EQ(1u, device.EnumerateFeatures(nullptr));
+                    wgpu::FeatureName enabledFeature;
+                    device.EnumerateFeatures(&enabledFeature);
+                    EXPECT_EQ(enabledFeature, featureName);
+                }
+
+                // Test on adapter with DisallowUnsafeApis disabled.
+                {
+                    wgpu::Device device = unsafeAdapterDisallow.CreateDevice(&deviceDescriptor);
+                    EXPECT_NE(device, nullptr);
+
+                    ASSERT_EQ(1u, device.EnumerateFeatures(nullptr));
+                    wgpu::FeatureName enabledFeature;
+                    device.EnumerateFeatures(&enabledFeature);
+                    EXPECT_EQ(enabledFeature, featureName);
+                }
+            }
+
+            // Test creating device with DisallowUnsafeApis enabled in device toggle descriptor will
+            // fail on both adapter, as device toggles will override the inherited adapter toggles.
+            {
+                const char* const enableToggles[] = {"disallow_unsafe_apis"};
+                wgpu::DawnTogglesDescriptor deviceToggleDesc;
+                deviceToggleDesc.enabledToggles = enableToggles;
+                deviceToggleDesc.enabledTogglesCount = 1;
+                deviceDescriptor.nextInChain = &deviceToggleDesc;
+
+                // Test on adapter with DisallowUnsafeApis enabled.
+                {
+                    wgpu::Device device = adapter.CreateDevice(&deviceDescriptor);
+                    EXPECT_EQ(device, nullptr);
+                }
+
+                // Test on adapter with DisallowUnsafeApis disabled.
+                {
+                    wgpu::Device device = unsafeAdapterDisallow.CreateDevice(&deviceDescriptor);
+                    EXPECT_EQ(device, nullptr);
+                }
+            }
+        }
+
+        // Test creating device on the adapter with AllowUnsafeApis toggle enabled would succeed.
+        {
+            deviceDescriptor.nextInChain = nullptr;
+
+            wgpu::Device device = unsafeAdapter.CreateDevice(&deviceDescriptor);
             EXPECT_NE(device, nullptr);
 
             ASSERT_EQ(1u, device.EnumerateFeatures(nullptr));
             wgpu::FeatureName enabledFeature;
             device.EnumerateFeatures(&enabledFeature);
-            EXPECT_EQ(enabledFeature, feature);
-            device.Release();
+            EXPECT_EQ(enabledFeature, featureName);
+        }
+
+        // Test creating device with AllowUnsafeApis enabled in device toggle descriptor will
+        // success on both adapter, as device toggles will override the inherited adapter toggles.
+        {
+            const char* const enableToggles[] = {"allow_unsafe_apis"};
+            wgpu::DawnTogglesDescriptor deviceTogglesDesc;
+            deviceTogglesDesc.enabledToggles = enableToggles;
+            deviceTogglesDesc.enabledTogglesCount = 1;
+            deviceDescriptor.nextInChain = &deviceTogglesDesc;
+
+            // Test on adapter with AllowUnsafeApis disabled.
+            {
+                wgpu::Device device = adapter.CreateDevice(&deviceDescriptor);
+                EXPECT_NE(device, nullptr);
+
+                ASSERT_EQ(1u, device.EnumerateFeatures(nullptr));
+                wgpu::FeatureName enabledFeature;
+                device.EnumerateFeatures(&enabledFeature);
+                EXPECT_EQ(enabledFeature, featureName);
+            }
+
+            // Test on adapter with AllowUnsafeApis disabled.
+            {
+                wgpu::Device device = unsafeAdapter.CreateDevice(&deviceDescriptor);
+                EXPECT_NE(device, nullptr);
+
+                ASSERT_EQ(1u, device.EnumerateFeatures(nullptr));
+                wgpu::FeatureName enabledFeature;
+                device.EnumerateFeatures(&enabledFeature);
+                EXPECT_EQ(enabledFeature, featureName);
+            }
+        }
+
+        // Test creating device with AllowUnsafeApis disabled in device toggle descriptor will fail
+        // on both adapter, as device toggles will override the inherited adapter toggles.
+        {
+            const char* const disableToggles[] = {"allow_unsafe_apis"};
+            wgpu::DawnTogglesDescriptor deviceToggleDesc;
+            deviceToggleDesc.disabledToggles = disableToggles;
+            deviceToggleDesc.disabledTogglesCount = 1;
+            deviceDescriptor.nextInChain = &deviceToggleDesc;
+
+            // Test on adapter with DisallowUnsafeApis enabled.
+            {
+                wgpu::Device device = adapter.CreateDevice(&deviceDescriptor);
+                EXPECT_EQ(device, nullptr);
+            }
+
+            // Test on adapter with DisallowUnsafeApis disabled.
+            {
+                wgpu::Device device = unsafeAdapter.CreateDevice(&deviceDescriptor);
+                EXPECT_EQ(device, nullptr);
+            }
         }
     }
 }
+// clang-format on
 
 TEST_F(DeviceCreationTest, CreateDeviceWithCacheSuccess) {
     // Default device descriptor should have the same cache key as a device descriptor with a
@@ -225,3 +427,4 @@ TEST_F(DeviceCreationTest, RequestDeviceFailure) {
 }
 
 }  // anonymous namespace
+}  // namespace dawn::native

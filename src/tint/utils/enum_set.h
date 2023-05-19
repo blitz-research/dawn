@@ -17,9 +17,10 @@
 
 #include <cstdint>
 #include <functional>
-#include <ostream>
 #include <type_traits>
 #include <utility>
+
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::utils {
 
@@ -192,14 +193,14 @@ struct EnumSet {
     };
 
     /// @returns an read-only iterator to the beginning of the set
-    Iterator begin() {
+    Iterator begin() const {
         auto it = Iterator{set, -1};
         ++it;  // Move to first set bit
         return it;
     }
 
     /// @returns an iterator to the beginning of the set
-    Iterator end() { return Iterator{set, Iterator::kEnd}; }
+    Iterator end() const { return Iterator{set, Iterator::kEnd}; }
 
   private:
     static constexpr uint64_t Bit(Enum value) {
@@ -216,12 +217,12 @@ struct EnumSet {
     uint64_t set = 0;
 };
 
-/// Writes the EnumSet to the std::ostream.
-/// @param out the std::ostream to write to
+/// Writes the EnumSet to the stream.
+/// @param out the stream to write to
 /// @param set the EnumSet to write
 /// @returns out so calls can be chained
 template <typename ENUM>
-inline std::ostream& operator<<(std::ostream& out, EnumSet<ENUM> set) {
+inline utils::StringStream& operator<<(utils::StringStream& out, EnumSet<ENUM> set) {
     out << "{";
     bool first = true;
     for (auto e : set) {

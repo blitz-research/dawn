@@ -24,8 +24,8 @@ template <typename T, typename BackendTraits>
 struct ToBackendTraits;
 
 template <typename BackendTraits>
-struct ToBackendTraits<AdapterBase, BackendTraits> {
-    using BackendType = typename BackendTraits::AdapterType;
+struct ToBackendTraits<PhysicalDeviceBase, BackendTraits> {
+    using BackendType = typename BackendTraits::PhysicalDeviceType;
 };
 
 template <typename BackendTraits>
@@ -96,11 +96,6 @@ struct ToBackendTraits<SamplerBase, BackendTraits> {
 template <typename BackendTraits>
 struct ToBackendTraits<ShaderModuleBase, BackendTraits> {
     using BackendType = typename BackendTraits::ShaderModuleType;
-};
-
-template <typename BackendTraits>
-struct ToBackendTraits<StagingBufferBase, BackendTraits> {
-    using BackendType = typename BackendTraits::StagingBufferType;
 };
 
 template <typename BackendTraits>

@@ -17,6 +17,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class ViewportOrientationTests : public DawnTest {};
 
 // Test that the pixel in viewport coordinate (-1, -1) matches texel (0, 0)
@@ -24,13 +27,13 @@ TEST_P(ViewportOrientationTests, OriginAt0x0) {
     utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, 2, 2);
 
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(-0.5, 0.5, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(-0.5, 0.5, 0.0, 1.0);
         })");
 
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
 
     utils::ComboRenderPipelineDescriptor descriptor;
@@ -59,8 +62,12 @@ TEST_P(ViewportOrientationTests, OriginAt0x0) {
 }
 
 DAWN_INSTANTIATE_TEST(ViewportOrientationTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

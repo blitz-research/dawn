@@ -428,7 +428,7 @@ TEST_P(BufferMappingTests, OffsetNotUpdatedOnError) {
     buffer.MapAsync(
         wgpu::MapMode::Read, 0, 4,
         [](WGPUBufferMapAsyncStatus status, void* userdata) {
-            ASSERT_EQ(WGPUBufferMapAsyncStatus_Error, status);
+            ASSERT_EQ(WGPUBufferMapAsyncStatus_MappingAlreadyPending, status);
             *static_cast<bool*>(userdata) = true;
         },
         &done2);
@@ -534,11 +534,190 @@ TEST_P(BufferMappingTests, MapWrite_ZeroSizedTwice) {
     MapAsyncAndWait(buffer, wgpu::MapMode::Write, 0, wgpu::kWholeMapSize);
 }
 
+// Regression test for crbug.com/1421170 where dropping a buffer which needs
+// padding bytes initialization resulted in a use-after-free.
+TEST_P(BufferMappingTests, RegressChromium1421170) {
+    // Create a mappable buffer of size 7. It will be internally
+    // aligned such that the padding bytes need to be zero initialized.
+    wgpu::BufferDescriptor descriptor;
+    descriptor.size = 7;
+    descriptor.usage = wgpu::BufferUsage::MapWrite;
+    descriptor.mappedAtCreation = false;
+    wgpu::Buffer buffer = device.CreateBuffer(&descriptor);
+
+    // Drop the buffer. The pending commands to zero initialize the
+    // padding bytes should stay valid.
+    buffer = nullptr;
+    // Flush pending commands.
+    device.Tick();
+}
+
 DAWN_INSTANTIATE_TEST(BufferMappingTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
+                      VulkanBackend());
+
+class BufferMappingCallbackTests : public BufferMappingTests {
+  protected:
+    void SubmitCommandBuffer(wgpu::Buffer buffer) {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+
+        {
+            // Record enough commands to make sure the submission cannot be completed by GPU too
+            // quick.
+            constexpr int kRepeatCount = 50;
+            constexpr int kBufferSize = 1024 * 1024 * 10;
+            wgpu::Buffer tempWriteBuffer = CreateMapWriteBuffer(kBufferSize);
+            wgpu::Buffer tempReadBuffer = CreateMapReadBuffer(kBufferSize);
+            for (int i = 0; i < kRepeatCount; ++i) {
+                encoder.CopyBufferToBuffer(tempWriteBuffer, 0, tempReadBuffer, 0, kBufferSize);
+            }
+        }
+
+        if (buffer) {
+            if (buffer.GetUsage() & wgpu::BufferUsage::CopyDst) {
+                encoder.ClearBuffer(buffer);
+            } else {
+                wgpu::Buffer tempBuffer = CreateMapReadBuffer(buffer.GetSize());
+                encoder.CopyBufferToBuffer(buffer, 0, tempBuffer, 0, buffer.GetSize());
+            }
+        }
+        wgpu::CommandBuffer commandBuffer = encoder.Finish();
+        queue.Submit(1, &commandBuffer);
+    }
+
+    void Wait(std::vector<bool>& done) {
+        do {
+            WaitABit();
+        } while (std::any_of(done.begin(), done.end(), [](bool done) { return !done; }));
+    }
+};
+
+TEST_P(BufferMappingCallbackTests, EmptySubmissionAndThenMap) {
+    wgpu::Buffer buffer = CreateMapWriteBuffer(4);
+    MapAsyncAndWait(buffer, wgpu::MapMode::Write, 0, wgpu::kWholeMapSize);
+    buffer.Unmap();
+
+    std::vector<bool> done = {false, false};
+
+    // 1. submission without using buffer.
+    SubmitCommandBuffer({});
+    queue.OnSubmittedWorkDone(
+        0,
+        [](WGPUQueueWorkDoneStatus status, void* userdata) {
+            EXPECT_EQ(status, WGPUQueueWorkDoneStatus_Success);
+            auto& done = *static_cast<std::vector<bool>*>(userdata);
+            done[0] = true;
+            // Step 2 callback should be called first, this is the second.
+            const std::vector<bool> kExpected = {true, true};
+            EXPECT_EQ(done, kExpected);
+        },
+        &done);
+
+    // 2.
+    buffer.MapAsync(
+        wgpu::MapMode::Write, 0, wgpu::kWholeMapSize,
+        [](WGPUBufferMapAsyncStatus status, void* userdata) {
+            EXPECT_EQ(status, WGPUBufferMapAsyncStatus_Success);
+            auto& done = *static_cast<std::vector<bool>*>(userdata);
+            done[1] = true;
+            // The buffer is not used by step 1, so this callback is called first.
+            const std::vector<bool> kExpected = {false, true};
+            EXPECT_EQ(done, kExpected);
+        },
+        &done);
+
+    Wait(done);
+}
+
+TEST_P(BufferMappingCallbackTests, UseTheBufferAndThenMap) {
+    wgpu::Buffer buffer = CreateMapWriteBuffer(4);
+    MapAsyncAndWait(buffer, wgpu::MapMode::Write, 0, wgpu::kWholeMapSize);
+    buffer.Unmap();
+
+    std::vector<bool> done = {false, false};
+
+    // 1. Submit a command buffer which uses the buffer
+    SubmitCommandBuffer(buffer);
+    queue.OnSubmittedWorkDone(
+        0,
+        [](WGPUQueueWorkDoneStatus status, void* userdata) {
+            EXPECT_EQ(status, WGPUQueueWorkDoneStatus_Success);
+            auto& done = *static_cast<std::vector<bool>*>(userdata);
+            done[0] = true;
+            // This callback should be called first
+            const std::vector<bool> kExpected = {true, false};
+            EXPECT_EQ(done, kExpected);
+        },
+        &done);
+
+    // 2.
+    buffer.MapAsync(
+        wgpu::MapMode::Write, 0, wgpu::kWholeMapSize,
+        [](WGPUBufferMapAsyncStatus status, void* userdata) {
+            EXPECT_EQ(status, WGPUBufferMapAsyncStatus_Success);
+            auto& done = *static_cast<std::vector<bool>*>(userdata);
+            done[1] = true;
+            // The buffer is used by step 1, so this callback is called second.
+            const std::vector<bool> kExpected = {true, true};
+            EXPECT_EQ(done, kExpected);
+        },
+        &done);
+
+    Wait(done);
+
+    buffer.Unmap();
+}
+
+TEST_P(BufferMappingCallbackTests, EmptySubmissionWriteAndThenMap) {
+    wgpu::Buffer buffer = CreateMapReadBuffer(4);
+    MapAsyncAndWait(buffer, wgpu::MapMode::Read, 0, wgpu::kWholeMapSize);
+    buffer.Unmap();
+
+    std::vector<bool> done = {false, false};
+
+    // 1. submission without using buffer.
+    SubmitCommandBuffer({});
+    queue.OnSubmittedWorkDone(
+        0,
+        [](WGPUQueueWorkDoneStatus status, void* userdata) {
+            EXPECT_EQ(status, WGPUQueueWorkDoneStatus_Success);
+            auto& done = *static_cast<std::vector<bool>*>(userdata);
+            done[0] = true;
+            // Step 2 callback should be called first, this is the second.
+            const std::vector<bool> kExpected = {true, false};
+            EXPECT_EQ(done, kExpected);
+        },
+        &done);
+
+    int32_t data = 0x12345678;
+    queue.WriteBuffer(buffer, 0, &data, sizeof(data));
+
+    // 2.
+    buffer.MapAsync(
+        wgpu::MapMode::Read, 0, wgpu::kWholeMapSize,
+        [](WGPUBufferMapAsyncStatus status, void* userdata) {
+            EXPECT_EQ(status, WGPUBufferMapAsyncStatus_Success);
+            auto& done = *static_cast<std::vector<bool>*>(userdata);
+            done[1] = true;
+            // The buffer is not used by step 1, so this callback is called first.
+            const std::vector<bool> kExpected = {true, true};
+            EXPECT_EQ(done, kExpected);
+        },
+        &done);
+
+    Wait(done);
+
+    buffer.Unmap();
+}
+
+DAWN_INSTANTIATE_TEST(BufferMappingCallbackTests,
+                      D3D11Backend(),
+                      D3D12Backend(),
+                      MetalBackend(),
                       VulkanBackend());
 
 class BufferMappedAtCreationTests : public DawnTest {
@@ -704,7 +883,7 @@ TEST_P(BufferMappedAtCreationTests, CreateThenMapBeforeUnmapFailure) {
         buffer.MapAsync(
             wgpu::MapMode::Write, 0, 4,
             [](WGPUBufferMapAsyncStatus status, void* userdata) {
-                ASSERT_EQ(WGPUBufferMapAsyncStatus_Error, status);
+                ASSERT_EQ(WGPUBufferMapAsyncStatus_ValidationError, status);
                 *static_cast<bool*>(userdata) = true;
             },
             &done);
@@ -787,6 +966,7 @@ TEST_P(BufferMappedAtCreationTests, GetMappedRangeZeroSized) {
 }
 
 DAWN_INSTANTIATE_TEST(BufferMappedAtCreationTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({}, {"use_d3d12_resource_heap_tier2"}),
                       MetalBackend(),
@@ -810,18 +990,17 @@ TEST_P(BufferTests, CreateBufferOOM) {
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
+    DAWN_TEST_UNSUPPORTED_IF(IsTsan());
 
     wgpu::BufferDescriptor descriptor;
     descriptor.usage = wgpu::BufferUsage::CopyDst;
 
     descriptor.size = std::numeric_limits<uint64_t>::max();
-    // TODO(dawn:1525): remove warning expectation after the deprecation period.
-    ASSERT_DEVICE_ERROR(EXPECT_DEPRECATION_WARNING(device.CreateBuffer(&descriptor)));
+    ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
 
     // UINT64_MAX may be special cased. Test a smaller, but really large buffer also fails
     descriptor.size = 1ull << 50;
-    // TODO(dawn:1525): remove warning expectation after the deprecation period.
-    ASSERT_DEVICE_ERROR(EXPECT_DEPRECATION_WARNING(device.CreateBuffer(&descriptor)));
+    ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
 
     // Validation errors should always be prior to OOM.
     descriptor.usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::Uniform;
@@ -838,6 +1017,7 @@ TEST_P(BufferTests, BufferMappedAtCreationOOM) {
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
+    DAWN_TEST_UNSUPPORTED_IF(IsTsan());
 
     // Test non-mappable buffer
     {
@@ -864,8 +1044,7 @@ TEST_P(BufferTests, BufferMappedAtCreationOOM) {
             wgpu::Buffer buffer = device.CreateBuffer(&descriptor);
             ASSERT_EQ(nullptr, buffer.Get());
         } else {
-            // TODO(dawn:1525): remove warning expectation after the deprecation period.
-            ASSERT_DEVICE_ERROR(EXPECT_DEPRECATION_WARNING(device.CreateBuffer(&descriptor)));
+            ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
         }
     }
 
@@ -894,8 +1073,7 @@ TEST_P(BufferTests, BufferMappedAtCreationOOM) {
             wgpu::Buffer buffer = device.CreateBuffer(&descriptor);
             ASSERT_EQ(nullptr, buffer.Get());
         } else {
-            // TODO(dawn:1525): remove warning expectation after the deprecation period.
-            ASSERT_DEVICE_ERROR(EXPECT_DEPRECATION_WARNING(device.CreateBuffer(&descriptor)));
+            ASSERT_DEVICE_ERROR(device.CreateBuffer(&descriptor));
         }
     }
 }
@@ -906,17 +1084,17 @@ TEST_P(BufferTests, CreateBufferOOMMapAsync) {
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
     DAWN_TEST_UNSUPPORTED_IF(IsAsan());
+    DAWN_TEST_UNSUPPORTED_IF(IsTsan());
 
     auto RunTest = [this](const wgpu::BufferDescriptor& descriptor) {
         wgpu::Buffer buffer;
-        // TODO(dawn:1525): remove warning expectation after the deprecation period.
-        ASSERT_DEVICE_ERROR(EXPECT_DEPRECATION_WARNING(buffer = device.CreateBuffer(&descriptor)));
+        ASSERT_DEVICE_ERROR(buffer = device.CreateBuffer(&descriptor));
 
         bool done = false;
         ASSERT_DEVICE_ERROR(buffer.MapAsync(
             wgpu::MapMode::Write, 0, 4,
             [](WGPUBufferMapAsyncStatus status, void* userdata) {
-                EXPECT_EQ(status, WGPUBufferMapAsyncStatus_Error);
+                EXPECT_EQ(status, WGPUBufferMapAsyncStatus_ValidationError);
                 *static_cast<bool*>(userdata) = true;
             },
             &done));
@@ -939,6 +1117,7 @@ TEST_P(BufferTests, CreateBufferOOMMapAsync) {
 }
 
 DAWN_INSTANTIATE_TEST(BufferTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -971,6 +1150,7 @@ TEST_P(BufferNoSuballocationTests, WriteBufferThenDestroy) {
 }
 
 DAWN_INSTANTIATE_TEST(BufferNoSuballocationTests,
+                      D3D11Backend({"disable_resource_suballocation"}),
                       D3D12Backend({"disable_resource_suballocation"}),
                       MetalBackend({"disable_resource_suballocation"}),
                       OpenGLBackend({"disable_resource_suballocation"}),

@@ -47,6 +47,7 @@
 #define ASSERT_DEVICE_ERROR_IMPL_1_(statement)                  \
     StartExpectDeviceError();                                   \
     statement;                                                  \
+    device.Tick();                                              \
     FlushWire();                                                \
     if (!EndExpectDeviceError()) {                              \
         FAIL() << "Expected device error in:\n " << #statement; \
@@ -57,6 +58,7 @@
 #define ASSERT_DEVICE_ERROR_IMPL_2_(statement, matcher)         \
     StartExpectDeviceError(matcher);                            \
     statement;                                                  \
+    device.Tick();                                              \
     FlushWire();                                                \
     if (!EndExpectDeviceError()) {                              \
         FAIL() << "Expected device error in:\n " << #statement; \
@@ -87,9 +89,9 @@
     } while (0)
 #define EXPECT_DEPRECATION_WARNING(statement) EXPECT_DEPRECATION_WARNINGS(statement, 1)
 
-namespace utils {
+namespace dawn::utils {
 class WireHelper;
-}  // namespace utils
+}  // namespace dawn::utils
 
 void InitDawnValidationTestEnvironment(int argc, char** argv);
 
@@ -133,7 +135,8 @@ class ValidationTest : public testing::Test {
 
   protected:
     dawn::native::Adapter& GetBackendAdapter();
-    virtual WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter);
+    virtual WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter,
+                                        wgpu::DeviceDescriptor descriptor);
 
     wgpu::Device RequestDeviceSync(const wgpu::DeviceDescriptor& deviceDesc);
 
@@ -147,7 +150,7 @@ class ValidationTest : public testing::Test {
     std::unique_ptr<dawn::native::Instance> mDawnInstance;
     wgpu::Instance mInstance;
     dawn::native::Adapter mBackendAdapter;
-    std::unique_ptr<utils::WireHelper> mWireHelper;
+    std::unique_ptr<dawn::utils::WireHelper> mWireHelper;
     WGPUDevice mLastCreatedBackendDevice;
 
     static void OnDeviceError(WGPUErrorType type, const char* message, void* userdata);

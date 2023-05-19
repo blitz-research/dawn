@@ -18,6 +18,9 @@
 
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class ComputeCopyStorageBufferTests : public DawnTest {
   public:
     static constexpr int kInstances = 4;
@@ -89,14 +92,14 @@ void ComputeCopyStorageBufferTests::BasicTest(const char* shader) {
 TEST_P(ComputeCopyStorageBufferTests, SizedArrayOfBasic) {
     BasicTest(R"(
         struct Buf {
-            s : array<vec4<u32>, 4>
+            s : array<vec4u, 4>
         }
 
         @group(0) @binding(0) var<storage, read_write> src : Buf;
         @group(0) @binding(1) var<storage, read_write> dst : Buf;
 
         @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             let index : u32 = GlobalInvocationID.x;
             if (index >= 4u) { return; }
             dst.s[index] = src.s[index];
@@ -107,8 +110,8 @@ TEST_P(ComputeCopyStorageBufferTests, SizedArrayOfBasic) {
 TEST_P(ComputeCopyStorageBufferTests, SizedArrayOfStruct) {
     BasicTest(R"(
         struct S {
-            a : vec2<u32>,
-            b : vec2<u32>,
+            a : vec2u,
+            b : vec2u,
         }
 
         struct Buf {
@@ -119,7 +122,7 @@ TEST_P(ComputeCopyStorageBufferTests, SizedArrayOfStruct) {
         @group(0) @binding(1) var<storage, read_write> dst : Buf;
 
         @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             let index : u32 = GlobalInvocationID.x;
             if (index >= 4u) { return; }
             dst.s[index] = src.s[index];
@@ -130,14 +133,14 @@ TEST_P(ComputeCopyStorageBufferTests, SizedArrayOfStruct) {
 TEST_P(ComputeCopyStorageBufferTests, UnsizedArrayOfBasic) {
     BasicTest(R"(
         struct Buf {
-            s : array<vec4<u32>>
+            s : array<vec4u>
         }
 
         @group(0) @binding(0) var<storage, read_write> src : Buf;
         @group(0) @binding(1) var<storage, read_write> dst : Buf;
 
         @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             let index : u32 = GlobalInvocationID.x;
             if (index >= 4u) { return; }
             dst.s[index] = src.s[index];
@@ -145,8 +148,12 @@ TEST_P(ComputeCopyStorageBufferTests, UnsizedArrayOfBasic) {
 }
 
 DAWN_INSTANTIATE_TEST(ComputeCopyStorageBufferTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

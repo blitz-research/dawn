@@ -231,8 +231,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
     void Apply(const OpenGLFunctions& gl) {
         BeforeApply();
         for (BindGroupIndex index : IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
-            ApplyBindGroup(gl, index, mBindGroups[index], mDynamicOffsetCounts[index],
-                           mDynamicOffsets[index].data());
+            ApplyBindGroup(gl, index, mBindGroups[index], mDynamicOffsets[index]);
         }
         AfterApply();
     }
@@ -241,10 +240,8 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
     void ApplyBindGroup(const OpenGLFunctions& gl,
                         BindGroupIndex index,
                         BindGroupBase* group,
-                        uint32_t dynamicOffsetCount,
-                        uint64_t* dynamicOffsets) {
+                        const ityp::vector<BindingIndex, uint64_t>& dynamicOffsets) {
         const auto& indices = ToBackend(mPipelineLayout)->GetBindingIndexInfo()[index];
-        uint32_t currentDynamicOffsetIndex = 0;
 
         for (BindingIndex bindingIndex{0}; bindingIndex < group->GetLayout()->GetBindingCount();
              ++bindingIndex) {
@@ -268,8 +265,8 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                     GLuint offset = binding.offset;
 
                     if (bindingInfo.buffer.hasDynamicOffset) {
-                        offset += dynamicOffsets[currentDynamicOffsetIndex];
-                        ++currentDynamicOffsetIndex;
+                        // Dynamic buffers are packed at the front of BindingIndices.
+                        offset += dynamicOffsets[bindingIndex];
                     }
 
                     GLenum target;
@@ -454,24 +451,26 @@ CommandBuffer::CommandBuffer(CommandEncoder* encoder, const CommandBufferDescrip
 MaybeError CommandBuffer::Execute() {
     const OpenGLFunctions& gl = ToBackend(GetDevice())->GetGL();
 
-    auto LazyClearSyncScope = [](const SyncScopeResourceUsage& scope) {
+    auto LazyClearSyncScope = [](const SyncScopeResourceUsage& scope) -> MaybeError {
         for (size_t i = 0; i < scope.textures.size(); i++) {
             Texture* texture = ToBackend(scope.textures[i]);
 
             // Clear subresources that are not render attachments. Render attachments will be
             // cleared in RecordBeginRenderPass by setting the loadop to clear when the texture
             // subresource has not been initialized before the render pass.
-            scope.textureUsages[i].Iterate(
-                [&](const SubresourceRange& range, wgpu::TextureUsage usage) {
+            DAWN_TRY(scope.textureUsages[i].Iterate(
+                [&](const SubresourceRange& range, wgpu::TextureUsage usage) -> MaybeError {
                     if (usage & ~wgpu::TextureUsage::RenderAttachment) {
-                        texture->EnsureSubresourceContentInitialized(range);
+                        DAWN_TRY(texture->EnsureSubresourceContentInitialized(range));
                     }
-                });
+                    return {};
+                }));
         }
 
         for (BufferBase* bufferBase : scope.buffers) {
             ToBackend(bufferBase)->EnsureDataInitialized();
         }
+        return {};
     };
 
     size_t nextComputePassNumber = 0;
@@ -484,7 +483,7 @@ MaybeError CommandBuffer::Execute() {
                 mCommands.NextCommand<BeginComputePassCmd>();
                 for (const SyncScopeResourceUsage& scope :
                      GetResourceUsages().computePasses[nextComputePassNumber].dispatchUsages) {
-                    LazyClearSyncScope(scope);
+                    DAWN_TRY(LazyClearSyncScope(scope));
                 }
                 DAWN_TRY(ExecuteComputePass());
 
@@ -494,7 +493,8 @@ MaybeError CommandBuffer::Execute() {
 
             case Command::BeginRenderPass: {
                 auto* cmd = mCommands.NextCommand<BeginRenderPassCmd>();
-                LazyClearSyncScope(GetResourceUsages().renderPasses[nextRenderPassNumber]);
+                DAWN_TRY(
+                    LazyClearSyncScope(GetResourceUsages().renderPasses[nextRenderPassNumber]));
                 LazyClearRenderPassAttachments(cmd);
                 DAWN_TRY(ExecuteRenderPass(cmd));
 
@@ -520,6 +520,9 @@ MaybeError CommandBuffer::Execute() {
 
                 gl.BindBuffer(GL_PIXEL_PACK_BUFFER, 0);
                 gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+                ToBackend(copy->source)->TrackUsage();
+                ToBackend(copy->destination)->TrackUsage();
                 break;
             }
 
@@ -546,7 +549,7 @@ MaybeError CommandBuffer::Execute() {
                                                   dst.mipLevel)) {
                     dst.texture->SetIsSubresourceContentInitialized(true, range);
                 } else {
-                    ToBackend(dst.texture)->EnsureSubresourceContentInitialized(range);
+                    DAWN_TRY(ToBackend(dst.texture)->EnsureSubresourceContentInitialized(range));
                 }
 
                 gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer->GetHandle());
@@ -560,6 +563,8 @@ MaybeError CommandBuffer::Execute() {
                               copy->copySize);
                 gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                 ToBackend(dst.texture)->Touch();
+
+                buffer->TrackUsage();
                 break;
             }
 
@@ -591,7 +596,7 @@ MaybeError CommandBuffer::Execute() {
                 buffer->EnsureDataInitializedAsDestination(copy);
 
                 SubresourceRange subresources = GetSubresourcesAffectedByCopy(src, copy->copySize);
-                texture->EnsureSubresourceContentInitialized(subresources);
+                DAWN_TRY(texture->EnsureSubresourceContentInitialized(subresources));
                 // The only way to move data from a texture to a buffer in GL is via
                 // glReadPixels with a pack buffer. Create a temporary FBO for the copy.
                 gl.BindTexture(target, texture->GetHandle());
@@ -666,6 +671,8 @@ MaybeError CommandBuffer::Execute() {
 
                 gl.BindBuffer(GL_PIXEL_PACK_BUFFER, 0);
                 gl.DeleteFramebuffers(1, &readFBO);
+
+                buffer->TrackUsage();
                 break;
             }
 
@@ -690,11 +697,11 @@ MaybeError CommandBuffer::Execute() {
                 SubresourceRange srcRange = GetSubresourcesAffectedByCopy(src, copy->copySize);
                 SubresourceRange dstRange = GetSubresourcesAffectedByCopy(dst, copy->copySize);
 
-                srcTexture->EnsureSubresourceContentInitialized(srcRange);
+                DAWN_TRY(srcTexture->EnsureSubresourceContentInitialized(srcRange));
                 if (IsCompleteSubresourceCopiedTo(dstTexture, copySize, dst.mipLevel)) {
                     dstTexture->SetIsSubresourceContentInitialized(true, dstRange);
                 } else {
-                    dstTexture->EnsureSubresourceContentInitialized(dstRange);
+                    DAWN_TRY(dstTexture->EnsureSubresourceContentInitialized(dstRange));
                 }
                 CopyImageSubData(gl, src.aspect, srcTexture->GetHandle(), srcTexture->GetGLTarget(),
                                  src.mipLevel, src.origin, dstTexture->GetHandle(),
@@ -720,6 +727,7 @@ MaybeError CommandBuffer::Execute() {
                     gl.BufferSubData(GL_ARRAY_BUFFER, cmd->offset, cmd->size, clearValues.data());
                 }
 
+                dstBuffer->TrackUsage();
                 break;
             }
 
@@ -756,6 +764,8 @@ MaybeError CommandBuffer::Execute() {
 
                 gl.BindBuffer(GL_ARRAY_BUFFER, dstBuffer->GetHandle());
                 gl.BufferSubData(GL_ARRAY_BUFFER, offset, size, data);
+
+                dstBuffer->TrackUsage();
                 break;
             }
 
@@ -799,6 +809,8 @@ MaybeError CommandBuffer::ExecuteComputePass() {
                 gl.BindBuffer(GL_DISPATCH_INDIRECT_BUFFER, indirectBuffer->GetHandle());
                 gl.DispatchComputeIndirect(static_cast<GLintptr>(indirectBufferOffset));
                 gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
+
+                indirectBuffer->TrackUsage();
                 break;
             }
 
@@ -922,30 +934,27 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             if (attachmentInfo->loadOp == wgpu::LoadOp::Clear) {
                 gl.ColorMask(true, true, true, true);
 
-                wgpu::TextureComponentType baseType =
+                TextureComponentType baseType =
                     attachmentInfo->view->GetFormat().GetAspectInfo(Aspect::Color).baseType;
                 switch (baseType) {
-                    case wgpu::TextureComponentType::Float: {
+                    case TextureComponentType::Float: {
                         const std::array<float, 4> appliedClearColor =
                             ConvertToFloatColor(attachmentInfo->clearColor);
                         gl.ClearBufferfv(GL_COLOR, i, appliedClearColor.data());
                         break;
                     }
-                    case wgpu::TextureComponentType::Uint: {
+                    case TextureComponentType::Uint: {
                         const std::array<uint32_t, 4> appliedClearColor =
                             ConvertToUnsignedIntegerColor(attachmentInfo->clearColor);
                         gl.ClearBufferuiv(GL_COLOR, i, appliedClearColor.data());
                         break;
                     }
-                    case wgpu::TextureComponentType::Sint: {
+                    case TextureComponentType::Sint: {
                         const std::array<int32_t, 4> appliedClearColor =
                             ConvertToSignedIntegerColor(attachmentInfo->clearColor);
                         gl.ClearBufferiv(GL_COLOR, i, appliedClearColor.data());
                         break;
                     }
-
-                    case wgpu::TextureComponentType::DepthComparison:
-                        UNREACHABLE();
                 }
             }
 
@@ -998,7 +1007,11 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 vertexStateBufferBindingTracker.Apply(gl);
                 bindGroupTracker.Apply(gl);
 
-                if (draw->firstInstance > 0) {
+                if (gl.DrawArraysInstancedBaseInstanceANGLE) {
+                    gl.DrawArraysInstancedBaseInstanceANGLE(
+                        lastPipeline->GetGLPrimitiveTopology(), draw->firstVertex,
+                        draw->vertexCount, draw->instanceCount, draw->firstInstance);
+                } else if (draw->firstInstance > 0) {
                     gl.DrawArraysInstancedBaseInstance(lastPipeline->GetGLPrimitiveTopology(),
                                                        draw->firstVertex, draw->vertexCount,
                                                        draw->instanceCount, draw->firstInstance);
@@ -1016,7 +1029,13 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 vertexStateBufferBindingTracker.Apply(gl);
                 bindGroupTracker.Apply(gl);
 
-                if (draw->firstInstance > 0) {
+                if (gl.DrawElementsInstancedBaseVertexBaseInstanceANGLE) {
+                    gl.DrawElementsInstancedBaseVertexBaseInstanceANGLE(
+                        lastPipeline->GetGLPrimitiveTopology(), draw->indexCount, indexBufferFormat,
+                        reinterpret_cast<void*>(draw->firstIndex * indexFormatSize +
+                                                indexBufferBaseOffset),
+                        draw->instanceCount, draw->baseVertex, draw->firstInstance);
+                } else if (draw->firstInstance > 0) {
                     gl.DrawElementsInstancedBaseVertexBaseInstance(
                         lastPipeline->GetGLPrimitiveTopology(), draw->indexCount, indexBufferFormat,
                         reinterpret_cast<void*>(draw->firstIndex * indexFormatSize +
@@ -1056,6 +1075,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 gl.DrawArraysIndirect(
                     lastPipeline->GetGLPrimitiveTopology(),
                     reinterpret_cast<void*>(static_cast<intptr_t>(indirectBufferOffset)));
+                indirectBuffer->TrackUsage();
                 break;
             }
 
@@ -1072,6 +1092,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 gl.DrawElementsIndirect(
                     lastPipeline->GetGLPrimitiveTopology(), indexBufferFormat,
                     reinterpret_cast<void*>(static_cast<intptr_t>(draw->indirectOffset)));
+                indirectBuffer->TrackUsage();
                 break;
             }
 
@@ -1112,6 +1133,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 indexBufferFormat = IndexFormatType(cmd->format);
                 indexFormatSize = IndexFormatSize(cmd->format);
                 vertexStateBufferBindingTracker.OnSetIndexBuffer(cmd->buffer.Get());
+                ToBackend(cmd->buffer)->TrackUsage();
                 break;
             }
 
@@ -1119,6 +1141,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
                 SetVertexBufferCmd* cmd = iter->NextCommand<SetVertexBufferCmd>();
                 vertexStateBufferBindingTracker.OnSetVertexBuffer(cmd->slot, cmd->buffer.Get(),
                                                                   cmd->offset);
+                ToBackend(cmd->buffer)->TrackUsage();
                 break;
             }
 

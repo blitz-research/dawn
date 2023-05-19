@@ -30,26 +30,23 @@ namespace tint::ast {
 ///   override scale : f32;            // No default - must be overridden.
 /// ```
 /// @see https://www.w3.org/TR/WGSL/#override-decls
-class Override final : public Castable<Override, Variable> {
+class Override final : public utils::Castable<Override, Variable> {
   public:
     /// Create an 'override' pipeline-overridable constant.
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param source the variable source
-    /// @param sym the variable symbol
+    /// @param name the variable name
     /// @param type the declared variable type
     /// @param initializer the initializer expression
     /// @param attributes the variable attributes
     Override(ProgramID pid,
              NodeID nid,
              const Source& source,
-             const Symbol& sym,
-             const ast::Type* type,
+             const Identifier* name,
+             Type type,
              const Expression* initializer,
              utils::VectorRef<const Attribute*> attributes);
-
-    /// Move constructor
-    Override(Override&&);
 
     /// Destructor
     ~Override() override;

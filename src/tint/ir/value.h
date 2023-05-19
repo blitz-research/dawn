@@ -15,11 +15,8 @@
 #ifndef SRC_TINT_IR_VALUE_H_
 #define SRC_TINT_IR_VALUE_H_
 
-#include <ostream>
-
-#include "src/tint/castable.h"
-#include "src/tint/symbol_table.h"
 #include "src/tint/type/type.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/unique_vector.h"
 
 // Forward declarations
@@ -30,7 +27,7 @@ class Instruction;
 namespace tint::ir {
 
 /// Value in the IR.
-class Value : public Castable<Value> {
+class Value : public utils::Castable<Value> {
   public:
     /// Destructor
     ~Value() override;
@@ -42,21 +39,15 @@ class Value : public Castable<Value> {
     Value& operator=(Value&&) = delete;
 
     /// Adds an instruction which uses this value.
-    /// @param instr the instruction
-    void AddUsage(const Instruction* instr) { uses_.Add(instr); }
+    /// @param inst the instruction
+    void AddUsage(const Instruction* inst) { uses_.Add(inst); }
 
     /// @returns the vector of instructions which use this value. An instruction will only be
     /// returned once even if that instruction uses the given value multiple times.
     utils::VectorRef<const Instruction*> Usage() const { return uses_; }
 
     /// @returns the type of the value
-    virtual const type::Type* Type() const = 0;
-
-    /// Write the value to the given stream
-    /// @param out the stream to write to
-    /// @param st the symbol table
-    /// @returns the stream
-    virtual std::ostream& ToString(std::ostream& out, const SymbolTable& st) const = 0;
+    virtual const type::Type* Type() const { return nullptr; }
 
   protected:
     /// Constructor

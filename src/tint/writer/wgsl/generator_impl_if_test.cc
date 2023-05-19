@@ -14,13 +14,15 @@
 
 #include "src/tint/writer/wgsl/test_helper.h"
 
+#include "gmock/gmock.h"
+
 namespace tint::writer::wgsl {
 namespace {
 
 using WgslGeneratorImplTest = TestHelper;
 
 TEST_F(WgslGeneratorImplTest, Emit_If) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* cond = Expr("cond");
     auto* body = Block(Return());
@@ -31,7 +33,8 @@ TEST_F(WgslGeneratorImplTest, Emit_If) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    gen.EmitStatement(i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   }
@@ -39,8 +42,8 @@ TEST_F(WgslGeneratorImplTest, Emit_If) {
 }
 
 TEST_F(WgslGeneratorImplTest, Emit_IfWithElseIf) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
-    GlobalVar("else_cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
+    GlobalVar("else_cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_cond = Expr("else_cond");
     auto* else_body = Block(Return());
@@ -54,7 +57,8 @@ TEST_F(WgslGeneratorImplTest, Emit_IfWithElseIf) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    gen.EmitStatement(i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else if (else_cond) {
@@ -64,7 +68,7 @@ TEST_F(WgslGeneratorImplTest, Emit_IfWithElseIf) {
 }
 
 TEST_F(WgslGeneratorImplTest, Emit_IfWithElse) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_body = Block(Return());
 
@@ -77,7 +81,8 @@ TEST_F(WgslGeneratorImplTest, Emit_IfWithElse) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    gen.EmitStatement(i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else {
@@ -87,8 +92,8 @@ TEST_F(WgslGeneratorImplTest, Emit_IfWithElse) {
 }
 
 TEST_F(WgslGeneratorImplTest, Emit_IfWithMultiple) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
-    GlobalVar("else_cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
+    GlobalVar("else_cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_cond = Expr("else_cond");
 
@@ -105,7 +110,8 @@ TEST_F(WgslGeneratorImplTest, Emit_IfWithMultiple) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    gen.EmitStatement(i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else if (else_cond) {

@@ -13,7 +13,10 @@
 // limitations under the License.
 
 #include "src/tint/ast/call_statement.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/wgsl/test_helper.h"
+
+#include "gmock/gmock.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -33,8 +36,9 @@ TEST_F(WgslGeneratorImplTest, EmitExpression_Call_WithoutParams) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, call);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "my_func()");
 }
 
@@ -48,16 +52,17 @@ TEST_F(WgslGeneratorImplTest, EmitExpression_Call_WithParams) {
          utils::Vector{
              Return(1.23_f),
          });
-    GlobalVar("param1", ty.f32(), ast::AddressSpace::kPrivate);
-    GlobalVar("param2", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("param1", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("param2", ty.f32(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("my_func", "param1", "param2");
     WrapInFunction(call);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, call)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, call);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "my_func(param1, param2)");
 }
 
@@ -68,8 +73,8 @@ TEST_F(WgslGeneratorImplTest, EmitStatement_Call) {
              Param(Sym(), ty.f32()),
          },
          ty.void_(), utils::Empty, utils::Empty);
-    GlobalVar("param1", ty.f32(), ast::AddressSpace::kPrivate);
-    GlobalVar("param2", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("param1", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("param2", ty.f32(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("my_func", "param1", "param2");
     auto* stmt = CallStmt(call);
@@ -78,7 +83,8 @@ TEST_F(WgslGeneratorImplTest, EmitStatement_Call) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    ASSERT_TRUE(gen.EmitStatement(stmt)) << gen.error();
+    gen.EmitStatement(stmt);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), "  my_func(param1, param2);\n");
 }
 

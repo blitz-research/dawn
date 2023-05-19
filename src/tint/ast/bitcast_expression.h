@@ -16,16 +16,12 @@
 #define SRC_TINT_AST_BITCAST_EXPRESSION_H_
 
 #include "src/tint/ast/expression.h"
-
-// Forward declarations
-namespace tint::ast {
-class Type;
-}  // namespace tint::ast
+#include "src/tint/ast/type.h"
 
 namespace tint::ast {
 
 /// A bitcast expression
-class BitcastExpression final : public Castable<BitcastExpression, Expression> {
+class BitcastExpression final : public utils::Castable<BitcastExpression, Expression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -36,10 +32,10 @@ class BitcastExpression final : public Castable<BitcastExpression, Expression> {
     BitcastExpression(ProgramID pid,
                       NodeID nid,
                       const Source& source,
-                      const Type* type,
+                      Type type,
                       const Expression* expr);
-    /// Move constructor
-    BitcastExpression(BitcastExpression&&);
+
+    /// Destructor
     ~BitcastExpression() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`
@@ -49,7 +45,7 @@ class BitcastExpression final : public Castable<BitcastExpression, Expression> {
     const BitcastExpression* Clone(CloneContext* ctx) const override;
 
     /// the target cast type
-    const Type* const type;
+    const Type type;
     /// the expression
     const Expression* const expr;
 };

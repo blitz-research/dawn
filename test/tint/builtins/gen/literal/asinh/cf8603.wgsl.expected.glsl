@@ -1,7 +1,7 @@
 #version 310 es
 
 void asinh_cf8603() {
-  vec4 res = vec4(0.881373584f);
+  vec4 res = vec4(0.88137358427047729492f);
 }
 
 vec4 vertex_main() {
@@ -18,10 +18,10 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 void asinh_cf8603() {
-  vec4 res = vec4(0.881373584f);
+  vec4 res = vec4(0.88137358427047729492f);
 }
 
 void fragment_main() {
@@ -35,7 +35,7 @@ void main() {
 #version 310 es
 
 void asinh_cf8603() {
-  vec4 res = vec4(0.881373584f);
+  vec4 res = vec4(0.88137358427047729492f);
 }
 
 void compute_main() {

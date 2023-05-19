@@ -29,16 +29,22 @@
 #include "src/tint/ast/parameter.h"
 #include "src/tint/ast/pipeline_stage.h"
 
+// Forward declarations
+namespace tint::ast {
+class Identifier;
+class IdentifierExpression;
+}  // namespace tint::ast
+
 namespace tint::ast {
 
 /// A Function statement.
-class Function final : public Castable<Function, Node> {
+class Function final : public utils::Castable<Function, Node> {
   public:
     /// Create a function
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param source the variable source
-    /// @param symbol the function symbol
+    /// @param name the function name
     /// @param params the function parameters
     /// @param return_type the return type
     /// @param body the function body
@@ -47,22 +53,21 @@ class Function final : public Castable<Function, Node> {
     Function(ProgramID pid,
              NodeID nid,
              const Source& source,
-             Symbol symbol,
+             const Identifier* name,
              utils::VectorRef<const Parameter*> params,
-             const Type* return_type,
+             Type return_type,
              const BlockStatement* body,
              utils::VectorRef<const Attribute*> attributes,
              utils::VectorRef<const Attribute*> return_type_attributes);
-    /// Move constructor
-    Function(Function&&);
 
+    /// Destructor
     ~Function() override;
 
     /// @returns the functions pipeline stage or None if not set
     ast::PipelineStage PipelineStage() const;
 
     /// @returns true if this function is an entry point
-    bool IsEntryPoint() const { return PipelineStage() != PipelineStage::kNone; }
+    bool IsEntryPoint() const { return PipelineStage() != ast::PipelineStage::kNone; }
 
     /// Clones this node and all transitive child nodes using the `CloneContext`
     /// `ctx`.
@@ -70,14 +75,14 @@ class Function final : public Castable<Function, Node> {
     /// @return the newly cloned node
     const Function* Clone(CloneContext* ctx) const override;
 
-    /// The function symbol
-    const Symbol symbol;
+    /// The function name
+    const Identifier* const name;
 
     /// The function params
     const utils::Vector<const Parameter*, 8> params;
 
     /// The function return type
-    const Type* const return_type;
+    const Type return_type;
 
     /// The function body
     const BlockStatement* const body;
@@ -105,12 +110,12 @@ class FunctionList : public utils::Vector<const Function*, 8> {
     /// @param sym the function symbol to search for
     /// @param stage the pipeline stage
     /// @returns the associated function or nullptr if none exists
-    const Function* Find(Symbol sym, PipelineStage stage) const;
+    const Function* Find(Symbol sym, ast::PipelineStage stage) const;
 
     /// @param stage the pipeline stage
     /// @returns true if the Builder contains an entrypoint function with
     /// the given stage
-    bool HasStage(PipelineStage stage) const;
+    bool HasStage(ast::PipelineStage stage) const;
 };
 
 }  // namespace tint::ast

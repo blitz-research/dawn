@@ -39,13 +39,13 @@ namespace tint::ast {
 /// ```
 ///
 /// @see https://www.w3.org/TR/WGSL/#var-decls
-class Var final : public Castable<Var, Variable> {
+class Var final : public utils::Castable<Var, Variable> {
   public:
     /// Create a 'var' variable
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param source the variable source
-    /// @param sym the variable symbol
+    /// @param name the variable name
     /// @param type the declared variable type
     /// @param declared_address_space the declared address space
     /// @param declared_access the declared access control
@@ -54,15 +54,12 @@ class Var final : public Castable<Var, Variable> {
     Var(ProgramID pid,
         NodeID nid,
         const Source& source,
-        const Symbol& sym,
-        const ast::Type* type,
-        AddressSpace declared_address_space,
-        Access declared_access,
+        const Identifier* name,
+        Type type,
+        const Expression* declared_address_space,
+        const Expression* declared_access,
         const Expression* initializer,
         utils::VectorRef<const Attribute*> attributes);
-
-    /// Move constructor
-    Var(Var&&);
 
     /// Destructor
     ~Var() override;
@@ -77,10 +74,10 @@ class Var final : public Castable<Var, Variable> {
     const Var* Clone(CloneContext* ctx) const override;
 
     /// The declared address space
-    const AddressSpace declared_address_space;
+    const Expression* const declared_address_space = nullptr;
 
     /// The declared access control
-    const Access declared_access;
+    const Expression* const declared_access = nullptr;
 };
 
 /// A list of `var` declarations

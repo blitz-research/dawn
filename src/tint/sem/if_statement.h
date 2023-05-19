@@ -22,13 +22,13 @@ namespace tint::ast {
 class IfStatement;
 }  // namespace tint::ast
 namespace tint::sem {
-class Expression;
+class ValueExpression;
 }  // namespace tint::sem
 
 namespace tint::sem {
 
 /// Holds semantic information about an if statement
-class IfStatement final : public Castable<IfStatement, CompoundStatement> {
+class IfStatement final : public utils::Castable<IfStatement, CompoundStatement> {
   public:
     /// Constructor
     /// @param declaration the AST node for this if statement
@@ -45,14 +45,14 @@ class IfStatement final : public Castable<IfStatement, CompoundStatement> {
     const ast::IfStatement* Declaration() const;
 
     /// @returns the if-statement condition expression
-    const Expression* Condition() const { return condition_; }
+    const ValueExpression* Condition() const { return condition_; }
 
     /// Sets the if-statement condition expression
     /// @param condition the if condition expression
-    void SetCondition(const Expression* condition) { condition_ = condition; }
+    void SetCondition(const ValueExpression* condition) { condition_ = condition; }
 
   private:
-    const Expression* condition_ = nullptr;
+    const ValueExpression* condition_ = nullptr;
 };
 
 }  // namespace tint::sem

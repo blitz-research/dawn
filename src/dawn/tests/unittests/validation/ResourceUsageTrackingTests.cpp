@@ -19,6 +19,7 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
 
 class ResourceUsageTrackingTest : public ValidationTest {
@@ -50,8 +51,8 @@ class ResourceUsageTrackingTest : public ValidationTest {
     // pipeline. But those bind groups in caller can be used for validation for other purposes.
     wgpu::RenderPipeline CreateNoOpRenderPipeline() {
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-                @vertex fn main() -> @builtin(position) vec4<f32> {
-                    return vec4<f32>();
+                @vertex fn main() -> @builtin(position) vec4f {
+                    return vec4f();
                 })");
 
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
@@ -749,8 +750,8 @@ TEST_F(ResourceUsageTrackingTest, BufferUsageConflictWithUnusedPipelineBindings)
 
         // Create a passthrough render pipeline with a readonly buffer
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-                @vertex fn main() -> @builtin(position) vec4<f32> {
-                    return vec4<f32>();
+                @vertex fn main() -> @builtin(position) vec4f {
+                    return vec4f();
                 })");
 
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
@@ -973,9 +974,11 @@ TEST_F(ResourceUsageTrackingTest, TextureWithMultipleWriteUsage) {
         // Create a bind group to use the texture as sampled and writeonly bindings
         wgpu::BindGroupLayout bgl = utils::MakeBindGroupLayout(
             device,
-            {{0, wgpu::ShaderStage::Compute, wgpu::StorageTextureAccess::WriteOnly, kFormat},
-             {1, wgpu::ShaderStage::Compute, wgpu::StorageTextureAccess::WriteOnly, kFormat}});
-        wgpu::BindGroup bg = utils::MakeBindGroup(device, bgl, {{0, view}, {1, view}});
+            {{0, wgpu::ShaderStage::Compute, wgpu::StorageTextureAccess::WriteOnly, kFormat}});
+        // Create 2 bind groups with same texture subresources and dispatch twice to avoid
+        // storage texture binding aliasing
+        wgpu::BindGroup bg0 = utils::MakeBindGroup(device, bgl, {{0, view}});
+        wgpu::BindGroup bg1 = utils::MakeBindGroup(device, bgl, {{0, view}});
 
         // Create a no-op compute pipeline
         wgpu::ComputePipeline cp = CreateNoOpComputePipeline({bgl});
@@ -985,7 +988,9 @@ TEST_F(ResourceUsageTrackingTest, TextureWithMultipleWriteUsage) {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
         pass.SetPipeline(cp);
-        pass.SetBindGroup(0, bg);
+        pass.SetBindGroup(0, bg0);
+        pass.DispatchWorkgroups(1);
+        pass.SetBindGroup(0, bg1);
         pass.DispatchWorkgroups(1);
         pass.End();
         encoder.Finish();
@@ -1567,8 +1572,8 @@ TEST_F(ResourceUsageTrackingTest, TextureUsageConflictWithUnusedPipelineBindings
     {
         // Create a passthrough render pipeline with a sampled storage texture
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-                @vertex fn main() -> @builtin(position) vec4<f32> {
-                    return vec4<f32>();
+                @vertex fn main() -> @builtin(position) vec4f {
+                    return vec4f();
                 })");
 
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
@@ -1679,3 +1684,4 @@ TEST_F(ResourceUsageTrackingTest, IndirectBufferWithReadOrWriteStorage) {
 }
 
 }  // anonymous namespace
+}  // namespace dawn

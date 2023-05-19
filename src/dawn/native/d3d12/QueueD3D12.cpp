@@ -18,8 +18,8 @@
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/DynamicUploader.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/CommandBufferD3D12.h"
-#include "dawn/native/d3d12/D3D12Error.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
 #include "dawn/platform/DawnPlatform.h"
@@ -43,8 +43,6 @@ void Queue::Initialize() {
 MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) {
     Device* device = ToBackend(GetDevice());
 
-    DAWN_TRY(device->Tick());
-
     CommandRecordingContext* commandContext;
     DAWN_TRY_ASSIGN(commandContext, device->GetPendingCommandContext());
 
@@ -59,6 +57,10 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
     DAWN_TRY(device->ExecutePendingCommandContext());
 
     DAWN_TRY(device->NextSerial());
+
+    // Call Tick() to get a chance to resolve callbacks.
+    DAWN_TRY(device->Tick());
+
     return {};
 }
 

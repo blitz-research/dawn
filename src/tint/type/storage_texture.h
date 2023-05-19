@@ -17,9 +17,10 @@
 
 #include <string>
 
-#include "src/tint/ast/access.h"
-#include "src/tint/ast/storage_texture.h"
+#include "src/tint/builtin/access.h"
+#include "src/tint/builtin/texel_format.h"
 #include "src/tint/type/texture.h"
+#include "src/tint/type/texture_dimension.h"
 
 // Forward declarations
 namespace tint::type {
@@ -29,16 +30,16 @@ class Manager;
 namespace tint::type {
 
 /// A storage texture type.
-class StorageTexture final : public Castable<StorageTexture, Texture> {
+class StorageTexture final : public utils::Castable<StorageTexture, Texture> {
   public:
     /// Constructor
     /// @param dim the dimensionality of the texture
     /// @param format the texel format of the texture
     /// @param access the access control type of the texture
     /// @param subtype the storage subtype. Use SubtypeFor() to calculate this.
-    StorageTexture(ast::TextureDimension dim,
-                   ast::TexelFormat format,
-                   ast::Access access,
+    StorageTexture(TextureDimension dim,
+                   builtin::TexelFormat format,
+                   builtin::Access access,
                    Type* subtype);
 
     /// Destructor
@@ -52,28 +53,27 @@ class StorageTexture final : public Castable<StorageTexture, Texture> {
     Type* type() const { return subtype_; }
 
     /// @returns the texel format
-    ast::TexelFormat texel_format() const { return texel_format_; }
+    builtin::TexelFormat texel_format() const { return texel_format_; }
 
     /// @returns the access control
-    ast::Access access() const { return access_; }
+    builtin::Access access() const { return access_; }
 
-    /// @param symbols the program's symbol table
     /// @returns the name for this type that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const SymbolTable& symbols) const override;
+    std::string FriendlyName() const override;
 
     /// @param format the storage texture image format
     /// @param type_mgr the Manager used to build the returned type
     /// @returns the storage texture subtype for the given TexelFormat
-    static Type* SubtypeFor(ast::TexelFormat format, Manager& type_mgr);
+    static Type* SubtypeFor(builtin::TexelFormat format, Manager& type_mgr);
 
     /// @param ctx the clone context
     /// @returns a clone of this type
     StorageTexture* Clone(CloneContext& ctx) const override;
 
   private:
-    ast::TexelFormat const texel_format_;
-    ast::Access const access_;
+    builtin::TexelFormat const texel_format_;
+    builtin::Access const access_;
     Type* const subtype_;
 };
 

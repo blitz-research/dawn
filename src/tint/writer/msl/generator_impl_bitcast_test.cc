@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/msl/test_helper.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -23,13 +24,13 @@ using MslGeneratorImplTest = TestHelper;
 
 TEST_F(MslGeneratorImplTest, EmitExpression_Bitcast) {
     auto* a = Let("a", Expr(1_i));
-    auto* bitcast = create<ast::BitcastExpression>(ty.f32(), Expr("a"));
+    auto* bitcast = Bitcast<f32>(Expr("a"));
     WrapInFunction(a, bitcast);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, bitcast)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, bitcast)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "as_type<float>(a)");
 }
 

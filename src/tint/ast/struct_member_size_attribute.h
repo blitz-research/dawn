@@ -24,17 +24,15 @@
 namespace tint::ast {
 
 /// A struct member size attribute
-class StructMemberSizeAttribute final : public Castable<StructMemberSizeAttribute, Attribute> {
+class StructMemberSizeAttribute final
+    : public utils::Castable<StructMemberSizeAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param expr the size expression
-    StructMemberSizeAttribute(ProgramID pid,
-                              NodeID nid,
-                              const Source& src,
-                              const ast::Expression* expr);
+    StructMemberSizeAttribute(ProgramID pid, NodeID nid, const Source& src, const Expression* expr);
     ~StructMemberSizeAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -47,7 +45,7 @@ class StructMemberSizeAttribute final : public Castable<StructMemberSizeAttribut
     const StructMemberSizeAttribute* Clone(CloneContext* ctx) const override;
 
     /// The size expression
-    const ast::Expression* const expr;
+    const Expression* const expr;
 };
 
 }  // namespace tint::ast

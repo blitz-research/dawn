@@ -21,14 +21,14 @@
 #include <utility>
 #include <vector>
 
-#include "src/tint/castable.h"
 #include "src/tint/debug.h"
 #include "src/tint/program_id.h"
 #include "src/tint/symbol.h"
-#include "src/tint/traits.h"
+#include "src/tint/utils/castable.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/hashset.h"
+#include "src/tint/utils/traits.h"
 #include "src/tint/utils/vector.h"
 
 // Forward declarations
@@ -40,6 +40,7 @@ class ProgramBuilder;
 namespace tint::ast {
 class FunctionList;
 class Node;
+struct Type;
 }  // namespace tint::ast
 
 namespace tint {
@@ -48,7 +49,7 @@ ProgramID ProgramIDOf(const Program*);
 ProgramID ProgramIDOf(const ProgramBuilder*);
 
 /// Cloneable is the base class for all objects that can be cloned
-class Cloneable : public Castable<Cloneable> {
+class Cloneable : public utils::Castable<Cloneable> {
   public:
     /// Constructor
     Cloneable();
@@ -73,8 +74,8 @@ class CloneContext {
     /// ParamTypeIsPtrOf<F, T> is true iff the first parameter of
     /// F is a pointer of (or derives from) type T.
     template <typename F, typename T>
-    static constexpr bool ParamTypeIsPtrOf =
-        traits::IsTypeOrDerived<typename std::remove_pointer<traits::ParameterType<F, 0>>::type, T>;
+    static constexpr bool ParamTypeIsPtrOf = utils::traits::
+        IsTypeOrDerived<typename std::remove_pointer<utils::traits::ParameterType<F, 0>>::type, T>;
 
   public:
     /// SymbolTransform is a function that takes a symbol and returns a new
@@ -141,6 +142,11 @@ class CloneContext {
         auto* c = a->Clone(this);
         return CheckedCast<T>(c);
     }
+
+    /// Clones the ast::Type `ty` into the ProgramBuilder #dst
+    /// @param ty the AST type.
+    /// @return the cloned node
+    ast::Type Clone(const ast::Type& ty);
 
     /// Clones the Source `s` into #dst
     /// TODO(bclayton) - Currently this 'clone' is a shallow copy. If/when
@@ -297,22 +303,23 @@ class CloneContext {
     ///        `T* (T*)`, where `T` derives from Cloneable
     /// @returns this CloneContext so calls can be chained
     template <typename F>
-    traits::EnableIf<ParamTypeIsPtrOf<F, Cloneable>, CloneContext>& ReplaceAll(F&& replacer) {
-        using TPtr = traits::ParameterType<F, 0>;
+    utils::traits::EnableIf<ParamTypeIsPtrOf<F, Cloneable>, CloneContext>& ReplaceAll(
+        F&& replacer) {
+        using TPtr = utils::traits::ParameterType<F, 0>;
         using T = typename std::remove_pointer<TPtr>::type;
         for (auto& transform : transforms_) {
-            bool already_registered = transform.typeinfo->Is(&TypeInfo::Of<T>()) ||
-                                      TypeInfo::Of<T>().Is(transform.typeinfo);
+            bool already_registered = transform.typeinfo->Is(&utils::TypeInfo::Of<T>()) ||
+                                      utils::TypeInfo::Of<T>().Is(transform.typeinfo);
             if (TINT_UNLIKELY(already_registered)) {
-                TINT_ICE(Clone, Diagnostics())
-                    << "ReplaceAll() called with a handler for type " << TypeInfo::Of<T>().name
-                    << " that is already handled by a handler for type "
-                    << transform.typeinfo->name;
+                TINT_ICE(Clone, Diagnostics()) << "ReplaceAll() called with a handler for type "
+                                               << utils::TypeInfo::Of<T>().name
+                                               << " that is already handled by a handler for type "
+                                               << transform.typeinfo->name;
                 return *this;
             }
         }
         CloneableTransform transform;
-        transform.typeinfo = &TypeInfo::Of<T>();
+        transform.typeinfo = &utils::TypeInfo::Of<T>();
         transform.function = [=](const Cloneable* in) { return replacer(in->As<T>()); };
         transforms_.Push(std::move(transform));
         return *this;
@@ -349,11 +356,13 @@ class CloneContext {
     /// references of the original object. A type mismatch will result in an
     /// assertion in debug builds, and undefined behavior in release builds.
     /// @returns this CloneContext so calls can be chained
-    template <typename WHAT, typename WITH, typename = traits::EnableIfIsType<WITH, Cloneable>>
+    template <typename WHAT,
+              typename WITH,
+              typename = utils::traits::EnableIfIsType<WITH, Cloneable>>
     CloneContext& Replace(const WHAT* what, const WITH* with) {
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(Clone, src, what);
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(Clone, dst, with);
-        replacements_.Add(what, [with]() -> const Cloneable* { return with; });
+        replacements_.Replace(what, [with]() -> const Cloneable* { return with; });
         return *this;
     }
 
@@ -373,7 +382,7 @@ class CloneContext {
     template <typename WHAT, typename WITH, typename = std::invoke_result_t<WITH>>
     CloneContext& Replace(const WHAT* what, WITH&& with) {
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(Clone, src, what);
-        replacements_.Add(what, with);
+        replacements_.Replace(what, with);
         return *this;
     }
 
@@ -545,8 +554,8 @@ class CloneContext {
         /// Destructor
         ~CloneableTransform();
 
-        // TypeInfo of the Cloneable that the transform operates on
-        const TypeInfo* typeinfo;
+        // utils::TypeInfo of the Cloneable that the transform operates on
+        const utils::TypeInfo* typeinfo;
         std::function<const Cloneable*(const Cloneable*)> function;
     };
 
@@ -589,7 +598,7 @@ class CloneContext {
         if (TINT_LIKELY(cast)) {
             return cast;
         }
-        CheckedCastFailure(obj, TypeInfo::Of<TO>());
+        CheckedCastFailure(obj, utils::TypeInfo::Of<TO>());
         return nullptr;
     }
 
@@ -599,7 +608,7 @@ class CloneContext {
 
     /// Adds an error diagnostic to Diagnostics() that the cloned object was not
     /// of the expected type.
-    void CheckedCastFailure(const Cloneable* got, const TypeInfo& expected);
+    void CheckedCastFailure(const Cloneable* got, const utils::TypeInfo& expected);
 
     /// @returns the diagnostic list of #dst
     diag::List& Diagnostics() const;

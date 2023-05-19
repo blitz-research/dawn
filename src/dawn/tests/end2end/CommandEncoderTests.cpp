@@ -15,6 +15,9 @@
 #include "dawn/tests/DawnTest.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class CommandEncoderTests : public DawnTest {};
 
 // Tests WriteBuffer commands on CommandEncoder.
@@ -46,8 +49,12 @@ TEST_P(CommandEncoderTests, WriteBuffer) {
 }
 
 DAWN_INSTANTIATE_TEST(CommandEncoderTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

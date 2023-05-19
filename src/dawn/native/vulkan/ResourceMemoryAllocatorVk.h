@@ -32,6 +32,7 @@ class Device;
 // Various kinds of memory that influence the result of the allocation. For example, to take
 // into account mappability and Vulkan's bufferImageGranularity.
 enum class MemoryKind {
+    LazilyAllocated,
     Linear,
     LinearMappable,
     Opaque,
@@ -43,7 +44,8 @@ class ResourceMemoryAllocator {
     ~ResourceMemoryAllocator();
 
     ResultOrError<ResourceMemoryAllocation> Allocate(const VkMemoryRequirements& requirements,
-                                                     MemoryKind kind);
+                                                     MemoryKind kind,
+                                                     bool forceDisableSubAllocation = false);
     void Deallocate(ResourceMemoryAllocation* allocation);
 
     void DestroyPool();

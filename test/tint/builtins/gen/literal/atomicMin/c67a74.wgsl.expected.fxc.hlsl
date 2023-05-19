@@ -1,14 +1,17 @@
-RWByteAddressBuffer sb_rw : register(u0, space0);
+RWByteAddressBuffer sb_rw : register(u0);
 
-uint tint_atomicMin(RWByteAddressBuffer buffer, uint offset, uint value) {
+uint sb_rwatomicMin(uint offset, uint value) {
   uint original_value = 0;
-  buffer.InterlockedMin(offset, value, original_value);
+  sb_rw.InterlockedMin(offset, value, original_value);
   return original_value;
 }
 
 
+RWByteAddressBuffer prevent_dce : register(u0, space2);
+
 void atomicMin_c67a74() {
-  uint res = tint_atomicMin(sb_rw, 0u, 1u);
+  uint res = sb_rwatomicMin(0u, 1u);
+  prevent_dce.Store(0u, asuint(res));
 }
 
 void fragment_main() {

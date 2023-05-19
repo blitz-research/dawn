@@ -18,12 +18,13 @@
 
 #include "dawn/tests/unittests/validation/ValidationTest.h"
 
+namespace dawn {
+namespace {
+
 constexpr static uint32_t kSize = 4;
 // Note that format Depth24PlusStencil8 has both depth and stencil aspects, so parameters
 // depthReadOnly and stencilReadOnly should be the same in render pass and render bundle.
 wgpu::TextureFormat kFormat = wgpu::TextureFormat::Depth24PlusStencil8;
-
-namespace {
 
 class RenderPipelineAndPassCompatibilityTests : public ValidationTest {
   public:
@@ -33,8 +34,8 @@ class RenderPipelineAndPassCompatibilityTests : public ValidationTest {
         // Create a NoOp pipeline
         utils::ComboRenderPipelineDescriptor pipelineDescriptor;
         pipelineDescriptor.vertex.module = utils::CreateShaderModule(device, R"(
-                @vertex fn main() -> @builtin(position) vec4<f32> {
-                    return vec4<f32>();
+                @vertex fn main() -> @builtin(position) vec4f {
+                    return vec4f();
                 })");
         pipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
                 @fragment fn main() {
@@ -179,3 +180,4 @@ TEST_F(RenderPipelineAndPassCompatibilityTests,
 //   - pipeline and pass compatibility tests for compute.
 
 }  // anonymous namespace
+}  // namespace dawn

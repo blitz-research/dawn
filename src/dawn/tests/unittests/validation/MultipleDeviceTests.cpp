@@ -37,7 +37,7 @@ TEST_F(MultipleDeviceTest, ValidatesSameDevice) {
 // objects from a different device.
 TEST_F(MultipleDeviceTest, ValidatesSameDeviceCreatePipelineAsync) {
     wgpu::ShaderModuleWGSLDescriptor wgslDesc = {};
-    wgslDesc.source = R"(
+    wgslDesc.code = R"(
          @compute @workgroup_size(1, 1, 1) fn main() {
         }
     )";
@@ -75,7 +75,7 @@ TEST_F(MultipleDeviceTest, ValidatesSameDeviceCreatePipelineAsync) {
 
         StrictMock<MockCallback<WGPUCreateComputePipelineAsyncCallback>> creationCallback;
         EXPECT_CALL(creationCallback,
-                    Call(WGPUCreatePipelineAsyncStatus_Error, nullptr, _, this + 1))
+                    Call(WGPUCreatePipelineAsyncStatus_ValidationError, nullptr, _, this + 1))
             .Times(1);
         device.CreateComputePipelineAsync(&pipelineDesc, creationCallback.Callback(),
                                           creationCallback.MakeUserdata(this + 1));

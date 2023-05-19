@@ -22,9 +22,11 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr static unsigned int kRTSize = 64;
 
-namespace {
 struct AddressModeTestCase {
     wgpu::AddressMode mMode;
     uint8_t mExpected2;
@@ -47,7 +49,6 @@ AddressModeTestCase addressModes[] = {
         255,
     },
 };
-}  // namespace
 
 class SamplerTest : public DawnTest {
   protected:
@@ -92,15 +93,15 @@ class SamplerTest : public DawnTest {
     void InitShaders(const char* frag_shader) {
         auto vsModule = utils::CreateShaderModule(device, R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 6>(
-                    vec2<f32>(-2.0, -2.0),
-                    vec2<f32>(-2.0,  2.0),
-                    vec2<f32>( 2.0, -2.0),
-                    vec2<f32>(-2.0,  2.0),
-                    vec2<f32>( 2.0, -2.0),
-                    vec2<f32>( 2.0,  2.0));
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f(-2.0, -2.0),
+                    vec2f(-2.0,  2.0),
+                    vec2f( 2.0, -2.0),
+                    vec2f(-2.0,  2.0),
+                    vec2f( 2.0, -2.0),
+                    vec2f( 2.0,  2.0));
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             }
         )");
         auto fsModule = utils::CreateShaderModule(device, frag_shader);
@@ -120,7 +121,7 @@ class SamplerTest : public DawnTest {
             wgpu::SamplerDescriptor descriptor = {};
             descriptor.minFilter = wgpu::FilterMode::Nearest;
             descriptor.magFilter = wgpu::FilterMode::Nearest;
-            descriptor.mipmapFilter = wgpu::FilterMode::Nearest;
+            descriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
             descriptor.addressModeU = u.mMode;
             descriptor.addressModeV = v.mMode;
             descriptor.addressModeW = w.mMode;
@@ -169,7 +170,7 @@ TEST_P(SamplerTest, AddressMode) {
             @group(0) @binding(1) var texture0 : texture_2d<f32>;
 
             @fragment
-            fn main(@builtin(position) FragCoord : vec4<f32>) -> @location(0) vec4<f32> {
+            fn main(@builtin(position) FragCoord : vec4f) -> @location(0) vec4f {
                 return textureSample(texture0, sampler0, FragCoord.xy / vec2(2.0, 2.0));
             })");
     for (auto u : addressModes) {
@@ -187,12 +188,12 @@ TEST_P(SamplerTest, PassThroughUserFunctionParameters) {
             @group(0) @binding(0) var sampler0 : sampler;
             @group(0) @binding(1) var texture0 : texture_2d<f32>;
 
-            fn foo(t : texture_2d<f32>, s : sampler, FragCoord : vec4<f32>) -> vec4<f32> {
+            fn foo(t : texture_2d<f32>, s : sampler, FragCoord : vec4f) -> vec4f {
                 return textureSample(t, s, FragCoord.xy / vec2(2.0, 2.0));
             }
 
             @fragment
-            fn main(@builtin(position) FragCoord : vec4<f32>) -> @location(0) vec4<f32> {
+            fn main(@builtin(position) FragCoord : vec4f) -> @location(0) vec4f {
                 return foo(texture0, sampler0, FragCoord);
             })");
     for (auto u : addressModes) {
@@ -205,8 +206,12 @@ TEST_P(SamplerTest, PassThroughUserFunctionParameters) {
 }
 
 DAWN_INSTANTIATE_TEST(SamplerTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -18,19 +18,22 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class DrawIndirectValidationTest : public ValidationTest {
   protected:
     void SetUp() override {
         ValidationTest::SetUp();
 
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-            @vertex fn main() -> @builtin(position) vec4<f32> {
-                return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+            @vertex fn main() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 0.0);
             })");
 
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-            @fragment fn main() -> @location(0) vec4<f32>{
-                return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+            @fragment fn main() -> @location(0) vec4f{
+                return vec4f(0.0, 0.0, 0.0, 0.0);
             })");
 
         // Set up render pipeline
@@ -160,3 +163,6 @@ TEST_F(DrawIndirectValidationTest, IndirectUsage) {
     TestIndirectOffset(utils::Expectation::Failure, {1, 2, 3, 4, 5}, 0, true,
                        wgpu::BufferUsage::Vertex);
 }
+
+}  // anonymous namespace
+}  // namespace dawn

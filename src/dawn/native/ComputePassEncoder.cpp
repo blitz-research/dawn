@@ -128,15 +128,18 @@ Ref<ComputePassEncoder> ComputePassEncoder::Create(DeviceBase* device,
 ComputePassEncoder::ComputePassEncoder(DeviceBase* device,
                                        CommandEncoder* commandEncoder,
                                        EncodingContext* encodingContext,
-                                       ErrorTag errorTag)
-    : ProgrammableEncoder(device, encodingContext, errorTag), mCommandEncoder(commandEncoder) {}
+                                       ErrorTag errorTag,
+                                       const char* label)
+    : ProgrammableEncoder(device, encodingContext, errorTag, label),
+      mCommandEncoder(commandEncoder) {}
 
 // static
 Ref<ComputePassEncoder> ComputePassEncoder::MakeError(DeviceBase* device,
                                                       CommandEncoder* commandEncoder,
-                                                      EncodingContext* encodingContext) {
+                                                      EncodingContext* encodingContext,
+                                                      const char* label) {
     return AcquireRef(
-        new ComputePassEncoder(device, commandEncoder, encodingContext, ObjectBase::kError));
+        new ComputePassEncoder(device, commandEncoder, encodingContext, ObjectBase::kError, label));
 }
 
 void ComputePassEncoder::DestroyImpl() {
@@ -150,6 +153,13 @@ ObjectType ComputePassEncoder::GetType() const {
 }
 
 void ComputePassEncoder::APIEnd() {
+    if (mEnded && IsValidationEnabled()) {
+        GetDevice()->HandleError(DAWN_VALIDATION_ERROR("%s was already ended.", this));
+        return;
+    }
+
+    mEnded = true;
+
     if (mEncodingContext->TryEncode(
             this,
             [&](CommandAllocator* allocator) -> MaybeError {
@@ -166,24 +176,6 @@ void ComputePassEncoder::APIEnd() {
     }
 }
 
-void ComputePassEncoder::APIEndPass() {
-    if (GetDevice()->ConsumedError(DAWN_MAKE_DEPRECATION_ERROR(
-            GetDevice(), "endPass() has been deprecated. Use end() instead."))) {
-        return;
-    }
-    APIEnd();
-}
-
-void ComputePassEncoder::APIDispatch(uint32_t workgroupCountX,
-                                     uint32_t workgroupCountY,
-                                     uint32_t workgroupCountZ) {
-    if (GetDevice()->ConsumedError(DAWN_MAKE_DEPRECATION_ERROR(
-            GetDevice(), "dispatch() has been deprecated. Use dispatchWorkgroups() instead."))) {
-        return;
-    }
-    APIDispatchWorkgroups(workgroupCountX, workgroupCountY, workgroupCountZ);
-}
-
 void ComputePassEncoder::APIDispatchWorkgroups(uint32_t workgroupCountX,
                                                uint32_t workgroupCountY,
                                                uint32_t workgroupCountZ) {
@@ -191,6 +183,12 @@ void ComputePassEncoder::APIDispatchWorkgroups(uint32_t workgroupCountX,
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
             if (IsValidationEnabled()) {
+                if (workgroupCountX == 0 || workgroupCountY == 0 || workgroupCountZ == 0) {
+                    GetDevice()->EmitWarningOnce(absl::StrFormat(
+                        "Calling %s.DispatchWorkgroups with a workgroup count of 0 is unusual.",
+                        this));
+                }
+
                 DAWN_TRY(mCommandBufferState.ValidateCanDispatch());
 
                 uint32_t workgroupsPerDimension =
@@ -231,6 +229,10 @@ ResultOrError<std::pair<Ref<BufferBase>, uint64_t>>
 ComputePassEncoder::TransformIndirectDispatchBuffer(Ref<BufferBase> indirectBuffer,
                                                     uint64_t indirectOffset) {
     DeviceBase* device = GetDevice();
+    // This function creates new resources, need to lock the Device.
+    // TODO(crbug.com/dawn/1618): In future, all temp resources should be created at Command Submit
+    // time, so the locking would be removed from here at that point.
+    auto deviceLock(GetDevice()->GetScopedLock());
 
     const bool shouldDuplicateNumWorkgroups =
         device->ShouldDuplicateNumWorkgroupsForDispatchIndirect(
@@ -315,15 +317,6 @@ ComputePassEncoder::TransformIndirectDispatchBuffer(Ref<BufferBase> indirectBuff
 
     // Return the new indirect buffer and indirect buffer offset.
     return std::make_pair(std::move(validatedIndirectBuffer), uint64_t(0));
-}
-
-void ComputePassEncoder::APIDispatchIndirect(BufferBase* indirectBuffer, uint64_t indirectOffset) {
-    if (GetDevice()->ConsumedError(DAWN_MAKE_DEPRECATION_ERROR(
-            GetDevice(),
-            "dispatchIndirect() has been deprecated. Use dispatchWorkgroupsIndirect() instead."))) {
-        return;
-    }
-    APIDispatchWorkgroupsIndirect(indirectBuffer, indirectOffset);
 }
 
 void ComputePassEncoder::APIDispatchWorkgroupsIndirect(BufferBase* indirectBuffer,

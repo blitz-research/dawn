@@ -36,7 +36,7 @@ class SamplerBase : public ApiObjectBase, public CachedObject {
     SamplerBase(DeviceBase* device, const SamplerDescriptor* descriptor);
     ~SamplerBase() override;
 
-    static SamplerBase* MakeError(DeviceBase* device);
+    static SamplerBase* MakeError(DeviceBase* device, const char* label);
 
     ObjectType GetType() const override;
 
@@ -53,12 +53,10 @@ class SamplerBase : public ApiObjectBase, public CachedObject {
     uint16_t GetMaxAnisotropy() const { return mMaxAnisotropy; }
 
   protected:
-    // Constructor used only for mocking and testing.
-    explicit SamplerBase(DeviceBase* device);
     void DestroyImpl() override;
 
   private:
-    SamplerBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+    SamplerBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
 
     // TODO(cwallez@chromium.org): Store a crypto hash of the items instead?
     wgpu::AddressMode mAddressModeU;
@@ -66,7 +64,7 @@ class SamplerBase : public ApiObjectBase, public CachedObject {
     wgpu::AddressMode mAddressModeW;
     wgpu::FilterMode mMagFilter;
     wgpu::FilterMode mMinFilter;
-    wgpu::FilterMode mMipmapFilter;
+    wgpu::MipmapFilterMode mMipmapFilter;
     float mLodMinClamp;
     float mLodMaxClamp;
     wgpu::CompareFunction mCompareFunction;

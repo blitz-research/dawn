@@ -9,8 +9,13 @@ float16_t tint_workgroupUniformLoad_arg_0() {
   return result;
 }
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  float16_t inner;
+} prevent_dce;
+
 void workgroupUniformLoad_e07d08() {
   float16_t res = tint_workgroupUniformLoad_arg_0();
+  prevent_dce.inner = res;
 }
 
 void compute_main(uint local_invocation_index) {

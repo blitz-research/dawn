@@ -19,7 +19,8 @@ namespace {
 
 TEST_F(ParserImplTest, IfStmt) {
     auto p = parser("if a == 4 { a = b; c = d; }");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_TRUE(e.matched);
     EXPECT_FALSE(e.errored);
     EXPECT_FALSE(p->has_error()) << p->error();
@@ -34,7 +35,8 @@ TEST_F(ParserImplTest, IfStmt) {
 
 TEST_F(ParserImplTest, IfStmt_WithElse) {
     auto p = parser("if a == 4 { a = b; c = d; } else if(c) { d = 2; } else {}");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_TRUE(e.matched);
     EXPECT_FALSE(e.errored);
     EXPECT_FALSE(p->has_error()) << p->error();
@@ -57,7 +59,8 @@ TEST_F(ParserImplTest, IfStmt_WithElse) {
 
 TEST_F(ParserImplTest, IfStmt_WithElse_WithParens) {
     auto p = parser("if(a==4) { a = b; c = d; } else if(c) { d = 2; } else {}");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_TRUE(e.matched);
     EXPECT_FALSE(e.errored);
     EXPECT_FALSE(p->has_error()) << p->error();
@@ -78,19 +81,36 @@ TEST_F(ParserImplTest, IfStmt_WithElse_WithParens) {
     EXPECT_EQ(el->statements.Length(), 0u);
 }
 
+TEST_F(ParserImplTest, IfStmt_WithAttributes) {
+    auto p = parser(R"(@diagnostic(off, derivative_uniformity) if true { })");
+    auto a = p->attribute_list();
+    auto e = p->if_statement(a.value);
+    EXPECT_TRUE(e.matched);
+    EXPECT_FALSE(e.errored);
+    EXPECT_FALSE(p->has_error()) << p->error();
+    ASSERT_NE(e.value, nullptr);
+    ASSERT_TRUE(e->Is<ast::IfStatement>());
+
+    EXPECT_TRUE(a->IsEmpty());
+    ASSERT_EQ(e->attributes.Length(), 1u);
+    EXPECT_TRUE(e->attributes[0]->Is<ast::DiagnosticAttribute>());
+}
+
 TEST_F(ParserImplTest, IfStmt_InvalidCondition) {
     auto p = parser("if a = 3 {}");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_FALSE(e.matched);
     EXPECT_TRUE(e.errored);
     EXPECT_EQ(e.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:6: expected '{'");
+    EXPECT_EQ(p->error(), "1:6: expected '{' for if statement");
 }
 
 TEST_F(ParserImplTest, IfStmt_MissingCondition) {
     auto p = parser("if {}");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_FALSE(e.matched);
     EXPECT_TRUE(e.errored);
     EXPECT_EQ(e.value, nullptr);
@@ -100,42 +120,46 @@ TEST_F(ParserImplTest, IfStmt_MissingCondition) {
 
 TEST_F(ParserImplTest, IfStmt_InvalidBody) {
     auto p = parser("if a { fn main() {}}");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_FALSE(e.matched);
     EXPECT_TRUE(e.errored);
     EXPECT_EQ(e.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:8: expected '}'");
+    EXPECT_EQ(p->error(), "1:8: expected '}' for if statement");
 }
 
 TEST_F(ParserImplTest, IfStmt_MissingBody) {
     auto p = parser("if a");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_FALSE(e.matched);
     EXPECT_TRUE(e.errored);
     EXPECT_EQ(e.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:5: expected '{'");
+    EXPECT_EQ(p->error(), "1:5: expected '{' for if statement");
 }
 
 TEST_F(ParserImplTest, IfStmt_InvalidElseif) {
     auto p = parser("if a {} else if a { fn main() -> a{}}");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_FALSE(e.matched);
     EXPECT_TRUE(e.errored);
     EXPECT_EQ(e.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:21: expected '}'");
+    EXPECT_EQ(p->error(), "1:21: expected '}' for if statement");
 }
 
 TEST_F(ParserImplTest, IfStmt_InvalidElse) {
     auto p = parser("if a {} else { fn main() -> a{}}");
-    auto e = p->if_statement();
+    ParserImpl::AttributeList attrs;
+    auto e = p->if_statement(attrs);
     EXPECT_FALSE(e.matched);
     EXPECT_TRUE(e.errored);
     EXPECT_EQ(e.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:16: expected '}'");
+    EXPECT_EQ(p->error(), "1:16: expected '}' for else statement");
 }
 
 }  // namespace

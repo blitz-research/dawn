@@ -40,7 +40,7 @@ std::array<wgpu::BindGroup, 2> updateBGs;
 
 size_t pingpong = 0;
 
-static const uint32_t kNumParticles = 1000;
+static const uint32_t kNumParticles = 1024;
 
 struct Particle {
     std::array<float, 2> pos;
@@ -65,11 +65,11 @@ void initBuffers() {
         {0.00, 0.02},
     }};
     modelBuffer =
-        utils::CreateBufferFromData(device, &model, sizeof(model), wgpu::BufferUsage::Vertex);
+        dawn::utils::CreateBufferFromData(device, &model, sizeof(model), wgpu::BufferUsage::Vertex);
 
     SimParams params = {0.04f, 0.1f, 0.025f, 0.025f, 0.02f, 0.05f, 0.005f, kNumParticles};
-    updateParams =
-        utils::CreateBufferFromData(device, &params, sizeof(params), wgpu::BufferUsage::Uniform);
+    updateParams = dawn::utils::CreateBufferFromData(device, &params, sizeof(params),
+                                                     wgpu::BufferUsage::Uniform);
 
     std::vector<Particle> initialParticles(kNumParticles);
     {
@@ -95,33 +95,33 @@ void initBuffers() {
 }
 
 void initRender() {
-    wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
+    wgpu::ShaderModule vsModule = dawn::utils::CreateShaderModule(device, R"(
         struct VertexIn {
-            @location(0) a_particlePos : vec2<f32>,
-            @location(1) a_particleVel : vec2<f32>,
-            @location(2) a_pos : vec2<f32>,
+            @location(0) a_particlePos : vec2f,
+            @location(1) a_particleVel : vec2f,
+            @location(2) a_pos : vec2f,
         };
 
         @vertex
-        fn main(input : VertexIn) -> @builtin(position) vec4<f32> {
+        fn main(input : VertexIn) -> @builtin(position) vec4f {
             var angle : f32 = -atan2(input.a_particleVel.x, input.a_particleVel.y);
-            var pos : vec2<f32> = vec2<f32>(
+            var pos : vec2f = vec2f(
                 (input.a_pos.x * cos(angle)) - (input.a_pos.y * sin(angle)),
                 (input.a_pos.x * sin(angle)) + (input.a_pos.y * cos(angle)));
-            return vec4<f32>(pos + input.a_particlePos, 0.0, 1.0);
+            return vec4f(pos + input.a_particlePos, 0.0, 1.0);
         }
     )");
 
-    wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
+    wgpu::ShaderModule fsModule = dawn::utils::CreateShaderModule(device, R"(
         @fragment
-        fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+        fn main() -> @location(0) vec4f {
+            return vec4f(1.0, 1.0, 1.0, 1.0);
         }
     )");
 
     depthStencilView = CreateDefaultDepthStencilView(device);
 
-    utils::ComboRenderPipelineDescriptor descriptor;
+    dawn::utils::ComboRenderPipelineDescriptor descriptor;
 
     descriptor.vertex.module = vsModule;
     descriptor.vertex.bufferCount = 2;
@@ -147,10 +147,10 @@ void initRender() {
 }
 
 void initSim() {
-    wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
+    wgpu::ShaderModule module = dawn::utils::CreateShaderModule(device, R"(
         struct Particle {
-            pos : vec2<f32>,
-            vel : vec2<f32>,
+            pos : vec2f,
+            vel : vec2f,
         };
         struct SimParams {
             deltaT : f32,
@@ -170,21 +170,21 @@ void initSim() {
         @binding(2) @group(0) var<storage, read_write> particlesB : Particles;
 
         // https://github.com/austinEng/Project6-Vulkan-Flocking/blob/master/data/shaders/computeparticles/particle.comp
-        @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        @compute @workgroup_size(64)
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             var index : u32 = GlobalInvocationID.x;
             if (index >= params.particleCount) {
                 return;
             }
-            var vPos : vec2<f32> = particlesA.particles[index].pos;
-            var vVel : vec2<f32> = particlesA.particles[index].vel;
-            var cMass : vec2<f32> = vec2<f32>(0.0, 0.0);
-            var cVel : vec2<f32> = vec2<f32>(0.0, 0.0);
-            var colVel : vec2<f32> = vec2<f32>(0.0, 0.0);
+            var vPos : vec2f = particlesA.particles[index].pos;
+            var vVel : vec2f = particlesA.particles[index].vel;
+            var cMass : vec2f = vec2f(0.0, 0.0);
+            var cVel : vec2f = vec2f(0.0, 0.0);
+            var colVel : vec2f = vec2f(0.0, 0.0);
             var cMassCount : u32 = 0u;
             var cVelCount : u32 = 0u;
-            var pos : vec2<f32>;
-            var vel : vec2<f32>;
+            var pos : vec2f;
+            var vel : vec2f;
 
             for (var i : u32 = 0u; i < params.particleCount; i = i + 1u) {
                 if (i == index) {
@@ -207,11 +207,11 @@ void initSim() {
             }
 
             if (cMassCount > 0u) {
-                cMass = (cMass / vec2<f32>(f32(cMassCount), f32(cMassCount))) - vPos;
+                cMass = (cMass / vec2f(f32(cMassCount), f32(cMassCount))) - vPos;
             }
 
             if (cVelCount > 0u) {
-                cVel = cVel / vec2<f32>(f32(cVelCount), f32(cVelCount));
+                cVel = cVel / vec2f(f32(cVelCount), f32(cVelCount));
             }
             vVel = vVel + (cMass * params.rule1Scale) + (colVel * params.rule2Scale) +
                 (cVel * params.rule3Scale);
@@ -242,14 +242,14 @@ void initSim() {
         }
     )");
 
-    auto bgl = utils::MakeBindGroupLayout(
+    auto bgl = dawn::utils::MakeBindGroupLayout(
         device, {
                     {0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Uniform},
                     {1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage},
                     {2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage},
                 });
 
-    wgpu::PipelineLayout pl = utils::MakeBasicPipelineLayout(device, &bgl);
+    wgpu::PipelineLayout pl = dawn::utils::MakeBasicPipelineLayout(device, &bgl);
 
     wgpu::ComputePipelineDescriptor csDesc;
     csDesc.layout = pl;
@@ -258,7 +258,7 @@ void initSim() {
     updatePipeline = device.CreateComputePipeline(&csDesc);
 
     for (uint32_t i = 0; i < 2; ++i) {
-        updateBGs[i] = utils::MakeBindGroup(
+        updateBGs[i] = dawn::utils::MakeBindGroup(
             device, bgl,
             {
                 {0, updateParams, 0, sizeof(SimParams)},
@@ -276,12 +276,12 @@ wgpu::CommandBuffer createCommandBuffer(const wgpu::TextureView backbufferView, 
         wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
         pass.SetPipeline(updatePipeline);
         pass.SetBindGroup(0, updateBGs[i]);
-        pass.DispatchWorkgroups(kNumParticles);
+        pass.DispatchWorkgroups(kNumParticles / 64);
         pass.End();
     }
 
     {
-        utils::ComboRenderPassDescriptor renderPass({backbufferView}, depthStencilView);
+        dawn::utils::ComboRenderPassDescriptor renderPass({backbufferView}, depthStencilView);
         wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
         pass.SetPipeline(renderPipeline);
         pass.SetVertexBuffer(0, bufferDst);
@@ -322,8 +322,9 @@ int main(int argc, const char* argv[]) {
     init();
 
     while (!ShouldQuit()) {
-        utils::ScopedAutoreleasePool pool;
+        dawn::utils::ScopedAutoreleasePool pool;
+        ProcessEvents();
         frame();
-        utils::USleep(16000);
+        dawn::utils::USleep(16000);
     }
 }

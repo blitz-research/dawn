@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/ast/test_helper.h"
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 
 namespace tint::reader::wgsl {
@@ -28,8 +29,8 @@ TEST_F(ParserImplTest, StructBodyDecl_Parses) {
     ASSERT_EQ(m.value.Length(), 1u);
 
     const auto* mem = m.value[0];
-    EXPECT_EQ(mem->symbol, builder.Symbols().Get("a"));
-    EXPECT_TRUE(mem->type->Is<ast::I32>());
+    EXPECT_EQ(mem->name->symbol, builder.Symbols().Get("a"));
+    ast::CheckIdentifier(mem->type, "i32");
     EXPECT_EQ(mem->attributes.Length(), 0u);
 }
 
@@ -44,8 +45,8 @@ TEST_F(ParserImplTest, StructBodyDecl_Parses_TrailingComma) {
     ASSERT_EQ(m.value.Length(), 1u);
 
     const auto* mem = m.value[0];
-    EXPECT_EQ(mem->symbol, builder.Symbols().Get("a"));
-    EXPECT_TRUE(mem->type->Is<ast::I32>());
+    EXPECT_EQ(mem->name->symbol, builder.Symbols().Get("a"));
+    ast::CheckIdentifier(mem->type, "i32");
     EXPECT_EQ(mem->attributes.Length(), 0u);
 }
 
@@ -65,7 +66,7 @@ TEST_F(ParserImplTest, StructBodyDecl_InvalidAlign) {
     auto m = p->expect_struct_body_decl();
     ASSERT_TRUE(p->has_error());
     ASSERT_TRUE(m.errored);
-    EXPECT_EQ(p->error(), "3:10: expected align expression");
+    EXPECT_EQ(p->error(), "3:10: expected expression for align");
 }
 
 TEST_F(ParserImplTest, StructBodyDecl_InvalidSize) {
@@ -76,7 +77,7 @@ TEST_F(ParserImplTest, StructBodyDecl_InvalidSize) {
     auto m = p->expect_struct_body_decl();
     ASSERT_TRUE(p->has_error());
     ASSERT_TRUE(m.errored);
-    EXPECT_EQ(p->error(), "3:9: expected size expression");
+    EXPECT_EQ(p->error(), "3:9: expected expression for size");
 }
 
 TEST_F(ParserImplTest, StructBodyDecl_MissingClosingBracket) {

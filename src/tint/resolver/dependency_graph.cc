@@ -19,62 +19,54 @@
 #include <vector>
 
 #include "src/tint/ast/alias.h"
-#include "src/tint/ast/array.h"
 #include "src/tint/ast/assignment_statement.h"
-#include "src/tint/ast/atomic.h"
 #include "src/tint/ast/block_statement.h"
-#include "src/tint/ast/bool.h"
 #include "src/tint/ast/break_if_statement.h"
 #include "src/tint/ast/break_statement.h"
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/compound_assignment_statement.h"
+#include "src/tint/ast/const.h"
 #include "src/tint/ast/continue_statement.h"
-#include "src/tint/ast/depth_multisampled_texture.h"
-#include "src/tint/ast/depth_texture.h"
+#include "src/tint/ast/diagnostic_attribute.h"
 #include "src/tint/ast/discard_statement.h"
-#include "src/tint/ast/external_texture.h"
-#include "src/tint/ast/f16.h"
-#include "src/tint/ast/f32.h"
 #include "src/tint/ast/for_loop_statement.h"
-#include "src/tint/ast/i32.h"
 #include "src/tint/ast/id_attribute.h"
+#include "src/tint/ast/identifier.h"
 #include "src/tint/ast/if_statement.h"
 #include "src/tint/ast/increment_decrement_statement.h"
 #include "src/tint/ast/internal_attribute.h"
 #include "src/tint/ast/interpolate_attribute.h"
 #include "src/tint/ast/invariant_attribute.h"
+#include "src/tint/ast/let.h"
 #include "src/tint/ast/location_attribute.h"
 #include "src/tint/ast/loop_statement.h"
-#include "src/tint/ast/matrix.h"
-#include "src/tint/ast/multisampled_texture.h"
-#include "src/tint/ast/pointer.h"
+#include "src/tint/ast/must_use_attribute.h"
+#include "src/tint/ast/override.h"
 #include "src/tint/ast/return_statement.h"
-#include "src/tint/ast/sampled_texture.h"
 #include "src/tint/ast/stage_attribute.h"
-#include "src/tint/ast/storage_texture.h"
 #include "src/tint/ast/stride_attribute.h"
 #include "src/tint/ast/struct.h"
 #include "src/tint/ast/struct_member_align_attribute.h"
 #include "src/tint/ast/struct_member_offset_attribute.h"
 #include "src/tint/ast/struct_member_size_attribute.h"
 #include "src/tint/ast/switch_statement.h"
+#include "src/tint/ast/templated_identifier.h"
 #include "src/tint/ast/traverse_expressions.h"
-#include "src/tint/ast/type_name.h"
-#include "src/tint/ast/u32.h"
+#include "src/tint/ast/var.h"
 #include "src/tint/ast/variable_decl_statement.h"
-#include "src/tint/ast/vector.h"
-#include "src/tint/ast/void.h"
 #include "src/tint/ast/while_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
+#include "src/tint/builtin/builtin.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/builtin.h"
-#include "src/tint/symbol_table.h"
-#include "src/tint/type/short_name.h"
+#include "src/tint/switch.h"
 #include "src/tint/utils/block_allocator.h"
 #include "src/tint/utils/compiler_macros.h"
 #include "src/tint/utils/defer.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/scoped_assignment.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/utils/unique_vector.h"
 
 #define TINT_DUMP_DEPENDENCY_GRAPH 0
@@ -89,8 +81,6 @@ struct Global;
 struct DependencyInfo {
     /// The source of the symbol that forms the dependency
     Source source;
-    /// A string describing how the dependency is referenced. e.g. 'calls'
-    const char* action = nullptr;
 };
 
 /// DependencyEdge describes the two Globals used to define a dependency
@@ -152,19 +142,16 @@ void AddNote(diag::List& diagnostics, const std::string& msg, const Source& sour
 class DependencyScanner {
   public:
     /// Constructor
-    /// @param syms the program symbol table
     /// @param globals_by_name map of global symbol to Global pointer
     /// @param diagnostics diagnostic messages, appended with any errors found
     /// @param graph the dependency graph to populate with resolved symbols
     /// @param edges the map of globals-to-global dependency edges, which will
     /// be populated by calls to Scan()
-    DependencyScanner(const SymbolTable& syms,
-                      const GlobalMap& globals_by_name,
+    DependencyScanner(const GlobalMap& globals_by_name,
                       diag::List& diagnostics,
                       DependencyGraph& graph,
                       DependencyEdges& edges)
-        : symbols_(syms),
-          globals_(globals_by_name),
+        : globals_(globals_by_name),
           diagnostics_(diagnostics),
           graph_(graph),
           dependency_edges_(edges) {
@@ -181,38 +168,47 @@ class DependencyScanner {
         Switch(
             global->node,
             [&](const ast::Struct* str) {
-                Declare(str->name, str);
+                Declare(str->name->symbol, str);
                 for (auto* member : str->members) {
                     TraverseAttributes(member->attributes);
-                    TraverseType(member->type);
+                    TraverseExpression(member->type);
                 }
             },
             [&](const ast::Alias* alias) {
-                Declare(alias->name, alias);
-                TraverseType(alias->type);
+                Declare(alias->name->symbol, alias);
+                TraverseExpression(alias->type);
             },
             [&](const ast::Function* func) {
-                Declare(func->symbol, func);
+                Declare(func->name->symbol, func);
                 TraverseFunction(func);
             },
-            [&](const ast::Variable* var) {
-                Declare(var->symbol, var);
-                TraverseType(var->type);
-                TraverseAttributes(var->attributes);
-                if (var->initializer) {
-                    TraverseExpression(var->initializer);
-                }
+            [&](const ast::Variable* v) {
+                Declare(v->name->symbol, v);
+                TraverseVariable(v);
+            },
+            [&](const ast::DiagnosticDirective*) {
+                // Diagnostic directives do not affect the dependency graph.
             },
             [&](const ast::Enable*) {
-                // Enable directives do not effect the dependency graph.
+                // Enable directives do not affect the dependency graph.
             },
-            [&](const ast::StaticAssert* assertion) { TraverseExpression(assertion->condition); },
+            [&](const ast::ConstAssert* assertion) { TraverseExpression(assertion->condition); },
             [&](Default) { UnhandledNode(diagnostics_, global->node); });
     }
 
   private:
-    /// Traverses the function, performing symbol resolution and determining
-    /// global dependencies.
+    /// Traverses the variable, performing symbol resolution.
+    void TraverseVariable(const ast::Variable* v) {
+        if (auto* var = v->As<ast::Var>()) {
+            TraverseExpression(var->declared_address_space);
+            TraverseExpression(var->declared_access);
+        }
+        TraverseExpression(v->type);
+        TraverseAttributes(v->attributes);
+        TraverseExpression(v->initializer);
+    }
+
+    /// Traverses the function, performing symbol resolution and determining global dependencies.
     void TraverseFunction(const ast::Function* func) {
         TraverseAttributes(func->attributes);
         TraverseAttributes(func->return_type_attributes);
@@ -221,20 +217,20 @@ class DependencyScanner {
         // with the same identifier as its type.
         for (auto* param : func->params) {
             TraverseAttributes(param->attributes);
-            TraverseType(param->type);
+            TraverseExpression(param->type);
         }
         // Resolve the return type
-        TraverseType(func->return_type);
+        TraverseExpression(func->return_type);
 
         // Push the scope stack for the parameters and function body.
         scope_stack_.Push();
         TINT_DEFER(scope_stack_.Pop());
 
         for (auto* param : func->params) {
-            if (auto* shadows = scope_stack_.Get(param->symbol)) {
+            if (auto* shadows = scope_stack_.Get(param->name->symbol)) {
                 graph_.shadows.Add(param, shadows);
             }
-            Declare(param->symbol, param);
+            Declare(param->name->symbol, param);
         }
         if (func->body) {
             TraverseStatements(func->body->statements);
@@ -305,12 +301,11 @@ class DependencyScanner {
                 }
             },
             [&](const ast::VariableDeclStatement* v) {
-                if (auto* shadows = scope_stack_.Get(v->variable->symbol)) {
+                if (auto* shadows = scope_stack_.Get(v->variable->name->symbol)) {
                     graph_.shadows.Add(v->variable, shadows);
                 }
-                TraverseType(v->variable->type);
-                TraverseExpression(v->variable->initializer);
-                Declare(v->variable->symbol, v->variable);
+                TraverseVariable(v->variable);
+                Declare(v->variable->name->symbol, v->variable);
             },
             [&](const ast::WhileStatement* w) {
                 scope_stack_.Push();
@@ -318,7 +313,7 @@ class DependencyScanner {
                 TraverseExpression(w->condition);
                 TraverseStatement(w->body);
             },
-            [&](const ast::StaticAssert* assertion) { TraverseExpression(assertion->condition); },
+            [&](const ast::ConstAssert* assertion) { TraverseExpression(assertion->condition); },
             [&](Default) {
                 if (TINT_UNLIKELY((!stmt->IsAnyOf<ast::BreakStatement, ast::ContinueStatement,
                                                   ast::DiscardStatement>()))) {
@@ -332,78 +327,37 @@ class DependencyScanner {
     void Declare(Symbol symbol, const ast::Node* node) {
         auto* old = scope_stack_.Set(symbol, node);
         if (old != nullptr && node != old) {
-            auto name = symbols_.NameFor(symbol);
+            auto name = symbol.Name();
             AddError(diagnostics_, "redeclaration of '" + name + "'", node->source);
             AddNote(diagnostics_, "'" + name + "' previously declared here", old->source);
         }
     }
 
-    /// Traverses the expression, performing symbol resolution and determining
-    /// global dependencies.
-    void TraverseExpression(const ast::Expression* root) {
-        if (!root) {
+    /// Traverses the expression @p root_expr, performing symbol resolution and determining global
+    /// dependencies.
+    void TraverseExpression(const ast::Expression* root_expr) {
+        if (!root_expr) {
             return;
         }
-        ast::TraverseExpressions(root, diagnostics_, [&](const ast::Expression* expr) {
-            Switch(
-                expr,
-                [&](const ast::IdentifierExpression* ident) {
-                    AddDependency(ident, ident->symbol, "identifier", "references");
-                },
-                [&](const ast::CallExpression* call) {
-                    if (call->target.name) {
-                        AddDependency(call->target.name, call->target.name->symbol, "function",
-                                      "calls");
-                    }
-                    if (call->target.type) {
-                        TraverseType(call->target.type);
-                    }
-                },
-                [&](const ast::BitcastExpression* cast) { TraverseType(cast->type); });
-            return ast::TraverseAction::Descend;
-        });
-    }
 
-    /// Traverses the type node, performing symbol resolution and determining
-    /// global dependencies.
-    void TraverseType(const ast::Type* ty) {
-        if (!ty) {
-            return;
-        }
-        Switch(
-            ty,  //
-            [&](const ast::Array* arr) {
-                TraverseType(arr->type);  //
-                TraverseExpression(arr->count);
-            },
-            [&](const ast::Atomic* atomic) {  //
-                TraverseType(atomic->type);
-            },
-            [&](const ast::Matrix* mat) {  //
-                TraverseType(mat->type);
-            },
-            [&](const ast::Pointer* ptr) {  //
-                TraverseType(ptr->type);
-            },
-            [&](const ast::TypeName* tn) {  //
-                AddDependency(tn, tn->name, "type", "references");
-            },
-            [&](const ast::Vector* vec) {  //
-                TraverseType(vec->type);
-            },
-            [&](const ast::SampledTexture* tex) {  //
-                TraverseType(tex->type);
-            },
-            [&](const ast::MultisampledTexture* tex) {  //
-                TraverseType(tex->type);
-            },
-            [&](Default) {
-                if (!ty->IsAnyOf<ast::Void, ast::Bool, ast::I32, ast::U32, ast::F16, ast::F32,
-                                 ast::DepthTexture, ast::DepthMultisampledTexture,
-                                 ast::StorageTexture, ast::ExternalTexture, ast::Sampler>()) {
-                    UnhandledNode(diagnostics_, ty);
-                }
+        utils::Vector<const ast::Expression*, 8> pending{root_expr};
+        while (!pending.IsEmpty()) {
+            ast::TraverseExpressions(pending.Pop(), diagnostics_, [&](const ast::Expression* expr) {
+                Switch(
+                    expr,
+                    [&](const ast::IdentifierExpression* e) {
+                        AddDependency(e->identifier, e->identifier->symbol);
+                        if (auto* tmpl_ident = e->identifier->As<ast::TemplatedIdentifier>()) {
+                            for (auto* arg : tmpl_ident->arguments) {
+                                pending.Push(arg);
+                            }
+                        }
+                    },
+                    [&](const ast::CallExpression* call) { TraverseExpression(call->target); },
+                    [&](const ast::BitcastExpression* cast) { TraverseExpression(cast->type); });
+                return ast::TraverseAction::Descend;
             });
+        }
     }
 
     /// Traverses the attribute list, performing symbol resolution and
@@ -423,12 +377,21 @@ class DependencyScanner {
                 TraverseExpression(binding->expr);
                 return true;
             },
+            [&](const ast::BuiltinAttribute* builtin) {
+                TraverseExpression(builtin->builtin);
+                return true;
+            },
             [&](const ast::GroupAttribute* group) {
                 TraverseExpression(group->expr);
                 return true;
             },
             [&](const ast::IdAttribute* id) {
                 TraverseExpression(id->expr);
+                return true;
+            },
+            [&](const ast::InterpolateAttribute* interpolate) {
+                TraverseExpression(interpolate->type);
+                TraverseExpression(interpolate->sampling);
                 return true;
             },
             [&](const ast::LocationAttribute* loc) {
@@ -448,13 +411,20 @@ class DependencyScanner {
                 TraverseExpression(wg->y);
                 TraverseExpression(wg->z);
                 return true;
+            },
+            [&](const ast::InternalAttribute* i) {
+                for (auto* dep : i->dependencies) {
+                    TraverseExpression(dep);
+                }
+                return true;
             });
         if (handled) {
             return;
         }
 
-        if (attr->IsAnyOf<ast::BuiltinAttribute, ast::InternalAttribute, ast::InterpolateAttribute,
-                          ast::InvariantAttribute, ast::StageAttribute, ast::StrideAttribute,
+        if (attr->IsAnyOf<ast::BuiltinAttribute, ast::DiagnosticAttribute,
+                          ast::InterpolateAttribute, ast::InvariantAttribute, ast::MustUseAttribute,
+                          ast::StageAttribute, ast::StrideAttribute,
                           ast::StructMemberOffsetAttribute>()) {
             return;
         }
@@ -462,46 +432,62 @@ class DependencyScanner {
         UnhandledNode(diagnostics_, attr);
     }
 
-    /// Adds the dependency from `from` to `to`, erroring if `to` cannot be
-    /// resolved.
-    void AddDependency(const ast::Node* from, Symbol to, const char* use, const char* action) {
+    /// Adds the dependency from @p from to @p to, erroring if @p to cannot be resolved.
+    void AddDependency(const ast::Identifier* from, Symbol to) {
         auto* resolved = scope_stack_.Get(to);
         if (!resolved) {
-            if (!IsBuiltin(to)) {
-                UnknownSymbol(to, from->source, use);
-                return;
+            switch (to.Type()) {
+                case Symbol::BuiltinType::kNone:
+                    graph_.resolved_identifiers.Add(from, UnresolvedIdentifier{to.Name()});
+                    break;
+                case Symbol::BuiltinType::kFunction:
+                    graph_.resolved_identifiers.Add(
+                        from, ResolvedIdentifier(to.BuiltinValue<builtin::Function>()));
+                    break;
+                case Symbol::BuiltinType::kBuiltin:
+                    graph_.resolved_identifiers.Add(
+                        from, ResolvedIdentifier(to.BuiltinValue<builtin::Builtin>()));
+                    break;
+                case Symbol::BuiltinType::kBuiltinValue:
+                    graph_.resolved_identifiers.Add(
+                        from, ResolvedIdentifier(to.BuiltinValue<builtin::BuiltinValue>()));
+                    break;
+                case Symbol::BuiltinType::kAddressSpace:
+                    graph_.resolved_identifiers.Add(
+                        from, ResolvedIdentifier(to.BuiltinValue<builtin::AddressSpace>()));
+                    break;
+                case Symbol::BuiltinType::kTexelFormat:
+                    graph_.resolved_identifiers.Add(
+                        from, ResolvedIdentifier(to.BuiltinValue<builtin::TexelFormat>()));
+                    break;
+                case Symbol::BuiltinType::kAccess:
+                    graph_.resolved_identifiers.Add(
+                        from, ResolvedIdentifier(to.BuiltinValue<builtin::Access>()));
+                    break;
+                case Symbol::BuiltinType::kInterpolationType:
+                    graph_.resolved_identifiers.Add(
+                        from, ResolvedIdentifier(to.BuiltinValue<builtin::InterpolationType>()));
+                    break;
+                case Symbol::BuiltinType::kInterpolationSampling:
+                    graph_.resolved_identifiers.Add(
+                        from,
+                        ResolvedIdentifier(to.BuiltinValue<builtin::InterpolationSampling>()));
+                    break;
             }
+            return;
         }
 
         if (auto global = globals_.Find(to); global && (*global)->node == resolved) {
             if (dependency_edges_.Add(DependencyEdge{current_global_, *global},
-                                      DependencyInfo{from->source, action})) {
+                                      DependencyInfo{from->source})) {
                 current_global_->deps.Push(*global);
             }
         }
 
-        graph_.resolved_symbols.Add(from, resolved);
-    }
-
-    /// @returns true if `name` is the name of a builtin function, or builtin type alias
-    bool IsBuiltin(Symbol name) const {
-        auto s = symbols_.NameFor(name);
-        if (sem::ParseBuiltinType(s) != sem::BuiltinType::kNone ||
-            type::ParseShortName(s) != type::ShortName::kUndefined) {
-            return true;
-        }
-        return false;
-    }
-
-    /// Appends an error to the diagnostics that the given symbol cannot be
-    /// resolved.
-    void UnknownSymbol(Symbol name, Source source, const char* use) {
-        AddError(diagnostics_, "unknown " + std::string(use) + ": '" + symbols_.NameFor(name) + "'",
-                 source);
+        graph_.resolved_identifiers.Add(from, ResolvedIdentifier(resolved));
     }
 
     using VariableMap = utils::Hashmap<Symbol, const ast::Variable*, 32>;
-    const SymbolTable& symbols_;
     const GlobalMap& globals_;
     diag::List& diagnostics_;
     DependencyGraph& graph_;
@@ -515,15 +501,15 @@ class DependencyScanner {
 struct DependencyAnalysis {
   public:
     /// Constructor
-    DependencyAnalysis(const SymbolTable& symbols, diag::List& diagnostics, DependencyGraph& graph)
-        : symbols_(symbols), diagnostics_(diagnostics), graph_(graph) {}
+    DependencyAnalysis(diag::List& diagnostics, DependencyGraph& graph)
+        : diagnostics_(diagnostics), graph_(graph) {}
 
     /// Performs global dependency analysis on the module, emitting any errors to
     /// #diagnostics.
     /// @returns true if analysis found no errors, otherwise false.
     bool Run(const ast::Module& module) {
         // Reserve container memory
-        graph_.resolved_symbols.Reserve(module.GlobalDeclarations().Length());
+        graph_.resolved_identifiers.Reserve(module.GlobalDeclarations().Length());
         sorted_.Reserve(module.GlobalDeclarations().Length());
 
         // Collect all the named globals from the AST module
@@ -551,11 +537,12 @@ struct DependencyAnalysis {
     Symbol SymbolOf(const ast::Node* node) const {
         return Switch(
             node,  //
-            [&](const ast::TypeDecl* td) { return td->name; },
-            [&](const ast::Function* func) { return func->symbol; },
-            [&](const ast::Variable* var) { return var->symbol; },
+            [&](const ast::TypeDecl* td) { return td->name->symbol; },
+            [&](const ast::Function* func) { return func->name->symbol; },
+            [&](const ast::Variable* var) { return var->name->symbol; },
+            [&](const ast::DiagnosticDirective*) { return Symbol(); },
             [&](const ast::Enable*) { return Symbol(); },
-            [&](const ast::StaticAssert*) { return Symbol(); },
+            [&](const ast::ConstAssert*) { return Symbol(); },
             [&](Default) {
                 UnhandledNode(diagnostics_, node);
                 return Symbol{};
@@ -566,7 +553,7 @@ struct DependencyAnalysis {
     /// @returns the name of the global declaration node
     /// @note will raise an ICE if the node is not a type, function or variable
     /// declaration
-    std::string NameOf(const ast::Node* node) const { return symbols_.NameFor(SymbolOf(node)); }
+    std::string NameOf(const ast::Node* node) const { return SymbolOf(node).Name(); }
 
     /// @param node the ast::Node of the global declaration
     /// @returns a string representation of the global declaration kind
@@ -574,12 +561,12 @@ struct DependencyAnalysis {
     /// declaration
     std::string KindOf(const ast::Node* node) {
         return Switch(
-            node,                                                       //
-            [&](const ast::Struct*) { return "struct"; },               //
-            [&](const ast::Alias*) { return "alias"; },                 //
-            [&](const ast::Function*) { return "function"; },           //
-            [&](const ast::Variable* v) { return v->Kind(); },          //
-            [&](const ast::StaticAssert*) { return "static_assert"; },  //
+            node,                                                     //
+            [&](const ast::Struct*) { return "struct"; },             //
+            [&](const ast::Alias*) { return "alias"; },               //
+            [&](const ast::Function*) { return "function"; },         //
+            [&](const ast::Variable* v) { return v->Kind(); },        //
+            [&](const ast::ConstAssert*) { return "const_assert"; },  //
             [&](Default) {
                 UnhandledNode(diagnostics_, node);
                 return "<error>";
@@ -601,7 +588,7 @@ struct DependencyAnalysis {
     /// Walks the global declarations, determining the dependencies of each global
     /// and adding these to each global's Global::deps field.
     void DetermineDependencies() {
-        DependencyScanner scanner(symbols_, globals_, diagnostics_, graph_, dependency_edges_);
+        DependencyScanner scanner(globals_, diagnostics_, graph_, dependency_edges_);
         for (auto* global : declaration_order_) {
             scanner.Scan(global);
         }
@@ -662,16 +649,16 @@ struct DependencyAnalysis {
             return;  // This code assumes there are no undeclared identifiers.
         }
 
-        // Make sure all 'enable' directives go before any other global declarations.
+        // Make sure all directives go before any other global declarations.
         for (auto* global : declaration_order_) {
-            if (auto* enable = global->node->As<ast::Enable>()) {
-                sorted_.Add(enable);
+            if (global->node->IsAnyOf<ast::DiagnosticDirective, ast::Enable>()) {
+                sorted_.Add(global->node);
             }
         }
 
         for (auto* global : declaration_order_) {
-            if (global->node->Is<ast::Enable>()) {
-                // Skip 'enable' directives here, as they are already added.
+            if (global->node->IsAnyOf<ast::DiagnosticDirective, ast::Enable>()) {
+                // Skip directives here, as they are already added.
                 continue;
             }
             utils::UniqueVector<const Global*, 8> stack;
@@ -725,7 +712,7 @@ struct DependencyAnalysis {
     /// found in `stack`.
     /// @param stack is the global dependency stack that contains a loop.
     void CyclicDependencyFound(const Global* root, utils::VectorRef<const Global*> stack) {
-        std::stringstream msg;
+        utils::StringStream msg;
         msg << "cyclic dependency found: ";
         constexpr size_t kLoopNotStarted = ~0u;
         size_t loop_start = kLoopNotStarted;
@@ -745,7 +732,7 @@ struct DependencyAnalysis {
             auto* to = (i + 1 < stack.Length()) ? stack[i + 1] : stack[loop_start];
             auto info = DepInfoFor(from, to);
             AddNote(diagnostics_,
-                    KindOf(from->node) + " '" + NameOf(from->node) + "' " + info.action + " " +
+                    KindOf(from->node) + " '" + NameOf(from->node) + "' references " +
                         KindOf(to->node) + " '" + NameOf(to->node) + "' here",
                     info.source);
         }
@@ -766,16 +753,13 @@ struct DependencyAnalysis {
         for (auto* node : sorted_) {
             auto symbol = SymbolOf(node);
             auto* global = *globals_.Find(symbol);
-            printf("%s depends on:\n", symbols_.NameFor(symbol).c_str());
+            printf("%s depends on:\n", symbol.Name().c_str());
             for (auto* dep : global->deps) {
                 printf("  %s\n", NameOf(dep->node).c_str());
             }
         }
         printf("=========================\n");
     }
-
-    /// Program symbols
-    const SymbolTable& symbols_;
 
     /// Program diagnostics
     diag::List& diagnostics_;
@@ -789,8 +773,7 @@ struct DependencyAnalysis {
     /// Global map, keyed by name. Populated by GatherGlobals().
     GlobalMap globals_;
 
-    /// Map of DependencyEdge to DependencyInfo. Populated by
-    /// DetermineDependencies().
+    /// Map of DependencyEdge to DependencyInfo. Populated by DetermineDependencies().
     DependencyEdges dependency_edges_;
 
     /// Globals in declaration order. Populated by GatherGlobals().
@@ -807,11 +790,73 @@ DependencyGraph::DependencyGraph(DependencyGraph&&) = default;
 DependencyGraph::~DependencyGraph() = default;
 
 bool DependencyGraph::Build(const ast::Module& module,
-                            const SymbolTable& symbols,
                             diag::List& diagnostics,
                             DependencyGraph& output) {
-    DependencyAnalysis da{symbols, diagnostics, output};
+    DependencyAnalysis da{diagnostics, output};
     return da.Run(module);
+}
+
+std::string ResolvedIdentifier::String(diag::List& diagnostics) const {
+    if (auto* node = Node()) {
+        return Switch(
+            node,
+            [&](const ast::TypeDecl* n) {  //
+                return "type '" + n->name->symbol.Name() + "'";
+            },
+            [&](const ast::Var* n) {  //
+                return "var '" + n->name->symbol.Name() + "'";
+            },
+            [&](const ast::Let* n) {  //
+                return "let '" + n->name->symbol.Name() + "'";
+            },
+            [&](const ast::Const* n) {  //
+                return "const '" + n->name->symbol.Name() + "'";
+            },
+            [&](const ast::Override* n) {  //
+                return "override '" + n->name->symbol.Name() + "'";
+            },
+            [&](const ast::Function* n) {  //
+                return "function '" + n->name->symbol.Name() + "'";
+            },
+            [&](const ast::Parameter* n) {  //
+                return "parameter '" + n->name->symbol.Name() + "'";
+            },
+            [&](Default) {
+                TINT_UNREACHABLE(Resolver, diagnostics)
+                    << "unhandled ast::Node: " << node->TypeInfo().name;
+                return "<unknown>";
+            });
+    }
+    if (auto builtin_fn = BuiltinFunction(); builtin_fn != builtin::Function::kNone) {
+        return "builtin function '" + utils::ToString(builtin_fn) + "'";
+    }
+    if (auto builtin_ty = BuiltinType(); builtin_ty != builtin::Builtin::kUndefined) {
+        return "builtin type '" + utils::ToString(builtin_ty) + "'";
+    }
+    if (auto builtin_val = BuiltinValue(); builtin_val != builtin::BuiltinValue::kUndefined) {
+        return "builtin value '" + utils::ToString(builtin_val) + "'";
+    }
+    if (auto access = Access(); access != builtin::Access::kUndefined) {
+        return "access '" + utils::ToString(access) + "'";
+    }
+    if (auto addr = AddressSpace(); addr != builtin::AddressSpace::kUndefined) {
+        return "address space '" + utils::ToString(addr) + "'";
+    }
+    if (auto type = InterpolationType(); type != builtin::InterpolationType::kUndefined) {
+        return "interpolation type '" + utils::ToString(type) + "'";
+    }
+    if (auto smpl = InterpolationSampling(); smpl != builtin::InterpolationSampling::kUndefined) {
+        return "interpolation sampling '" + utils::ToString(smpl) + "'";
+    }
+    if (auto fmt = TexelFormat(); fmt != builtin::TexelFormat::kUndefined) {
+        return "texel format '" + utils::ToString(fmt) + "'";
+    }
+    if (auto* unresolved = Unresolved()) {
+        return "unresolved identifier '" + unresolved->name + "'";
+    }
+
+    TINT_UNREACHABLE(Resolver, diagnostics) << "unhandled ResolvedIdentifier";
+    return "<unknown>";
 }
 
 }  // namespace tint::resolver

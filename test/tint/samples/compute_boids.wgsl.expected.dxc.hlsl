@@ -35,11 +35,11 @@ tint_symbol_3 frag_main() {
   return wrapper_result_1;
 }
 
-cbuffer cbuffer_params : register(b0, space0) {
+cbuffer cbuffer_params : register(b0) {
   uint4 params[2];
 };
-RWByteAddressBuffer particlesA : register(u1, space0);
-RWByteAddressBuffer particlesB : register(u2, space0);
+RWByteAddressBuffer particlesA : register(u1);
+RWByteAddressBuffer particlesB : register(u2);
 
 struct tint_symbol_5 {
   uint3 gl_GlobalInvocationID : SV_DispatchThreadID;
@@ -86,7 +86,7 @@ void comp_main_inner(uint3 gl_GlobalInvocationID) {
     cVel = (cVel / float2(float(cVelCount), float(cVelCount)));
   }
   vVel = (((vVel + (cMass * asfloat(params[1].x))) + (colVel * asfloat(params[1].y))) + (cVel * asfloat(params[1].z)));
-  vVel = (normalize(vVel) * clamp(length(vVel), 0.0f, 0.100000001f));
+  vVel = (normalize(vVel) * clamp(length(vVel), 0.0f, 0.10000000149011611938f));
   vPos = (vPos + (vVel * asfloat(params[0].x)));
   if ((vPos.x < -1.0f)) {
     vPos.x = 1.0f;

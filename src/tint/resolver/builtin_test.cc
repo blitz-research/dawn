@@ -36,6 +36,9 @@
 #include "src/tint/sem/variable.h"
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/test_helper.h"
+#include "src/tint/type/texture_dimension.h"
+#include "src/tint/utils/string.h"
+#include "src/tint/utils/string_stream.h"
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
@@ -47,13 +50,11 @@ namespace {
 
 using ExpressionList = utils::Vector<const ast::Expression*, 8>;
 
-using BuiltinType = sem::BuiltinType;
-
 using ResolverBuiltinTest = ResolverTest;
 
 struct BuiltinData {
     const char* name;
-    BuiltinType builtin;
+    builtin::Function builtin;
 };
 
 inline std::ostream& operator<<(std::ostream& out, BuiltinData data) {
@@ -79,7 +80,7 @@ using ResolverBuiltinTest_BoolMethod = ResolverTestWithParam<std::string>;
 TEST_P(ResolverBuiltinTest_BoolMethod, Scalar) {
     auto name = GetParam();
 
-    GlobalVar("my_var", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_var", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call(name, "my_var");
     WrapInFunction(expr);
@@ -92,7 +93,7 @@ TEST_P(ResolverBuiltinTest_BoolMethod, Scalar) {
 TEST_P(ResolverBuiltinTest_BoolMethod, Vector) {
     auto name = GetParam();
 
-    GlobalVar("my_var", ty.vec3<bool>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_var", ty.vec3<bool>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call(name, "my_var");
     WrapInFunction(expr);
@@ -107,9 +108,9 @@ INSTANTIATE_TEST_SUITE_P(ResolverTest,
                          testing::Values("any", "all"));
 
 TEST_F(ResolverBuiltinTest, Select) {
-    GlobalVar("my_var", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_var", ty.vec3<f32>(), builtin::AddressSpace::kPrivate);
 
-    GlobalVar("bool_var", ty.vec3<bool>(), ast::AddressSpace::kPrivate);
+    GlobalVar("bool_var", ty.vec3<bool>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call("select", "my_var", "my_var", "bool_var");
     WrapInFunction(expr);
@@ -211,10 +212,10 @@ namespace array_builtin_tests {
 using ResolverBuiltinArrayTest = ResolverTest;
 
 TEST_F(ResolverBuiltinArrayTest, ArrayLength_Vector) {
-    auto* ary = ty.array<i32>();
+    auto ary = ty.array<i32>();
     auto* str = Structure("S", utils::Vector{Member("x", ary)});
-    GlobalVar("a", ty.Of(str), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
-              Group(0_a));
+    GlobalVar("a", ty.Of(str), builtin::AddressSpace::kStorage, builtin::Access::kRead,
+              Binding(0_a), Group(0_a));
 
     auto* call = Call("arrayLength", AddressOf(MemberAccessor("a", "x")));
     WrapInFunction(call);
@@ -226,7 +227,7 @@ TEST_F(ResolverBuiltinArrayTest, ArrayLength_Vector) {
 }
 
 TEST_F(ResolverBuiltinArrayTest, ArrayLength_Error_ArraySized) {
-    GlobalVar("arr", ty.array<i32, 4>(), ast::AddressSpace::kPrivate);
+    GlobalVar("arr", ty.array<i32, 4>(), builtin::AddressSpace::kPrivate);
     auto* call = Call("arrayLength", AddressOf("arr"));
     WrapInFunction(call);
 
@@ -250,7 +251,7 @@ namespace float_builtin_tests {
 struct BuiltinDataWithParamNum {
     uint32_t args_number;
     const char* name;
-    BuiltinType builtin;
+    builtin::Function builtin;
 };
 
 inline std::ostream& operator<<(std::ostream& out, BuiltinDataWithParamNum data) {
@@ -469,7 +470,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Vector_f32) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f16) {
     auto param = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto val = 0.5_h;
     if (param.name == std::string("acosh")) {
@@ -497,7 +498,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Scalar_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Vector_f16) {
     auto param = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto val = param.name == std::string("acosh") ? vec3<f16>(1.0_h, 2.0_h, 3.0_h)
                                                   : vec3<f16>(0.5_h, 0.5_h, 0.8_h);
@@ -526,7 +527,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, OneParam_Vector_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Scalar_f16) {
     auto param = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call(param.name, 1_h, 1_h);
     WrapInFunction(call);
@@ -549,7 +550,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Scalar_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Vector_f16) {
     auto param = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call(param.name, vec3<f16>(1_h, 1_h, 3_h), vec3<f16>(1_h, 1_h, 3_h));
     WrapInFunction(call);
@@ -575,7 +576,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, TwoParams_Vector_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f16) {
     auto param = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call(param.name, 0_h, 1_h, 2_h);
     WrapInFunction(call);
@@ -598,7 +599,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Scalar_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Vector_f16) {
     auto param = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call(param.name, vec3<f16>(0_h, 0_h, 0_h), vec3<f16>(1_h, 1_h, 1_h),
                       vec3<f16>(2_h, 2_h, 2_h));
@@ -626,7 +627,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, ThreeParams_Vector_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Scalar_f16) {
     auto param = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call(param.name, 1_h, 1_h, 1_h, 1_h);
     WrapInFunction(call);
@@ -649,7 +650,7 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Scalar_f16) {
 TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Vector_f16) {
     auto param = GetParam();
 
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call(param.name, vec3<f16>(1_h, 1_h, 3_h), vec3<f16>(1_h, 1_h, 3_h),
                       vec3<f16>(1_h, 1_h, 3_h), vec3<f16>(1_h, 1_h, 3_h));
@@ -677,55 +678,55 @@ TEST_P(ResolverBuiltinTest_FloatBuiltin_IdenticalType, FourParams_Vector_f16) {
 INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_FloatBuiltin_IdenticalType,
-    testing::Values(BuiltinDataWithParamNum{1, "abs", BuiltinType::kAbs},
-                    BuiltinDataWithParamNum{1, "acos", BuiltinType::kAcos},
-                    BuiltinDataWithParamNum{1, "acosh", BuiltinType::kAcos},
-                    BuiltinDataWithParamNum{1, "asin", BuiltinType::kAsin},
-                    BuiltinDataWithParamNum{1, "asinh", BuiltinType::kAsin},
-                    BuiltinDataWithParamNum{1, "atan", BuiltinType::kAtan},
-                    BuiltinDataWithParamNum{1, "atanh", BuiltinType::kAtan},
-                    BuiltinDataWithParamNum{2, "atan2", BuiltinType::kAtan2},
-                    BuiltinDataWithParamNum{1, "ceil", BuiltinType::kCeil},
-                    BuiltinDataWithParamNum{3, "clamp", BuiltinType::kClamp},
-                    BuiltinDataWithParamNum{1, "cos", BuiltinType::kCos},
-                    BuiltinDataWithParamNum{1, "cosh", BuiltinType::kCosh},
+    testing::Values(BuiltinDataWithParamNum{1, "abs", builtin::Function::kAbs},
+                    BuiltinDataWithParamNum{1, "acos", builtin::Function::kAcos},
+                    BuiltinDataWithParamNum{1, "acosh", builtin::Function::kAcos},
+                    BuiltinDataWithParamNum{1, "asin", builtin::Function::kAsin},
+                    BuiltinDataWithParamNum{1, "asinh", builtin::Function::kAsin},
+                    BuiltinDataWithParamNum{1, "atan", builtin::Function::kAtan},
+                    BuiltinDataWithParamNum{1, "atanh", builtin::Function::kAtan},
+                    BuiltinDataWithParamNum{2, "atan2", builtin::Function::kAtan2},
+                    BuiltinDataWithParamNum{1, "ceil", builtin::Function::kCeil},
+                    BuiltinDataWithParamNum{3, "clamp", builtin::Function::kClamp},
+                    BuiltinDataWithParamNum{1, "cos", builtin::Function::kCos},
+                    BuiltinDataWithParamNum{1, "cosh", builtin::Function::kCosh},
                     // cross: (vec3<T>, vec3<T>) -> vec3<T>
-                    BuiltinDataWithParamNum{1, "degrees", BuiltinType::kDegrees},
+                    BuiltinDataWithParamNum{1, "degrees", builtin::Function::kDegrees},
                     // distance: (T, T) -> T, (vecN<T>, vecN<T>) -> T
-                    BuiltinDataWithParamNum{1, "exp", BuiltinType::kExp},
-                    BuiltinDataWithParamNum{1, "exp2", BuiltinType::kExp2},
+                    BuiltinDataWithParamNum{1, "exp", builtin::Function::kExp},
+                    BuiltinDataWithParamNum{1, "exp2", builtin::Function::kExp2},
                     // faceForward: (vecN<T>, vecN<T>, vecN<T>) -> vecN<T>
-                    BuiltinDataWithParamNum{1, "floor", BuiltinType::kFloor},
-                    BuiltinDataWithParamNum{3, "fma", BuiltinType::kFma},
-                    BuiltinDataWithParamNum{1, "fract", BuiltinType::kFract},
+                    BuiltinDataWithParamNum{1, "floor", builtin::Function::kFloor},
+                    BuiltinDataWithParamNum{3, "fma", builtin::Function::kFma},
+                    BuiltinDataWithParamNum{1, "fract", builtin::Function::kFract},
                     // frexp
-                    BuiltinDataWithParamNum{1, "inverseSqrt", BuiltinType::kInverseSqrt},
+                    BuiltinDataWithParamNum{1, "inverseSqrt", builtin::Function::kInverseSqrt},
                     // ldexp: (T, i32) -> T, (vecN<T>, vecN<i32>) -> vecN<T>
                     // length: (vecN<T>) -> T
-                    BuiltinDataWithParamNum{1, "log", BuiltinType::kLog},
-                    BuiltinDataWithParamNum{1, "log2", BuiltinType::kLog2},
-                    BuiltinDataWithParamNum{2, "max", BuiltinType::kMax},
-                    BuiltinDataWithParamNum{2, "min", BuiltinType::kMin},
+                    BuiltinDataWithParamNum{1, "log", builtin::Function::kLog},
+                    BuiltinDataWithParamNum{1, "log2", builtin::Function::kLog2},
+                    BuiltinDataWithParamNum{2, "max", builtin::Function::kMax},
+                    BuiltinDataWithParamNum{2, "min", builtin::Function::kMin},
                     // Note that `mix(vecN<f32>, vecN<f32>, f32) -> vecN<f32>` is not tested here.
-                    BuiltinDataWithParamNum{3, "mix", BuiltinType::kMix},
+                    BuiltinDataWithParamNum{3, "mix", builtin::Function::kMix},
                     // modf
                     // normalize: (vecN<T>) -> vecN<T>
-                    BuiltinDataWithParamNum{2, "pow", BuiltinType::kPow},
+                    BuiltinDataWithParamNum{2, "pow", builtin::Function::kPow},
                     // quantizeToF16 is not implemented yet.
-                    BuiltinDataWithParamNum{1, "radians", BuiltinType::kRadians},
+                    BuiltinDataWithParamNum{1, "radians", builtin::Function::kRadians},
                     // reflect: (vecN<T>, vecN<T>) -> vecN<T>
                     // refract: (vecN<T>, vecN<T>, T) -> vecN<T>
-                    BuiltinDataWithParamNum{1, "round", BuiltinType::kRound},
+                    BuiltinDataWithParamNum{1, "round", builtin::Function::kRound},
                     // saturate not implemented yet.
-                    BuiltinDataWithParamNum{1, "sign", BuiltinType::kSign},
-                    BuiltinDataWithParamNum{1, "sin", BuiltinType::kSin},
-                    BuiltinDataWithParamNum{1, "sinh", BuiltinType::kSinh},
-                    BuiltinDataWithParamNum{3, "smoothstep", BuiltinType::kSmoothstep},
-                    BuiltinDataWithParamNum{1, "sqrt", BuiltinType::kSqrt},
-                    BuiltinDataWithParamNum{2, "step", BuiltinType::kStep},
-                    BuiltinDataWithParamNum{1, "tan", BuiltinType::kTan},
-                    BuiltinDataWithParamNum{1, "tanh", BuiltinType::kTanh},
-                    BuiltinDataWithParamNum{1, "trunc", BuiltinType::kTrunc}));
+                    BuiltinDataWithParamNum{1, "sign", builtin::Function::kSign},
+                    BuiltinDataWithParamNum{1, "sin", builtin::Function::kSin},
+                    BuiltinDataWithParamNum{1, "sinh", builtin::Function::kSinh},
+                    BuiltinDataWithParamNum{3, "smoothstep", builtin::Function::kSmoothstep},
+                    BuiltinDataWithParamNum{1, "sqrt", builtin::Function::kSqrt},
+                    BuiltinDataWithParamNum{2, "step", builtin::Function::kStep},
+                    BuiltinDataWithParamNum{1, "tan", builtin::Function::kTan},
+                    BuiltinDataWithParamNum{1, "tanh", builtin::Function::kTanh},
+                    BuiltinDataWithParamNum{1, "trunc", builtin::Function::kTrunc}));
 
 using ResolverBuiltinFloatTest = ResolverTest;
 
@@ -743,7 +744,7 @@ TEST_F(ResolverBuiltinFloatTest, Cross_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Cross_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("cross", vec3<f16>(1_h, 2_h, 3_h), vec3<f16>(1_h, 2_h, 3_h));
     WrapInFunction(call);
@@ -839,7 +840,7 @@ TEST_F(ResolverBuiltinFloatTest, Distance_Scalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Distance_Scalar_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("distance", 1_h, 1_h);
     WrapInFunction(call);
@@ -861,7 +862,7 @@ TEST_F(ResolverBuiltinFloatTest, Distance_Vector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Distance_Vector_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("distance", vec3<f16>(1_h, 1_h, 3_h), vec3<f16>(1_h, 1_h, 3_h));
     WrapInFunction(call);
@@ -924,7 +925,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpScalar_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
+    auto* ty = TypeOf(call)->As<type::Struct>();
     ASSERT_NE(ty, nullptr);
     ASSERT_EQ(ty->Members().Length(), 2u);
 
@@ -947,7 +948,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpScalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, FrexpScalar_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("frexp", 1_h);
     WrapInFunction(call);
@@ -955,7 +956,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpScalar_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
+    auto* ty = TypeOf(call)->As<type::Struct>();
     ASSERT_NE(ty, nullptr);
     ASSERT_EQ(ty->Members().Length(), 2u);
 
@@ -984,7 +985,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
+    auto* ty = TypeOf(call)->As<type::Struct>();
     ASSERT_NE(ty, nullptr);
     ASSERT_EQ(ty->Members().Length(), 2u);
 
@@ -1011,7 +1012,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, FrexpVector_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("frexp", vec3<f16>());
     WrapInFunction(call);
@@ -1019,7 +1020,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
+    auto* ty = TypeOf(call)->As<type::Struct>();
     ASSERT_NE(ty, nullptr);
     ASSERT_EQ(ty->Members().Length(), 2u);
 
@@ -1045,31 +1046,8 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f16) {
     EXPECT_EQ(ty->SizeNoPadding(), 28u);
 }
 
-// TODO(crbug.com/tint/1757): Remove once deprecation period for `frexp().sig` is over
-TEST_F(ResolverBuiltinFloatTest, FrexpVector_sig) {
-    Enable(ast::Extension::kF16);
-
-    auto* call = Call("frexp", vec3<f16>());
-    auto* expr = MemberAccessor(call, "sig");
-    WrapInFunction(expr);
-
-    EXPECT_TRUE(r()->Resolve()) << r()->error();
-
-    ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
-    ASSERT_NE(ty, nullptr);
-    ASSERT_EQ(ty->Members().Length(), 2u);
-
-    auto* sig = ty->Members()[0];
-    EXPECT_TYPE(sig->Type(), TypeOf(expr));
-
-    auto* access = Sem().Get<sem::StructMemberAccess>(expr);
-    ASSERT_NE(access, nullptr);
-    EXPECT_EQ(access->Member(), sig);
-}
-
 TEST_F(ResolverBuiltinFloatTest, Frexp_Error_FirstParamInt) {
-    GlobalVar("v", ty.i32(), ast::AddressSpace::kWorkgroup);
+    GlobalVar("v", ty.i32(), builtin::AddressSpace::kWorkgroup);
     auto* call = Call("frexp", 1_i, AddressOf("v"));
     WrapInFunction(call);
 
@@ -1096,7 +1074,7 @@ TEST_F(ResolverBuiltinFloatTest, Length_Scalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Length_Scalar_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("length", 1_h);
     WrapInFunction(call);
@@ -1118,7 +1096,7 @@ TEST_F(ResolverBuiltinFloatTest, Length_FloatVector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Length_FloatVector_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("length", vec3<f16>(1_h, 1_h, 3_h));
     WrapInFunction(call);
@@ -1173,7 +1151,7 @@ TEST_F(ResolverBuiltinFloatTest, Mix_VectorScalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Mix_VectorScalar_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("mix", vec3<f16>(1_h, 1_h, 1_h), vec3<f16>(1_h, 1_h, 1_h), 4_h);
     WrapInFunction(call);
@@ -1196,7 +1174,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfScalar_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
+    auto* ty = TypeOf(call)->As<type::Struct>();
     ASSERT_NE(ty, nullptr);
     ASSERT_EQ(ty->Members().Length(), 2u);
 
@@ -1219,7 +1197,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfScalar_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, ModfScalar_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("modf", 1_h);
     WrapInFunction(call);
@@ -1227,7 +1205,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfScalar_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
+    auto* ty = TypeOf(call)->As<type::Struct>();
     ASSERT_NE(ty, nullptr);
     ASSERT_EQ(ty->Members().Length(), 2u);
 
@@ -1256,7 +1234,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfVector_f32) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
+    auto* ty = TypeOf(call)->As<type::Struct>();
     ASSERT_NE(ty, nullptr);
     ASSERT_EQ(ty->Members().Length(), 2u);
 
@@ -1283,7 +1261,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfVector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, ModfVector_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("modf", vec3<f16>());
     WrapInFunction(call);
@@ -1291,7 +1269,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfVector_f16) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    auto* ty = TypeOf(call)->As<sem::Struct>();
+    auto* ty = TypeOf(call)->As<type::Struct>();
     ASSERT_NE(ty, nullptr);
     ASSERT_EQ(ty->Members().Length(), 2u);
 
@@ -1318,7 +1296,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfVector_f16) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Modf_Error_FirstParamInt) {
-    GlobalVar("whole", ty.f32(), ast::AddressSpace::kWorkgroup);
+    GlobalVar("whole", ty.f32(), builtin::AddressSpace::kWorkgroup);
     auto* call = Call("modf", 1_i, AddressOf("whole"));
     WrapInFunction(call);
 
@@ -1334,7 +1312,7 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_FirstParamInt) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Modf_Error_SecondParamIntPtr) {
-    GlobalVar("whole", ty.i32(), ast::AddressSpace::kWorkgroup);
+    GlobalVar("whole", ty.i32(), builtin::AddressSpace::kWorkgroup);
     auto* call = Call("modf", 1_f, AddressOf("whole"));
     WrapInFunction(call);
 
@@ -1364,7 +1342,7 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_SecondParamNotAPointer) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Modf_Error_VectorSizesDontMatch) {
-    GlobalVar("whole", ty.vec4<f32>(), ast::AddressSpace::kWorkgroup);
+    GlobalVar("whole", ty.vec4<f32>(), builtin::AddressSpace::kWorkgroup);
     auto* call = Call("modf", vec2<f32>(1_f, 2_f), AddressOf("whole"));
     WrapInFunction(call);
 
@@ -1393,7 +1371,7 @@ TEST_F(ResolverBuiltinFloatTest, Normalize_Vector_f32) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Normalize_Vector_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto* call = Call("normalize", vec3<f16>(1_h, 1_h, 3_h));
     WrapInFunction(call);
@@ -1429,7 +1407,7 @@ namespace integer_builtin_tests {
 struct BuiltinDataWithParamNum {
     uint32_t args_number;
     const char* name;
-    BuiltinType builtin;
+    builtin::Function builtin;
 };
 
 inline std::ostream& operator<<(std::ostream& out, BuiltinDataWithParamNum data) {
@@ -1825,18 +1803,18 @@ INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_IntegerBuiltin_IdenticalType,
     testing::Values(
-        BuiltinDataWithParamNum{1, "abs", BuiltinType::kAbs},
-        BuiltinDataWithParamNum{3, "clamp", BuiltinType::kClamp},
-        BuiltinDataWithParamNum{1, "countLeadingZeros", BuiltinType::kCountLeadingZeros},
-        BuiltinDataWithParamNum{1, "countOneBits", BuiltinType::kCountOneBits},
-        BuiltinDataWithParamNum{1, "countTrailingZeros", BuiltinType::kCountTrailingZeros},
+        BuiltinDataWithParamNum{1, "abs", builtin::Function::kAbs},
+        BuiltinDataWithParamNum{3, "clamp", builtin::Function::kClamp},
+        BuiltinDataWithParamNum{1, "countLeadingZeros", builtin::Function::kCountLeadingZeros},
+        BuiltinDataWithParamNum{1, "countOneBits", builtin::Function::kCountOneBits},
+        BuiltinDataWithParamNum{1, "countTrailingZeros", builtin::Function::kCountTrailingZeros},
         // extractBits: (T, u32, u32) -> T
-        BuiltinDataWithParamNum{1, "firstLeadingBit", BuiltinType::kFirstLeadingBit},
-        BuiltinDataWithParamNum{1, "firstTrailingBit", BuiltinType::kFirstTrailingBit},
+        BuiltinDataWithParamNum{1, "firstLeadingBit", builtin::Function::kFirstLeadingBit},
+        BuiltinDataWithParamNum{1, "firstTrailingBit", builtin::Function::kFirstTrailingBit},
         // insertBits: (T, T, u32, u32) -> T
-        BuiltinDataWithParamNum{2, "max", BuiltinType::kMax},
-        BuiltinDataWithParamNum{2, "min", BuiltinType::kMin},
-        BuiltinDataWithParamNum{1, "reverseBits", BuiltinType::kReverseBits}));
+        BuiltinDataWithParamNum{2, "max", builtin::Function::kMax},
+        BuiltinDataWithParamNum{2, "min", builtin::Function::kMin},
+        BuiltinDataWithParamNum{1, "reverseBits", builtin::Function::kReverseBits}));
 
 }  // namespace integer_builtin_tests
 
@@ -1844,7 +1822,7 @@ INSTANTIATE_TEST_SUITE_P(
 namespace matrix_builtin_tests {
 
 TEST_F(ResolverBuiltinTest, Determinant_2x2_f32) {
-    GlobalVar("var", ty.mat2x2<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat2x2<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1856,9 +1834,9 @@ TEST_F(ResolverBuiltinTest, Determinant_2x2_f32) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_2x2_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
-    GlobalVar("var", ty.mat2x2<f16>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat2x2<f16>(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1870,7 +1848,7 @@ TEST_F(ResolverBuiltinTest, Determinant_2x2_f16) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_3x3_f32) {
-    GlobalVar("var", ty.mat3x3<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat3x3<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1882,9 +1860,9 @@ TEST_F(ResolverBuiltinTest, Determinant_3x3_f32) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_3x3_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
-    GlobalVar("var", ty.mat3x3<f16>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat3x3<f16>(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1896,7 +1874,7 @@ TEST_F(ResolverBuiltinTest, Determinant_3x3_f16) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_4x4_f32) {
-    GlobalVar("var", ty.mat4x4<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat4x4<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1908,9 +1886,9 @@ TEST_F(ResolverBuiltinTest, Determinant_4x4_f32) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_4x4_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
-    GlobalVar("var", ty.mat4x4<f16>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat4x4<f16>(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1922,7 +1900,7 @@ TEST_F(ResolverBuiltinTest, Determinant_4x4_f16) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_NotSquare) {
-    GlobalVar("var", ty.mat2x3<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat2x3<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1937,7 +1915,7 @@ TEST_F(ResolverBuiltinTest, Determinant_NotSquare) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_NotMatrix) {
-    GlobalVar("var", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.f32(), builtin::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1957,7 +1935,7 @@ TEST_F(ResolverBuiltinTest, Determinant_NotMatrix) {
 namespace vector_builtin_tests {
 
 TEST_F(ResolverBuiltinTest, Dot_Vec2_f32) {
-    GlobalVar("my_var", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_var", ty.vec2<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call("dot", "my_var", "my_var");
     WrapInFunction(expr);
@@ -1969,9 +1947,9 @@ TEST_F(ResolverBuiltinTest, Dot_Vec2_f32) {
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec2_f16) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
-    GlobalVar("my_var", ty.vec2<f16>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_var", ty.vec2<f16>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call("dot", "my_var", "my_var");
     WrapInFunction(expr);
@@ -1983,7 +1961,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec2_f16) {
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec3_i32) {
-    GlobalVar("my_var", ty.vec3<i32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_var", ty.vec3<i32>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call("dot", "my_var", "my_var");
     WrapInFunction(expr);
@@ -1995,7 +1973,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec3_i32) {
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec4_u32) {
-    GlobalVar("my_var", ty.vec4<u32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_var", ty.vec4<u32>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call("dot", "my_var", "my_var");
     WrapInFunction(expr);
@@ -2030,7 +2008,7 @@ using ResolverBuiltinDerivativeTest = ResolverTestWithParam<std::string>;
 TEST_P(ResolverBuiltinDerivativeTest, Scalar) {
     auto name = GetParam();
 
-    GlobalVar("ident", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("ident", ty.f32(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call(name, "ident");
     Func("func", utils::Empty, ty.void_(), utils::Vector{Ignore(expr)},
@@ -2044,7 +2022,7 @@ TEST_P(ResolverBuiltinDerivativeTest, Scalar) {
 
 TEST_P(ResolverBuiltinDerivativeTest, Vector) {
     auto name = GetParam();
-    GlobalVar("ident", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("ident", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call(name, "ident");
     Func("func", utils::Empty, ty.void_(), utils::Vector{Ignore(expr)},
@@ -2090,7 +2068,7 @@ INSTANTIATE_TEST_SUITE_P(ResolverTest,
 namespace texture_builtin_tests {
 
 enum class Texture { kF32, kI32, kU32 };
-inline std::ostream& operator<<(std::ostream& out, Texture data) {
+inline utils::StringStream& operator<<(utils::StringStream& out, Texture data) {
     if (data == Texture::kF32) {
         out << "f32";
     } else if (data == Texture::kI32) {
@@ -2102,12 +2080,14 @@ inline std::ostream& operator<<(std::ostream& out, Texture data) {
 }
 
 struct TextureTestParams {
-    ast::TextureDimension dim;
+    type::TextureDimension dim;
     Texture type = Texture::kF32;
-    ast::TexelFormat format = ast::TexelFormat::kR32Float;
+    builtin::TexelFormat format = builtin::TexelFormat::kR32Float;
 };
 inline std::ostream& operator<<(std::ostream& out, TextureTestParams data) {
-    out << data.dim << "_" << data.type;
+    utils::StringStream str;
+    str << data.dim << "_" << data.type;
+    out << str.str();
     return out;
 }
 
@@ -2118,34 +2098,38 @@ class ResolverBuiltinTest_TextureOperation : public ResolverTestWithParam<Textur
     /// @param dim dimensionality of the texture being sampled
     /// @param scalar the scalar type
     /// @returns a pointer to a type appropriate for the coord param
-    const ast::Type* GetCoordsType(ast::TextureDimension dim, const ast::Type* scalar) {
+    ast::Type GetCoordsType(type::TextureDimension dim, ast::Type scalar) {
         switch (dim) {
-            case ast::TextureDimension::k1d:
-                return scalar;
-            case ast::TextureDimension::k2d:
-            case ast::TextureDimension::k2dArray:
-                return ty.vec(scalar, 2);
-            case ast::TextureDimension::k3d:
-            case ast::TextureDimension::kCube:
-            case ast::TextureDimension::kCubeArray:
-                return ty.vec(scalar, 3);
+            case type::TextureDimension::k1d:
+                return ty(scalar);
+            case type::TextureDimension::k2d:
+            case type::TextureDimension::k2dArray:
+                return ty.vec2(scalar);
+            case type::TextureDimension::k3d:
+            case type::TextureDimension::kCube:
+            case type::TextureDimension::kCubeArray:
+                return ty.vec3(scalar);
             default:
-                [=]() { FAIL() << "Unsupported texture dimension: " << dim; }();
+                [=]() {
+                    utils::StringStream str;
+                    str << dim;
+                    FAIL() << "Unsupported texture dimension: " << str.str();
+                }();
         }
-        return nullptr;
+        return ast::Type{};
     }
 
-    void add_call_param(std::string name, const ast::Type* type, ExpressionList* call_params) {
-        if (type->IsAnyOf<ast::Texture, ast::Sampler>()) {
+    void add_call_param(std::string name, ast::Type type, ExpressionList* call_params) {
+        std::string type_name = type->identifier->symbol.Name();
+        if (utils::HasPrefix(type_name, "texture") || utils::HasPrefix(type_name, "sampler")) {
             GlobalVar(name, type, Binding(0_a), Group(0_a));
-
         } else {
-            GlobalVar(name, type, ast::AddressSpace::kPrivate);
+            GlobalVar(name, type, builtin::AddressSpace::kPrivate);
         }
 
         call_params->Push(Expr(name));
     }
-    const ast::Type* subtype(Texture type) {
+    ast::Type subtype(Texture type) {
         if (type == Texture::kF32) {
             return ty.f32();
         }
@@ -2161,15 +2145,15 @@ TEST_P(ResolverBuiltinTest_SampledTextureOperation, TextureLoadSampled) {
     auto dim = GetParam().dim;
     auto type = GetParam().type;
 
-    auto* s = subtype(type);
-    auto* coords_type = GetCoordsType(dim, ty.i32());
-    auto* texture_type = ty.sampled_texture(dim, s);
+    ast::Type s = subtype(type);
+    ast::Type coords_type = GetCoordsType(dim, ty.i32());
+    auto texture_type = ty.sampled_texture(dim, s);
 
     ExpressionList call_params;
 
     add_call_param("texture", texture_type, &call_params);
     add_call_param("coords", coords_type, &call_params);
-    if (dim == ast::TextureDimension::k2dArray) {
+    if (dim == type::TextureDimension::k2dArray) {
         add_call_param("array_index", ty.i32(), &call_params);
     }
     add_call_param("level", ty.i32(), &call_params);
@@ -2193,20 +2177,20 @@ TEST_P(ResolverBuiltinTest_SampledTextureOperation, TextureLoadSampled) {
 
 INSTANTIATE_TEST_SUITE_P(ResolverTest,
                          ResolverBuiltinTest_SampledTextureOperation,
-                         testing::Values(TextureTestParams{ast::TextureDimension::k1d},
-                                         TextureTestParams{ast::TextureDimension::k2d},
-                                         TextureTestParams{ast::TextureDimension::k2dArray},
-                                         TextureTestParams{ast::TextureDimension::k3d}));
+                         testing::Values(TextureTestParams{type::TextureDimension::k1d},
+                                         TextureTestParams{type::TextureDimension::k2d},
+                                         TextureTestParams{type::TextureDimension::k2dArray},
+                                         TextureTestParams{type::TextureDimension::k3d}));
 
-using ResolverBuiltinTest_Texture = ResolverTestWithParam<ast::builtin::test::TextureOverloadCase>;
+using ResolverBuiltinTest_Texture = ResolverTestWithParam<ast::test::TextureOverloadCase>;
 
 INSTANTIATE_TEST_SUITE_P(ResolverTest,
                          ResolverBuiltinTest_Texture,
-                         testing::ValuesIn(ast::builtin::test::TextureOverloadCase::ValidCases()));
+                         testing::ValuesIn(ast::test::TextureOverloadCase::ValidCases()));
 
 static std::string to_str(const std::string& function,
                           utils::VectorRef<const sem::Parameter*> params) {
-    std::stringstream out;
+    utils::StringStream out;
     out << function << "(";
     bool first = true;
     for (auto* param : params) {
@@ -2220,8 +2204,8 @@ static std::string to_str(const std::string& function,
     return out.str();
 }
 
-static const char* expected_texture_overload(ast::builtin::test::ValidTextureOverload overload) {
-    using ValidTextureOverload = ast::builtin::test::ValidTextureOverload;
+static const char* expected_texture_overload(ast::test::ValidTextureOverload overload) {
+    using ValidTextureOverload = ast::test::ValidTextureOverload;
     switch (overload) {
         case ValidTextureOverload::kDimensions1d:
         case ValidTextureOverload::kDimensions2d:
@@ -2459,7 +2443,8 @@ TEST_P(ResolverBuiltinTest_Texture, Call) {
     param.BuildSamplerVariable(this);
 
     auto* call = Call(param.function, param.args(this));
-    auto* stmt = CallStmt(call);
+    auto* stmt = param.returns_value ? static_cast<const ast::Statement*>(Assign(Phony(), call))
+                                     : static_cast<const ast::Statement*>(CallStmt(call));
     Func("func", utils::Empty, ty.void_(), utils::Vector{stmt},
          utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
@@ -2467,22 +2452,25 @@ TEST_P(ResolverBuiltinTest_Texture, Call) {
 
     if (std::string(param.function) == "textureDimensions") {
         switch (param.texture_dimension) {
-            default:
-                FAIL() << "invalid texture dimensions: " << param.texture_dimension;
-            case ast::TextureDimension::k1d:
+            default: {
+                utils::StringStream str;
+                str << param.texture_dimension;
+                FAIL() << "invalid texture dimensions: " << str.str();
+            }
+            case type::TextureDimension::k1d:
                 EXPECT_TRUE(TypeOf(call)->Is<type::U32>());
                 break;
-            case ast::TextureDimension::k2d:
-            case ast::TextureDimension::k2dArray:
-            case ast::TextureDimension::kCube:
-            case ast::TextureDimension::kCubeArray: {
+            case type::TextureDimension::k2d:
+            case type::TextureDimension::k2dArray:
+            case type::TextureDimension::kCube:
+            case type::TextureDimension::kCubeArray: {
                 auto* vec = As<type::Vector>(TypeOf(call));
                 ASSERT_NE(vec, nullptr);
                 EXPECT_EQ(vec->Width(), 2u);
                 EXPECT_TRUE(vec->type()->Is<type::U32>());
                 break;
             }
-            case ast::TextureDimension::k3d: {
+            case type::TextureDimension::k3d: {
                 auto* vec = As<type::Vector>(TypeOf(call));
                 ASSERT_NE(vec, nullptr);
                 EXPECT_EQ(vec->Width(), 3u);
@@ -2503,13 +2491,13 @@ TEST_P(ResolverBuiltinTest_Texture, Call) {
         ASSERT_NE(vec, nullptr);
         EXPECT_EQ(vec->Width(), 4u);
         switch (param.texture_data_type) {
-            case ast::builtin::test::TextureDataType::kF32:
+            case ast::test::TextureDataType::kF32:
                 EXPECT_TRUE(vec->type()->Is<type::F32>());
                 break;
-            case ast::builtin::test::TextureDataType::kU32:
+            case ast::test::TextureDataType::kU32:
                 EXPECT_TRUE(vec->type()->Is<type::U32>());
                 break;
-            case ast::builtin::test::TextureDataType::kI32:
+            case ast::test::TextureDataType::kI32:
                 EXPECT_TRUE(vec->type()->Is<type::I32>());
                 break;
         }
@@ -2520,26 +2508,26 @@ TEST_P(ResolverBuiltinTest_Texture, Call) {
         EXPECT_TRUE(vec->type()->Is<type::F32>());
     } else {
         switch (param.texture_kind) {
-            case ast::builtin::test::TextureKind::kRegular:
-            case ast::builtin::test::TextureKind::kMultisampled:
-            case ast::builtin::test::TextureKind::kStorage: {
+            case ast::test::TextureKind::kRegular:
+            case ast::test::TextureKind::kMultisampled:
+            case ast::test::TextureKind::kStorage: {
                 auto* vec = TypeOf(call)->As<type::Vector>();
                 ASSERT_NE(vec, nullptr);
                 switch (param.texture_data_type) {
-                    case ast::builtin::test::TextureDataType::kF32:
+                    case ast::test::TextureDataType::kF32:
                         EXPECT_TRUE(vec->type()->Is<type::F32>());
                         break;
-                    case ast::builtin::test::TextureDataType::kU32:
+                    case ast::test::TextureDataType::kU32:
                         EXPECT_TRUE(vec->type()->Is<type::U32>());
                         break;
-                    case ast::builtin::test::TextureDataType::kI32:
+                    case ast::test::TextureDataType::kI32:
                         EXPECT_TRUE(vec->type()->Is<type::I32>());
                         break;
                 }
                 break;
             }
-            case ast::builtin::test::TextureKind::kDepth:
-            case ast::builtin::test::TextureKind::kDepthMultisampled: {
+            case ast::test::TextureKind::kDepth:
+            case ast::test::TextureKind::kDepthMultisampled: {
                 EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
                 break;
             }
@@ -2565,8 +2553,8 @@ using ResolverBuiltinTest_DataPacking = ResolverTestWithParam<BuiltinData>;
 TEST_P(ResolverBuiltinTest_DataPacking, InferType) {
     auto param = GetParam();
 
-    bool pack4 =
-        param.builtin == BuiltinType::kPack4X8Snorm || param.builtin == BuiltinType::kPack4X8Unorm;
+    bool pack4 = param.builtin == builtin::Function::kPack4X8Snorm ||
+                 param.builtin == builtin::Function::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, vec4<f32>(1_f, 2_f, 3_f, 4_f))
                        : Call(param.name, vec2<f32>(1_f, 2_f));
@@ -2580,8 +2568,8 @@ TEST_P(ResolverBuiltinTest_DataPacking, InferType) {
 TEST_P(ResolverBuiltinTest_DataPacking, Error_IncorrectParamType) {
     auto param = GetParam();
 
-    bool pack4 =
-        param.builtin == BuiltinType::kPack4X8Snorm || param.builtin == BuiltinType::kPack4X8Unorm;
+    bool pack4 = param.builtin == builtin::Function::kPack4X8Snorm ||
+                 param.builtin == builtin::Function::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, vec4<i32>(1_i, 2_i, 3_i, 4_i))
                        : Call(param.name, vec2<i32>(1_i, 2_i));
@@ -2606,8 +2594,8 @@ TEST_P(ResolverBuiltinTest_DataPacking, Error_NoParams) {
 TEST_P(ResolverBuiltinTest_DataPacking, Error_TooManyParams) {
     auto param = GetParam();
 
-    bool pack4 =
-        param.builtin == BuiltinType::kPack4X8Snorm || param.builtin == BuiltinType::kPack4X8Unorm;
+    bool pack4 = param.builtin == builtin::Function::kPack4X8Snorm ||
+                 param.builtin == builtin::Function::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, vec4<f32>(1_f, 2_f, 3_f, 4_f), 1_f)
                        : Call(param.name, vec2<f32>(1_f, 2_f), 1_f);
@@ -2618,14 +2606,14 @@ TEST_P(ResolverBuiltinTest_DataPacking, Error_TooManyParams) {
     EXPECT_THAT(r()->error(), HasSubstr("error: no matching call to " + std::string(param.name)));
 }
 
-INSTANTIATE_TEST_SUITE_P(ResolverTest,
-                         ResolverBuiltinTest_DataPacking,
-                         testing::Values(BuiltinData{"pack4x8snorm", BuiltinType::kPack4X8Snorm},
-                                         BuiltinData{"pack4x8unorm", BuiltinType::kPack4X8Unorm},
-                                         BuiltinData{"pack2x16snorm", BuiltinType::kPack2X16Snorm},
-                                         BuiltinData{"pack2x16unorm", BuiltinType::kPack2X16Unorm},
-                                         BuiltinData{"pack2x16float",
-                                                     BuiltinType::kPack2X16Float}));
+INSTANTIATE_TEST_SUITE_P(
+    ResolverTest,
+    ResolverBuiltinTest_DataPacking,
+    testing::Values(BuiltinData{"pack4x8snorm", builtin::Function::kPack4X8Snorm},
+                    BuiltinData{"pack4x8unorm", builtin::Function::kPack4X8Unorm},
+                    BuiltinData{"pack2x16snorm", builtin::Function::kPack2X16Snorm},
+                    BuiltinData{"pack2x16unorm", builtin::Function::kPack2X16Unorm},
+                    BuiltinData{"pack2x16float", builtin::Function::kPack2X16Float}));
 
 }  // namespace data_packing_builtin_tests
 
@@ -2636,8 +2624,8 @@ using ResolverBuiltinTest_DataUnpacking = ResolverTestWithParam<BuiltinData>;
 TEST_P(ResolverBuiltinTest_DataUnpacking, InferType) {
     auto param = GetParam();
 
-    bool pack4 = param.builtin == BuiltinType::kUnpack4X8Snorm ||
-                 param.builtin == BuiltinType::kUnpack4X8Unorm;
+    bool pack4 = param.builtin == builtin::Function::kUnpack4X8Snorm ||
+                 param.builtin == builtin::Function::kUnpack4X8Unorm;
 
     auto* call = Call(param.name, 1_u);
     WrapInFunction(call);
@@ -2655,11 +2643,11 @@ TEST_P(ResolverBuiltinTest_DataUnpacking, InferType) {
 INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_DataUnpacking,
-    testing::Values(BuiltinData{"unpack4x8snorm", BuiltinType::kUnpack4X8Snorm},
-                    BuiltinData{"unpack4x8unorm", BuiltinType::kUnpack4X8Unorm},
-                    BuiltinData{"unpack2x16snorm", BuiltinType::kUnpack2X16Snorm},
-                    BuiltinData{"unpack2x16unorm", BuiltinType::kUnpack2X16Unorm},
-                    BuiltinData{"unpack2x16float", BuiltinType::kUnpack2X16Float}));
+    testing::Values(BuiltinData{"unpack4x8snorm", builtin::Function::kUnpack4X8Snorm},
+                    BuiltinData{"unpack4x8unorm", builtin::Function::kUnpack4X8Unorm},
+                    BuiltinData{"unpack2x16snorm", builtin::Function::kUnpack2X16Snorm},
+                    BuiltinData{"unpack2x16unorm", builtin::Function::kUnpack2X16Unorm},
+                    BuiltinData{"unpack2x16float", builtin::Function::kUnpack2X16Float}));
 
 }  // namespace data_unpacking_builtin_tests
 
@@ -2692,8 +2680,8 @@ TEST_P(ResolverBuiltinTest_Barrier, Error_TooManyParams) {
 INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_Barrier,
-    testing::Values(BuiltinData{"storageBarrier", BuiltinType::kStorageBarrier},
-                    BuiltinData{"workgroupBarrier", BuiltinType::kWorkgroupBarrier}));
+    testing::Values(BuiltinData{"storageBarrier", builtin::Function::kStorageBarrier},
+                    BuiltinData{"workgroupBarrier", builtin::Function::kWorkgroupBarrier}));
 
 }  // namespace synchronization_builtin_tests
 

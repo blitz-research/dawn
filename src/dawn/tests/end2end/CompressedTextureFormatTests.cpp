@@ -23,6 +23,9 @@
 #include "dawn/utils/TextureUtils.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 // The helper struct to configure the copies between buffers and textures.
 struct CopyConfig {
     wgpu::TextureDescriptor textureDescriptor;
@@ -34,10 +37,8 @@ struct CopyConfig {
     uint32_t rowsPerImage = wgpu::kCopyStrideUndefined;
 };
 
-namespace {
 using TextureFormat = wgpu::TextureFormat;
 DAWN_TEST_PARAM_STRUCT(CompressedTextureFormatTestParams, TextureFormat);
-}  // namespace
 
 class CompressedTextureFormatTest : public DawnTestWithParams<CompressedTextureFormatTestParams> {
   protected:
@@ -165,19 +166,19 @@ class CompressedTextureFormatTest : public DawnTestWithParams<CompressedTextureF
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
             struct VertexOut {
                 @location(0) texCoord : vec2 <f32>,
-                @builtin(position) position : vec4<f32>,
+                @builtin(position) position : vec4f,
             }
 
             @vertex
             fn main(@builtin(vertex_index) VertexIndex : u32) -> VertexOut {
-                var pos = array<vec2<f32>, 3>(
-                    vec2<f32>(-3.0,  1.0),
-                    vec2<f32>( 3.0,  1.0),
-                    vec2<f32>( 0.0, -2.0)
+                var pos = array(
+                    vec2f(-3.0,  1.0),
+                    vec2f( 3.0,  1.0),
+                    vec2f( 0.0, -2.0)
                 );
                 var output : VertexOut;
-                output.position = vec4<f32>(pos[VertexIndex], 0.0, 1.0);
-                output.texCoord = vec2<f32>(output.position.x / 2.0, -output.position.y / 2.0) + vec2<f32>(0.5, 0.5);
+                output.position = vec4f(pos[VertexIndex], 0.0, 1.0);
+                output.texCoord = vec2f(output.position.x / 2.0, -output.position.y / 2.0) + vec2f(0.5, 0.5);
                 return output;
             })");
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
@@ -185,7 +186,7 @@ class CompressedTextureFormatTest : public DawnTestWithParams<CompressedTextureF
             @group(0) @binding(1) var texture0 : texture_2d<f32>;
 
             @fragment
-            fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
                 return textureSample(texture0, sampler0, texCoord);
             })");
         renderPipelineDescriptor.vertex.module = vsModule;
@@ -688,6 +689,9 @@ TEST_P(CompressedTextureFormatTest, CopyIntoSubRegion) {
 
     DAWN_TEST_UNSUPPORTED_IF(!IsFormatSupported());
 
+    // TODO(dawn:1802): Clear BC formats.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && utils::IsBCTextureFormat(GetParam().mTextureFormat));
+
     CopyConfig config = GetDefaultSmallConfig();
     config.copyOrigin3D = {BlockWidthInTexels(), BlockHeightInTexels(), 0};
     config.copyExtent3D = {BlockWidthInTexels(), BlockHeightInTexels(), 1};
@@ -1121,8 +1125,8 @@ TEST_P(CompressedTextureFormatTest, CopyMultiple2DArrayLayers) {
 }
 
 DAWN_INSTANTIATE_TEST_P(CompressedTextureFormatTest,
-                        {D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
-                         VulkanBackend(),
+                        {D3D11Backend(), D3D12Backend(), MetalBackend(), OpenGLBackend(),
+                         OpenGLESBackend(), VulkanBackend(),
                          VulkanBackend({"use_temporary_buffer_in_texture_to_texture_copy"})},
                         std::vector<wgpu::TextureFormat>(utils::kCompressedFormats.begin(),
                                                          utils::kCompressedFormats.end()));
@@ -1153,6 +1157,9 @@ TEST_P(CompressedTextureFormatSpecificTest, BC1RGBAUnorm_UnalignedDynamicUploade
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
     DAWN_TEST_UNSUPPORTED_IF(!IsBCFormatSupported());
 
+    // TODO(dawn:1802): Clear BC formats.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
+
     utils::UnalignDynamicUploader(device);
 
     wgpu::TextureDescriptor textureDescriptor = {};
@@ -1177,6 +1184,7 @@ TEST_P(CompressedTextureFormatSpecificTest, BC1RGBAUnorm_UnalignedDynamicUploade
 }
 
 DAWN_INSTANTIATE_TEST(CompressedTextureFormatSpecificTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1225,6 +1233,9 @@ TEST_P(CompressedTextureWriteTextureTest, Basic) {
     // TODO(crbug.com/dawn/976): Failing on Linux Intel OpenGL drivers.
     DAWN_SUPPRESS_TEST_IF(IsIntel() && IsOpenGL() && IsLinux());
 
+    // TODO(dawn:1802): Clear BC formats.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && utils::IsBCTextureFormat(GetParam().mTextureFormat));
+
     constexpr uint32_t kSizeWidthMultiplier = 5;
     constexpr uint32_t kSizeHeightMultiplier = 6;
     constexpr uint32_t kOriginWidthMultiplier = 1;
@@ -1254,6 +1265,9 @@ TEST_P(CompressedTextureWriteTextureTest, WriteMultiple2DArrayLayers) {
 
     // TODO(crbug.com/dawn/1328): ES3.1 does not support subsetting of compressed textures.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
+
+    // TODO(dawn:1802): Clear BC formats.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && utils::IsBCTextureFormat(GetParam().mTextureFormat));
 
     // TODO(b/198674734): Width multiplier set to 7 because 5 results in square size for ASTC6x5.
     constexpr uint32_t kSizeWidthMultiplier = 7;
@@ -1288,6 +1302,9 @@ TEST_P(CompressedTextureWriteTextureTest,
     // TODO(crbug.com/dawn/1328): ES3.1 does not support subsetting of compressed textures.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
 
+    // TODO(dawn:1802): Clear BC formats.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && utils::IsBCTextureFormat(GetParam().mTextureFormat));
+
     CopyConfig config = GetDefaultFullConfig();
 
     // The virtual size of the texture at mipmap level == 2 is not a multiple of the texel
@@ -1304,7 +1321,10 @@ TEST_P(CompressedTextureWriteTextureTest,
 }
 
 DAWN_INSTANTIATE_TEST_P(CompressedTextureWriteTextureTest,
-                        {D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
-                         VulkanBackend()},
+                        {D3D11Backend(), D3D12Backend(), MetalBackend(), OpenGLBackend(),
+                         OpenGLESBackend(), VulkanBackend()},
                         std::vector<wgpu::TextureFormat>(utils::kCompressedFormats.begin(),
                                                          utils::kCompressedFormats.end()));
+
+}  // anonymous namespace
+}  // namespace dawn

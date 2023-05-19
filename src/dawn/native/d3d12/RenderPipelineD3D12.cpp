@@ -22,84 +22,17 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/Log.h"
 #include "dawn/native/CreatePipelineAsyncTask.h"
-#include "dawn/native/d3d12/BlobD3D12.h"
-#include "dawn/native/d3d12/D3D12Error.h"
+#include "dawn/native/d3d/BlobD3D.h"
+#include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/PipelineLayoutD3D12.h"
-#include "dawn/native/d3d12/PlatformFunctions.h"
+#include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/ShaderModuleD3D12.h"
 #include "dawn/native/d3d12/TextureD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
 
 namespace dawn::native::d3d12 {
-
 namespace {
-DXGI_FORMAT VertexFormatType(wgpu::VertexFormat format) {
-    switch (format) {
-        case wgpu::VertexFormat::Uint8x2:
-            return DXGI_FORMAT_R8G8_UINT;
-        case wgpu::VertexFormat::Uint8x4:
-            return DXGI_FORMAT_R8G8B8A8_UINT;
-        case wgpu::VertexFormat::Sint8x2:
-            return DXGI_FORMAT_R8G8_SINT;
-        case wgpu::VertexFormat::Sint8x4:
-            return DXGI_FORMAT_R8G8B8A8_SINT;
-        case wgpu::VertexFormat::Unorm8x2:
-            return DXGI_FORMAT_R8G8_UNORM;
-        case wgpu::VertexFormat::Unorm8x4:
-            return DXGI_FORMAT_R8G8B8A8_UNORM;
-        case wgpu::VertexFormat::Snorm8x2:
-            return DXGI_FORMAT_R8G8_SNORM;
-        case wgpu::VertexFormat::Snorm8x4:
-            return DXGI_FORMAT_R8G8B8A8_SNORM;
-        case wgpu::VertexFormat::Uint16x2:
-            return DXGI_FORMAT_R16G16_UINT;
-        case wgpu::VertexFormat::Uint16x4:
-            return DXGI_FORMAT_R16G16B16A16_UINT;
-        case wgpu::VertexFormat::Sint16x2:
-            return DXGI_FORMAT_R16G16_SINT;
-        case wgpu::VertexFormat::Sint16x4:
-            return DXGI_FORMAT_R16G16B16A16_SINT;
-        case wgpu::VertexFormat::Unorm16x2:
-            return DXGI_FORMAT_R16G16_UNORM;
-        case wgpu::VertexFormat::Unorm16x4:
-            return DXGI_FORMAT_R16G16B16A16_UNORM;
-        case wgpu::VertexFormat::Snorm16x2:
-            return DXGI_FORMAT_R16G16_SNORM;
-        case wgpu::VertexFormat::Snorm16x4:
-            return DXGI_FORMAT_R16G16B16A16_SNORM;
-        case wgpu::VertexFormat::Float16x2:
-            return DXGI_FORMAT_R16G16_FLOAT;
-        case wgpu::VertexFormat::Float16x4:
-            return DXGI_FORMAT_R16G16B16A16_FLOAT;
-        case wgpu::VertexFormat::Float32:
-            return DXGI_FORMAT_R32_FLOAT;
-        case wgpu::VertexFormat::Float32x2:
-            return DXGI_FORMAT_R32G32_FLOAT;
-        case wgpu::VertexFormat::Float32x3:
-            return DXGI_FORMAT_R32G32B32_FLOAT;
-        case wgpu::VertexFormat::Float32x4:
-            return DXGI_FORMAT_R32G32B32A32_FLOAT;
-        case wgpu::VertexFormat::Uint32:
-            return DXGI_FORMAT_R32_UINT;
-        case wgpu::VertexFormat::Uint32x2:
-            return DXGI_FORMAT_R32G32_UINT;
-        case wgpu::VertexFormat::Uint32x3:
-            return DXGI_FORMAT_R32G32B32_UINT;
-        case wgpu::VertexFormat::Uint32x4:
-            return DXGI_FORMAT_R32G32B32A32_UINT;
-        case wgpu::VertexFormat::Sint32:
-            return DXGI_FORMAT_R32_SINT;
-        case wgpu::VertexFormat::Sint32x2:
-            return DXGI_FORMAT_R32G32_SINT;
-        case wgpu::VertexFormat::Sint32x3:
-            return DXGI_FORMAT_R32G32B32_SINT;
-        case wgpu::VertexFormat::Sint32x4:
-            return DXGI_FORMAT_R32G32B32A32_SINT;
-        default:
-            UNREACHABLE();
-    }
-}
 
 D3D12_INPUT_CLASSIFICATION VertexStepModeFunction(wgpu::VertexStepMode mode) {
     switch (mode) {
@@ -234,16 +167,41 @@ uint8_t D3D12RenderTargetWriteMask(wgpu::ColorWriteMask writeMask) {
     return static_cast<uint8_t>(writeMask);
 }
 
-D3D12_RENDER_TARGET_BLEND_DESC ComputeColorDesc(const ColorTargetState* state) {
+D3D12_RENDER_TARGET_BLEND_DESC ComputeColorDesc(const DeviceBase* device,
+                                                const ColorTargetState* state) {
     D3D12_RENDER_TARGET_BLEND_DESC blendDesc = {};
     blendDesc.BlendEnable = state->blend != nullptr;
     if (blendDesc.BlendEnable) {
         blendDesc.SrcBlend = D3D12Blend(state->blend->color.srcFactor);
+        if (device->GetValidInternalFormat(state->format).componentCount < 4 &&
+            blendDesc.SrcBlend == D3D12_BLEND_DEST_ALPHA) {
+            // According to the D3D SPEC, the default value for missing components in an element
+            // format is "0" for any component except A, which gets "1". So here
+            // D3D12_BLEND_DEST_ALPHA should have same effect as D3D12_BLEND_ONE.
+            // Note that this replacement can be an optimization as using D3D12_BLEND_ONE means the
+            // GPU hardware no longer needs to get pixels from the destination texture. It can also
+            // be served as a workaround against an Intel driver issue about alpha blending (see
+            // http://crbug.com/dawn/1579 for more details).
+            blendDesc.SrcBlend = D3D12_BLEND_ONE;
+        }
+
         blendDesc.DestBlend = D3D12Blend(state->blend->color.dstFactor);
         blendDesc.BlendOp = D3D12BlendOperation(state->blend->color.operation);
         blendDesc.SrcBlendAlpha = D3D12AlphaBlend(state->blend->alpha.srcFactor);
         blendDesc.DestBlendAlpha = D3D12AlphaBlend(state->blend->alpha.dstFactor);
         blendDesc.BlendOpAlpha = D3D12BlendOperation(state->blend->alpha.operation);
+
+        if (device->IsToggleEnabled(
+                Toggle::D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha) &&
+            blendDesc.SrcBlend == D3D12_BLEND_DEST_ALPHA &&
+            blendDesc.SrcBlendAlpha == D3D12_BLEND_DEST_ALPHA &&
+            blendDesc.BlendOp == D3D12_BLEND_OP_ADD &&
+            blendDesc.BlendOpAlpha == D3D12_BLEND_OP_ADD &&
+            blendDesc.DestBlend == D3D12_BLEND_ZERO &&
+            blendDesc.DestBlendAlpha == D3D12_BLEND_ZERO) {
+            blendDesc.BlendOp = D3D12_BLEND_OP_SUBTRACT;
+            blendDesc.BlendOpAlpha = D3D12_BLEND_OP_SUBTRACT;
+        }
     }
     blendDesc.RenderTargetWriteMask = D3D12RenderTargetWriteMask(state->writeMask);
     blendDesc.LogicOpEnable = false;
@@ -342,7 +300,7 @@ MaybeError RenderPipeline::Initialize() {
         compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
     }
 
-    // SPRIV-cross does matrix multiplication expecting row major matrices
+    // Tint does matrix multiplication expecting row major matrices
     compileFlags |= D3DCOMPILE_PACK_MATRIX_ROW_MAJOR;
 
     // FXC can miscompile code that depends on special float values (NaN, INF, etc) when IEEE
@@ -355,7 +313,7 @@ MaybeError RenderPipeline::Initialize() {
     shaders[SingleShaderStage::Vertex] = &descriptorD3D12.VS;
     shaders[SingleShaderStage::Fragment] = &descriptorD3D12.PS;
 
-    PerStage<CompiledShader> compiledShader;
+    PerStage<d3d::CompiledShader> compiledShader;
 
     std::bitset<kMaxInterStageShaderVariables>* usedInterstageVariables = nullptr;
     dawn::native::EntryPointMetadata fragmentEntryPoint;
@@ -372,7 +330,8 @@ MaybeError RenderPipeline::Initialize() {
                         ToBackend(programmableStage.module)
                             ->Compile(programmableStage, stage, ToBackend(GetLayout()),
                                       compileFlags, usedInterstageVariables));
-        *shaders[stage] = compiledShader[stage].GetD3D12ShaderBytecode();
+        *shaders[stage] = {compiledShader[stage].shaderBlob.Data(),
+                           compiledShader[stage].shaderBlob.Size()};
     }
 
     mUsesVertexOrInstanceIndex =
@@ -405,7 +364,7 @@ MaybeError RenderPipeline::Initialize() {
     descriptorD3D12.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
 
     if (HasDepthStencilAttachment()) {
-        descriptorD3D12.DSVFormat = D3D12TextureFormat(GetDepthStencilFormat());
+        descriptorD3D12.DSVFormat = d3d::DXGITextureFormat(GetDepthStencilFormat());
     }
 
     static_assert(kMaxColorAttachments == 8);
@@ -417,9 +376,9 @@ MaybeError RenderPipeline::Initialize() {
         GetHighestBitIndexPlusOne(GetColorAttachmentsMask());
     for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
         descriptorD3D12.RTVFormats[static_cast<uint8_t>(i)] =
-            D3D12TextureFormat(GetColorAttachmentFormat(i));
+            d3d::DXGITextureFormat(GetColorAttachmentFormat(i));
         descriptorD3D12.BlendState.RenderTarget[static_cast<uint8_t>(i)] =
-            ComputeColorDesc(GetColorTargetState(i));
+            ComputeColorDesc(device, GetColorTargetState(i));
     }
     ASSERT(highestColorAttachmentIndexPlusOne <= kMaxColorAttachmentsTyped);
     descriptorD3D12.NumRenderTargets = static_cast<uint8_t>(highestColorAttachmentIndexPlusOne);
@@ -516,7 +475,7 @@ D3D12_INPUT_LAYOUT_DESC RenderPipeline::ComputeInputLayout(
         // SemanticIndex N
         inputElementDescriptor.SemanticName = "TEXCOORD";
         inputElementDescriptor.SemanticIndex = static_cast<uint8_t>(loc);
-        inputElementDescriptor.Format = VertexFormatType(attribute.format);
+        inputElementDescriptor.Format = d3d::DXGIVertexFormat(attribute.format);
         inputElementDescriptor.InputSlot = static_cast<uint8_t>(attribute.vertexBufferSlot);
 
         const VertexBufferInfo& input = GetVertexBuffer(attribute.vertexBufferSlot);

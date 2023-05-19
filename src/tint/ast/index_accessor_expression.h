@@ -15,12 +15,13 @@
 #ifndef SRC_TINT_AST_INDEX_ACCESSOR_EXPRESSION_H_
 #define SRC_TINT_AST_INDEX_ACCESSOR_EXPRESSION_H_
 
-#include "src/tint/ast/expression.h"
+#include "src/tint/ast/accessor_expression.h"
 
 namespace tint::ast {
 
 /// An index accessor expression
-class IndexAccessorExpression final : public Castable<IndexAccessorExpression, Expression> {
+class IndexAccessorExpression final
+    : public utils::Castable<IndexAccessorExpression, AccessorExpression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -33,8 +34,8 @@ class IndexAccessorExpression final : public Castable<IndexAccessorExpression, E
                             const Source& source,
                             const Expression* obj,
                             const Expression* idx);
-    /// Move constructor
-    IndexAccessorExpression(IndexAccessorExpression&&);
+
+    /// Destructor
     ~IndexAccessorExpression() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`
@@ -42,9 +43,6 @@ class IndexAccessorExpression final : public Castable<IndexAccessorExpression, E
     /// @param ctx the clone context
     /// @return the newly cloned node
     const IndexAccessorExpression* Clone(CloneContext* ctx) const override;
-
-    /// the array, vector or matrix
-    const Expression* const object;
 
     /// the index expression
     const Expression* const index;

@@ -20,18 +20,21 @@
 #include "dawn/utils/TextureUtils.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class StorageTextureValidationTests : public ValidationTest {
   protected:
     void SetUp() override {
         ValidationTest::SetUp();
 
         mDefaultVSModule = utils::CreateShaderModule(device, R"(
-            @vertex fn main() -> @builtin(position) vec4<f32> {
-                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            @vertex fn main() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
             })");
         mDefaultFSModule = utils::CreateShaderModule(device, R"(
-            @fragment fn main() -> @location(0) vec4<f32> {
-                return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(1.0, 0.0, 0.0, 1.0);
             })");
     }
 
@@ -85,7 +88,7 @@ class StorageTextureValidationTests : public ValidationTest {
                 << imageFormatQualifier << ", " << access
                 << ">;\n"
                    "@compute @workgroup_size(1) fn main() {\n"
-                   "    textureDimensions(image0);\n"
+                   "    _ = textureDimensions(image0);\n"
                    "}\n";
 
         return ostream.str();
@@ -121,9 +124,9 @@ TEST_F(StorageTextureValidationTests, RenderPipeline) {
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
             @group(0) @binding(0) var image0 : texture_storage_2d<rgba8unorm, write>;
             @vertex
-            fn main(@builtin(vertex_index) vertex_index : u32) -> @builtin(position) vec4<f32> {
-                textureStore(image0, vec2<i32>(i32(vertex_index), 0), vec4<f32>(1.0, 0.0, 0.0, 1.0));
-                return vec4<f32>(0.0);
+            fn main(@builtin(vertex_index) vertex_index : u32) -> @builtin(position) vec4f {
+                textureStore(image0, vec2i(i32(vertex_index), 0), vec4f(1.0, 0.0, 0.0, 1.0));
+                return vec4f(0.0);
             })");
 
         utils::ComboRenderPipelineDescriptor descriptor;
@@ -137,8 +140,8 @@ TEST_F(StorageTextureValidationTests, RenderPipeline) {
     {
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
             @group(0) @binding(0) var image0 : texture_storage_2d<rgba8unorm, write>;
-            @fragment fn main(@builtin(position) position : vec4<f32>) {
-                textureStore(image0, vec2<i32>(position.xy), vec4<f32>(1.0, 0.0, 0.0, 1.0));
+            @fragment fn main(@builtin(position) position : vec4f) {
+                textureStore(image0, vec2i(position.xy), vec4f(1.0, 0.0, 0.0, 1.0));
             })");
 
         utils::ComboRenderPipelineDescriptor descriptor;
@@ -158,8 +161,8 @@ TEST_F(StorageTextureValidationTests, ComputePipeline) {
         wgpu::ShaderModule csModule = utils::CreateShaderModule(device, R"(
             @group(0) @binding(0) var image0 : texture_storage_2d<rgba8unorm, write>;
 
-            @compute @workgroup_size(1) fn main(@builtin(local_invocation_id) LocalInvocationID : vec3<u32>) {
-                textureStore(image0, vec2<i32>(LocalInvocationID.xy), vec4<f32>(0.0, 0.0, 0.0, 0.0));
+            @compute @workgroup_size(1) fn main(@builtin(local_invocation_id) LocalInvocationID : vec3u) {
+                textureStore(image0, vec2i(LocalInvocationID.xy), vec4f(0.0, 0.0, 0.0, 0.0));
             })");
 
         wgpu::ComputePipelineDescriptor descriptor;
@@ -178,7 +181,7 @@ TEST_F(StorageTextureValidationTests, ReadWriteStorageTexture) {
         ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, R"(
             @group(0) @binding(0) var image0 : texture_storage_2d<rgba8unorm, read_write>;
             @vertex fn main() {
-                textureDimensions(image0);
+                _ = textureDimensions(image0);
             })"));
     }
 
@@ -187,7 +190,7 @@ TEST_F(StorageTextureValidationTests, ReadWriteStorageTexture) {
         ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, R"(
             @group(0) @binding(0) var image0 : texture_storage_2d<rgba8unorm, read_write>;
             @fragment fn main() {
-                textureDimensions(image0);
+                _ = textureDimensions(image0);
             })"));
     }
 
@@ -196,7 +199,7 @@ TEST_F(StorageTextureValidationTests, ReadWriteStorageTexture) {
         ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, R"(
             @group(0) @binding(0) var image0 : texture_storage_2d<rgba8unorm, read_write>;
             @compute @workgroup_size(1) fn main() {
-                textureDimensions(image0);
+                _ = textureDimensions(image0);
             })"));
     }
 }
@@ -233,9 +236,9 @@ TEST_F(StorageTextureValidationTests, BindGroupLayoutWithStorageTextureBindingTy
 // Validate it is an error to declare a read-only or write-only storage texture in shaders with any
 // format that doesn't support TextureUsage::StorageBinding texture usages.
 TEST_F(StorageTextureValidationTests, StorageTextureFormatInShaders) {
-    // Not include RGBA8UnormSrgb, BGRA8Unorm, BGRA8UnormSrgb because they are not related to any
-    // SPIR-V Image Formats.
-    constexpr std::array<wgpu::TextureFormat, 32> kWGPUTextureFormatSupportedAsSPIRVImageFormats = {
+    // Not include RGBA8UnormSrgb, BGRA8UnormSrgb because they are neither related to any SPIR-V
+    // Image Formats nor WGSL texture formats.
+    constexpr std::array<wgpu::TextureFormat, 33> kWGPUTextureFormatSupportedAsSPIRVImageFormats = {
         wgpu::TextureFormat::R32Uint,      wgpu::TextureFormat::R32Sint,
         wgpu::TextureFormat::R32Float,     wgpu::TextureFormat::RGBA8Unorm,
         wgpu::TextureFormat::RGBA8Snorm,   wgpu::TextureFormat::RGBA8Uint,
@@ -251,7 +254,8 @@ TEST_F(StorageTextureValidationTests, StorageTextureFormatInShaders) {
         wgpu::TextureFormat::RG8Snorm,     wgpu::TextureFormat::RG8Uint,
         wgpu::TextureFormat::RG8Sint,      wgpu::TextureFormat::RG16Uint,
         wgpu::TextureFormat::RG16Sint,     wgpu::TextureFormat::RG16Float,
-        wgpu::TextureFormat::RGB10A2Unorm, wgpu::TextureFormat::RG11B10Ufloat};
+        wgpu::TextureFormat::RGB10A2Unorm, wgpu::TextureFormat::RG11B10Ufloat,
+        wgpu::TextureFormat::BGRA8Unorm};
 
     for (wgpu::StorageTextureAccess storageTextureBindingType : kSupportedStorageTextureAccess) {
         for (wgpu::TextureFormat format : kWGPUTextureFormatSupportedAsSPIRVImageFormats) {
@@ -263,6 +267,26 @@ TEST_F(StorageTextureValidationTests, StorageTextureFormatInShaders) {
                 ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, computeShader.c_str()));
             }
         }
+    }
+}
+
+class BGRA8UnormStorageTextureInShaderValidationTests : public StorageTextureValidationTests {
+  protected:
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
+        wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::BGRA8UnormStorage};
+        descriptor.requiredFeatures = requiredFeatures;
+        descriptor.requiredFeaturesCount = 1;
+        return dawnAdapter.CreateDevice(&descriptor);
+    }
+};
+
+// Test that 'bgra8unorm' is a valid storage texture format if 'bgra8unorm-storage' is enabled.
+TEST_F(BGRA8UnormStorageTextureInShaderValidationTests, BGRA8UnormAsStorageInShader) {
+    for (wgpu::StorageTextureAccess storageTextureBindingType : kSupportedStorageTextureAccess) {
+        std::string computeShader = CreateComputeShaderWithStorageTexture(
+            storageTextureBindingType, wgpu::TextureFormat::BGRA8Unorm);
+        utils::CreateShaderModule(device, computeShader.c_str());
     }
 }
 
@@ -401,6 +425,32 @@ TEST_F(StorageTextureValidationTests, StorageTextureFormatInBindGroupLayout) {
                 ASSERT_DEVICE_ERROR(utils::MakeBindGroupLayout(device, {bindGroupLayoutBinding}));
             }
         }
+    }
+}
+
+class BGRA8UnormStorageBindGroupLayoutTest : public StorageTextureValidationTests {
+  protected:
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
+        wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::BGRA8UnormStorage};
+        descriptor.requiredFeatures = requiredFeatures;
+        descriptor.requiredFeaturesCount = 1;
+        return dawnAdapter.CreateDevice(&descriptor);
+    }
+};
+
+// Test that creating a bind group layout with BGRA8Unorm as storage texture format is valid when
+// The optional feature bgra8unorm-storage is supported.
+TEST_F(BGRA8UnormStorageBindGroupLayoutTest, BGRA8UnormAsStorage) {
+    wgpu::BindGroupLayoutEntry bindGroupLayoutBinding;
+    bindGroupLayoutBinding.binding = 0;
+    bindGroupLayoutBinding.visibility = wgpu::ShaderStage::Compute;
+    bindGroupLayoutBinding.storageTexture.format = wgpu::TextureFormat::BGRA8Unorm;
+    bindGroupLayoutBinding.storageTexture.viewDimension = wgpu::TextureViewDimension::e2D;
+
+    for (wgpu::StorageTextureAccess bindingType : kSupportedStorageTextureAccess) {
+        bindGroupLayoutBinding.storageTexture.access = bindingType;
+        utils::MakeBindGroupLayout(device, {bindGroupLayoutBinding});
     }
 }
 
@@ -810,3 +860,6 @@ TEST_F(StorageTextureValidationTests, StorageTextureAndSampledTextureInOneComput
         encoder.Finish();
     }
 }
+
+}  // anonymous namespace
+}  // namespace dawn

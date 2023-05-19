@@ -17,6 +17,9 @@
 #include "dawn/tests/DawnTest.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class ComputeStorageBufferBarrierTests : public DawnTest {
   protected:
     static constexpr uint32_t kNumValues = 100;
@@ -40,7 +43,7 @@ TEST_P(ComputeStorageBufferBarrierTests, AddIncrement) {
         @group(0) @binding(0) var<storage, read_write> buf : Buf;
 
         @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             buf.data[GlobalInvocationID.x] = buf.data[GlobalInvocationID.x] + 0x1234u;
         }
     )");
@@ -91,7 +94,7 @@ TEST_P(ComputeStorageBufferBarrierTests, AddPingPong) {
         @group(0) @binding(1) var<storage, read_write> dst : Buf;
 
         @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             dst.data[GlobalInvocationID.x] = src.data[GlobalInvocationID.x] + 0x1234u;
         }
     )");
@@ -157,7 +160,7 @@ TEST_P(ComputeStorageBufferBarrierTests, StorageAndReadonlyStoragePingPongInOneP
         @group(0) @binding(1) var<storage, read_write> dst : Buf;
 
         @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             dst.data[GlobalInvocationID.x] = src.data[GlobalInvocationID.x] + 0x1234u;
         }
     )");
@@ -218,16 +221,16 @@ TEST_P(ComputeStorageBufferBarrierTests, UniformToStorageAddPingPong) {
 
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         struct Buf {
-            data : array<vec4<u32>, 25>
+            data : array<vec4u, 25>
         }
 
         @group(0) @binding(0) var<uniform> src : Buf;
         @group(0) @binding(1) var<storage, read_write> dst : Buf;
 
         @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             dst.data[GlobalInvocationID.x] = src.data[GlobalInvocationID.x] +
-                vec4<u32>(0x1234u, 0x1234u, 0x1234u, 0x1234u);
+                vec4u(0x1234u, 0x1234u, 0x1234u, 0x1234u);
         }
     )");
 
@@ -286,16 +289,16 @@ TEST_P(ComputeStorageBufferBarrierTests, UniformToStorageAddPingPongInOnePass) {
 
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         struct Buf {
-            data : array<vec4<u32>, 25>
+            data : array<vec4u, 25>
         }
 
         @group(0) @binding(0) var<uniform> src : Buf;
         @group(0) @binding(1) var<storage, read_write> dst : Buf;
 
         @compute @workgroup_size(1)
-        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+        fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
             dst.data[GlobalInvocationID.x] = src.data[GlobalInvocationID.x] +
-                vec4<u32>(0x1234u, 0x1234u, 0x1234u, 0x1234u);
+                vec4u(0x1234u, 0x1234u, 0x1234u, 0x1234u);
         }
     )");
 
@@ -320,9 +323,9 @@ TEST_P(ComputeStorageBufferBarrierTests, UniformToStorageAddPingPongInOnePass) {
 
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
-    for (uint32_t i = 0, b = 0; i < kIterations; ++i, b = 1 - b) {
+    for (uint32_t i = 0; i < kIterations; ++i) {
         pass.SetPipeline(pipeline);
-        pass.SetBindGroup(0, bindGroups[b]);
+        pass.SetBindGroup(0, bindGroups[i % 2]);
         pass.DispatchWorkgroups(kNumValues / 4);
     }
     pass.End();
@@ -349,7 +352,7 @@ TEST_P(ComputeStorageBufferBarrierTests, IndirectBufferCorrectBarrier) {
         @group(0) @binding(0) var<storage, read_write> buf : Buf;
 
         @compute @workgroup_size(1) fn main() {
-            buf.data = array<u32, 3>(1u, 1u, 1u);
+            buf.data = array(1u, 1u, 1u);
         }
     )");
     wgpu::ComputePipeline step2Pipeline = device.CreateComputePipeline(&step2PipelineDesc);
@@ -409,8 +412,12 @@ TEST_P(ComputeStorageBufferBarrierTests, IndirectBufferCorrectBarrier) {
 }
 
 DAWN_INSTANTIATE_TEST(ComputeStorageBufferBarrierTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

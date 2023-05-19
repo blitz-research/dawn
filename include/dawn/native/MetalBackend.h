@@ -17,7 +17,6 @@
 
 #include <vector>
 
-#include "dawn/dawn_wsi.h"
 #include "dawn/native/DawnNative.h"
 
 // The specifics of the Metal backend expose types in function signatures that might not be
@@ -62,9 +61,6 @@ struct DAWN_NATIVE_EXPORT ExternalImageDescriptorIOSurface : ExternalImageDescri
     ~ExternalImageDescriptorIOSurface();
 
     IOSurfaceRef ioSurface;
-
-    // This has been deprecated.
-    uint32_t plane;
 
     // A list of events to wait on before accessing the texture.
     std::vector<ExternalImageMTLSharedEventDescriptor> waitEvents;

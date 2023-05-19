@@ -20,6 +20,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 // The compute shader workgroup size is settled at compute pipeline creation time.
 // The validation code in dawn is in each backend (not including Null backend) thus this test needs
 // to be as part of a dawn_end2end_tests instead of the dawn_unittests
@@ -169,7 +172,7 @@ TEST_P(WorkgroupSizeValidationTest, WithFixedValuesStorageSizeLimits) {
         std::ostringstream ss;
         std::ostringstream body;
         if (vec4_count > 0) {
-            ss << "var<workgroup> vec4_data: array<vec4<f32>, " << vec4_count << ">;";
+            ss << "var<workgroup> vec4_data: array<vec4f, " << vec4_count << ">;";
             body << "_ = vec4_data;";
         }
         if (mat4_count > 0) {
@@ -346,7 +349,7 @@ TEST_P(WorkgroupSizeValidationTest, ValidationAfterOverrideStorageSize) {
         ss << "override a: u32;";
         ss << "override b: u32;";
         if (vec4_count > 0) {
-            ss << "var<workgroup> vec4_data: array<vec4<f32>, a>;";
+            ss << "var<workgroup> vec4_data: array<vec4f, a>;";
             body << "_ = vec4_data[0];";
             constants.push_back({nullptr, "a", static_cast<double>(vec4_count)});
         }
@@ -375,9 +378,13 @@ TEST_P(WorkgroupSizeValidationTest, ValidationAfterOverrideStorageSize) {
 }
 
 DAWN_INSTANTIATE_TEST(WorkgroupSizeValidationTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       NullBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

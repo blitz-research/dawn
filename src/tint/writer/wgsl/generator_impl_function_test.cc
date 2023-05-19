@@ -15,7 +15,10 @@
 #include "src/tint/ast/stage_attribute.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/ast/workgroup_attribute.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/writer/wgsl/test_helper.h"
+
+#include "gmock/gmock.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -33,8 +36,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitFunction(func));
+    gen.EmitFunction(func);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  fn my_func() {
     return;
   }
@@ -55,8 +58,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_WithParams) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitFunction(func));
+    gen.EmitFunction(func);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  fn my_func(a : f32, b : i32) {
     return;
   }
@@ -76,11 +79,32 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_WithAttribute_WorkgroupSize) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitFunction(func));
+    gen.EmitFunction(func);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  @compute @workgroup_size(2i, 4i, 6i)
   fn my_func() {
     return;
+  }
+)");
+}
+
+TEST_F(WgslGeneratorImplTest, Emit_Function_WithAttribute_MustUse) {
+    auto* func = Func("my_func", utils::Empty, ty.i32(),
+                      utils::Vector{
+                          Return(1_i),
+                      },
+                      utils::Vector{
+                          MustUse(),
+                      });
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+    gen.EmitFunction(func);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
+    EXPECT_EQ(gen.result(), R"(  @must_use
+  fn my_func() -> i32 {
+    return 1i;
   }
 )");
 }
@@ -99,8 +123,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_WithAttribute_WorkgroupSize_WithIden
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitFunction(func));
+    gen.EmitFunction(func);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  @compute @workgroup_size(2i, height)
   fn my_func() {
     return;
@@ -109,10 +133,10 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_WithAttribute_WorkgroupSize_WithIden
 }
 
 TEST_F(WgslGeneratorImplTest, Emit_Function_EntryPoint_Parameters) {
-    auto* vec4 = ty.vec4<f32>();
+    auto vec4 = ty.vec4<f32>();
     auto* coord = Param("coord", vec4,
                         utils::Vector{
-                            Builtin(ast::BuiltinValue::kPosition),
+                            Builtin(builtin::BuiltinValue::kPosition),
                         });
     auto* loc1 = Param("loc1", ty.f32(),
                        utils::Vector{
@@ -126,8 +150,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_EntryPoint_Parameters) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitFunction(func));
+    gen.EmitFunction(func);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  @fragment
   fn frag_main(@builtin(position) coord : vec4<f32>, @location(1) loc1 : f32) {
   }
@@ -149,8 +173,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_EntryPoint_ReturnValue) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitFunction(func));
+    gen.EmitFunction(func);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  @fragment
   fn frag_main() -> @location(1) f32 {
     return 1.0f;
@@ -179,8 +203,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_Multiple_EntryPoint_With_Same_Module
                                     Member("d", ty.f32()),
                                 });
 
-    GlobalVar("data", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite, Binding(0_a),
-              Group(0_a));
+    GlobalVar("data", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+              Binding(0_a), Group(0_a));
 
     {
         auto* var = Var("v", ty.f32(), MemberAccessor("data", "d"));
@@ -212,7 +236,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_Multiple_EntryPoint_With_Same_Module
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(struct Data {
   d : f32,
 }

@@ -19,6 +19,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr static unsigned int kRTSize = 64;
 
 class DepthStencilStateTest : public DawnTest {
@@ -58,32 +61,32 @@ class DepthStencilStateTest : public DawnTest {
 
         vsModule = utils::CreateShaderModule(device, R"(
             struct UBO {
-                color : vec3<f32>,
+                color : vec3f,
                 depth : f32,
             }
             @group(0) @binding(0) var<uniform> ubo : UBO;
 
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 6>(
-                        vec2<f32>(-1.0,  1.0),
-                        vec2<f32>(-1.0, -1.0),
-                        vec2<f32>( 1.0, -1.0), // front-facing
-                        vec2<f32>(-1.0,  1.0),
-                        vec2<f32>( 1.0,  1.0),
-                        vec2<f32>( 1.0, -1.0)); // back-facing
-                return vec4<f32>(pos[VertexIndex], ubo.depth, 1.0);
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                        vec2f(-1.0,  1.0),
+                        vec2f(-1.0, -1.0),
+                        vec2f( 1.0, -1.0), // front-facing
+                        vec2f(-1.0,  1.0),
+                        vec2f( 1.0,  1.0),
+                        vec2f( 1.0, -1.0)); // back-facing
+                return vec4f(pos[VertexIndex], ubo.depth, 1.0);
             })");
 
         fsModule = utils::CreateShaderModule(device, R"(
             struct UBO {
-                color : vec3<f32>,
+                color : vec3f,
                 depth : f32,
             }
             @group(0) @binding(0) var<uniform> ubo : UBO;
 
-            @fragment fn main() -> @location(0) vec4<f32> {
-                return vec4<f32>(ubo.color, 1.0);
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(ubo.color, 1.0);
             })");
     }
 
@@ -781,6 +784,8 @@ TEST_P(DepthStencilStateTest, CreatePipelineWithAllFormats) {
 // Test that the front and back stencil states are set correctly (and take frontFace into account)
 TEST_P(DepthStencilStateTest, StencilFrontAndBackFace) {
     wgpu::DepthStencilState state;
+    state.depthWriteEnabled = false;
+    state.depthCompare = wgpu::CompareFunction::Always;
     state.stencilFront.compare = wgpu::CompareFunction::Always;
     state.stencilBack.compare = wgpu::CompareFunction::Never;
 
@@ -794,12 +799,16 @@ TEST_P(DepthStencilStateTest, StencilFrontAndBackFace) {
 // Test that the depth reference of a new render pass is initialized to default value 0
 TEST_P(DepthStencilStateTest, StencilReferenceInitialized) {
     wgpu::DepthStencilState stencilAlwaysReplaceState;
+    stencilAlwaysReplaceState.depthWriteEnabled = false;
+    stencilAlwaysReplaceState.depthCompare = wgpu::CompareFunction::Always;
     stencilAlwaysReplaceState.stencilFront.compare = wgpu::CompareFunction::Always;
     stencilAlwaysReplaceState.stencilFront.passOp = wgpu::StencilOperation::Replace;
     stencilAlwaysReplaceState.stencilBack.compare = wgpu::CompareFunction::Always;
     stencilAlwaysReplaceState.stencilBack.passOp = wgpu::StencilOperation::Replace;
 
     wgpu::DepthStencilState stencilEqualKeepState;
+    stencilEqualKeepState.depthWriteEnabled = false;
+    stencilEqualKeepState.depthCompare = wgpu::CompareFunction::Always;
     stencilEqualKeepState.stencilFront.compare = wgpu::CompareFunction::Equal;
     stencilEqualKeepState.stencilFront.passOp = wgpu::StencilOperation::Keep;
     stencilEqualKeepState.stencilBack.compare = wgpu::CompareFunction::Equal;
@@ -834,9 +843,13 @@ TEST_P(DepthStencilStateTest, StencilReferenceInitialized) {
 }
 
 DAWN_INSTANTIATE_TEST(DepthStencilStateTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend({"vulkan_use_d32s8"}, {}),
                       VulkanBackend({}, {"vulkan_use_d32s8"}));
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -29,40 +29,33 @@
 #include "glslang/Public/ShaderLang.h"
 #endif  // TINT_BUILD_GLSL_WRITER
 
-#if TINT_BUILD_SPV_READER
+#if TINT_BUILD_SYNTAX_TREE_WRITER
+#include "src/tint/writer/syntax_tree/generator.h"  // nogncheck
+
+#endif  // TINT_BUILD_SYNTAX_TREE_WRITER
+
+#if TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 #include "spirv-tools/libspirv.hpp"
-#endif  // TINT_BUILD_SPV_READER
+#endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
 #include "src/tint/ast/module.h"
+#include "src/tint/cmd/generate_external_texture_bindings.h"
+#include "src/tint/cmd/helper.h"
 #include "src/tint/utils/io/command.h"
 #include "src/tint/utils/string.h"
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/utils/transform.h"
 #include "src/tint/val/val.h"
 #include "tint/tint.h"
 
 #if TINT_BUILD_IR
-#include "src/tint/ir/debug.h"
-#include "src/tint/ir/disassembler.h"
-#include "src/tint/ir/module.h"
-#endif  // TINT_BUILD_IR
+#include "src/tint/ir/debug.h"         // nogncheck
+#include "src/tint/ir/disassembler.h"  // nogncheck
+#include "src/tint/ir/from_program.h"  // nogncheck
+#include "src/tint/ir/module.h"        // nogncheck
+#endif                                 // TINT_BUILD_IR
 
 namespace {
-
-[[noreturn]] void TintInternalCompilerErrorReporter(const tint::diag::List& diagnostics) {
-    auto printer = tint::diag::Printer::create(stderr, true);
-    tint::diag::Formatter{}.format(diagnostics, printer.get());
-    tint::diag::Style bold_red{tint::diag::Color::kRed, true};
-    constexpr const char* please_file_bug = R"(
-********************************************************************
-*  The tint shader compiler has encountered an unexpected error.   *
-*                                                                  *
-*  Please help us fix this issue by submitting a bug report at     *
-*  crbug.com/tint with the source program that triggered the bug.  *
-********************************************************************
-)";
-    printer->write(please_file_bug, bold_red);
-    exit(1);
-}
 
 /// Prints the given hash value in a format string that the end-to-end test runner can parse.
 void PrintHash(uint32_t hash) {
@@ -91,8 +84,8 @@ struct Options {
     bool disable_workgroup_init = false;
     bool validate = false;
     bool print_hash = false;
-    bool demangle = false;
     bool dump_inspector_bindings = false;
+    bool enable_robustness = false;
 
     std::unordered_set<uint32_t> skip_hash;
 
@@ -102,6 +95,10 @@ struct Options {
     std::string ep_name;
 
     bool rename_all = false;
+
+#if TINT_BUILD_SPV_READER
+    tint::reader::spirv::Options spirv_reader_options;
+#endif
 
     std::vector<std::string> transforms;
 
@@ -114,7 +111,12 @@ struct Options {
 #if TINT_BUILD_IR
     bool dump_ir = false;
     bool dump_ir_graph = false;
+    bool use_ir = false;
 #endif  // TINT_BUILD_IR
+
+#if TINT_BUILD_SYNTAX_TREE_WRITER
+    bool dump_syntax_tree = false;
+#endif  // TINB_BUILD_SYNTAX_TREE_WRITER
 };
 
 const char kUsage[] = R"(Usage: tint [options] <input-file>
@@ -135,9 +137,10 @@ const char kUsage[] = R"(Usage: tint [options] <input-file>
   --transform <name list>   -- Runs transforms, name list is comma separated
                                Available transforms:
 ${transforms} --parse-only              -- Stop after parsing the input
+  --allow-non-uniform-derivatives  -- When using SPIR-V input, allow non-uniform derivatives by
+                               inserting a module-scope directive to suppress any uniformity
+                               violations that may be produced.
   --disable-workgroup-init  -- Disable workgroup memory zero initialization.
-  --demangle                -- Preserve original source names. Demangle them.
-                               Affects AST dumping, and text-based output languages.
   --dump-inspector-bindings -- Dump reflection data about bindins to stdout.
   -h                        -- This help text
   --hlsl-root-constant-binding-point <group>,<binding>  -- Binding point for root constant.
@@ -202,47 +205,34 @@ Format parse_format(const std::string& fmt) {
     return Format::kUnknown;
 }
 
-#if TINT_BUILD_SPV_WRITER || TINT_BUILD_WGSL_WRITER || TINT_BUILD_MSL_WRITER || \
-    TINT_BUILD_HLSL_WRITER
-/// @param input input string
-/// @param suffix potential suffix string
-/// @returns true if input ends with the given suffix.
-bool ends_with(const std::string& input, const std::string& suffix) {
-    const auto input_len = input.size();
-    const auto suffix_len = suffix.size();
-    // Avoid integer overflow.
-    return (input_len >= suffix_len) && (input_len - suffix_len == input.rfind(suffix));
-}
-#endif
-
 /// @param filename the filename to inspect
 /// @returns the inferred format for the filename suffix
 Format infer_format(const std::string& filename) {
     (void)filename;
 
 #if TINT_BUILD_SPV_WRITER
-    if (ends_with(filename, ".spv")) {
+    if (tint::utils::HasSuffix(filename, ".spv")) {
         return Format::kSpirv;
     }
-    if (ends_with(filename, ".spvasm")) {
+    if (tint::utils::HasSuffix(filename, ".spvasm")) {
         return Format::kSpvAsm;
     }
 #endif  // TINT_BUILD_SPV_WRITER
 
 #if TINT_BUILD_WGSL_WRITER
-    if (ends_with(filename, ".wgsl")) {
+    if (tint::utils::HasSuffix(filename, ".wgsl")) {
         return Format::kWgsl;
     }
 #endif  // TINT_BUILD_WGSL_WRITER
 
 #if TINT_BUILD_MSL_WRITER
-    if (ends_with(filename, ".metal")) {
+    if (tint::utils::HasSuffix(filename, ".metal")) {
         return Format::kMsl;
     }
 #endif  // TINT_BUILD_MSL_WRITER
 
 #if TINT_BUILD_HLSL_WRITER
-    if (ends_with(filename, ".hlsl")) {
+    if (tint::utils::HasSuffix(filename, ".hlsl")) {
         return Format::kHlsl;
     }
 #endif  // TINT_BUILD_HLSL_WRITER
@@ -253,7 +243,7 @@ Format infer_format(const std::string& filename) {
 std::vector<std::string> split_on_char(std::string list, char c) {
     std::vector<std::string> res;
 
-    std::stringstream str(list);
+    std::istringstream str(list);
     while (str.good()) {
         std::string substr;
         getline(str, substr, c);
@@ -289,111 +279,6 @@ std::optional<uint64_t> parse_unsigned_number(std::string number) {
     }
 
     return result;
-}
-
-std::string TextureDimensionToString(tint::inspector::ResourceBinding::TextureDimension dim) {
-    switch (dim) {
-        case tint::inspector::ResourceBinding::TextureDimension::kNone:
-            return "None";
-        case tint::inspector::ResourceBinding::TextureDimension::k1d:
-            return "1d";
-        case tint::inspector::ResourceBinding::TextureDimension::k2d:
-            return "2d";
-        case tint::inspector::ResourceBinding::TextureDimension::k2dArray:
-            return "2dArray";
-        case tint::inspector::ResourceBinding::TextureDimension::k3d:
-            return "3d";
-        case tint::inspector::ResourceBinding::TextureDimension::kCube:
-            return "Cube";
-        case tint::inspector::ResourceBinding::TextureDimension::kCubeArray:
-            return "CubeArray";
-    }
-
-    return "Unknown";
-}
-
-std::string SampledKindToString(tint::inspector::ResourceBinding::SampledKind kind) {
-    switch (kind) {
-        case tint::inspector::ResourceBinding::SampledKind::kFloat:
-            return "Float";
-        case tint::inspector::ResourceBinding::SampledKind::kUInt:
-            return "UInt";
-        case tint::inspector::ResourceBinding::SampledKind::kSInt:
-            return "SInt";
-        case tint::inspector::ResourceBinding::SampledKind::kUnknown:
-            break;
-    }
-
-    return "Unknown";
-}
-
-std::string TexelFormatToString(tint::inspector::ResourceBinding::TexelFormat format) {
-    switch (format) {
-        case tint::inspector::ResourceBinding::TexelFormat::kR32Uint:
-            return "R32Uint";
-        case tint::inspector::ResourceBinding::TexelFormat::kR32Sint:
-            return "R32Sint";
-        case tint::inspector::ResourceBinding::TexelFormat::kR32Float:
-            return "R32Float";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba8Unorm:
-            return "Rgba8Unorm";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba8Snorm:
-            return "Rgba8Snorm";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba8Uint:
-            return "Rgba8Uint";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba8Sint:
-            return "Rgba8Sint";
-        case tint::inspector::ResourceBinding::TexelFormat::kRg32Uint:
-            return "Rg32Uint";
-        case tint::inspector::ResourceBinding::TexelFormat::kRg32Sint:
-            return "Rg32Sint";
-        case tint::inspector::ResourceBinding::TexelFormat::kRg32Float:
-            return "Rg32Float";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba16Uint:
-            return "Rgba16Uint";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba16Sint:
-            return "Rgba16Sint";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba16Float:
-            return "Rgba16Float";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba32Uint:
-            return "Rgba32Uint";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba32Sint:
-            return "Rgba32Sint";
-        case tint::inspector::ResourceBinding::TexelFormat::kRgba32Float:
-            return "Rgba32Float";
-        case tint::inspector::ResourceBinding::TexelFormat::kNone:
-            return "None";
-    }
-    return "Unknown";
-}
-
-std::string ResourceTypeToString(tint::inspector::ResourceBinding::ResourceType type) {
-    switch (type) {
-        case tint::inspector::ResourceBinding::ResourceType::kUniformBuffer:
-            return "UniformBuffer";
-        case tint::inspector::ResourceBinding::ResourceType::kStorageBuffer:
-            return "StorageBuffer";
-        case tint::inspector::ResourceBinding::ResourceType::kReadOnlyStorageBuffer:
-            return "ReadOnlyStorageBuffer";
-        case tint::inspector::ResourceBinding::ResourceType::kSampler:
-            return "Sampler";
-        case tint::inspector::ResourceBinding::ResourceType::kComparisonSampler:
-            return "ComparisonSampler";
-        case tint::inspector::ResourceBinding::ResourceType::kSampledTexture:
-            return "SampledTexture";
-        case tint::inspector::ResourceBinding::ResourceType::kMultisampledTexture:
-            return "MultisampledTexture";
-        case tint::inspector::ResourceBinding::ResourceType::kWriteOnlyStorageTexture:
-            return "WriteOnlyStorageTexture";
-        case tint::inspector::ResourceBinding::ResourceType::kDepthTexture:
-            return "DepthTexture";
-        case tint::inspector::ResourceBinding::ResourceType::kDepthMultisampledTexture:
-            return "DepthMultisampledTexture";
-        case tint::inspector::ResourceBinding::ResourceType::kExternalTexture:
-            return "ExternalTexture";
-    }
-
-    return "Unknown";
 }
 
 bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
@@ -441,10 +326,15 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             opts->transforms = split_on_comma(args[i]);
         } else if (arg == "--parse-only") {
             opts->parse_only = true;
+        } else if (arg == "--allow-non-uniform-derivatives") {
+#if TINT_BUILD_SPV_READER
+            opts->spirv_reader_options.allow_non_uniform_derivatives = true;
+#else
+            std::cerr << "Tint not built with the SPIR-V reader enabled" << std::endl;
+            return false;
+#endif
         } else if (arg == "--disable-workgroup-init") {
             opts->disable_workgroup_init = true;
-        } else if (arg == "--demangle") {
-            opts->demangle = true;
         } else if (arg == "--dump-inspector-bindings") {
             opts->dump_inspector_bindings = true;
         } else if (arg == "--validate") {
@@ -486,7 +376,13 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             opts->dump_ir = true;
         } else if (arg == "--dump-ir-graph") {
             opts->dump_ir_graph = true;
+        } else if (arg == "--use-ir") {
+            opts->use_ir = true;
 #endif  // TINT_BUILD_IR
+#if TINT_BUILD_SYNTAX_TREE_WRITER
+        } else if (arg == "--dump-ast") {
+            opts->dump_syntax_tree = true;
+#endif  // TINT_BUILD_SYNTAX_TREE_WRITER
         } else if (arg == "--xcrun") {
             ++i;
             if (i >= args.size()) {
@@ -546,54 +442,6 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
             opts->input_filename = arg;
         }
     }
-    return true;
-}
-
-/// Copies the content from the file named `input_file` to `buffer`,
-/// assuming each element in the file is of type `T`.  If any error occurs,
-/// writes error messages to the standard error stream and returns false.
-/// Assumes the size of a `T` object is divisible by its required alignment.
-/// @returns true if we successfully read the file.
-template <typename T>
-bool ReadFile(const std::string& input_file, std::vector<T>* buffer) {
-    if (!buffer) {
-        std::cerr << "The buffer pointer was null" << std::endl;
-        return false;
-    }
-
-    FILE* file = nullptr;
-#if defined(_MSC_VER)
-    fopen_s(&file, input_file.c_str(), "rb");
-#else
-    file = fopen(input_file.c_str(), "rb");
-#endif
-    if (!file) {
-        std::cerr << "Failed to open " << input_file << std::endl;
-        return false;
-    }
-
-    fseek(file, 0, SEEK_END);
-    const auto file_size = static_cast<size_t>(ftell(file));
-    if (0 != (file_size % sizeof(T))) {
-        std::cerr << "File " << input_file
-                  << " does not contain an integral number of objects: " << file_size
-                  << " bytes in the file, require " << sizeof(T) << " bytes per object"
-                  << std::endl;
-        fclose(file);
-        return false;
-    }
-    fseek(file, 0, SEEK_SET);
-
-    buffer->clear();
-    buffer->resize(file_size / sizeof(T));
-
-    size_t bytes_read = fread(buffer->data(), 1, file_size, file);
-    fclose(file);
-    if (bytes_read != file_size) {
-        std::cerr << "Failed to read " << input_file << std::endl;
-        return false;
-    }
-
     return true;
 }
 
@@ -678,21 +526,6 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
 }
 #endif  // TINT_BUILD_SPV_WRITER
 
-/// PrintWGSL writes the WGSL of the program to the provided ostream, if the
-/// WGSL writer is enabled, otherwise it does nothing.
-/// @param out the output stream to write the WGSL to
-/// @param program the program
-void PrintWGSL(std::ostream& out, const tint::Program& program) {
-#if TINT_BUILD_WGSL_WRITER
-    tint::writer::wgsl::Options options;
-    auto result = tint::writer::wgsl::Generate(&program, options);
-    out << std::endl << result.wgsl << std::endl;
-#else
-    (void)out;
-    (void)program;
-#endif
-}
-
 /// Generate SPIR-V code for a program.
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
@@ -701,11 +534,16 @@ bool GenerateSpirv(const tint::Program* program, const Options& options) {
 #if TINT_BUILD_SPV_WRITER
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::writer::spirv::Options gen_options;
+    gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
-    gen_options.generate_external_texture_bindings = true;
+    gen_options.external_texture_options.bindings_map =
+        tint::cmd::GenerateExternalTextureBindings(program);
+#if TINT_BUILD_IR
+    gen_options.use_tint_ir = options.use_ir;
+#endif
     auto result = tint::writer::spirv::Generate(program, gen_options);
     if (!result.success) {
-        PrintWGSL(std::cerr, *program);
+        tint::cmd::PrintWGSL(std::cerr, *program);
         std::cerr << "Failed to generate: " << result.error << std::endl;
         return false;
     }
@@ -807,11 +645,18 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
 
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::writer::msl::Options gen_options;
+    gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
-    gen_options.generate_external_texture_bindings = true;
+    gen_options.external_texture_options.bindings_map =
+        tint::cmd::GenerateExternalTextureBindings(input_program);
+    gen_options.array_length_from_uniform.ubo_binding = tint::writer::BindingPoint{0, 30};
+    gen_options.array_length_from_uniform.bindpoint_to_size_index.emplace(
+        tint::writer::BindingPoint{0, 0}, 0);
+    gen_options.array_length_from_uniform.bindpoint_to_size_index.emplace(
+        tint::writer::BindingPoint{0, 1}, 1);
     auto result = tint::writer::msl::Generate(input_program, gen_options);
     if (!result.success) {
-        PrintWGSL(std::cerr, *program);
+        tint::cmd::PrintWGSL(std::cerr, *program);
         std::cerr << "Failed to generate: " << result.error << std::endl;
         return false;
     }
@@ -867,12 +712,14 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
 #if TINT_BUILD_HLSL_WRITER
     // TODO(jrprice): Provide a way for the user to set non-default options.
     tint::writer::hlsl::Options gen_options;
+    gen_options.disable_robustness = !options.enable_robustness;
     gen_options.disable_workgroup_init = options.disable_workgroup_init;
-    gen_options.generate_external_texture_bindings = true;
+    gen_options.external_texture_options.bindings_map =
+        tint::cmd::GenerateExternalTextureBindings(program);
     gen_options.root_constant_binding_point = options.hlsl_root_constant_binding_point;
     auto result = tint::writer::hlsl::Generate(program, gen_options);
     if (!result.success) {
-        PrintWGSL(std::cerr, *program);
+        tint::cmd::PrintWGSL(std::cerr, *program);
         std::cerr << "Failed to generate: " << result.error << std::endl;
         return false;
     }
@@ -902,8 +749,8 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
 
                 auto enable_list = program->AST().Enables();
                 bool dxc_require_16bit_types = false;
-                for (auto enable : enable_list) {
-                    if (enable->extension == tint::ast::Extension::kF16) {
+                for (auto* enable : enable_list) {
+                    if (enable->HasExtension(tint::builtin::Extension::kF16)) {
                         dxc_require_16bit_types = true;
                         break;
                     }
@@ -1006,10 +853,12 @@ bool GenerateGlsl(const tint::Program* program, const Options& options) {
 
     auto generate = [&](const tint::Program* prg, const std::string entry_point_name) -> bool {
         tint::writer::glsl::Options gen_options;
-        gen_options.generate_external_texture_bindings = true;
+        gen_options.disable_robustness = !options.enable_robustness;
+        gen_options.external_texture_options.bindings_map =
+            tint::cmd::GenerateExternalTextureBindings(prg);
         auto result = tint::writer::glsl::Generate(prg, gen_options, entry_point_name);
         if (!result.success) {
-            PrintWGSL(std::cerr, *prg);
+            tint::cmd::PrintWGSL(std::cerr, *prg);
             std::cerr << "Failed to generate: " << result.error << std::endl;
             return false;
         }
@@ -1071,7 +920,7 @@ int main(int argc, const char** argv) {
     std::vector<std::string> args(argv, argv + argc);
     Options options;
 
-    tint::SetInternalCompilerErrorReporter(&TintInternalCompilerErrorReporter);
+    tint::SetInternalCompilerErrorReporter(&tint::cmd::TintInternalCompilerErrorReporter);
 
 #if TINT_BUILD_WGSL_WRITER
     tint::Program::printer = [](const tint::Program* program) {
@@ -1104,24 +953,25 @@ int main(int argc, const char** argv) {
     std::vector<TransformFactory> transforms = {
         {"first_index_offset",
          [](tint::inspector::Inspector&, tint::transform::Manager& m, tint::transform::DataMap& i) {
-             i.Add<tint::transform::FirstIndexOffset::BindingPoint>(0, 0);
-             m.Add<tint::transform::FirstIndexOffset>();
+             i.Add<tint::ast::transform::FirstIndexOffset::BindingPoint>(0, 0);
+             m.Add<tint::ast::transform::FirstIndexOffset>();
              return true;
          }},
         {"renamer",
          [](tint::inspector::Inspector&, tint::transform::Manager& m, tint::transform::DataMap&) {
-             m.Add<tint::transform::Renamer>();
+             m.Add<tint::ast::transform::Renamer>();
              return true;
          }},
         {"robustness",
-         [](tint::inspector::Inspector&, tint::transform::Manager& m, tint::transform::DataMap&) {
-             m.Add<tint::transform::Robustness>();
+         [&](tint::inspector::Inspector&, tint::transform::Manager&,
+             tint::transform::DataMap&) {  // enabled via writer option
+             options.enable_robustness = true;
              return true;
          }},
         {"substitute_override",
          [&](tint::inspector::Inspector& inspector, tint::transform::Manager& m,
              tint::transform::DataMap& i) {
-             tint::transform::SubstituteOverride::Config cfg;
+             tint::ast::transform::SubstituteOverride::Config cfg;
 
              std::unordered_map<tint::OverrideId, double> values;
              values.reserve(options.overrides.size());
@@ -1148,62 +998,13 @@ int main(int argc, const char** argv) {
 
              cfg.map = std::move(values);
 
-             i.Add<tint::transform::SubstituteOverride::Config>(cfg);
-             m.Add<tint::transform::SubstituteOverride>();
-             return true;
-         }},
-        {"multiplaner_external_texture",
-         [](tint::inspector::Inspector& inspector, tint::transform::Manager& m,
-            tint::transform::DataMap& i) {
-             using MET = tint::transform::MultiplanarExternalTexture;
-
-             // Generate the MultiplanarExternalTexture::NewBindingPoints by finding two free
-             // binding points. We may wish to expose these binding points via a command line flag
-             // in the future.
-
-             // Set of all the group-0 bindings in use.
-             std::unordered_set<uint32_t> group0_bindings_in_use;
-             auto allocate_binding = [&] {
-                 for (uint32_t idx = 0;; idx++) {
-                     auto binding = tint::transform::BindingPoint{0u, idx};
-                     if (group0_bindings_in_use.emplace(idx).second) {
-                         return binding;
-                     }
-                 }
-             };
-             // Populate group0_bindings_in_use with the existing bindings across all entry points.
-             for (auto ep : inspector.GetEntryPoints()) {
-                 for (auto binding : inspector.GetResourceBindings(ep.name)) {
-                     if (binding.bind_group == 0) {
-                         group0_bindings_in_use.emplace(binding.binding);
-                     }
-                 }
-             }
-             // Allocate new binding points for the external texture's planes and parameters.
-             MET::BindingsMap met_bindings;
-             for (auto ep : inspector.GetEntryPoints()) {
-                 for (auto ext_tex : inspector.GetExternalTextureResourceBindings(ep.name)) {
-                     auto binding = tint::transform::BindingPoint{
-                         ext_tex.bind_group,
-                         ext_tex.binding,
-                     };
-                     if (met_bindings.count(binding)) {
-                         continue;
-                     }
-                     met_bindings.emplace(binding, MET::BindingPoints{
-                                                       /* plane_1 */ allocate_binding(),
-                                                       /* params */ allocate_binding(),
-                                                   });
-                 }
-             }
-
-             i.Add<MET::NewBindingPoints>(std::move(met_bindings));
-             m.Add<MET>();
+             i.Add<tint::ast::transform::SubstituteOverride::Config>(cfg);
+             m.Add<tint::ast::transform::SubstituteOverride>();
              return true;
          }},
     };
     auto transform_names = [&] {
-        std::stringstream names;
+        tint::utils::StringStream names;
         for (auto& t : transforms) {
             names << "   " << t.name << std::endl;
         }
@@ -1215,8 +1016,12 @@ int main(int argc, const char** argv) {
 #if TINT_BUILD_IR
         usage +=
             "  --dump-ir                 -- Writes the IR to stdout\n"
-            "  --dump-ir-graph           -- Writes the IR graph to 'tint.dot' as a dot graph\n";
+            "  --dump-ir-graph           -- Writes the IR graph to 'tint.dot' as a dot graph\n"
+            "  --use-ir                  -- Use the IR for writers and transforms when possible\n";
 #endif  // TINT_BUILD_IR
+#if TINT_BUILD_SYNTAX_TREE_WRITER
+        usage += "  --dump-ast                -- Writes the AST to stdout\n";
+#endif  // TINT_BUILD_SYNTAX_TREE_WRITER
 
         std::cout << usage << std::endl;
         return 0;
@@ -1238,107 +1043,37 @@ int main(int argc, const char** argv) {
     std::unique_ptr<tint::Program> program;
     std::unique_ptr<tint::Source::File> source_file;
 
-    enum class InputFormat {
-        kUnknown,
-        kWgsl,
-        kSpirvBin,
-        kSpirvAsm,
-    };
-    auto input_format = InputFormat::kUnknown;
-
-    if (options.input_filename.size() > 5 &&
-        options.input_filename.substr(options.input_filename.size() - 5) == ".wgsl") {
-        input_format = InputFormat::kWgsl;
-    } else if (options.input_filename.size() > 4 &&
-               options.input_filename.substr(options.input_filename.size() - 4) == ".spv") {
-        input_format = InputFormat::kSpirvBin;
-    } else if (options.input_filename.size() > 7 &&
-               options.input_filename.substr(options.input_filename.size() - 7) == ".spvasm") {
-        input_format = InputFormat::kSpirvAsm;
-    }
-
-    switch (input_format) {
-        case InputFormat::kUnknown: {
-            std::cerr << "Unknown input format" << std::endl;
-            return 1;
-        }
-        case InputFormat::kWgsl: {
-#if TINT_BUILD_WGSL_READER
-            std::vector<uint8_t> data;
-            if (!ReadFile<uint8_t>(options.input_filename, &data)) {
-                return 1;
-            }
-            source_file = std::make_unique<tint::Source::File>(
-                options.input_filename, std::string(data.begin(), data.end()));
-            program = std::make_unique<tint::Program>(tint::reader::wgsl::Parse(source_file.get()));
-            break;
-#else
-            std::cerr << "Tint not built with the WGSL reader enabled" << std::endl;
-            return 1;
-#endif  // TINT_BUILD_WGSL_READER
-        }
-        case InputFormat::kSpirvBin: {
+    {
+        tint::cmd::LoadProgramOptions opts;
+        opts.filename = options.input_filename;
 #if TINT_BUILD_SPV_READER
-            std::vector<uint32_t> data;
-            if (!ReadFile<uint32_t>(options.input_filename, &data)) {
-                return 1;
-            }
-            program = std::make_unique<tint::Program>(tint::reader::spirv::Parse(data));
-            break;
-#else
-            std::cerr << "Tint not built with the SPIR-V reader enabled" << std::endl;
-            return 1;
-#endif  // TINT_BUILD_SPV_READER
-        }
-        case InputFormat::kSpirvAsm: {
-#if TINT_BUILD_SPV_READER
-            std::vector<char> text;
-            if (!ReadFile<char>(options.input_filename, &text)) {
-                return 1;
-            }
-            // Use Vulkan 1.1, since this is what Tint, internally, is expecting.
-            spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_1);
-            tools.SetMessageConsumer([](spv_message_level_t, const char*, const spv_position_t& pos,
-                                        const char* msg) {
-                std::cerr << (pos.line + 1) << ":" << (pos.column + 1) << ": " << msg << std::endl;
-            });
-            std::vector<uint32_t> data;
-            if (!tools.Assemble(text.data(), text.size(), &data,
-                                SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS)) {
-                return 1;
-            }
-            program = std::make_unique<tint::Program>(tint::reader::spirv::Parse(data));
-            break;
-#else
-            std::cerr << "Tint not built with the SPIR-V reader enabled" << std::endl;
-            return 1;
-#endif  // TINT_BUILD_SPV_READER
-        }
+        opts.spirv_reader_options = options.spirv_reader_options;
+#endif
+
+        auto info = tint::cmd::LoadProgramInfo(opts);
+        program = std::move(info.program);
+        source_file = std::move(info.source_file);
     }
 
-    if (!program) {
-        std::cerr << "Failed to parse input file: " << options.input_filename << std::endl;
-        return 1;
-    }
-    if (program->Diagnostics().count() > 0) {
-        if (!program->IsValid() && input_format != InputFormat::kWgsl) {
-            // Invalid program from a non-wgsl source. Print the WGSL, to help
-            // understand the diagnostics.
-            PrintWGSL(std::cout, *program);
-        }
-        diag_formatter.format(program->Diagnostics(), diag_printer.get());
-    }
-
-    if (!program->IsValid()) {
-        return 1;
-    }
     if (options.parse_only) {
         return 1;
     }
 
+#if TINT_BUILD_SYNTAX_TREE_WRITER
+    if (options.dump_syntax_tree) {
+        tint::writer::syntax_tree::Options gen_options;
+        auto result = tint::writer::syntax_tree::Generate(program.get(), gen_options);
+        if (!result.success) {
+            std::cerr << "Failed to dump AST: " << result.error << std::endl;
+        } else {
+            std::cout << result.ast << std::endl;
+        }
+    }
+#endif  // TINT_BUILD_SYNTAX_TREE_WRITER
+
 #if TINT_BUILD_IR
     if (options.dump_ir || options.dump_ir_graph) {
-        auto result = tint::ir::Module::FromProgram(program.get());
+        auto result = tint::ir::FromProgram(program.get());
         if (!result) {
             std::cerr << "Failed to build IR from program: " << result.Failure() << std::endl;
         } else {
@@ -1356,37 +1091,8 @@ int main(int argc, const char** argv) {
 #endif  // TINT_BUILD_IR
 
     tint::inspector::Inspector inspector(program.get());
-
     if (options.dump_inspector_bindings) {
-        std::cout << std::string(80, '-') << std::endl;
-        auto entry_points = inspector.GetEntryPoints();
-        if (!inspector.error().empty()) {
-            std::cerr << "Failed to get entry points from Inspector: " << inspector.error()
-                      << std::endl;
-            return 1;
-        }
-
-        for (auto& entry_point : entry_points) {
-            auto bindings = inspector.GetResourceBindings(entry_point.name);
-            if (!inspector.error().empty()) {
-                std::cerr << "Failed to get bindings from Inspector: " << inspector.error()
-                          << std::endl;
-                return 1;
-            }
-            std::cout << "Entry Point = " << entry_point.name << std::endl;
-            for (auto& binding : bindings) {
-                std::cout << "\t[" << binding.bind_group << "][" << binding.binding
-                          << "]:" << std::endl;
-                std::cout << "\t\t resource_type = " << ResourceTypeToString(binding.resource_type)
-                          << std::endl;
-                std::cout << "\t\t dim = " << TextureDimensionToString(binding.dim) << std::endl;
-                std::cout << "\t\t sampled_kind = " << SampledKindToString(binding.sampled_kind)
-                          << std::endl;
-                std::cout << "\t\t image_format = " << TexelFormatToString(binding.image_format)
-                          << std::endl;
-            }
-        }
-        std::cout << std::string(80, '-') << std::endl;
+        tint::cmd::PrintInspectorBindings(inspector);
     }
 
     tint::transform::Manager transform_manager;
@@ -1396,37 +1102,37 @@ int main(int argc, const char** argv) {
     switch (options.format) {
         case Format::kMsl: {
 #if TINT_BUILD_MSL_WRITER
-            transform_inputs.Add<tint::transform::Renamer::Config>(
-                options.rename_all ? tint::transform::Renamer::Target::kAll
-                                   : tint::transform::Renamer::Target::kMslKeywords,
+            transform_inputs.Add<tint::ast::transform::Renamer::Config>(
+                options.rename_all ? tint::ast::transform::Renamer::Target::kAll
+                                   : tint::ast::transform::Renamer::Target::kMslKeywords,
                 /* preserve_unicode */ false);
-            transform_manager.Add<tint::transform::Renamer>();
+            transform_manager.Add<tint::ast::transform::Renamer>();
 #endif  // TINT_BUILD_MSL_WRITER
             break;
         }
 #if TINT_BUILD_GLSL_WRITER
         case Format::kGlsl: {
-            transform_inputs.Add<tint::transform::Renamer::Config>(
-                options.rename_all ? tint::transform::Renamer::Target::kAll
-                                   : tint::transform::Renamer::Target::kGlslKeywords,
+            transform_inputs.Add<tint::ast::transform::Renamer::Config>(
+                options.rename_all ? tint::ast::transform::Renamer::Target::kAll
+                                   : tint::ast::transform::Renamer::Target::kGlslKeywords,
                 /* preserve_unicode */ false);
-            transform_manager.Add<tint::transform::Renamer>();
+            transform_manager.Add<tint::ast::transform::Renamer>();
             break;
         }
 #endif  // TINT_BUILD_GLSL_WRITER
         case Format::kHlsl: {
 #if TINT_BUILD_HLSL_WRITER
-            transform_inputs.Add<tint::transform::Renamer::Config>(
-                options.rename_all ? tint::transform::Renamer::Target::kAll
-                                   : tint::transform::Renamer::Target::kHlslKeywords,
+            transform_inputs.Add<tint::ast::transform::Renamer::Config>(
+                options.rename_all ? tint::ast::transform::Renamer::Target::kAll
+                                   : tint::ast::transform::Renamer::Target::kHlslKeywords,
                 /* preserve_unicode */ false);
-            transform_manager.Add<tint::transform::Renamer>();
+            transform_manager.Add<tint::ast::transform::Renamer>();
 #endif  // TINT_BUILD_HLSL_WRITER
             break;
         }
         default: {
             if (options.rename_all) {
-                transform_manager.Add<tint::transform::Renamer>();
+                transform_manager.Add<tint::ast::transform::Renamer>();
             }
             break;
         }
@@ -1461,18 +1167,19 @@ int main(int argc, const char** argv) {
     }
 
     if (options.emit_single_entry_point) {
-        transform_manager.append(std::make_unique<tint::transform::SingleEntryPoint>());
-        transform_inputs.Add<tint::transform::SingleEntryPoint::Config>(options.ep_name);
+        transform_manager.append(std::make_unique<tint::ast::transform::SingleEntryPoint>());
+        transform_inputs.Add<tint::ast::transform::SingleEntryPoint::Config>(options.ep_name);
     }
 
-    auto out = transform_manager.Run(program.get(), std::move(transform_inputs));
-    if (!out.program.IsValid()) {
-        PrintWGSL(std::cerr, out.program);
-        diag_formatter.format(out.program.Diagnostics(), diag_printer.get());
+    tint::transform::DataMap outputs;
+    auto out = transform_manager.Run(program.get(), std::move(transform_inputs), outputs);
+    if (!out.IsValid()) {
+        tint::cmd::PrintWGSL(std::cerr, out);
+        diag_formatter.format(out.Diagnostics(), diag_printer.get());
         return 1;
     }
 
-    *program = std::move(out.program);
+    *program = std::move(out);
 
     bool success = false;
     switch (options.format) {

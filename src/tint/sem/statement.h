@@ -15,6 +15,7 @@
 #ifndef SRC_TINT_SEM_STATEMENT_H_
 #define SRC_TINT_SEM_STATEMENT_H_
 
+#include "src/tint/ast/diagnostic_control.h"
 #include "src/tint/sem/behavior.h"
 #include "src/tint/sem/node.h"
 #include "src/tint/symbol.h"
@@ -56,7 +57,7 @@ using FindFirstParentReturnType = typename FindFirstParentReturn<TYPES...>::type
 }  // namespace detail
 
 /// Statement holds the semantic information for a statement.
-class Statement : public Castable<Statement, Node> {
+class Statement : public utils::Castable<Statement, Node> {
   public:
     /// Constructor
     /// @param declaration the AST node for this statement
@@ -109,17 +110,30 @@ class Statement : public Castable<Statement, Node> {
     /// according to the behavior analysis
     void SetIsReachable(bool is_reachable) { is_reachable_ = is_reachable; }
 
+    /// Modifies the severity of a specific diagnostic rule for this statement.
+    /// @param rule the diagnostic rule
+    /// @param severity the new diagnostic severity
+    void SetDiagnosticSeverity(builtin::DiagnosticRule rule, builtin::DiagnosticSeverity severity) {
+        diagnostic_severities_[rule] = severity;
+    }
+
+    /// @returns the diagnostic severity modifications applied to this statement
+    const builtin::DiagnosticRuleSeverities& DiagnosticSeverities() const {
+        return diagnostic_severities_;
+    }
+
   private:
     const ast::Statement* const declaration_;
     const CompoundStatement* const parent_;
     const sem::Function* const function_;
     sem::Behaviors behaviors_{sem::Behavior::kNext};
     bool is_reachable_ = true;
+    builtin::DiagnosticRuleSeverities diagnostic_severities_;
 };
 
 /// CompoundStatement is the base class of statements that can hold other
 /// statements.
-class CompoundStatement : public Castable<Statement, Statement> {
+class CompoundStatement : public utils::Castable<CompoundStatement, Statement> {
   public:
     /// Constructor
     /// @param declaration the AST node for this statement

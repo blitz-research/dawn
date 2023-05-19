@@ -32,7 +32,7 @@ class CommandRecordingContext;
 class Device;
 struct MTLSharedEventAndSignalValue;
 
-MTLPixelFormat MetalPixelFormat(wgpu::TextureFormat format);
+MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat format);
 MaybeError ValidateIOSurfaceCanBeWrapped(const DeviceBase* device,
                                          const TextureDescriptor* descriptor,
                                          IOSurfaceRef ioSurface);
@@ -55,8 +55,11 @@ class Texture final : public TextureBase {
     IOSurfaceRef GetIOSurface();
     NSPRef<id<MTLTexture>> CreateFormatView(wgpu::TextureFormat format);
 
-    void EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
-                                             const SubresourceRange& range);
+    bool ShouldKeepInitialized() const;
+
+    MTLBlitOption ComputeMTLBlitOption(Aspect aspect) const;
+    MaybeError EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
+                                                   const SubresourceRange& range);
 
     void SynchronizeTextureBeforeUse(CommandRecordingContext* commandContext);
     void IOSurfaceEndAccess(ExternalImageIOSurfaceEndAccessDescriptor* descriptor);
@@ -75,6 +78,7 @@ class Texture final : public TextureBase {
     void InitializeAsWrapping(const TextureDescriptor* descriptor, NSPRef<id<MTLTexture>> wrapped);
 
     void DestroyImpl() override;
+    void SetLabelImpl() override;
 
     MaybeError ClearTexture(CommandRecordingContext* commandContext,
                             const SubresourceRange& range,
@@ -105,6 +109,7 @@ class TextureView final : public TextureViewBase {
     using TextureViewBase::TextureViewBase;
     MaybeError Initialize(const TextureViewDescriptor* descriptor);
     void DestroyImpl() override;
+    void SetLabelImpl() override;
 
     NSPRef<id<MTLTexture>> mMtlTextureView;
 };

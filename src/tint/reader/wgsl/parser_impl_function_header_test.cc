@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/ast/test_helper.h"
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 
 namespace tint::reader::wgsl {
@@ -24,11 +25,11 @@ TEST_F(ParserImplTest, FunctionHeader) {
     EXPECT_TRUE(f.matched);
     EXPECT_FALSE(f.errored);
 
-    EXPECT_EQ(f->name, "main");
+    ast::CheckIdentifier(f->name, "main");
     ASSERT_EQ(f->params.Length(), 2u);
-    EXPECT_EQ(f->params[0]->symbol, p->builder().Symbols().Get("a"));
-    EXPECT_EQ(f->params[1]->symbol, p->builder().Symbols().Get("b"));
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->params[0]->name->symbol, p->builder().Symbols().Get("a"));
+    EXPECT_EQ(f->params[1]->name->symbol, p->builder().Symbols().Get("b"));
+    EXPECT_EQ(f->return_type, nullptr);
 }
 
 TEST_F(ParserImplTest, FunctionHeader_TrailingComma) {
@@ -37,10 +38,10 @@ TEST_F(ParserImplTest, FunctionHeader_TrailingComma) {
     EXPECT_TRUE(f.matched);
     EXPECT_FALSE(f.errored);
 
-    EXPECT_EQ(f->name, "main");
+    ast::CheckIdentifier(f->name, "main");
     ASSERT_EQ(f->params.Length(), 1u);
-    EXPECT_EQ(f->params[0]->symbol, p->builder().Symbols().Get("a"));
-    EXPECT_TRUE(f->return_type->Is<ast::Void>());
+    EXPECT_EQ(f->params[0]->name->symbol, p->builder().Symbols().Get("a"));
+    EXPECT_EQ(f->return_type, nullptr);
 }
 
 TEST_F(ParserImplTest, FunctionHeader_AttributeReturnType) {
@@ -50,9 +51,9 @@ TEST_F(ParserImplTest, FunctionHeader_AttributeReturnType) {
     EXPECT_TRUE(f.matched);
     EXPECT_FALSE(f.errored);
 
-    EXPECT_EQ(f->name, "main");
+    ast::CheckIdentifier(f->name, "main");
     EXPECT_EQ(f->params.Length(), 0u);
-    EXPECT_TRUE(f->return_type->Is<ast::F32>());
+    ast::CheckIdentifier(f->return_type, "f32");
     ASSERT_EQ(f->return_type_attributes.Length(), 1u);
 
     auto* loc = f->return_type_attributes[0]->As<ast::LocationAttribute>();
@@ -69,9 +70,9 @@ TEST_F(ParserImplTest, FunctionHeader_InvariantReturnType) {
     EXPECT_TRUE(f.matched);
     EXPECT_FALSE(f.errored);
 
-    EXPECT_EQ(f->name, "main");
+    ast::CheckIdentifier(f->name, "main");
     EXPECT_EQ(f->params.Length(), 0u);
-    EXPECT_TRUE(f->return_type->Is<ast::F32>());
+    ast::CheckIdentifier(f->return_type, "f32");
     ASSERT_EQ(f->return_type_attributes.Length(), 1u);
     EXPECT_TRUE(f->return_type_attributes[0]->Is<ast::InvariantAttribute>());
 }

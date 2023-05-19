@@ -17,19 +17,27 @@
 
 #include "src/tint/ast/expression.h"
 
+// Forward declarations
+namespace tint::ast {
+class Identifier;
+}
+
 namespace tint::ast {
 
 /// An identifier expression
-class IdentifierExpression final : public Castable<IdentifierExpression, Expression> {
+class IdentifierExpression final : public utils::Castable<IdentifierExpression, Expression> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
-    /// @param sym the symbol for the identifier
-    IdentifierExpression(ProgramID pid, NodeID nid, const Source& src, Symbol sym);
-    /// Move constructor
-    IdentifierExpression(IdentifierExpression&&);
+    /// @param identifier the identifier
+    IdentifierExpression(ProgramID pid,
+                         NodeID nid,
+                         const Source& src,
+                         const Identifier* identifier);
+
+    /// Destructor
     ~IdentifierExpression() override;
 
     /// Clones this node and all transitive child nodes using the `CloneContext`
@@ -38,8 +46,8 @@ class IdentifierExpression final : public Castable<IdentifierExpression, Express
     /// @return the newly cloned node
     const IdentifierExpression* Clone(CloneContext* ctx) const override;
 
-    /// The symbol for the identifier
-    const Symbol symbol;
+    /// The identifier for the expression
+    Identifier const* const identifier;
 };
 
 }  // namespace tint::ast

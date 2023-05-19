@@ -15,15 +15,13 @@
 #include <cmath>
 #include <vector>
 
-#include "dawn/tests/unittests/validation/DeprecatedAPITests.h"
-#include "dawn/tests/unittests/validation/ValidationTest.h"
-
 #include "dawn/common/Constants.h"
-
+#include "dawn/tests/unittests/validation/ValidationTest.h"
 #include "dawn/utils/ComboRenderBundleEncoderDescriptor.h"
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
 
 class RenderPassDescriptorValidationTest : public ValidationTest {
@@ -553,13 +551,13 @@ TEST_F(RenderPassDescriptorValidationTest, MaxDrawCount) {
     constexpr uint64_t kMaxDrawCount = 16;
 
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
 
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
 
     utils::ComboRenderPipelineDescriptor pipelineDescriptor;
@@ -1052,6 +1050,7 @@ TEST_F(RenderPassDescriptorValidationTest, UseNaNOrINFINITYAsColorOrDepthClearVa
         wgpu::TextureView depth =
             Create2DAttachment(device, 1, 1, wgpu::TextureFormat::Depth24Plus);
         utils::ComboRenderPassDescriptor renderPass({color}, depth);
+        renderPass.cDepthStencilAttachmentInfo.depthLoadOp = wgpu::LoadOp::Clear;
         renderPass.cDepthStencilAttachmentInfo.stencilLoadOp = wgpu::LoadOp::Undefined;
         renderPass.cDepthStencilAttachmentInfo.stencilStoreOp = wgpu::StoreOp::Undefined;
         renderPass.cDepthStencilAttachmentInfo.depthClearValue = NAN;
@@ -1063,6 +1062,7 @@ TEST_F(RenderPassDescriptorValidationTest, UseNaNOrINFINITYAsColorOrDepthClearVa
         wgpu::TextureView depth =
             Create2DAttachment(device, 1, 1, wgpu::TextureFormat::Depth24Plus);
         utils::ComboRenderPassDescriptor renderPass({color}, depth);
+        renderPass.cDepthStencilAttachmentInfo.depthLoadOp = wgpu::LoadOp::Clear;
         renderPass.cDepthStencilAttachmentInfo.stencilLoadOp = wgpu::LoadOp::Undefined;
         renderPass.cDepthStencilAttachmentInfo.stencilStoreOp = wgpu::StoreOp::Undefined;
         renderPass.cDepthStencilAttachmentInfo.depthClearValue = INFINITY;
@@ -1126,6 +1126,45 @@ TEST_F(RenderPassDescriptorValidationTest, ValidateDepthClearValueRange) {
     AssertBeginRenderPassSuccess(&renderPass);
 }
 
+// Tests that default depthClearValue is required if attachment has a depth aspect and depthLoadOp
+// is clear.
+TEST_F(RenderPassDescriptorValidationTest, DefaultDepthClearValue) {
+    wgpu::TextureView depthView =
+        Create2DAttachment(device, 1, 1, wgpu::TextureFormat::Depth24Plus);
+    wgpu::TextureView stencilView = Create2DAttachment(device, 1, 1, wgpu::TextureFormat::Stencil8);
+
+    wgpu::RenderPassDepthStencilAttachment depthStencilAttachment;
+
+    wgpu::RenderPassDescriptor renderPassDescriptor;
+    renderPassDescriptor.colorAttachmentCount = 0;
+    renderPassDescriptor.colorAttachments = nullptr;
+    renderPassDescriptor.depthStencilAttachment = &depthStencilAttachment;
+
+    // Default depthClearValue should be accepted if attachment doesn't have
+    // a depth aspect.
+    depthStencilAttachment.view = stencilView;
+    depthStencilAttachment.stencilLoadOp = wgpu::LoadOp::Load;
+    depthStencilAttachment.stencilStoreOp = wgpu::StoreOp::Store;
+    AssertBeginRenderPassSuccess(&renderPassDescriptor);
+
+    // Default depthClearValue should be accepted if depthLoadOp is not clear.
+    depthStencilAttachment.view = depthView;
+    depthStencilAttachment.stencilLoadOp = wgpu::LoadOp::Undefined;
+    depthStencilAttachment.stencilStoreOp = wgpu::StoreOp::Undefined;
+    depthStencilAttachment.depthLoadOp = wgpu::LoadOp::Load;
+    depthStencilAttachment.depthStoreOp = wgpu::StoreOp::Store;
+    AssertBeginRenderPassSuccess(&renderPassDescriptor);
+
+    // Default depthClearValue should fail the validation
+    // if attachment has a depth aspect and depthLoadOp is clear.
+    depthStencilAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+    AssertBeginRenderPassError(&renderPassDescriptor);
+
+    // The validation should pass if valid depthClearValue is provided.
+    depthStencilAttachment.depthClearValue = 0.0f;
+    AssertBeginRenderPassSuccess(&renderPassDescriptor);
+}
+
 TEST_F(RenderPassDescriptorValidationTest, ValidateDepthStencilReadOnly) {
     wgpu::TextureView colorView = Create2DAttachment(device, 1, 1, wgpu::TextureFormat::RGBA8Unorm);
     wgpu::TextureView depthStencilView =
@@ -1155,7 +1194,7 @@ TEST_F(RenderPassDescriptorValidationTest, ValidateDepthStencilReadOnly) {
         renderPass.cDepthStencilAttachmentInfo.stencilLoadOp = wgpu::LoadOp::Load;
         renderPass.cDepthStencilAttachmentInfo.stencilStoreOp = wgpu::StoreOp::Store;
         renderPass.cDepthStencilAttachmentInfo.stencilReadOnly = false;
-        EXPECT_DEPRECATION_WARNING(AssertBeginRenderPassSuccess(&renderPass));
+        AssertBeginRenderPassError(&renderPass);
     }
 
     // Tests that a pass with mismatched depthReadOnly and stencilReadOnly values fails when
@@ -1244,6 +1283,19 @@ TEST_F(RenderPassDescriptorValidationTest, ValidateDepthStencilReadOnly) {
         renderPass.cDepthStencilAttachmentInfo.depthReadOnly = true;
         renderPass.cDepthStencilAttachmentInfo.stencilLoadOp = wgpu::LoadOp::Load;
         renderPass.cDepthStencilAttachmentInfo.stencilStoreOp = wgpu::StoreOp::Discard;
+        renderPass.cDepthStencilAttachmentInfo.stencilReadOnly = true;
+        AssertBeginRenderPassError(&renderPass);
+    }
+
+    // Tests that a pass with loadOp set to load, storeOp set to store, and readOnly set to true
+    // fails.
+    {
+        utils::ComboRenderPassDescriptor renderPass({colorView}, depthStencilView);
+        renderPass.cDepthStencilAttachmentInfo.depthLoadOp = wgpu::LoadOp::Load;
+        renderPass.cDepthStencilAttachmentInfo.depthStoreOp = wgpu::StoreOp::Store;
+        renderPass.cDepthStencilAttachmentInfo.depthReadOnly = true;
+        renderPass.cDepthStencilAttachmentInfo.stencilLoadOp = wgpu::LoadOp::Load;
+        renderPass.cDepthStencilAttachmentInfo.stencilStoreOp = wgpu::StoreOp::Store;
         renderPass.cDepthStencilAttachmentInfo.stencilReadOnly = true;
         AssertBeginRenderPassError(&renderPass);
     }
@@ -1409,7 +1461,7 @@ TEST_F(RenderPassDescriptorValidationTest, ValidateDepthStencilAllAspects) {
 
 // Tests validation for per-pixel accounting for render targets. The tests currently assume that the
 // default maxColorAttachmentBytesPerSample limit of 32 is used.
-TEST_P(DeprecationTests, RenderPassColorAttachmentBytesPerSample) {
+TEST_F(RenderPassDescriptorValidationTest, RenderPassColorAttachmentBytesPerSample) {
     struct TestCase {
         std::vector<wgpu::TextureFormat> formats;
         bool success;
@@ -1465,12 +1517,12 @@ TEST_P(DeprecationTests, RenderPassColorAttachmentBytesPerSample) {
         }
         utils::ComboRenderPassDescriptor descriptor(colorAttachmentInfo);
         wgpu::CommandEncoder commandEncoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder renderPassEncoder = commandEncoder.BeginRenderPass(&descriptor);
+        renderPassEncoder.End();
         if (testCase.success) {
-            wgpu::RenderPassEncoder renderPassEncoder = commandEncoder.BeginRenderPass(&descriptor);
-            renderPassEncoder.End();
             commandEncoder.Finish();
         } else {
-            EXPECT_DEPRECATION_WARNING_ONLY(commandEncoder.BeginRenderPass(&descriptor));
+            ASSERT_DEVICE_ERROR(commandEncoder.Finish());
         }
     }
 }
@@ -1478,3 +1530,4 @@ TEST_P(DeprecationTests, RenderPassColorAttachmentBytesPerSample) {
 // TODO(cwallez@chromium.org): Constraints on attachment aliasing?
 
 }  // anonymous namespace
+}  // namespace dawn

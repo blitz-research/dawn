@@ -1,11 +1,11 @@
 struct S {
   /* @offset(0) */
-  a : vec4<f32>,
+  a : vec4f,
   /* @offset(16) */
   b : i32,
 }
 
-type RTArr = array<S>;
+alias RTArr = array<S>;
 
 struct sb_block {
   /* @offset(0) */

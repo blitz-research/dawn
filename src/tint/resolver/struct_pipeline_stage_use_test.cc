@@ -16,6 +16,7 @@
 
 #include "gmock/gmock.h"
 #include "src/tint/ast/stage_attribute.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/resolver/resolver_test_helper.h"
 #include "src/tint/sem/struct.h"
 
@@ -33,7 +34,7 @@ TEST_F(ResolverPipelineStageUseTest, UnusedStruct) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_TRUE(sem->PipelineStageUses().empty());
 }
@@ -45,7 +46,7 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsNonEntryPointParam) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_TRUE(sem->PipelineStageUses().empty());
 }
@@ -53,12 +54,12 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsNonEntryPointParam) {
 TEST_F(ResolverPipelineStageUseTest, StructUsedAsNonEntryPointReturnType) {
     auto* s = Structure("S", utils::Vector{Member("a", ty.f32(), utils::Vector{Location(0_a)})});
 
-    Func("foo", utils::Empty, ty.Of(s), utils::Vector{Return(Construct(ty.Of(s), Expr(0_f)))},
+    Func("foo", utils::Empty, ty.Of(s), utils::Vector{Return(Call(ty.Of(s), Expr(0_f)))},
          utils::Empty);
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_TRUE(sem->PipelineStageUses().empty());
 }
@@ -67,29 +68,29 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsVertexShaderParam) {
     auto* s = Structure("S", utils::Vector{Member("a", ty.f32(), utils::Vector{Location(0_a)})});
 
     Func("main", utils::Vector{Param("param", ty.Of(s))}, ty.vec4<f32>(),
-         utils::Vector{Return(Construct(ty.vec4<f32>()))},
+         utils::Vector{Return(Call(ty.vec4<f32>()))},
          utils::Vector{Stage(ast::PipelineStage::kVertex)},
-         utils::Vector{Builtin(ast::BuiltinValue::kPosition)});
+         utils::Vector{Builtin(builtin::BuiltinValue::kPosition)});
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_THAT(sem->PipelineStageUses(),
                 UnorderedElementsAre(type::PipelineStageUsage::kVertexInput));
 }
 
 TEST_F(ResolverPipelineStageUseTest, StructUsedAsVertexShaderReturnType) {
-    auto* s =
-        Structure("S", utils::Vector{Member("a", ty.vec4<f32>(),
-                                            utils::Vector{Builtin(ast::BuiltinValue::kPosition)})});
+    auto* s = Structure(
+        "S", utils::Vector{Member("a", ty.vec4<f32>(),
+                                  utils::Vector{Builtin(builtin::BuiltinValue::kPosition)})});
 
-    Func("main", utils::Empty, ty.Of(s), utils::Vector{Return(Construct(ty.Of(s)))},
+    Func("main", utils::Empty, ty.Of(s), utils::Vector{Return(Call(ty.Of(s)))},
          utils::Vector{Stage(ast::PipelineStage::kVertex)});
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_THAT(sem->PipelineStageUses(),
                 UnorderedElementsAre(type::PipelineStageUsage::kVertexOutput));
@@ -103,7 +104,7 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsFragmentShaderParam) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_THAT(sem->PipelineStageUses(),
                 UnorderedElementsAre(type::PipelineStageUsage::kFragmentInput));
@@ -112,12 +113,12 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsFragmentShaderParam) {
 TEST_F(ResolverPipelineStageUseTest, StructUsedAsFragmentShaderReturnType) {
     auto* s = Structure("S", utils::Vector{Member("a", ty.f32(), utils::Vector{Location(0_a)})});
 
-    Func("main", utils::Empty, ty.Of(s), utils::Vector{Return(Construct(ty.Of(s), Expr(0_f)))},
+    Func("main", utils::Empty, ty.Of(s), utils::Vector{Return(Call(ty.Of(s), Expr(0_f)))},
          utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_THAT(sem->PipelineStageUses(),
                 UnorderedElementsAre(type::PipelineStageUsage::kFragmentOutput));
@@ -125,26 +126,27 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsFragmentShaderReturnType) {
 
 TEST_F(ResolverPipelineStageUseTest, StructUsedAsComputeShaderParam) {
     auto* s = Structure(
-        "S", utils::Vector{Member(
-                 "a", ty.u32(), utils::Vector{Builtin(ast::BuiltinValue::kLocalInvocationIndex)})});
+        "S",
+        utils::Vector{Member(
+            "a", ty.u32(), utils::Vector{Builtin(builtin::BuiltinValue::kLocalInvocationIndex)})});
 
     Func("main", utils::Vector{Param("param", ty.Of(s))}, ty.void_(), utils::Empty,
          utils::Vector{Stage(ast::PipelineStage::kCompute), WorkgroupSize(1_i)});
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_THAT(sem->PipelineStageUses(),
                 UnorderedElementsAre(type::PipelineStageUsage::kComputeInput));
 }
 
 TEST_F(ResolverPipelineStageUseTest, StructUsedMultipleStages) {
-    auto* s =
-        Structure("S", utils::Vector{Member("a", ty.vec4<f32>(),
-                                            utils::Vector{Builtin(ast::BuiltinValue::kPosition)})});
+    auto* s = Structure(
+        "S", utils::Vector{Member("a", ty.vec4<f32>(),
+                                  utils::Vector{Builtin(builtin::BuiltinValue::kPosition)})});
 
-    Func("vert_main", utils::Empty, ty.Of(s), utils::Vector{Return(Construct(ty.Of(s)))},
+    Func("vert_main", utils::Empty, ty.Of(s), utils::Vector{Return(Call(ty.Of(s)))},
          utils::Vector{Stage(ast::PipelineStage::kVertex)});
 
     Func("frag_main", utils::Vector{Param("param", ty.Of(s))}, ty.void_(), utils::Empty,
@@ -152,7 +154,7 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedMultipleStages) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_THAT(sem->PipelineStageUses(),
                 UnorderedElementsAre(type::PipelineStageUsage::kVertexOutput,
@@ -168,7 +170,7 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsShaderParamViaAlias) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_THAT(sem->PipelineStageUses(),
                 UnorderedElementsAre(type::PipelineStageUsage::kFragmentInput));
@@ -182,10 +184,10 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsShaderParamLocationSet) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     ASSERT_EQ(1u, sem->Members().Length());
-    EXPECT_EQ(3u, sem->Members()[0]->Location());
+    EXPECT_EQ(3u, sem->Members()[0]->Attributes().location);
 }
 
 TEST_F(ResolverPipelineStageUseTest, StructUsedAsShaderReturnTypeViaAlias) {
@@ -193,12 +195,12 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsShaderReturnTypeViaAlias) {
     auto* s_alias = Alias("S_alias", ty.Of(s));
 
     Func("main", utils::Empty, ty.Of(s_alias),
-         utils::Vector{Return(Construct(ty.Of(s_alias), Expr(0_f)))},
+         utils::Vector{Return(Call(ty.Of(s_alias), Expr(0_f)))},
          utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     EXPECT_THAT(sem->PipelineStageUses(),
                 UnorderedElementsAre(type::PipelineStageUsage::kFragmentOutput));
@@ -207,15 +209,15 @@ TEST_F(ResolverPipelineStageUseTest, StructUsedAsShaderReturnTypeViaAlias) {
 TEST_F(ResolverPipelineStageUseTest, StructUsedAsShaderReturnTypeLocationSet) {
     auto* s = Structure("S", utils::Vector{Member("a", ty.f32(), utils::Vector{Location(3_a)})});
 
-    Func("main", utils::Empty, ty.Of(s), utils::Vector{Return(Construct(ty.Of(s), Expr(0_f)))},
+    Func("main", utils::Empty, ty.Of(s), utils::Vector{Return(Call(ty.Of(s), Expr(0_f)))},
          utils::Vector{Stage(ast::PipelineStage::kFragment)});
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = TypeOf(s)->As<sem::Struct>();
+    auto* sem = TypeOf(s)->As<type::Struct>();
     ASSERT_NE(sem, nullptr);
     ASSERT_EQ(1u, sem->Members().Length());
-    EXPECT_EQ(3u, sem->Members()[0]->Location());
+    EXPECT_EQ(3u, sem->Members()[0]->Attributes().location);
 }
 
 }  // namespace

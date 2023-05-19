@@ -13,11 +13,15 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <vector>
 
 #include "dawn/common/Assert.h"
 #include "dawn/tests/DawnTest.h"
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
+
+namespace dawn {
+namespace {
 
 class MultisampledRenderingTest : public DawnTest {
   protected:
@@ -47,13 +51,13 @@ class MultisampledRenderingTest : public DawnTest {
         bool flipTriangle = false) {
         const char* kFsOneOutputWithDepth = R"(
             struct U {
-                color : vec4<f32>,
+                color : vec4f,
                 depth : f32,
             }
             @group(0) @binding(0) var<uniform> uBuffer : U;
 
             struct FragmentOut {
-                @location(0) color : vec4<f32>,
+                @location(0) color : vec4f,
                 @builtin(frag_depth) depth : f32,
             }
 
@@ -66,11 +70,11 @@ class MultisampledRenderingTest : public DawnTest {
 
         const char* kFsOneOutputWithoutDepth = R"(
             struct U {
-                color : vec4<f32>
+                color : vec4f
             }
             @group(0) @binding(0) var<uniform> uBuffer : U;
 
-            @fragment fn main() -> @location(0) vec4<f32> {
+            @fragment fn main() -> @location(0) vec4f {
                 return uBuffer.color;
             })";
 
@@ -85,14 +89,14 @@ class MultisampledRenderingTest : public DawnTest {
         bool alphaToCoverageEnabled = false) {
         const char* kFsTwoOutputs = R"(
             struct U {
-                color0 : vec4<f32>,
-                color1 : vec4<f32>,
+                color0 : vec4f,
+                color1 : vec4f,
             }
             @group(0) @binding(0) var<uniform> uBuffer : U;
 
             struct FragmentOut {
-                @location(0) color0 : vec4<f32>,
-                @location(1) color1 : vec4<f32>,
+                @location(0) color0 : vec4f,
+                @location(1) color1 : vec4f,
             }
 
             @fragment fn main() -> FragmentOut {
@@ -109,7 +113,8 @@ class MultisampledRenderingTest : public DawnTest {
     wgpu::Texture CreateTextureForRenderAttachment(wgpu::TextureFormat format,
                                                    uint32_t sampleCount,
                                                    uint32_t mipLevelCount = 1,
-                                                   uint32_t arrayLayerCount = 1) {
+                                                   uint32_t arrayLayerCount = 1,
+                                                   bool transientAttachment = false) {
         wgpu::TextureDescriptor descriptor;
         descriptor.dimension = wgpu::TextureDimension::e2D;
         descriptor.size.width = kWidth << (mipLevelCount - 1);
@@ -118,7 +123,12 @@ class MultisampledRenderingTest : public DawnTest {
         descriptor.sampleCount = sampleCount;
         descriptor.format = format;
         descriptor.mipLevelCount = mipLevelCount;
-        descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
+        if (transientAttachment) {
+            descriptor.usage =
+                wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TransientAttachment;
+        } else {
+            descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
+        }
         return device.CreateTexture(&descriptor);
     }
 
@@ -226,25 +236,25 @@ class MultisampledRenderingTest : public DawnTest {
         // only two of the samples will be touched.
         const char* vs = R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 3>(
-                    vec2<f32>(-1.0,  1.0),
-                    vec2<f32>( 1.0,  1.0),
-                    vec2<f32>( 1.0, -1.0)
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f(-1.0,  1.0),
+                    vec2f( 1.0,  1.0),
+                    vec2f( 1.0, -1.0)
                 );
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             })";
 
         // Draw a bottom-left triangle.
         const char* vsFlipped = R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 3>(
-                    vec2<f32>(-1.0,  1.0),
-                    vec2<f32>( 1.0,  1.0),
-                    vec2<f32>(-1.0, -1.0)
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f(-1.0,  1.0),
+                    vec2f( 1.0,  1.0),
+                    vec2f(-1.0, -1.0)
                 );
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             })";
 
         if (flipTriangle) {
@@ -769,12 +779,12 @@ TEST_P(MultisampledRenderingTest, ResolveInto2DTextureWithSampleMaskAndShaderOut
     constexpr uint32_t kSampleMask = kFirstSampleMaskBit | kThirdSampleMaskBit;
     const char* fs = R"(
         struct U {
-            color : vec4<f32>
+            color : vec4f
         }
         @group(0) @binding(0) var<uniform> uBuffer : U;
 
         struct FragmentOut {
-            @location(0) color : vec4<f32>,
+            @location(0) color : vec4f,
             @builtin(sample_mask) sampleMask : u32,
         }
 
@@ -825,14 +835,14 @@ TEST_P(MultisampledRenderingTest, ResolveIntoMultipleResolveTargetsWithShaderOut
     constexpr float kMSAACoverage = 0.25f;
     const char* fs = R"(
         struct U {
-            color0 : vec4<f32>,
-            color1 : vec4<f32>,
+            color0 : vec4f,
+            color1 : vec4f,
         }
         @group(0) @binding(0) var<uniform> uBuffer : U;
 
         struct FragmentOut {
-            @location(0) color0 : vec4<f32>,
-            @location(1) color1 : vec4<f32>,
+            @location(0) color0 : vec4f,
+            @location(1) color1 : vec4f,
             @builtin(sample_mask) sampleMask : u32,
         }
 
@@ -1129,7 +1139,60 @@ TEST_P(MultisampledRenderingTest, ResolveInto2DTextureWithAlphaToCoverageAndRast
     }
 }
 
+class MultisampledRenderingWithTransientAttachmentTest : public MultisampledRenderingTest {
+    void SetUp() override {
+        MultisampledRenderingTest::SetUp();
+
+        // Skip all tests if the transient attachments feature is not supported.
+        DAWN_TEST_UNSUPPORTED_IF(!SupportsFeatures({wgpu::FeatureName::TransientAttachments}));
+    }
+
+    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
+        std::vector<wgpu::FeatureName> requiredFeatures = {};
+        if (SupportsFeatures({wgpu::FeatureName::TransientAttachments})) {
+            requiredFeatures.push_back(wgpu::FeatureName::TransientAttachments);
+        }
+        return requiredFeatures;
+    }
+};
+
+// Test using one multisampled color transient attachment with resolve target can render correctly.
+TEST_P(MultisampledRenderingWithTransientAttachmentTest, ResolveTransientAttachmentInto2DTexture) {
+    constexpr bool kTestDepth = false;
+    wgpu::RenderPipeline pipeline = CreateRenderPipelineWithOneOutputForTest(kTestDepth);
+
+    auto transientMultisampledColorTexture =
+        CreateTextureForRenderAttachment(kColorFormat, kSampleCount,
+                                         /*mipLevelCount=*/1,
+                                         /*arrayLayerCount=*/1,
+                                         /*transientAttachment=*/true);
+    auto transientMultisampledColorView = transientMultisampledColorTexture.CreateView();
+    constexpr wgpu::Color kGreen = {0.0f, 0.8f, 0.0f, 0.8f};
+
+    wgpu::CommandEncoder commandEncoder = device.CreateCommandEncoder();
+
+    // Draw a green triangle.
+    {
+        utils::ComboRenderPassDescriptor renderPass = CreateComboRenderPassDescriptorForTest(
+            {transientMultisampledColorView}, {mResolveView}, wgpu::LoadOp::Clear,
+            wgpu::LoadOp::Clear, kTestDepth);
+
+        // Note: It is not possible to store into a transient attachment.
+        renderPass.cColorAttachments[0].storeOp = wgpu::StoreOp::Discard;
+
+        std::array<float, 4> kUniformData = {kGreen.r, kGreen.g, kGreen.b, kGreen.a};
+        constexpr uint32_t kSize = sizeof(kUniformData);
+        EncodeRenderPassForTest(commandEncoder, renderPass, pipeline, kUniformData.data(), kSize);
+    }
+
+    wgpu::CommandBuffer commandBuffer = commandEncoder.Finish();
+    queue.Submit(1, &commandBuffer);
+
+    VerifyResolveTarget(kGreen, mResolveTexture);
+}
+
 DAWN_INSTANTIATE_TEST(MultisampledRenderingTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({}, {"use_d3d12_resource_heap_tier2"}),
                       D3D12Backend({}, {"use_d3d12_render_pass"}),
@@ -1142,3 +1205,21 @@ DAWN_INSTANTIATE_TEST(MultisampledRenderingTest,
                       MetalBackend({"always_resolve_into_zero_level_and_layer"}),
                       MetalBackend({"always_resolve_into_zero_level_and_layer",
                                     "emulate_store_and_msaa_resolve"}));
+
+DAWN_INSTANTIATE_TEST(MultisampledRenderingWithTransientAttachmentTest,
+                      D3D11Backend(),
+                      D3D12Backend(),
+                      D3D12Backend({}, {"use_d3d12_resource_heap_tier2"}),
+                      D3D12Backend({}, {"use_d3d12_render_pass"}),
+                      MetalBackend(),
+                      OpenGLBackend(),
+                      OpenGLESBackend(),
+                      VulkanBackend(),
+                      VulkanBackend({"always_resolve_into_zero_level_and_layer"}),
+                      MetalBackend({"emulate_store_and_msaa_resolve"}),
+                      MetalBackend({"always_resolve_into_zero_level_and_layer"}),
+                      MetalBackend({"always_resolve_into_zero_level_and_layer",
+                                    "emulate_store_and_msaa_resolve"}));
+
+}  // anonymous namespace
+}  // namespace dawn

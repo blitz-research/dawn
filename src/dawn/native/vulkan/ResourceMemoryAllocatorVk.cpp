@@ -124,7 +124,8 @@ ResourceMemoryAllocator::~ResourceMemoryAllocator() = default;
 
 ResultOrError<ResourceMemoryAllocation> ResourceMemoryAllocator::Allocate(
     const VkMemoryRequirements& requirements,
-    MemoryKind kind) {
+    MemoryKind kind,
+    bool forceDisableSubAllocation) {
     // The Vulkan spec guarantees at least on memory type is valid.
     int memoryType = FindBestTypeIndex(requirements, kind);
     ASSERT(memoryType >= 0);
@@ -134,7 +135,8 @@ ResultOrError<ResourceMemoryAllocation> ResourceMemoryAllocator::Allocate(
     // Sub-allocate non-mappable resources because at the moment the mapped pointer
     // is part of the resource and not the heap, which doesn't match the Vulkan model.
     // TODO(crbug.com/dawn/849): allow sub-allocating mappable resources, maybe.
-    if (requirements.size < kMaxSizeForSubAllocation && kind != MemoryKind::LinearMappable &&
+    if (!forceDisableSubAllocation && requirements.size < kMaxSizeForSubAllocation &&
+        kind != MemoryKind::LinearMappable &&
         !mDevice->IsToggleEnabled(Toggle::DisableResourceSuballocation)) {
         // When sub-allocating, Vulkan requires that we respect bufferImageGranularity. Some
         // hardware puts information on the memory's page table entry and allocating a linear
@@ -256,7 +258,23 @@ int ResourceMemoryAllocator::FindBestTypeIndex(VkMemoryRequirements requirements
             continue;
         }
 
-        // For non-mappable resources, favor device local memory.
+        // For non-mappable resources that can be lazily allocated, favor lazy
+        // allocation (note: this is a more important property than that of
+        // device local memory and hence is checked first).
+        bool currentLazilyAllocated =
+            info.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+        bool bestLazilyAllocated =
+            info.memoryTypes[bestType].propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+        if ((kind == MemoryKind::LazilyAllocated) &&
+            (currentLazilyAllocated != bestLazilyAllocated)) {
+            if (currentLazilyAllocated) {
+                bestType = static_cast<int>(i);
+            }
+            continue;
+        }
+
+        // For non-mappable, non-lazily-allocated resources, favor device local
+        // memory.
         bool currentDeviceLocal =
             info.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         bool bestDeviceLocal =

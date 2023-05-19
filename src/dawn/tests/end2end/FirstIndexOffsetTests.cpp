@@ -21,6 +21,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr uint32_t kRTSize = 1;
 
 enum class DrawMode {
@@ -39,12 +42,14 @@ bool IsIndirectDraw(DrawMode mode) {
     return mode == DrawMode::NonIndexedIndirect || mode == DrawMode::IndexedIndirect;
 }
 
-namespace dawn {
+}  // anonymous namespace
+
 template <>
 struct IsDawnBitmask<CheckIndex> {
     static constexpr bool enable = true;
 };
-}  // namespace dawn
+
+namespace {
 
 class FirstIndexOffsetTests : public DawnTest {
   public:
@@ -108,8 +113,8 @@ void FirstIndexOffsetTests::TestImpl(DrawMode mode,
     std::stringstream fragmentInputs;
     std::stringstream fragmentBody;
 
-    vertexInputs << "  @location(0) position : vec4<f32>,\n";
-    vertexOutputs << "  @builtin(position) position : vec4<f32>,\n";
+    vertexInputs << "  @location(0) position : vec4f,\n";
+    vertexOutputs << "  @builtin(position) position : vec4f,\n";
 
     if ((checkIndex & CheckIndex::Vertex) != 0) {
         vertexInputs << "  @builtin(vertex_index) vertex_index : u32,\n";
@@ -322,8 +327,12 @@ TEST_P(FirstIndexOffsetTests, IndexedIndirectBothOffset) {
 }
 
 DAWN_INSTANTIATE_TEST(FirstIndexOffsetTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

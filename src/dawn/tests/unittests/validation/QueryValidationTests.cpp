@@ -17,6 +17,9 @@
 #include "dawn/tests/unittests/validation/ValidationTest.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class QuerySetValidationTest : public ValidationTest {
   protected:
     wgpu::QuerySet CreateQuerySet(
@@ -43,6 +46,14 @@ TEST_F(QuerySetValidationTest, CreationWithoutFeatures) {
     CreateQuerySet(device, wgpu::QueryType::Occlusion, 1);
 
     // Creating a query set for other types of queries fails without features enabled.
+    ASSERT_DEVICE_ERROR(CreateQuerySet(device, wgpu::QueryType::PipelineStatistics, 1,
+                                       {wgpu::PipelineStatisticName::VertexShaderInvocations}));
+    ASSERT_DEVICE_ERROR(CreateQuerySet(device, wgpu::QueryType::PipelineStatistics, 1,
+                                       {wgpu::PipelineStatisticName::ClipperPrimitivesOut}));
+    ASSERT_DEVICE_ERROR(CreateQuerySet(device, wgpu::QueryType::PipelineStatistics, 1,
+                                       {wgpu::PipelineStatisticName::ComputeShaderInvocations}));
+    ASSERT_DEVICE_ERROR(CreateQuerySet(device, wgpu::QueryType::PipelineStatistics, 1,
+                                       {wgpu::PipelineStatisticName::FragmentShaderInvocations}));
     ASSERT_DEVICE_ERROR(CreateQuerySet(device, wgpu::QueryType::PipelineStatistics, 1,
                                        {wgpu::PipelineStatisticName::VertexShaderInvocations}));
     ASSERT_DEVICE_ERROR(CreateQuerySet(device, wgpu::QueryType::Timestamp, 1));
@@ -265,17 +276,11 @@ TEST_F(OcclusionQueryValidationTest, InvalidBeginAndEnd) {
 
 class TimestampQueryValidationTest : public QuerySetValidationTest {
   protected:
-    WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter) override {
-        wgpu::DeviceDescriptor descriptor;
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::TimestampQuery};
         descriptor.requiredFeatures = requiredFeatures;
         descriptor.requiredFeaturesCount = 1;
-
-        wgpu::DawnTogglesDeviceDescriptor togglesDesc;
-        descriptor.nextInChain = &togglesDesc;
-        const char* forceDisabledToggles[1] = {"disallow_unsafe_apis"};
-        togglesDesc.forceDisabledToggles = forceDisabledToggles;
-        togglesDesc.forceDisabledTogglesCount = 1;
 
         return dawnAdapter.CreateDevice(&descriptor);
     }
@@ -383,13 +388,13 @@ TEST_F(TimestampQueryValidationTest, TimestampWritesOnComputePass) {
         ASSERT_DEVICE_ERROR(encoder.Finish());
     }
 
-    // Success to write timestamps to the same query index twice on same compute pass
+    // Fail to write timestamps to the same query index twice on same compute pass
     {
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         EncodeComputePassWithTimestampWrites(
             encoder, {{querySet, 0, wgpu::ComputePassTimestampLocation::Beginning},
                       {querySet, 0, wgpu::ComputePassTimestampLocation::End}});
-        encoder.Finish();
+        ASSERT_DEVICE_ERROR(encoder.Finish());
     }
 
     // Success to write timestamps at same location of different compute pass
@@ -564,8 +569,8 @@ TEST_F(TimestampQueryValidationTest, WriteTimestampOnCommandEncoder) {
 
 class TimestampQueryInsidePassesValidationTest : public QuerySetValidationTest {
   protected:
-    WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter) override {
-        wgpu::DeviceDescriptor descriptor;
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
         // The timestamp query feature must be supported if the timestamp query inside passes
         // feature is supported. Enable timestamp query for validating queries overwrite inside and
         // outside of the passes.
@@ -573,12 +578,6 @@ class TimestampQueryInsidePassesValidationTest : public QuerySetValidationTest {
                                                  wgpu::FeatureName::TimestampQueryInsidePasses};
         descriptor.requiredFeatures = requiredFeatures;
         descriptor.requiredFeaturesCount = 2;
-
-        wgpu::DawnTogglesDeviceDescriptor togglesDesc;
-        descriptor.nextInChain = &togglesDesc;
-        const char* forceDisabledToggles[1] = {"disallow_unsafe_apis"};
-        togglesDesc.forceDisabledToggles = forceDisabledToggles;
-        togglesDesc.forceDisabledTogglesCount = 1;
 
         return dawnAdapter.CreateDevice(&descriptor);
     }
@@ -713,19 +712,14 @@ TEST_F(TimestampQueryInsidePassesValidationTest, WriteTimestampOnRenderPassEncod
 
 class PipelineStatisticsQueryValidationTest : public QuerySetValidationTest {
   protected:
-    WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter) override {
-        wgpu::DeviceDescriptor descriptor;
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
+        // Create a device with pipeline statistic query feature required. Note that Pipeline
+        // statistic query is an unsafe API, while AllowUnsafeApis instance toggle is enabled
+        // when ValidationTest creating testing instance, so we can test it.
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::PipelineStatisticsQuery};
         descriptor.requiredFeatures = requiredFeatures;
         descriptor.requiredFeaturesCount = 1;
-
-        // TODO(crbug.com/1177506): Pipeline statistic query is an unsafe API, disable disallowing
-        // unsafe APIs to test it.
-        wgpu::DawnTogglesDeviceDescriptor togglesDesc;
-        descriptor.nextInChain = &togglesDesc;
-        const char* forceDisabledToggles[1] = {"disallow_unsafe_apis"};
-        togglesDesc.forceDisabledToggles = forceDisabledToggles;
-        togglesDesc.forceDisabledTogglesCount = 1;
 
         return dawnAdapter.CreateDevice(&descriptor);
     }
@@ -914,3 +908,6 @@ TEST_F(ResolveQuerySetValidationTest, ResolveToInvalidBufferAndOffset) {
         ASSERT_DEVICE_ERROR(queue.Submit(1, &commands));
     }
 }
+
+}  // anonymous namespace
+}  // namespace dawn

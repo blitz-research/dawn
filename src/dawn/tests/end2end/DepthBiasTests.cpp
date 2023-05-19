@@ -22,6 +22,9 @@
 #include "dawn/utils/TextureUtils.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr static unsigned int kRTSize = 2;
 
 enum class QuadAngle { Flat, TiltedX };
@@ -40,15 +43,15 @@ class DepthBiasTests : public DawnTest {
                 // Draw a square at z = 0.25
                 vertexSource = R"(
     @vertex
-    fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-        var pos = array<vec2<f32>, 6>(
-            vec2<f32>(-1.0, -1.0),
-            vec2<f32>( 1.0, -1.0),
-            vec2<f32>(-1.0,  1.0),
-            vec2<f32>(-1.0,  1.0),
-            vec2<f32>( 1.0, -1.0),
-            vec2<f32>( 1.0,  1.0));
-        return vec4<f32>(pos[VertexIndex], 0.25, 1.0);
+    fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+        var pos = array(
+            vec2f(-1.0, -1.0),
+            vec2f( 1.0, -1.0),
+            vec2f(-1.0,  1.0),
+            vec2f(-1.0,  1.0),
+            vec2f( 1.0, -1.0),
+            vec2f( 1.0,  1.0));
+        return vec4f(pos[VertexIndex], 0.25, 1.0);
     })";
                 break;
 
@@ -56,15 +59,15 @@ class DepthBiasTests : public DawnTest {
                 // Draw a square ranging from 0 to 0.5, bottom to top
                 vertexSource = R"(
     @vertex
-    fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-        var pos = array<vec3<f32>, 6>(
-            vec3<f32>(-1.0, -1.0, 0.0),
-            vec3<f32>( 1.0, -1.0, 0.0),
-            vec3<f32>(-1.0,  1.0, 0.5),
-            vec3<f32>(-1.0,  1.0, 0.5),
-            vec3<f32>( 1.0, -1.0, 0.0),
-            vec3<f32>( 1.0,  1.0, 0.5));
-        return vec4<f32>(pos[VertexIndex], 1.0);
+    fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+        var pos = array(
+            vec3f(-1.0, -1.0, 0.0),
+            vec3f( 1.0, -1.0, 0.0),
+            vec3f(-1.0,  1.0, 0.5),
+            vec3f(-1.0,  1.0, 0.5),
+            vec3f( 1.0, -1.0, 0.0),
+            vec3f( 1.0,  1.0, 0.5));
+        return vec4f(pos[VertexIndex], 1.0);
     })";
                 break;
         }
@@ -72,8 +75,8 @@ class DepthBiasTests : public DawnTest {
         wgpu::ShaderModule vertexModule = utils::CreateShaderModule(device, vertexSource);
 
         wgpu::ShaderModule fragmentModule = utils::CreateShaderModule(device, R"(
-    @fragment fn main() -> @location(0) vec4<f32> {
-        return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+    @fragment fn main() -> @location(0) vec4f {
+        return vec4f(1.0, 0.0, 0.0, 1.0);
     })");
 
         {
@@ -390,8 +393,12 @@ TEST_P(DepthBiasTests, PositiveSlopeBiasOn24bit) {
 }
 
 DAWN_INSTANTIATE_TEST(DepthBiasTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -23,7 +23,6 @@
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/VulkanBackend.h"
-#include "dawn/native/vulkan/AdapterVk.h"
 #include "dawn/native/vulkan/BackendVk.h"
 #include "dawn/native/vulkan/BindGroupLayoutVk.h"
 #include "dawn/native/vulkan/BindGroupVk.h"
@@ -31,6 +30,7 @@
 #include "dawn/native/vulkan/CommandBufferVk.h"
 #include "dawn/native/vulkan/ComputePipelineVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
+#include "dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "dawn/native/vulkan/PipelineCacheVk.h"
 #include "dawn/native/vulkan/PipelineLayoutVk.h"
 #include "dawn/native/vulkan/QuerySetVk.h"
@@ -40,7 +40,6 @@
 #include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
 #include "dawn/native/vulkan/SamplerVk.h"
 #include "dawn/native/vulkan/ShaderModuleVk.h"
-#include "dawn/native/vulkan/StagingBufferVk.h"
 #include "dawn/native/vulkan/SwapChainVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
@@ -89,39 +88,36 @@ void DestroyCommandPoolAndBuffer(const VulkanFunctions& fn,
 }  // namespace
 
 // static
-ResultOrError<Ref<Device>> Device::Create(Adapter* adapter,
+ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           const DeviceDescriptor* descriptor,
-                                          const TripleStateTogglesSet& userProvidedToggles) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, userProvidedToggles));
+                                          const TogglesState& deviceToggles) {
+    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
 
-Device::Device(Adapter* adapter,
+Device::Device(AdapterBase* adapter,
                const DeviceDescriptor* descriptor,
-               const TripleStateTogglesSet& userProvidedToggles)
-    : DeviceBase(adapter, descriptor, userProvidedToggles),
-      mDebugPrefix(GetNextDeviceDebugPrefix()) {
-    InitTogglesFromDriver();
-}
+               const TogglesState& deviceToggles)
+    : DeviceBase(adapter, descriptor, deviceToggles), mDebugPrefix(GetNextDeviceDebugPrefix()) {}
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // Copy the adapter's device info to the device so that we can change the "knobs"
-    mDeviceInfo = ToBackend(GetAdapter())->GetDeviceInfo();
+    mDeviceInfo = ToBackend(GetPhysicalDevice())->GetDeviceInfo();
 
     // Initialize the "instance" procs of our local function table.
     VulkanFunctions* functions = GetMutableFunctions();
-    *functions = ToBackend(GetAdapter())->GetVulkanInstance()->GetFunctions();
+    *functions = ToBackend(GetPhysicalDevice())->GetVulkanInstance()->GetFunctions();
 
     // Two things are crucial if device initialization fails: the function pointers to destroy
     // objects, and the fence deleter that calls these functions. Do not do anything before
     // these two are set up, so that a failed initialization doesn't cause a crash in
     // DestroyImpl()
     {
-        VkPhysicalDevice physicalDevice = ToBackend(GetAdapter())->GetPhysicalDevice();
+        VkPhysicalDevice vkPhysicalDevice = ToBackend(GetPhysicalDevice())->GetVkPhysicalDevice();
 
         VulkanDeviceKnobs usedDeviceKnobs = {};
-        DAWN_TRY_ASSIGN(usedDeviceKnobs, CreateDevice(physicalDevice));
+        DAWN_TRY_ASSIGN(usedDeviceKnobs, CreateDevice(vkPhysicalDevice));
         *static_cast<VulkanDeviceKnobs*>(&mDeviceInfo) = usedDeviceKnobs;
 
         DAWN_TRY(functions->LoadDeviceProcs(mVkDevice, mDeviceInfo));
@@ -141,17 +137,9 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
 
     DAWN_TRY(PrepareRecordingContext());
 
-    // The environment can request to various options for depth-stencil formats that could be
-    // unavailable. Override the decision if it is not applicable.
-    ApplyDepthStencilFormatToggles();
-
-    // The environment can only request to use VK_KHR_zero_initialize_workgroup_memory when the
-    // extension is available. Override the decision if it is no applicable.
-    ApplyUseZeroInitializeWorkgroupMemoryExtensionToggle();
-
     SetLabelImpl();
 
-    ToBackend(GetAdapter())->GetVulkanInstance()->StartListeningForDeviceMessages(this);
+    ToBackend(GetPhysicalDevice())->GetVulkanInstance()->StartListeningForDeviceMessages(this);
 
     return DeviceBase::Initialize(Queue::Create(this, &descriptor->defaultQueue));
 }
@@ -202,12 +190,8 @@ ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     return ShaderModule::Create(this, descriptor, parseResult, compilationMessages);
 }
 ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
-    const SwapChainDescriptor* descriptor) {
-    return OldSwapChain::Create(this, descriptor);
-}
-ResultOrError<Ref<NewSwapChainBase>> Device::CreateSwapChainImpl(
     Surface* surface,
-    NewSwapChainBase* previousSwapChain,
+    SwapChainBase* previousSwapChain,
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
@@ -231,6 +215,11 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPip
                                                WGPUCreateRenderPipelineAsyncCallback callback,
                                                void* userdata) {
     RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
+}
+
+ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
+    const Surface* surface) const {
+    return SwapChain::GetSupportedSurfaceUsage(this, surface);
 }
 
 MaybeError Device::TickImpl() {
@@ -257,14 +246,14 @@ MaybeError Device::TickImpl() {
 }
 
 VkInstance Device::GetVkInstance() const {
-    return ToBackend(GetAdapter())->GetVulkanInstance()->GetVkInstance();
+    return ToBackend(GetPhysicalDevice())->GetVulkanInstance()->GetVkInstance();
 }
 const VulkanDeviceInfo& Device::GetDeviceInfo() const {
     return mDeviceInfo;
 }
 
 const VulkanGlobalInfo& Device::GetGlobalInfo() const {
-    return ToBackend(GetAdapter())->GetVulkanInstance()->GetGlobalInfo();
+    return ToBackend(GetPhysicalDevice())->GetVulkanInstance()->GetGlobalInfo();
 }
 
 VkDevice Device::GetVkDevice() const {
@@ -319,11 +308,17 @@ MaybeError Device::SubmitPendingCommands() {
         return {};
     }
 
-    ScopedSignalSemaphore scopedSignalSemaphore(this, VK_NULL_HANDLE);
+    if (!mRecordingContext.mappableBuffersForEagerTransition.empty()) {
+        // Transition mappable buffers back to map usages with the submit.
+        Buffer::TransitionMappableBuffersEagerly(
+            fn, &mRecordingContext, mRecordingContext.mappableBuffersForEagerTransition);
+    }
+
+    ScopedSignalSemaphore externalTextureSemaphore(this, VK_NULL_HANDLE);
     if (mRecordingContext.externalTexturesForEagerTransition.size() > 0) {
         // Create an external semaphore for all external textures that have been used in the pending
         // submit.
-        DAWN_TRY_ASSIGN(*scopedSignalSemaphore.InitializeInto(),
+        DAWN_TRY_ASSIGN(*externalTextureSemaphore.InitializeInto(),
                         mExternalSemaphoreService->CreateExportableSemaphore());
     }
 
@@ -341,6 +336,10 @@ MaybeError Device::SubmitPendingCommands() {
     std::vector<VkPipelineStageFlags> dstStageMasks(mRecordingContext.waitSemaphores.size(),
                                                     VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
+    if (externalTextureSemaphore.Get() != VK_NULL_HANDLE) {
+        mRecordingContext.signalSemaphores.push_back(externalTextureSemaphore.Get());
+    }
+
     VkSubmitInfo submitInfo;
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.pNext = nullptr;
@@ -349,8 +348,8 @@ MaybeError Device::SubmitPendingCommands() {
     submitInfo.pWaitDstStageMask = dstStageMasks.data();
     submitInfo.commandBufferCount = mRecordingContext.commandBufferList.size();
     submitInfo.pCommandBuffers = mRecordingContext.commandBufferList.data();
-    submitInfo.signalSemaphoreCount = (scopedSignalSemaphore.Get() == VK_NULL_HANDLE ? 0 : 1);
-    submitInfo.pSignalSemaphores = AsVkArray(scopedSignalSemaphore.InitializeInto());
+    submitInfo.signalSemaphoreCount = mRecordingContext.signalSemaphores.size();
+    submitInfo.pSignalSemaphores = AsVkArray(mRecordingContext.signalSemaphores.data());
 
     VkFence fence = VK_NULL_HANDLE;
     DAWN_TRY_ASSIGN(fence, GetUnusedFence());
@@ -381,7 +380,7 @@ MaybeError Device::SubmitPendingCommands() {
         // Export the signal semaphore.
         ExternalSemaphoreHandle semaphoreHandle;
         DAWN_TRY_ASSIGN(semaphoreHandle,
-                        mExternalSemaphoreService->ExportSemaphore(scopedSignalSemaphore.Get()));
+                        mExternalSemaphoreService->ExportSemaphore(externalTextureSemaphore.Get()));
 
         // Update all external textures, eagerly transitioned in the submit, with the exported
         // handle, and the duplicated handles.
@@ -401,7 +400,7 @@ MaybeError Device::SubmitPendingCommands() {
     return {};
 }
 
-ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice physicalDevice) {
+ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysicalDevice) {
     VulkanDeviceKnobs usedKnobs = {};
 
     // Default to asking for all avilable known extensions.
@@ -479,42 +478,38 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice physicalD
     }
 
     if (HasFeature(Feature::TextureCompressionBC)) {
-        ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.textureCompressionBC == VK_TRUE);
+        ASSERT(ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.textureCompressionBC ==
+               VK_TRUE);
         usedKnobs.features.textureCompressionBC = VK_TRUE;
     }
 
     if (HasFeature(Feature::TextureCompressionETC2)) {
-        ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.textureCompressionETC2 == VK_TRUE);
+        ASSERT(ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.textureCompressionETC2 ==
+               VK_TRUE);
         usedKnobs.features.textureCompressionETC2 = VK_TRUE;
     }
 
     if (HasFeature(Feature::TextureCompressionASTC)) {
-        ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.textureCompressionASTC_LDR ==
-               VK_TRUE);
+        ASSERT(
+            ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.textureCompressionASTC_LDR ==
+            VK_TRUE);
         usedKnobs.features.textureCompressionASTC_LDR = VK_TRUE;
     }
 
     if (HasFeature(Feature::PipelineStatisticsQuery)) {
-        ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.pipelineStatisticsQuery ==
+        ASSERT(ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.pipelineStatisticsQuery ==
                VK_TRUE);
         usedKnobs.features.pipelineStatisticsQuery = VK_TRUE;
     }
 
     if (HasFeature(Feature::DepthClipControl)) {
-        const VulkanDeviceInfo& deviceInfo = ToBackend(GetAdapter())->GetDeviceInfo();
-        ASSERT(deviceInfo.HasExt(DeviceExt::DepthClipEnable) &&
-               deviceInfo.depthClipEnableFeatures.depthClipEnable == VK_TRUE);
-
         usedKnobs.features.depthClamp = VK_TRUE;
-        usedKnobs.depthClipEnableFeatures.depthClipEnable = VK_TRUE;
-        featuresChain.Add(&usedKnobs.depthClipEnableFeatures,
-                          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT);
     }
 
     // TODO(dawn:1510, tint:1473): After implementing a transform to handle the pipeline input /
     // output if necessary, relax the requirement of storageInputOutput16.
     if (HasFeature(Feature::ShaderF16)) {
-        const VulkanDeviceInfo& deviceInfo = ToBackend(GetAdapter())->GetDeviceInfo();
+        const VulkanDeviceInfo& deviceInfo = ToBackend(GetPhysicalDevice())->GetDeviceInfo();
         ASSERT(deviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
                deviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
                deviceInfo.HasExt(DeviceExt::_16BitStorage) &&
@@ -588,7 +583,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice physicalD
         createInfo.pEnabledFeatures = &usedKnobs.features;
     }
 
-    DAWN_TRY(CheckVkSuccess(fn.CreateDevice(physicalDevice, &createInfo, nullptr, &mVkDevice),
+    DAWN_TRY(CheckVkSuccess(fn.CreateDevice(vkPhysicalDevice, &createInfo, nullptr, &mVkDevice),
                             "vkCreateDevice"));
 
     return usedKnobs;
@@ -622,61 +617,6 @@ uint32_t Device::FindComputeSubgroupSize() const {
 
 void Device::GatherQueueFromDevice() {
     fn.GetDeviceQueue(mVkDevice, mQueueFamily, 0, &mQueue);
-}
-
-// Note that this function is called before mDeviceInfo is initialized.
-void Device::InitTogglesFromDriver() {
-    // TODO(crbug.com/dawn/857): tighten this workaround when this issue is fixed in both
-    // Vulkan SPEC and drivers.
-    SetToggle(Toggle::UseTemporaryBufferInCompressedTextureToTextureCopy, true);
-
-    // By default try to use D32S8 for Depth24PlusStencil8
-    SetToggle(Toggle::VulkanUseD32S8, true);
-
-    // By default try to initialize workgroup memory with OpConstantNull according to the Vulkan
-    // extension VK_KHR_zero_initialize_workgroup_memory.
-    SetToggle(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, true);
-
-    // By default try to use S8 if available.
-    SetToggle(Toggle::VulkanUseS8, true);
-
-    if (ToBackend(GetAdapter())->IsAndroidQualcomm()) {
-        // dawn:1564: Clearing a depth/stencil buffer in a render pass and then sampling it in a
-        // compute pass in the same command buffer causes a crash on Qualcomm GPUs. To work around
-        // that bug, split the command buffer any time we can detect that situation.
-        SetToggle(Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass, true);
-
-        // dawn:1569: Qualcomm devices have a bug resolving into a non-zero level of an array
-        // texture. Work around it by resolving into a single level texture and then copying into
-        // the intended layer.
-        SetToggle(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
-    }
-}
-
-void Device::ApplyDepthStencilFormatToggles() {
-    bool supportsD32s8 =
-        ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_D32_SFLOAT_S8_UINT);
-    bool supportsD24s8 =
-        ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_D24_UNORM_S8_UINT);
-    bool supportsS8 = ToBackend(GetAdapter())->IsDepthStencilFormatSupported(VK_FORMAT_S8_UINT);
-
-    ASSERT(supportsD32s8 || supportsD24s8);
-
-    if (!supportsD24s8) {
-        ForceSetToggle(Toggle::VulkanUseD32S8, true);
-    }
-    if (!supportsD32s8) {
-        ForceSetToggle(Toggle::VulkanUseD32S8, false);
-    }
-    if (!supportsS8) {
-        ForceSetToggle(Toggle::VulkanUseS8, false);
-    }
-}
-
-void Device::ApplyUseZeroInitializeWorkgroupMemoryExtensionToggle() {
-    if (!mDeviceInfo.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory)) {
-        ForceSetToggle(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension, false);
-    }
 }
 
 VulkanFunctions* Device::GetMutableFunctions() {
@@ -823,13 +763,7 @@ void Device::RecycleCompletedCommands() {
     mCommandsInFlight.ClearUpTo(GetCompletedCommandSerial());
 }
 
-ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
-    std::unique_ptr<StagingBufferBase> stagingBuffer = std::make_unique<StagingBuffer>(size, this);
-    DAWN_TRY(stagingBuffer->Initialize());
-    return std::move(stagingBuffer);
-}
-
-MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
@@ -857,15 +791,15 @@ MaybeError Device::CopyFromStagingToBufferImpl(StagingBufferBase* source,
     copy.dstOffset = destinationOffset;
     copy.size = size;
 
-    this->fn.CmdCopyBuffer(recordingContext->commandBuffer, ToBackend(source)->GetBufferHandle(),
+    this->fn.CmdCopyBuffer(recordingContext->commandBuffer, ToBackend(source)->GetHandle(),
                            ToBackend(destination)->GetHandle(), 1, &copy);
 
     return {};
 }
 
-MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureDataLayout& src,
-                                                TextureCopy* dst,
+                                                const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     // There is no need of a barrier to make host writes available and visible to the copy
     // operation for HOST_COHERENT memory. The Vulkan spec for vkQueueSubmit describes that it
@@ -874,28 +808,28 @@ MaybeError Device::CopyFromStagingToTextureImpl(const StagingBufferBase* source,
     CommandRecordingContext* recordingContext =
         GetPendingRecordingContext(DeviceBase::SubmitMode::Passive);
 
-    VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, *dst, copySizePixels);
+    VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, dst, copySizePixels);
     VkImageSubresourceLayers subresource = region.imageSubresource;
 
-    SubresourceRange range = GetSubresourcesAffectedByCopy(*dst, copySizePixels);
+    SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
 
-    if (IsCompleteSubresourceCopiedTo(dst->texture.Get(), copySizePixels, subresource.mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copySizePixels, subresource.mipLevel)) {
         // Since texture has been overwritten, it has been "initialized"
-        dst->texture->SetIsSubresourceContentInitialized(true, range);
+        dst.texture->SetIsSubresourceContentInitialized(true, range);
     } else {
-        ToBackend(dst->texture)->EnsureSubresourceContentInitialized(recordingContext, range);
+        DAWN_TRY(
+            ToBackend(dst.texture)->EnsureSubresourceContentInitialized(recordingContext, range));
     }
     // Insert pipeline barrier to ensure correct ordering with previous memory operations on the
     // texture.
-    ToBackend(dst->texture)
+    ToBackend(dst.texture)
         ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, range);
-    VkImage dstImage = ToBackend(dst->texture)->GetHandle();
+    VkImage dstImage = ToBackend(dst.texture)->GetHandle();
 
     // Dawn guarantees dstImage be in the TRANSFER_DST_OPTIMAL layout after the
     // copy command.
-    this->fn.CmdCopyBufferToImage(recordingContext->commandBuffer,
-                                  ToBackend(source)->GetBufferHandle(), dstImage,
-                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    this->fn.CmdCopyBufferToImage(recordingContext->commandBuffer, ToBackend(source)->GetHandle(),
+                                  dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     return {};
 }
 
@@ -920,8 +854,8 @@ MaybeError Device::ImportExternalImage(const ExternalImageDescriptorVk* descript
                     "External semaphore usage not supported");
 
     DAWN_INVALID_IF(!mExternalMemoryService->SupportsImportMemory(
-                        VulkanImageFormat(this, textureDescriptor->format), VK_IMAGE_TYPE_2D,
-                        VK_IMAGE_TILING_OPTIMAL,
+                        descriptor->GetType(), VulkanImageFormat(this, textureDescriptor->format),
+                        VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
                         VulkanImageUsage(usage, GetValidInternalFormat(textureDescriptor->format)),
                         VK_IMAGE_CREATE_ALIAS_BIT_KHR),
                     "External memory usage not supported");
@@ -929,8 +863,8 @@ MaybeError Device::ImportExternalImage(const ExternalImageDescriptorVk* descript
     // Import the external image's memory
     external_memory::MemoryImportParams importParams;
     DAWN_TRY_ASSIGN(importParams, mExternalMemoryService->GetMemoryImportParams(descriptor, image));
-    DAWN_TRY_ASSIGN(*outAllocation,
-                    mExternalMemoryService->ImportMemory(memoryHandle, importParams, image));
+    DAWN_TRY_ASSIGN(*outAllocation, mExternalMemoryService->ImportMemory(
+                                        descriptor->GetType(), memoryHandle, importParams, image));
 
     // Import semaphores we have to wait on before using the texture
     for (const ExternalSemaphoreHandle& handle : waitHandles) {
@@ -1026,7 +960,8 @@ void Device::OnDebugMessage(std::string message) {
 }
 
 MaybeError Device::CheckDebugLayerAndGenerateErrors() {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled() || mDebugMessages.empty()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled() ||
+        mDebugMessages.empty()) {
         return {};
     }
 
@@ -1038,7 +973,7 @@ MaybeError Device::CheckDebugLayerAndGenerateErrors() {
 }
 
 void Device::AppendDebugLayerMessages(ErrorData* error) {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled()) {
         return;
     }
 
@@ -1049,7 +984,8 @@ void Device::AppendDebugLayerMessages(ErrorData* error) {
 }
 
 void Device::CheckDebugMessagesAfterDestruction() const {
-    if (!GetAdapter()->GetInstance()->IsBackendValidationEnabled() || mDebugMessages.empty()) {
+    if (!GetPhysicalDevice()->GetInstance()->IsBackendValidationEnabled() ||
+        mDebugMessages.empty()) {
         return;
     }
 
@@ -1134,7 +1070,7 @@ void Device::DestroyImpl() {
     // Enough of the Device's initialization happened that we can now do regular robust
     // deinitialization.
 
-    ToBackend(GetAdapter())->GetVulkanInstance()->StopListeningForDeviceMessages(this);
+    ToBackend(GetPhysicalDevice())->GetVulkanInstance()->StopListeningForDeviceMessages(this);
 
     // Immediately tag the recording context as unused so we don't try to submit it in Tick.
     mRecordingContext.needsSubmit = false;
@@ -1147,6 +1083,7 @@ void Device::DestroyImpl() {
         fn.DestroySemaphore(mVkDevice, semaphore, nullptr);
     }
     mRecordingContext.waitSemaphores.clear();
+    mRecordingContext.signalSemaphores.clear();
 
     // Some commands might still be marked as in-flight if we shut down because of a device
     // loss. Recycle them as unused so that we free them below.

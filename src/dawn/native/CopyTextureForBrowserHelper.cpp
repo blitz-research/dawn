@@ -50,8 +50,8 @@ static const char sCopyForBrowserShader[] = R"(
             };
 
             struct Uniforms {                                                    // offset   align   size
-                scale: vec2<f32>,                                                // 0        8       8
-                offset: vec2<f32>,                                               // 8        8       8
+                scale: vec2f,                                                // 0        8       8
+                offset: vec2f,                                               // 8        8       8
                 steps_mask: u32,                                                 // 16       4       4
                 // implicit padding;                                             // 20               12
                 conversion_matrix: mat3x3<f32>,                                  // 32       16      48
@@ -63,8 +63,8 @@ static const char sCopyForBrowserShader[] = R"(
             @binding(0) @group(0) var<uniform> uniforms : Uniforms;
 
             struct VertexOutputs {
-                @location(0) texcoords : vec2<f32>,
-                @builtin(position) position : vec4<f32>,
+                @location(0) texcoords : vec2f,
+                @builtin(position) position : vec4f,
             };
 
             // Chromium uses unified equation to construct gamma decoding function
@@ -89,33 +89,14 @@ static const char sCopyForBrowserShader[] = R"(
             fn vs_main(
                 @builtin(vertex_index) VertexIndex : u32
             ) -> VertexOutputs {
-                var texcoord = array<vec2<f32>, 3>(
-                    vec2<f32>(-0.5, 0.0),
-                    vec2<f32>( 1.5, 0.0),
-                    vec2<f32>( 0.5, 2.0));
+                var texcoord = array(
+                    vec2f(-0.5, 0.0),
+                    vec2f( 1.5, 0.0),
+                    vec2f( 0.5, 2.0));
 
                 var output : VertexOutputs;
-                output.position = vec4<f32>((texcoord[VertexIndex] * 2.0 - vec2<f32>(1.0, 1.0)), 0.0, 1.0);
-
-                // Y component of scale is calculated by the copySizeHeight / textureHeight. Only
-                // flipY case can get negative number.
-                var flipY = uniforms.scale.y < 0.0;
-
-                // Texture coordinate takes top-left as origin point. We need to map the
-                // texture to triangle carefully.
-                if (flipY) {
-                    // We need to get the mirror positions(mirrored based on y = 0.5) on flip cases.
-                    // Adopt transform to src texture and then mapping it to triangle coord which
-                    // do a +1 shift on Y dimension will help us got that mirror position perfectly.
-                    output.texcoords = (texcoord[VertexIndex] * uniforms.scale + uniforms.offset) *
-                        vec2<f32>(1.0, -1.0) + vec2<f32>(0.0, 1.0);
-                } else {
-                    // For the normal case, we need to get the exact position.
-                    // So mapping texture to triangle firstly then adopt the transform.
-                    output.texcoords = (texcoord[VertexIndex] *
-                        vec2<f32>(1.0, -1.0) + vec2<f32>(0.0, 1.0)) *
-                        uniforms.scale + uniforms.offset;
-                }
+                output.position = vec4f((texcoord[VertexIndex] * 2.0 - vec2f(1.0, 1.0)), 0.0, 1.0);
+                output.texcoords = texcoord[VertexIndex] * uniforms.scale + uniforms.offset;
 
                 return output;
             }
@@ -128,15 +109,15 @@ static const char sCopyForBrowserShader[] = R"(
             // Resource used in copyExternalTexture entry point only.
             @binding(2) @group(0) var mySourceExternalTexture: texture_external;
 
-            fn discardIfOutsideOfCopy(texcoord : vec2<f32>) {
+            fn discardIfOutsideOfCopy(texcoord : vec2f) {
                 var clampedTexcoord =
-                    clamp(texcoord, vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0));
+                    clamp(texcoord, vec2f(0.0, 0.0), vec2f(1.0, 1.0));
                 if (!all(clampedTexcoord == texcoord)) {
                     discard;
                 }
             }
 
-            fn transform(srcColor : vec4<f32>) -> vec4<f32> {
+            fn transform(srcColor : vec4f) -> vec4f {
                 var color = srcColor;
                 let kUnpremultiplyStep = 0x01u;
                 let kDecodeToLinearStep = 0x02u;
@@ -151,14 +132,14 @@ static const char sCopyForBrowserShader[] = R"(
                 // This step is exclusive with clear src alpha to one step.
                 if (bool(uniforms.steps_mask & kUnpremultiplyStep)) {
                     if (color.a != 0.0) {
-                        color = vec4<f32>(color.rgb / color.a, color.a);
+                        color = vec4f(color.rgb / color.a, color.a);
                     }
                 }
 
                 // Linearize the source color using the source color space’s
                 // transfer function if it is non-linear.
                 if (bool(uniforms.steps_mask & kDecodeToLinearStep)) {
-                    color = vec4<f32>(gamma_conversion(color.r, uniforms.gamma_decoding_params),
+                    color = vec4f(gamma_conversion(color.r, uniforms.gamma_decoding_params),
                                       gamma_conversion(color.g, uniforms.gamma_decoding_params),
                                       gamma_conversion(color.b, uniforms.gamma_decoding_params),
                                       color.a);
@@ -168,13 +149,13 @@ static const char sCopyForBrowserShader[] = R"(
                 // multiplying by a 3x3 matrix. Calculate transformFromXYZD50 * transformToXYZD50
                 // in CPU side and upload the final result in uniforms.
                 if (bool(uniforms.steps_mask & kConvertToDstGamutStep)) {
-                    color = vec4<f32>(uniforms.conversion_matrix * color.rgb, color.a);
+                    color = vec4f(uniforms.conversion_matrix * color.rgb, color.a);
                 }
 
                 // Encode that color using the inverse of the destination color
                 // space’s transfer function if it is non-linear.
                 if (bool(uniforms.steps_mask & kEncodeToGammaStep)) {
-                    color = vec4<f32>(gamma_conversion(color.r, uniforms.gamma_encoding_params),
+                    color = vec4f(gamma_conversion(color.r, uniforms.gamma_encoding_params),
                                       gamma_conversion(color.g, uniforms.gamma_encoding_params),
                                       gamma_conversion(color.b, uniforms.gamma_encoding_params),
                                       color.a);
@@ -183,12 +164,12 @@ static const char sCopyForBrowserShader[] = R"(
                 // Premultiply step.
                 // This step is exclusive with clear src alpha to one step.
                 if (bool(uniforms.steps_mask & kPremultiplyStep)) {
-                    color = vec4<f32>(color.rgb * color.a, color.a);
+                    color = vec4f(color.rgb * color.a, color.a);
                 }
 
                 // Decode for copying from non-srgb formats to srgb formats
                 if (bool(uniforms.steps_mask & kDecodeForSrgbDstFormat)) {
-                    color = vec4<f32>(gamma_conversion(color.r, uniforms.gamma_decoding_for_dst_srgb_params),
+                    color = vec4f(gamma_conversion(color.r, uniforms.gamma_decoding_for_dst_srgb_params),
                                       gamma_conversion(color.g, uniforms.gamma_decoding_for_dst_srgb_params),
                                       gamma_conversion(color.b, uniforms.gamma_decoding_for_dst_srgb_params),
                                       color.a);
@@ -204,8 +185,8 @@ static const char sCopyForBrowserShader[] = R"(
             }
 
             @fragment
-            fn copyTexture(@location(0) texcoord : vec2<f32>
-            ) -> @location(0) vec4<f32> {
+            fn copyTexture(@location(0) texcoord : vec2f
+            ) -> @location(0) vec4f {
                 var color = textureSample(mySourceTexture, mySampler, texcoord);
 
                 // TODO(crbug.com/tint/1723): Discard before sampling should be valid.
@@ -215,8 +196,8 @@ static const char sCopyForBrowserShader[] = R"(
             }
 
             @fragment
-            fn copyExternalTexture(@location(0) texcoord : vec2<f32>
-            ) -> @location(0) vec4<f32> {
+            fn copyExternalTexture(@location(0) texcoord : vec2f
+            ) -> @location(0) vec4f {
                 var color = textureSampleBaseClampToEdge(mySourceExternalTexture, mySampler, texcoord);
 
                 // TODO(crbug.com/tint/1723): Discard before sampling should be valid.
@@ -435,10 +416,11 @@ MaybeError DoCopyForBrowser(DeviceBase* device,
         sourceInfo->origin.y / static_cast<float>(sourceInfo->size.height)  // offset
     };
 
-    // Handle flipY. FlipY here means we flip the source texture firstly and then
-    // do copy. This helps on the case which source texture is flipped and the copy
-    // need to unpack the flip.
-    if (options->flipY) {
+    // The NDC to framebuffer space transform maps inverts the Y coordinate such that NDC [-1, 1]
+    // (resp [-1, -1]) maps to framebuffer space [0, 0] (resp [0, height-1]). So we need to undo
+    // this flip when converting positions to texcoords.
+    // https://www.w3.org/TR/webgpu/#coordinate-systems
+    if (!options->flipY) {
         uniformData.scaleY *= -1.0;
         uniformData.offsetY += copySize->height / static_cast<float>(sourceInfo->size.height);
     }
@@ -601,7 +583,7 @@ MaybeError DoCopyForBrowser(DeviceBase* device,
     passEncoder->APISetViewport(destination->origin.x, destination->origin.y, copySize->width,
                                 copySize->height, 0.0, 1.0);
     passEncoder->APIDraw(3);
-    passEncoder->APIEnd();
+    passEncoder->End();
 
     // Finsh encoding.
     Ref<CommandBufferBase> commandBuffer;
@@ -712,18 +694,27 @@ MaybeError ValidateCopyExternalTextureForBrowser(DeviceBase* device,
     DAWN_TRY(device->ValidateObject(source->externalTexture));
     DAWN_TRY(source->externalTexture->ValidateCanUseInSubmitNow());
 
-    const Extent2D& sourceVisibleSize = source->externalTexture->GetVisibleSize();
+    Extent2D sourceSize;
+
+    // TODO(crbug.com/dawn/1694): Remove this workaround that use visible rect
+    // if natural size it not set after chromium side changes ready.
+    if (source->naturalSize.width == 0) {
+        sourceSize = source->externalTexture->GetVisibleSize();
+    } else {
+        sourceSize.width = source->naturalSize.width;
+        sourceSize.height = source->naturalSize.height;
+    }
 
     // All texture dimensions are in uint32_t so by doing checks in uint64_t we avoid
     // overflows.
     DAWN_INVALID_IF(
         static_cast<uint64_t>(source->origin.x) + static_cast<uint64_t>(copySize->width) >
-                static_cast<uint64_t>(sourceVisibleSize.width) ||
+                static_cast<uint64_t>(sourceSize.width) ||
             static_cast<uint64_t>(source->origin.y) + static_cast<uint64_t>(copySize->height) >
-                static_cast<uint64_t>(sourceVisibleSize.height) ||
+                static_cast<uint64_t>(sourceSize.height) ||
             static_cast<uint64_t>(source->origin.z) > 0,
-        "Texture copy range (origin: %s, copySize: %s) touches outside of %s visible size (%s).",
-        &source->origin, copySize, source->externalTexture, &sourceVisibleSize);
+        "Texture copy range (origin: %s, copySize: %s) touches outside of %s source size (%s).",
+        &source->origin, copySize, source->externalTexture, &sourceSize);
     DAWN_INVALID_IF(source->origin.z > 0, "Source has a non-zero z origin (%u).", source->origin.z);
     DAWN_INVALID_IF(
         options->internalUsage && !device->HasFeature(Feature::DawnInternalUsages),
@@ -749,8 +740,14 @@ MaybeError DoCopyExternalTextureForBrowser(DeviceBase* device,
                                            const CopyTextureForBrowserOptions* options) {
     TextureInfo info;
     info.origin = source->origin;
-    const Extent2D& visibleSize = source->externalTexture->GetVisibleSize();
-    info.size = {visibleSize.width, visibleSize.height, 1};
+    info.size = {source->naturalSize.width, source->naturalSize.height, 1};
+
+    // TODO(crbug.com/dawn/1694): Remove this workaround that use visible rect
+    // if natural size it not set after chromium side changes ready.
+    if (info.size.width == 0) {
+        const Extent2D& visibleSize = source->externalTexture->GetVisibleSize();
+        info.size = {visibleSize.width, visibleSize.height, 1};
+    }
 
     RenderPipelineBase* pipeline;
     DAWN_TRY_ASSIGN(pipeline, GetOrCreateCopyExternalTextureForBrowserPipeline(

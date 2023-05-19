@@ -15,7 +15,7 @@
 #include <utility>
 
 #include "dawn/common/Math.h"
-#include "dawn/native/vulkan/AdapterVk.h"
+#include "dawn/native/Adapter.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/tests/DawnTest.h"
 #include "dawn/tests/white_box/VulkanImageWrappingTests.h"
@@ -23,9 +23,6 @@
 #include "dawn/utils/WGPUHelpers.h"
 
 namespace dawn::native::vulkan {
-
-using ExternalTexture = VulkanImageWrappingTestBackend::ExternalTexture;
-using ExternalSemaphore = VulkanImageWrappingTestBackend::ExternalSemaphore;
 
 void VulkanImageWrappingTestBackend::SetParam(
     const VulkanImageWrappingTestBackend::TestParams& params) {
@@ -37,6 +34,9 @@ const VulkanImageWrappingTestBackend::TestParams& VulkanImageWrappingTestBackend
 }
 
 namespace {
+
+using ExternalTexture = VulkanImageWrappingTestBackend::ExternalTexture;
+using ExternalSemaphore = VulkanImageWrappingTestBackend::ExternalSemaphore;
 
 using UseDedicatedAllocation = bool;
 using DetectDedicatedAllocation = bool;
@@ -144,8 +144,6 @@ class VulkanImageWrappingTestBase : public DawnTestWithParams<ImageWrappingParam
     wgpu::TextureDescriptor defaultDescriptor;
     std::unique_ptr<ExternalTexture> defaultTexture;
 };
-
-}  // namespace
 
 using VulkanImageWrappingValidationTests = VulkanImageWrappingTestBase;
 
@@ -265,26 +263,24 @@ class VulkanImageWrappingUsageTests : public VulkanImageWrappingTestBase {
         }
 
         // Create another device based on the original
-        backendAdapter =
-            dawn::native::vulkan::ToBackend(dawn::native::FromAPI(device.Get())->GetAdapter());
-        deviceDescriptor.nextInChain = &togglesDesc;
-        togglesDesc.forceEnabledToggles = GetParam().forceEnabledWorkarounds.data();
-        togglesDesc.forceEnabledTogglesCount = GetParam().forceEnabledWorkarounds.size();
-        togglesDesc.forceDisabledToggles = GetParam().forceDisabledWorkarounds.data();
-        togglesDesc.forceDisabledTogglesCount = GetParam().forceDisabledWorkarounds.size();
+        adapterBase = native::FromAPI(device.Get())->GetAdapter();
+        deviceDescriptor.nextInChain = &deviceTogglesDesc;
+        deviceTogglesDesc.enabledToggles = GetParam().forceEnabledWorkarounds.data();
+        deviceTogglesDesc.enabledTogglesCount = GetParam().forceEnabledWorkarounds.size();
+        deviceTogglesDesc.disabledToggles = GetParam().forceDisabledWorkarounds.data();
+        deviceTogglesDesc.disabledTogglesCount = GetParam().forceDisabledWorkarounds.size();
 
-        secondDeviceVk =
-            dawn::native::vulkan::ToBackend(backendAdapter->APICreateDevice(&deviceDescriptor));
-        secondDevice = wgpu::Device::Acquire(dawn::native::ToAPI(secondDeviceVk));
+        secondDeviceVk = native::vulkan::ToBackend(adapterBase->APICreateDevice(&deviceDescriptor));
+        secondDevice = wgpu::Device::Acquire(native::ToAPI(secondDeviceVk));
     }
 
   protected:
-    dawn::native::vulkan::Adapter* backendAdapter;
-    dawn::native::DeviceDescriptor deviceDescriptor;
-    dawn::native::DawnTogglesDeviceDescriptor togglesDesc;
+    native::AdapterBase* adapterBase;
+    native::DeviceDescriptor deviceDescriptor;
+    native::DawnTogglesDescriptor deviceTogglesDesc;
 
     wgpu::Device secondDevice;
-    dawn::native::vulkan::Device* secondDeviceVk;
+    native::vulkan::Device* secondDeviceVk;
 
     // Clear a texture on a given device
     void ClearImage(wgpu::Device dawnDevice, wgpu::Texture wrappedTexture, wgpu::Color clearColor) {
@@ -614,9 +610,9 @@ TEST_P(VulkanImageWrappingUsageTests, ChainTextureCopy) {
     // device 1 = |device|
     // device 2 = |secondDevice|
     // Create device 3
-    dawn::native::vulkan::Device* thirdDeviceVk =
-        dawn::native::vulkan::ToBackend(backendAdapter->APICreateDevice(&deviceDescriptor));
-    wgpu::Device thirdDevice = wgpu::Device::Acquire(dawn::native::ToAPI(thirdDeviceVk));
+    native::vulkan::Device* thirdDeviceVk =
+        native::vulkan::ToBackend(adapterBase->APICreateDevice(&deviceDescriptor));
+    wgpu::Device thirdDevice = wgpu::Device::Acquire(native::ToAPI(thirdDeviceVk));
 
     // Make queue for device 2 and 3
     wgpu::Queue secondDeviceQueue = secondDevice.GetQueue();
@@ -821,23 +817,23 @@ TEST_P(VulkanImageWrappingUsageTests, SRGBReinterpretation) {
     utils::ComboRenderPipelineDescriptor pipelineDesc;
     pipelineDesc.vertex.module = utils::CreateShaderModule(device, R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 6>(
-                                            vec2<f32>(-1.0, -1.0),
-                                            vec2<f32>(-1.0,  1.0),
-                                            vec2<f32>( 1.0, -1.0),
-                                            vec2<f32>(-1.0,  1.0),
-                                            vec2<f32>( 1.0, -1.0),
-                                            vec2<f32>( 1.0,  1.0));
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                                            vec2f(-1.0, -1.0),
+                                            vec2f(-1.0,  1.0),
+                                            vec2f( 1.0, -1.0),
+                                            vec2f(-1.0,  1.0),
+                                            vec2f( 1.0, -1.0),
+                                            vec2f( 1.0,  1.0));
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             }
         )");
     pipelineDesc.cFragment.module = utils::CreateShaderModule(device, R"(
             @group(0) @binding(0) var texture : texture_2d<f32>;
 
             @fragment
-            fn main(@builtin(position) coord: vec4<f32>) -> @location(0) vec4<f32> {
-                return textureLoad(texture, vec2<i32>(coord.xy), 0);
+            fn main(@builtin(position) coord: vec4f) -> @location(0) vec4f {
+                return textureLoad(texture, vec2i(coord.xy), 0);
             }
         )");
 
@@ -889,4 +885,5 @@ DAWN_INSTANTIATE_TEST_P(VulkanImageWrappingUsageTests,
                         {true, false}   // DetectDedicatedAllocation
 );
 
+}  // anonymous namespace
 }  // namespace dawn::native::vulkan

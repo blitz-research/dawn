@@ -61,7 +61,7 @@ OpFunctionEnd
 }
 
 TEST_F(BuilderTest, Function_Terminator_ReturnValue) {
-    GlobalVar("a", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate);
 
     Func("a_func", utils::Empty, ty.f32(), utils::Vector{Return("a")}, utils::Empty);
 
@@ -70,8 +70,8 @@ TEST_F(BuilderTest, Function_Terminator_ReturnValue) {
     auto* var_a = program->AST().GlobalVariables()[0];
     auto* func = program->AST().Functions()[0];
 
-    ASSERT_TRUE(b.GenerateGlobalVariable(var_a)) << b.error();
-    ASSERT_TRUE(b.GenerateFunction(func)) << b.error();
+    ASSERT_TRUE(b.GenerateGlobalVariable(var_a)) << b.Diagnostics();
+    ASSERT_TRUE(b.GenerateFunction(func)) << b.Diagnostics();
     EXPECT_EQ(DumpBuilder(b), R"(OpName %1 "a"
 OpName %6 "a_func"
 %3 = OpTypeFloat 32
@@ -90,7 +90,7 @@ OpFunctionEnd
 TEST_F(BuilderTest, Function_Terminator_Discard) {
     Func("a_func", utils::Empty, ty.void_(),
          utils::Vector{
-             create<ast::DiscardStatement>(),
+             Discard(),
          });
 
     spirv::Builder& b = Build();
@@ -161,7 +161,7 @@ TEST_F(BuilderTest, FunctionType) {
 
     auto* func = program->AST().Functions()[0];
     ASSERT_TRUE(b.GenerateFunction(func));
-    EXPECT_EQ(DumpInstructions(b.types()), R"(%2 = OpTypeVoid
+    EXPECT_EQ(DumpInstructions(b.Module().Types()), R"(%2 = OpTypeVoid
 %1 = OpTypeFunction %2
 )");
 }
@@ -174,7 +174,7 @@ TEST_F(BuilderTest, FunctionType_DeDuplicate) {
 
     ASSERT_TRUE(b.GenerateFunction(func1));
     ASSERT_TRUE(b.GenerateFunction(func2));
-    EXPECT_EQ(DumpInstructions(b.types()), R"(%2 = OpTypeVoid
+    EXPECT_EQ(DumpInstructions(b.Module().Types()), R"(%2 = OpTypeVoid
 %1 = OpTypeFunction %2
 )");
 }
@@ -198,8 +198,8 @@ TEST_F(BuilderTest, Emit_Multiple_EntryPoint_With_Same_ModuleVar) {
 
     auto* s = Structure("Data", utils::Vector{Member("d", ty.f32())});
 
-    GlobalVar("data", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite, Binding(0_a),
-              Group(0_a));
+    GlobalVar("data", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+              Binding(0_a), Group(0_a));
 
     {
         auto* var = Var("v", ty.f32(), MemberAccessor("data", "d"));

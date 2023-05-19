@@ -61,7 +61,7 @@ class BindGroupLayoutBase : public ApiObjectBase, public CachedObject {
                         PipelineCompatibilityToken pipelineCompatibilityToken);
     ~BindGroupLayoutBase() override;
 
-    static BindGroupLayoutBase* MakeError(DeviceBase* device);
+    static BindGroupLayoutBase* MakeError(DeviceBase* device, const char* label = nullptr);
 
     ObjectType GetType() const override;
 
@@ -135,8 +135,6 @@ class BindGroupLayoutBase : public ApiObjectBase, public CachedObject {
     std::string EntriesToString() const;
 
   protected:
-    // Constructor used only for mocking and testing.
-    explicit BindGroupLayoutBase(DeviceBase* device);
     void DestroyImpl() override;
 
     template <typename BindGroup>
@@ -149,7 +147,7 @@ class BindGroupLayoutBase : public ApiObjectBase, public CachedObject {
     }
 
   private:
-    BindGroupLayoutBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+    BindGroupLayoutBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
 
     BindingCounts mBindingCounts = {};
     ityp::vector<BindingIndex, BindingInfo> mBindingInfo;

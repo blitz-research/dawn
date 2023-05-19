@@ -1,3 +1,7 @@
+float tint_trunc(float param_0) {
+  return param_0 < 0 ? ceil(param_0) : floor(param_0);
+}
+
 cbuffer cbuffer_x_20 : register(b9, space2) {
   uint4 x_20[8];
 };
@@ -31,6 +35,10 @@ float4x4 getFrameData_f1_(inout float frameID) {
   const float x_51 = fX;
   const float4 x_54 = frameMapTexture.SampleBias(frameMapSampler, float2(x_51, 0.5f), 0.0f);
   return float4x4(float4(x_40.x, x_40.y, x_40.z, x_40.w), float4(x_47.x, x_47.y, x_47.z, x_47.w), float4(x_54.x, x_54.y, x_54.z, x_54.w), (0.0f).xxxx);
+}
+
+float tint_float_mod(float lhs, float rhs) {
+  return (lhs - (tint_trunc((lhs / rhs)) * rhs));
 }
 
 void main_1() {
@@ -100,7 +108,7 @@ void main_1() {
     if ((x_174 > 0.0f)) {
       const float x_181 = asfloat(x_20[0].x);
       const float x_184 = animationData.z;
-      mt = ((x_181 * x_184) % 1.0f);
+      mt = tint_float_mod((x_181 * x_184), 1.0f);
       f = 0.0f;
       while (true) {
         const float x_193 = f;
@@ -206,8 +214,8 @@ main_out main_inner(float2 tUV_param, float2 tileID_1_param, float2 levelUnits_p
   vPosition = vPosition_param;
   vUV = vUV_param;
   main_1();
-  const main_out tint_symbol_6 = {glFragColor};
-  return tint_symbol_6;
+  const main_out tint_symbol_3 = {glFragColor};
+  return tint_symbol_3;
 }
 
 tint_symbol_2 main(tint_symbol_1 tint_symbol) {

@@ -20,10 +20,12 @@
 
 #include "src/tint/ast/binary_expression.h"
 #include "src/tint/program_builder.h"
+#include "src/tint/resolver/builtin_structs.h"
 #include "src/tint/sem/evaluation_stage.h"
 #include "src/tint/sem/pipeline_stage_set.h"
-#include "src/tint/sem/type_conversion.h"
-#include "src/tint/sem/type_initializer.h"
+#include "src/tint/sem/value_constructor.h"
+#include "src/tint/sem/value_conversion.h"
+#include "src/tint/switch.h"
 #include "src/tint/type/abstract_float.h"
 #include "src/tint/type/abstract_int.h"
 #include "src/tint/type/abstract_numeric.h"
@@ -34,10 +36,12 @@
 #include "src/tint/type/multisampled_texture.h"
 #include "src/tint/type/sampled_texture.h"
 #include "src/tint/type/storage_texture.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/hashmap.h"
 #include "src/tint/utils/math.h"
 #include "src/tint/utils/scoped_assignment.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::resolver {
 namespace {
@@ -55,14 +59,14 @@ constexpr static const size_t kNumFixedParams = 8;
 constexpr static const size_t kNumFixedCandidates = 8;
 
 /// A special type that matches all TypeMatchers
-class Any final : public Castable<Any, type::Type> {
+class Any final : public utils::Castable<Any, type::Type> {
   public:
     Any() : Base(0u, type::Flags{}) {}
     ~Any() override = default;
 
     // Stub implementations for type::Type conformance.
     bool Equals(const type::UniqueNode&) const override { return false; }
-    std::string FriendlyName(const SymbolTable&) const override { return "<any>"; }
+    std::string FriendlyName() const override { return "<any>"; }
     type::Type* Clone(type::CloneContext&) const override { return nullptr; }
 };
 
@@ -176,6 +180,9 @@ class TemplateState {
         }
         return numbers_[idx];
     }
+
+    /// @return the total number of type and number templates
+    size_t Count() const { return types_.Length() + numbers_.Length(); }
 
   private:
     utils::Vector<const type::Type*, 4> types_;
@@ -327,9 +334,9 @@ class TemplateNumberMatcher : public NumberMatcher {
 // TODO(bclayton): See if we can move more of this hand-rolled code to the
 // template
 ////////////////////////////////////////////////////////////////////////////////
-using TexelFormat = ast::TexelFormat;
-using Access = ast::Access;
-using AddressSpace = ast::AddressSpace;
+using TexelFormat = builtin::TexelFormat;
+using Access = builtin::Access;
+using AddressSpace = builtin::AddressSpace;
 using ParameterUsage = sem::ParameterUsage;
 using PipelineStage = ast::PipelineStage;
 
@@ -337,11 +344,12 @@ using PipelineStage = ast::PipelineStage;
 enum class OverloadFlag {
     kIsBuiltin,                 // The overload is a builtin ('fn')
     kIsOperator,                // The overload is an operator ('op')
-    kIsInitializer,             // The overload is a type initializer ('ctor')
-    kIsConverter,               // The overload is a type converter ('conv')
+    kIsConstructor,             // The overload is a value constructor ('ctor')
+    kIsConverter,               // The overload is a value converter ('conv')
     kSupportsVertexPipeline,    // The overload can be used in vertex shaders
     kSupportsFragmentPipeline,  // The overload can be used in fragment shaders
     kSupportsComputePipeline,   // The overload can be used in compute shaders
+    kMustUse,                   // The overload cannot be called as a statement
     kIsDeprecated,              // The overload is deprecated
 };
 
@@ -454,6 +462,25 @@ constexpr auto build_vec2 = build_vec<2>;
 constexpr auto build_vec3 = build_vec<3>;
 constexpr auto build_vec4 = build_vec<4>;
 
+bool match_packedVec3(MatchState&, const type::Type* ty, const type::Type*& T) {
+    if (ty->Is<Any>()) {
+        T = ty;
+        return true;
+    }
+
+    if (auto* v = ty->As<type::Vector>()) {
+        if (v->Packed()) {
+            T = v->type();
+            return true;
+        }
+    }
+    return false;
+}
+
+const type::Vector* build_packedVec3(MatchState& state, const type::Type* el) {
+    return state.builder.create<type::Vector>(el, 3u, /* packed */ true);
+}
+
 bool match_mat(MatchState&, const type::Type* ty, Number& M, Number& N, const type::Type*& T) {
     if (ty->Is<Any>()) {
         M = Number::any;
@@ -559,8 +586,8 @@ bool match_ptr(MatchState&, const type::Type* ty, Number& S, const type::Type*& 
 }
 
 const type::Pointer* build_ptr(MatchState& state, Number S, const type::Type* T, Number& A) {
-    return state.builder.create<type::Pointer>(T, static_cast<ast::AddressSpace>(S.Value()),
-                                               static_cast<ast::Access>(A.Value()));
+    return state.builder.create<type::Pointer>(T, static_cast<builtin::AddressSpace>(S.Value()),
+                                               static_cast<builtin::Access>(A.Value()));
 }
 
 bool match_atomic(MatchState&, const type::Type* ty, const type::Type*& T) {
@@ -584,11 +611,11 @@ bool match_sampler(MatchState&, const type::Type* ty) {
     if (ty->Is<Any>()) {
         return true;
     }
-    return ty->Is([](const type::Sampler* s) { return s->kind() == ast::SamplerKind::kSampler; });
+    return ty->Is([](const type::Sampler* s) { return s->kind() == type::SamplerKind::kSampler; });
 }
 
 const type::Sampler* build_sampler(MatchState& state) {
-    return state.builder.create<type::Sampler>(ast::SamplerKind::kSampler);
+    return state.builder.create<type::Sampler>(type::SamplerKind::kSampler);
 }
 
 bool match_sampler_comparison(MatchState&, const type::Type* ty) {
@@ -596,16 +623,16 @@ bool match_sampler_comparison(MatchState&, const type::Type* ty) {
         return true;
     }
     return ty->Is(
-        [](const type::Sampler* s) { return s->kind() == ast::SamplerKind::kComparisonSampler; });
+        [](const type::Sampler* s) { return s->kind() == type::SamplerKind::kComparisonSampler; });
 }
 
 const type::Sampler* build_sampler_comparison(MatchState& state) {
-    return state.builder.create<type::Sampler>(ast::SamplerKind::kComparisonSampler);
+    return state.builder.create<type::Sampler>(type::SamplerKind::kComparisonSampler);
 }
 
 bool match_texture(MatchState&,
                    const type::Type* ty,
-                   ast::TextureDimension dim,
+                   type::TextureDimension dim,
                    const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
@@ -632,17 +659,17 @@ bool match_texture(MatchState&,
         return state.builder.create<type::SampledTexture>(dim, T);                  \
     }
 
-DECLARE_SAMPLED_TEXTURE(1d, ast::TextureDimension::k1d)
-DECLARE_SAMPLED_TEXTURE(2d, ast::TextureDimension::k2d)
-DECLARE_SAMPLED_TEXTURE(2d_array, ast::TextureDimension::k2dArray)
-DECLARE_SAMPLED_TEXTURE(3d, ast::TextureDimension::k3d)
-DECLARE_SAMPLED_TEXTURE(cube, ast::TextureDimension::kCube)
-DECLARE_SAMPLED_TEXTURE(cube_array, ast::TextureDimension::kCubeArray)
+DECLARE_SAMPLED_TEXTURE(1d, type::TextureDimension::k1d)
+DECLARE_SAMPLED_TEXTURE(2d, type::TextureDimension::k2d)
+DECLARE_SAMPLED_TEXTURE(2d_array, type::TextureDimension::k2dArray)
+DECLARE_SAMPLED_TEXTURE(3d, type::TextureDimension::k3d)
+DECLARE_SAMPLED_TEXTURE(cube, type::TextureDimension::kCube)
+DECLARE_SAMPLED_TEXTURE(cube_array, type::TextureDimension::kCubeArray)
 #undef DECLARE_SAMPLED_TEXTURE
 
 bool match_texture_multisampled(MatchState&,
                                 const type::Type* ty,
-                                ast::TextureDimension dim,
+                                type::TextureDimension dim,
                                 const type::Type*& T) {
     if (ty->Is<Any>()) {
         T = ty;
@@ -667,10 +694,10 @@ bool match_texture_multisampled(MatchState&,
         return state.builder.create<type::MultisampledTexture>(dim, T);                      \
     }
 
-DECLARE_MULTISAMPLED_TEXTURE(2d, ast::TextureDimension::k2d)
+DECLARE_MULTISAMPLED_TEXTURE(2d, type::TextureDimension::k2d)
 #undef DECLARE_MULTISAMPLED_TEXTURE
 
-bool match_texture_depth(MatchState&, const type::Type* ty, ast::TextureDimension dim) {
+bool match_texture_depth(MatchState&, const type::Type* ty, type::TextureDimension dim) {
     if (ty->Is<Any>()) {
         return true;
     }
@@ -685,10 +712,10 @@ bool match_texture_depth(MatchState&, const type::Type* ty, ast::TextureDimensio
         return state.builder.create<type::DepthTexture>(dim);                           \
     }
 
-DECLARE_DEPTH_TEXTURE(2d, ast::TextureDimension::k2d)
-DECLARE_DEPTH_TEXTURE(2d_array, ast::TextureDimension::k2dArray)
-DECLARE_DEPTH_TEXTURE(cube, ast::TextureDimension::kCube)
-DECLARE_DEPTH_TEXTURE(cube_array, ast::TextureDimension::kCubeArray)
+DECLARE_DEPTH_TEXTURE(2d, type::TextureDimension::k2d)
+DECLARE_DEPTH_TEXTURE(2d_array, type::TextureDimension::k2dArray)
+DECLARE_DEPTH_TEXTURE(cube, type::TextureDimension::kCube)
+DECLARE_DEPTH_TEXTURE(cube_array, type::TextureDimension::kCubeArray)
 #undef DECLARE_DEPTH_TEXTURE
 
 bool match_texture_depth_multisampled_2d(MatchState&, const type::Type* ty) {
@@ -696,17 +723,17 @@ bool match_texture_depth_multisampled_2d(MatchState&, const type::Type* ty) {
         return true;
     }
     return ty->Is([&](const type::DepthMultisampledTexture* t) {
-        return t->dim() == ast::TextureDimension::k2d;
+        return t->dim() == type::TextureDimension::k2d;
     });
 }
 
 type::DepthMultisampledTexture* build_texture_depth_multisampled_2d(MatchState& state) {
-    return state.builder.create<type::DepthMultisampledTexture>(ast::TextureDimension::k2d);
+    return state.builder.create<type::DepthMultisampledTexture>(type::TextureDimension::k2d);
 }
 
 bool match_texture_storage(MatchState&,
                            const type::Type* ty,
-                           ast::TextureDimension dim,
+                           type::TextureDimension dim,
                            Number& F,
                            Number& A) {
     if (ty->Is<Any>()) {
@@ -737,10 +764,10 @@ bool match_texture_storage(MatchState&,
         return state.builder.create<type::StorageTexture>(dim, format, access, T);                 \
     }
 
-DECLARE_STORAGE_TEXTURE(1d, ast::TextureDimension::k1d)
-DECLARE_STORAGE_TEXTURE(2d, ast::TextureDimension::k2d)
-DECLARE_STORAGE_TEXTURE(2d_array, ast::TextureDimension::k2dArray)
-DECLARE_STORAGE_TEXTURE(3d, ast::TextureDimension::k3d)
+DECLARE_STORAGE_TEXTURE(1d, type::TextureDimension::k1d)
+DECLARE_STORAGE_TEXTURE(2d, type::TextureDimension::k2d)
+DECLARE_STORAGE_TEXTURE(2d_array, type::TextureDimension::k2dArray)
+DECLARE_STORAGE_TEXTURE(3d, type::TextureDimension::k3d)
 #undef DECLARE_STORAGE_TEXTURE
 
 bool match_texture_external(MatchState&, const type::Type* ty) {
@@ -793,172 +820,26 @@ bool match_atomic_compare_exchange_result(MatchState&, const type::Type* ty, con
     return false;
 }
 
-struct NameAndType {
-    std::string name;
-    const type::Type* type;
-};
-sem::Struct* build_struct(ProgramBuilder& b,
-                          std::string name,
-                          std::initializer_list<NameAndType> member_names_and_types) {
-    uint32_t offset = 0;
-    uint32_t max_align = 0;
-    utils::Vector<const sem::StructMember*, 4> members;
-    for (auto& m : member_names_and_types) {
-        uint32_t align = std::max<uint32_t>(m.type->Align(), 1);
-        uint32_t size = m.type->Size();
-        offset = utils::RoundUp(align, offset);
-        max_align = std::max(max_align, align);
-        members.Push(b.create<sem::StructMember>(
-            /* declaration */ nullptr,
-            /* source */ Source{},
-            /* name */ b.Sym(m.name),
-            /* type */ m.type,
-            /* index */ static_cast<uint32_t>(members.Length()),
-            /* offset */ offset,
-            /* align */ align,
-            /* size */ size,
-            /* location */ std::nullopt));
-        offset += size;
-    }
-    uint32_t size_without_padding = offset;
-    uint32_t size_with_padding = utils::RoundUp(max_align, offset);
-    return b.create<sem::Struct>(
-        /* declaration */ nullptr,
-        /* source */ Source{},
-        /* name */ b.Sym(name),
-        /* members */ std::move(members),
-        /* align */ max_align,
-        /* size */ size_with_padding,
-        /* size_no_padding */ size_without_padding);
+const type::Struct* build_modf_result(MatchState& state, const type::Type* el) {
+    return CreateModfResult(state.builder, el);
 }
 
-const sem::Struct* build_modf_result(MatchState& state, const type::Type* el) {
-    auto build_f32 = [&] {
-        auto* ty = state.builder.create<type::F32>();
-        return build_struct(state.builder, "__modf_result_f32", {{"fract", ty}, {"whole", ty}});
-    };
-    auto build_f16 = [&] {
-        auto* ty = state.builder.create<type::F16>();
-        return build_struct(state.builder, "__modf_result_f16", {{"fract", ty}, {"whole", ty}});
-    };
-
-    return Switch(
-        el,                                             //
-        [&](const type::F32*) { return build_f32(); },  //
-        [&](const type::F16*) { return build_f16(); },  //
-        [&](const type::AbstractFloat*) {
-            auto* abstract = build_struct(state.builder, "__modf_result_abstract",
-                                          {{"fract", el}, {"whole", el}});
-            abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
-            return abstract;
-        },
-        [&](Default) {
-            TINT_ICE(Resolver, state.builder.Diagnostics())
-                << "unhandled modf type: " << state.builder.FriendlyName(el);
-            return nullptr;
-        });
+const type::Struct* build_modf_result_vec(MatchState& state, Number& n, const type::Type* el) {
+    auto* vec = state.builder.create<type::Vector>(el, n.Value());
+    return CreateModfResult(state.builder, vec);
 }
 
-const sem::Struct* build_modf_result_vec(MatchState& state, Number& n, const type::Type* el) {
-    auto prefix = "__modf_result_vec" + std::to_string(n.Value());
-    auto build_f32 = [&] {
-        auto* vec =
-            state.builder.create<type::Vector>(state.builder.create<type::F32>(), n.Value());
-        return build_struct(state.builder, prefix + "_f32", {{"fract", vec}, {"whole", vec}});
-    };
-    auto build_f16 = [&] {
-        auto* vec =
-            state.builder.create<type::Vector>(state.builder.create<type::F16>(), n.Value());
-        return build_struct(state.builder, prefix + "_f16", {{"fract", vec}, {"whole", vec}});
-    };
-
-    return Switch(
-        el,                                             //
-        [&](const type::F32*) { return build_f32(); },  //
-        [&](const type::F16*) { return build_f16(); },  //
-        [&](const type::AbstractFloat*) {
-            auto* vec = state.builder.create<type::Vector>(el, n.Value());
-            auto* abstract =
-                build_struct(state.builder, prefix + "_abstract", {{"fract", vec}, {"whole", vec}});
-            abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
-            return abstract;
-        },
-        [&](Default) {
-            TINT_ICE(Resolver, state.builder.Diagnostics())
-                << "unhandled modf type: " << state.builder.FriendlyName(el);
-            return nullptr;
-        });
+const type::Struct* build_frexp_result(MatchState& state, const type::Type* el) {
+    return CreateFrexpResult(state.builder, el);
 }
 
-const sem::Struct* build_frexp_result(MatchState& state, const type::Type* el) {
-    auto build_f32 = [&] {
-        auto* f = state.builder.create<type::F32>();
-        auto* i = state.builder.create<type::I32>();
-        return build_struct(state.builder, "__frexp_result_f32", {{"fract", f}, {"exp", i}});
-    };
-    auto build_f16 = [&] {
-        auto* f = state.builder.create<type::F16>();
-        auto* i = state.builder.create<type::I32>();
-        return build_struct(state.builder, "__frexp_result_f16", {{"fract", f}, {"exp", i}});
-    };
-
-    return Switch(
-        el,                                             //
-        [&](const type::F32*) { return build_f32(); },  //
-        [&](const type::F16*) { return build_f16(); },  //
-        [&](const type::AbstractFloat*) {
-            auto* i = state.builder.create<type::AbstractInt>();
-            auto* abstract =
-                build_struct(state.builder, "__frexp_result_abstract", {{"fract", el}, {"exp", i}});
-            abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
-            return abstract;
-        },
-        [&](Default) {
-            TINT_ICE(Resolver, state.builder.Diagnostics())
-                << "unhandled frexp type: " << state.builder.FriendlyName(el);
-            return nullptr;
-        });
+const type::Struct* build_frexp_result_vec(MatchState& state, Number& n, const type::Type* el) {
+    auto* vec = state.builder.create<type::Vector>(el, n.Value());
+    return CreateFrexpResult(state.builder, vec);
 }
 
-const sem::Struct* build_frexp_result_vec(MatchState& state, Number& n, const type::Type* el) {
-    auto prefix = "__frexp_result_vec" + std::to_string(n.Value());
-    auto build_f32 = [&] {
-        auto* f = state.builder.create<type::Vector>(state.builder.create<type::F32>(), n.Value());
-        auto* e = state.builder.create<type::Vector>(state.builder.create<type::I32>(), n.Value());
-        return build_struct(state.builder, prefix + "_f32", {{"fract", f}, {"exp", e}});
-    };
-    auto build_f16 = [&] {
-        auto* f = state.builder.create<type::Vector>(state.builder.create<type::F16>(), n.Value());
-        auto* e = state.builder.create<type::Vector>(state.builder.create<type::I32>(), n.Value());
-        return build_struct(state.builder, prefix + "_f16", {{"fract", f}, {"exp", e}});
-    };
-
-    return Switch(
-        el,                                             //
-        [&](const type::F32*) { return build_f32(); },  //
-        [&](const type::F16*) { return build_f16(); },  //
-        [&](const type::AbstractFloat*) {
-            auto* f = state.builder.create<type::Vector>(el, n.Value());
-            auto* e = state.builder.create<type::Vector>(state.builder.create<type::AbstractInt>(),
-                                                         n.Value());
-            auto* abstract =
-                build_struct(state.builder, prefix + "_abstract", {{"fract", f}, {"exp", e}});
-            abstract->SetConcreteTypes(utils::Vector{build_f32(), build_f16()});
-            return abstract;
-        },
-        [&](Default) {
-            TINT_ICE(Resolver, state.builder.Diagnostics())
-                << "unhandled frexp type: " << state.builder.FriendlyName(el);
-            return nullptr;
-        });
-}
-
-const sem::Struct* build_atomic_compare_exchange_result(MatchState& state, const type::Type* ty) {
-    return build_struct(
-        state.builder,
-        "__atomic_compare_exchange_result" + ty->FriendlyName(state.builder.Symbols()),
-        {{"old_value", const_cast<type::Type*>(ty)},
-         {"exchanged", state.builder.create<type::Bool>()}});
+const type::Struct* build_atomic_compare_exchange_result(MatchState& state, const type::Type* ty) {
+    return CreateAtomicCompareExchangeResult(state.builder, ty);
 }
 
 /// ParameterInfo describes a parameter
@@ -1074,7 +955,7 @@ class Impl : public IntrinsicTable {
   public:
     explicit Impl(ProgramBuilder& builder);
 
-    Builtin Lookup(sem::BuiltinType builtin_type,
+    Builtin Lookup(builtin::Function builtin_type,
                    utils::VectorRef<const type::Type*> args,
                    sem::EvaluationStage earliest_eval_stage,
                    const Source& source) override;
@@ -1091,7 +972,7 @@ class Impl : public IntrinsicTable {
                           const Source& source,
                           bool is_compound) override;
 
-    InitOrConv Lookup(InitConvIntrinsic type,
+    CtorOrConv Lookup(CtorConvIntrinsic type,
                       const type::Type* template_arg,
                       utils::VectorRef<const type::Type*> args,
                       sem::EvaluationStage earliest_eval_stage,
@@ -1142,7 +1023,7 @@ class Impl : public IntrinsicTable {
                                       utils::VectorRef<const type::Type*> args,
                                       sem::EvaluationStage earliest_eval_stage,
                                       TemplateState templates,
-                                      OnNoMatch on_no_match) const;
+                                      const OnNoMatch& on_no_match) const;
 
     /// Evaluates the single overload for the provided argument types.
     /// @param overload the overload being considered
@@ -1181,12 +1062,12 @@ class Impl : public IntrinsicTable {
                      sem::EvaluationStage earliest_eval_stage) const;
 
     // Prints the overload for emitting diagnostics
-    void PrintOverload(std::ostream& ss,
+    void PrintOverload(utils::StringStream& ss,
                        const OverloadInfo* overload,
                        const char* intrinsic_name) const;
 
     // Prints the list of candidates for emitting diagnostics
-    void PrintCandidates(std::ostream& ss,
+    void PrintCandidates(utils::StringStream& ss,
                          utils::VectorRef<Candidate> candidates,
                          const char* intrinsic_name) const;
 
@@ -1199,22 +1080,21 @@ class Impl : public IntrinsicTable {
     ProgramBuilder& builder;
     Matchers matchers;
     utils::Hashmap<IntrinsicPrototype, sem::Builtin*, 64, IntrinsicPrototype::Hasher> builtins;
-    utils::Hashmap<IntrinsicPrototype, sem::TypeInitializer*, 16, IntrinsicPrototype::Hasher>
-        initializers;
-    utils::Hashmap<IntrinsicPrototype, sem::TypeConversion*, 16, IntrinsicPrototype::Hasher>
+    utils::Hashmap<IntrinsicPrototype, sem::ValueConstructor*, 16, IntrinsicPrototype::Hasher>
+        constructors;
+    utils::Hashmap<IntrinsicPrototype, sem::ValueConversion*, 16, IntrinsicPrototype::Hasher>
         converters;
 };
 
 /// @return a string representing a call to a builtin with the given argument
 /// types.
-std::string CallSignature(ProgramBuilder& builder,
-                          const char* intrinsic_name,
+std::string CallSignature(const char* intrinsic_name,
                           utils::VectorRef<const type::Type*> args,
                           const type::Type* template_arg = nullptr) {
-    std::stringstream ss;
+    utils::StringStream ss;
     ss << intrinsic_name;
     if (template_arg) {
-        ss << "<" << template_arg->FriendlyName(builder.Symbols()) << ">";
+        ss << "<" << template_arg->FriendlyName() << ">";
     }
     ss << "(";
     {
@@ -1224,7 +1104,7 @@ std::string CallSignature(ProgramBuilder& builder,
                 ss << ", ";
             }
             first = false;
-            ss << arg->UnwrapRef()->FriendlyName(builder.Symbols());
+            ss << arg->UnwrapRef()->FriendlyName();
         }
     }
     ss << ")";
@@ -1242,16 +1122,16 @@ std::string TemplateNumberMatcher::String(MatchState* state) const {
 
 Impl::Impl(ProgramBuilder& b) : builder(b) {}
 
-Impl::Builtin Impl::Lookup(sem::BuiltinType builtin_type,
+Impl::Builtin Impl::Lookup(builtin::Function builtin_type,
                            utils::VectorRef<const type::Type*> args,
                            sem::EvaluationStage earliest_eval_stage,
                            const Source& source) {
-    const char* intrinsic_name = sem::str(builtin_type);
+    const char* intrinsic_name = builtin::str(builtin_type);
 
     // Generates an error when no overloads match the provided arguments
     auto on_no_match = [&](utils::VectorRef<Candidate> candidates) {
-        std::stringstream ss;
-        ss << "no matching call to " << CallSignature(builder, intrinsic_name, args) << std::endl;
+        utils::StringStream ss;
+        ss << "no matching call to " << CallSignature(intrinsic_name, args) << std::endl;
         if (!candidates.IsEmpty()) {
             ss << std::endl
                << candidates.Length() << " candidate function"
@@ -1274,24 +1154,26 @@ Impl::Builtin Impl::Lookup(sem::BuiltinType builtin_type,
         params.Reserve(match.parameters.Length());
         for (auto& p : match.parameters) {
             params.Push(builder.create<sem::Parameter>(
-                nullptr, static_cast<uint32_t>(params.Length()), p.type, ast::AddressSpace::kNone,
-                ast::Access::kUndefined, p.usage));
+                nullptr, static_cast<uint32_t>(params.Length()), p.type,
+                builtin::AddressSpace::kUndefined, builtin::Access::kUndefined, p.usage));
         }
         sem::PipelineStageSet supported_stages;
-        if (match.overload->flags.Contains(OverloadFlag::kSupportsVertexPipeline)) {
+        auto& overload = *match.overload;
+        if (overload.flags.Contains(OverloadFlag::kSupportsVertexPipeline)) {
             supported_stages.Add(ast::PipelineStage::kVertex);
         }
-        if (match.overload->flags.Contains(OverloadFlag::kSupportsFragmentPipeline)) {
+        if (overload.flags.Contains(OverloadFlag::kSupportsFragmentPipeline)) {
             supported_stages.Add(ast::PipelineStage::kFragment);
         }
-        if (match.overload->flags.Contains(OverloadFlag::kSupportsComputePipeline)) {
+        if (overload.flags.Contains(OverloadFlag::kSupportsComputePipeline)) {
             supported_stages.Add(ast::PipelineStage::kCompute);
         }
-        auto eval_stage = match.overload->const_eval_fn ? sem::EvaluationStage::kConstant
-                                                        : sem::EvaluationStage::kRuntime;
-        return builder.create<sem::Builtin>(
-            builtin_type, match.return_type, std::move(params), eval_stage, supported_stages,
-            match.overload->flags.Contains(OverloadFlag::kIsDeprecated));
+        auto eval_stage = overload.const_eval_fn ? sem::EvaluationStage::kConstant
+                                                 : sem::EvaluationStage::kRuntime;
+        return builder.create<sem::Builtin>(builtin_type, match.return_type, std::move(params),
+                                            eval_stage, supported_stages,
+                                            overload.flags.Contains(OverloadFlag::kIsDeprecated),
+                                            overload.flags.Contains(OverloadFlag::kMustUse));
     });
     return Builtin{sem, match.overload->const_eval_fn};
 }
@@ -1317,8 +1199,8 @@ IntrinsicTable::UnaryOperator Impl::Lookup(ast::UnaryOp op,
 
     // Generates an error when no overloads match the provided arguments
     auto on_no_match = [&, name = intrinsic_name](utils::VectorRef<Candidate> candidates) {
-        std::stringstream ss;
-        ss << "no matching overload for " << CallSignature(builder, name, args) << std::endl;
+        utils::StringStream ss;
+        ss << "no matching overload for " << CallSignature(name, args) << std::endl;
         if (!candidates.IsEmpty()) {
             ss << std::endl
                << candidates.Length() << " candidate operator"
@@ -1395,8 +1277,8 @@ IntrinsicTable::BinaryOperator Impl::Lookup(ast::BinaryOp op,
 
     // Generates an error when no overloads match the provided arguments
     auto on_no_match = [&, name = intrinsic_name](utils::VectorRef<Candidate> candidates) {
-        std::stringstream ss;
-        ss << "no matching overload for " << CallSignature(builder, name, args) << std::endl;
+        utils::StringStream ss;
+        ss << "no matching overload for " << CallSignature(name, args) << std::endl;
         if (!candidates.IsEmpty()) {
             ss << std::endl
                << candidates.Length() << " candidate operator"
@@ -1421,7 +1303,7 @@ IntrinsicTable::BinaryOperator Impl::Lookup(ast::BinaryOp op,
     };
 }
 
-IntrinsicTable::InitOrConv Impl::Lookup(InitConvIntrinsic type,
+IntrinsicTable::CtorOrConv Impl::Lookup(CtorConvIntrinsic type,
                                         const type::Type* template_arg,
                                         utils::VectorRef<const type::Type*> args,
                                         sem::EvaluationStage earliest_eval_stage,
@@ -1430,12 +1312,12 @@ IntrinsicTable::InitOrConv Impl::Lookup(InitConvIntrinsic type,
 
     // Generates an error when no overloads match the provided arguments
     auto on_no_match = [&](utils::VectorRef<Candidate> candidates) {
-        std::stringstream ss;
-        ss << "no matching initializer for " << CallSignature(builder, name, args, template_arg)
+        utils::StringStream ss;
+        ss << "no matching constructor for " << CallSignature(name, args, template_arg)
            << std::endl;
         Candidates ctor, conv;
         for (auto candidate : candidates) {
-            if (candidate.overload->flags.Contains(OverloadFlag::kIsInitializer)) {
+            if (candidate.overload->flags.Contains(OverloadFlag::kIsConstructor)) {
                 ctor.Push(candidate);
             } else {
                 conv.Push(candidate);
@@ -1443,7 +1325,7 @@ IntrinsicTable::InitOrConv Impl::Lookup(InitConvIntrinsic type,
         }
         if (!ctor.IsEmpty()) {
             ss << std::endl
-               << ctor.Length() << " candidate initializer" << (ctor.Length() > 1 ? "s:" : ":")
+               << ctor.Length() << " candidate constructor" << (ctor.Length() > 1 ? "s:" : ":")
                << std::endl;
             PrintCandidates(ss, ctor, name);
         }
@@ -1463,40 +1345,40 @@ IntrinsicTable::InitOrConv Impl::Lookup(InitConvIntrinsic type,
     }
 
     // Resolve the intrinsic overload
-    auto match = MatchIntrinsic(kInitializersAndConverters[static_cast<size_t>(type)], name, args,
+    auto match = MatchIntrinsic(kConstructorsAndConverters[static_cast<size_t>(type)], name, args,
                                 earliest_eval_stage, templates, on_no_match);
     if (!match.overload) {
         return {};
     }
 
-    // Was this overload a initializer or conversion?
-    if (match.overload->flags.Contains(OverloadFlag::kIsInitializer)) {
-        utils::Vector<const sem::Parameter*, 8> params;
+    // Was this overload a constructor or conversion?
+    if (match.overload->flags.Contains(OverloadFlag::kIsConstructor)) {
+        utils::Vector<sem::Parameter*, 8> params;
         params.Reserve(match.parameters.Length());
         for (auto& p : match.parameters) {
             params.Push(builder.create<sem::Parameter>(
-                nullptr, static_cast<uint32_t>(params.Length()), p.type, ast::AddressSpace::kNone,
-                ast::Access::kUndefined, p.usage));
+                nullptr, static_cast<uint32_t>(params.Length()), p.type,
+                builtin::AddressSpace::kUndefined, builtin::Access::kUndefined, p.usage));
         }
         auto eval_stage = match.overload->const_eval_fn ? sem::EvaluationStage::kConstant
                                                         : sem::EvaluationStage::kRuntime;
-        auto* target = initializers.GetOrCreate(match, [&]() {
-            return builder.create<sem::TypeInitializer>(match.return_type, std::move(params),
-                                                        eval_stage);
+        auto* target = constructors.GetOrCreate(match, [&]() {
+            return builder.create<sem::ValueConstructor>(match.return_type, std::move(params),
+                                                         eval_stage);
         });
-        return InitOrConv{target, match.overload->const_eval_fn};
+        return CtorOrConv{target, match.overload->const_eval_fn};
     }
 
     // Conversion.
     auto* target = converters.GetOrCreate(match, [&]() {
         auto param = builder.create<sem::Parameter>(
-            nullptr, 0u, match.parameters[0].type, ast::AddressSpace::kNone,
-            ast::Access::kUndefined, match.parameters[0].usage);
+            nullptr, 0u, match.parameters[0].type, builtin::AddressSpace::kUndefined,
+            builtin::Access::kUndefined, match.parameters[0].usage);
         auto eval_stage = match.overload->const_eval_fn ? sem::EvaluationStage::kConstant
                                                         : sem::EvaluationStage::kRuntime;
-        return builder.create<sem::TypeConversion>(match.return_type, param, eval_stage);
+        return builder.create<sem::ValueConversion>(match.return_type, param, eval_stage);
     });
-    return InitOrConv{target, match.overload->const_eval_fn};
+    return CtorOrConv{target, match.overload->const_eval_fn};
 }
 
 IntrinsicPrototype Impl::MatchIntrinsic(const IntrinsicInfo& intrinsic,
@@ -1504,7 +1386,7 @@ IntrinsicPrototype Impl::MatchIntrinsic(const IntrinsicInfo& intrinsic,
                                         utils::VectorRef<const type::Type*> args,
                                         sem::EvaluationStage earliest_eval_stage,
                                         TemplateState templates,
-                                        OnNoMatch on_no_match) const {
+                                        const OnNoMatch& on_no_match) const {
     size_t num_matched = 0;
     size_t match_idx = 0;
     utils::Vector<Candidate, kNumFixedCandidates> candidates;
@@ -1567,6 +1449,7 @@ Impl::Candidate Impl::ScoreOverload(const OverloadInfo* overload,
     // The overloads with the lowest score will be displayed first (top-most).
     constexpr int kMismatchedParamCountPenalty = 3;
     constexpr int kMismatchedParamTypePenalty = 2;
+    constexpr int kMismatchedTemplateCountPenalty = 1;
     constexpr int kMismatchedTemplateTypePenalty = 1;
     constexpr int kMismatchedTemplateNumberPenalty = 1;
 
@@ -1578,6 +1461,15 @@ Impl::Candidate Impl::ScoreOverload(const OverloadInfo* overload,
     if (num_parameters != num_arguments) {
         score += kMismatchedParamCountPenalty * (std::max(num_parameters, num_arguments) -
                                                  std::min(num_parameters, num_arguments));
+    }
+
+    if (score == 0) {
+        // Check that all of the template arguments provided are actually expected by the overload.
+        size_t expected_templates = overload->num_template_types + overload->num_template_numbers;
+        size_t provided_templates = in_templates.Count();
+        if (provided_templates > expected_templates) {
+            score += kMismatchedTemplateCountPenalty * (provided_templates - expected_templates);
+        }
     }
 
     // Make a mutable copy of the input templates so we can implicitly match more templated
@@ -1732,7 +1624,7 @@ MatchState Impl::Match(TemplateState& templates,
     return MatchState(builder, templates, matchers, overload, matcher_indices, earliest_eval_stage);
 }
 
-void Impl::PrintOverload(std::ostream& ss,
+void Impl::PrintOverload(utils::StringStream& ss,
                          const OverloadInfo* overload,
                          const char* intrinsic_name) const {
     TemplateState templates;
@@ -1749,8 +1641,8 @@ void Impl::PrintOverload(std::ostream& ss,
             // e.g. vec3<T>(vec3<U>) -> vec3<f32>
             print_template_type = true;
         } else if ((overload->num_parameters == 0) &&
-                   overload->flags.Contains(OverloadFlag::kIsInitializer)) {
-            // Print for initializers with no params
+                   overload->flags.Contains(OverloadFlag::kIsConstructor)) {
+            // Print for constructors with no params
             // e.g. vec2<T>() -> vec2<T>
             print_template_type = true;
         }
@@ -1804,7 +1696,7 @@ void Impl::PrintOverload(std::ostream& ss,
     }
 }
 
-void Impl::PrintCandidates(std::ostream& ss,
+void Impl::PrintCandidates(utils::StringStream& ss,
                            utils::VectorRef<Candidate> candidates,
                            const char* intrinsic_name) const {
     for (auto& candidate : candidates) {
@@ -1842,11 +1734,11 @@ void Impl::ErrAmbiguousOverload(const char* intrinsic_name,
                                 utils::VectorRef<const type::Type*> args,
                                 TemplateState templates,
                                 utils::VectorRef<Candidate> candidates) const {
-    std::stringstream ss;
+    utils::StringStream ss;
     ss << "ambiguous overload while attempting to match " << intrinsic_name;
     for (size_t i = 0; i < std::numeric_limits<size_t>::max(); i++) {
         if (auto* ty = templates.Type(i)) {
-            ss << ((i == 0) ? "<" : ", ") << ty->FriendlyName(builder.Symbols());
+            ss << ((i == 0) ? "<" : ", ") << ty->FriendlyName();
         } else {
             if (i > 0) {
                 ss << ">";
@@ -1861,7 +1753,7 @@ void Impl::ErrAmbiguousOverload(const char* intrinsic_name,
             ss << ", ";
         }
         first = false;
-        ss << arg->FriendlyName(builder.Symbols());
+        ss << arg->FriendlyName();
     }
     ss << "):\n";
     for (auto& candidate : candidates) {

@@ -18,8 +18,44 @@ TINT_INSTANTIATE_TYPEINFO(tint::ir::Function);
 
 namespace tint::ir {
 
-Function::Function() : Base() {}
+Function::Function(Symbol name,
+                   type::Type* rt,
+                   PipelineStage stage,
+                   std::optional<std::array<uint32_t, 3>> wg_size)
+    : Base(), name_(name), return_type_(rt), pipeline_stage_(stage), workgroup_size_(wg_size) {}
 
 Function::~Function() = default;
+
+utils::StringStream& operator<<(utils::StringStream& out, Function::PipelineStage value) {
+    switch (value) {
+        case Function::PipelineStage::kVertex:
+            return out << "vertex";
+        case Function::PipelineStage::kFragment:
+            return out << "fragment";
+        case Function::PipelineStage::kCompute:
+            return out << "compute";
+        default:
+            break;
+    }
+    return out << "<unknown>";
+}
+
+utils::StringStream& operator<<(utils::StringStream& out, Function::ReturnAttribute value) {
+    switch (value) {
+        case Function::ReturnAttribute::kLocation:
+            return out << "location";
+        case Function::ReturnAttribute::kFragDepth:
+            return out << "frag_depth";
+        case Function::ReturnAttribute::kSampleMask:
+            return out << "sample_mask";
+        case Function::ReturnAttribute::kPosition:
+            return out << "position";
+        case Function::ReturnAttribute::kInvariant:
+            return out << "invariant";
+        default:
+            break;
+    }
+    return out << "<unknown>";
+}
 
 }  // namespace tint::ir

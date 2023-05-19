@@ -17,12 +17,13 @@
 
 #include <string>
 
+#include "src/tint/ast/type.h"
 #include "src/tint/ast/type_decl.h"
 
 namespace tint::ast {
 
 /// A type alias type. Holds a name and pointer to another type.
-class Alias final : public Castable<Alias, TypeDecl> {
+class Alias final : public utils::Castable<Alias, TypeDecl> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
@@ -30,9 +31,8 @@ class Alias final : public Castable<Alias, TypeDecl> {
     /// @param src the source of this node
     /// @param name the symbol for the alias
     /// @param subtype the alias'd type
-    Alias(ProgramID pid, NodeID nid, const Source& src, const Symbol& name, const Type* subtype);
-    /// Move constructor
-    Alias(Alias&&);
+    Alias(ProgramID pid, NodeID nid, const Source& src, const Identifier* name, Type subtype);
+
     /// Destructor
     ~Alias() override;
 
@@ -42,7 +42,7 @@ class Alias final : public Castable<Alias, TypeDecl> {
     const Alias* Clone(CloneContext* ctx) const override;
 
     /// the alias type
-    const Type* const type;
+    const Type type;
 };
 
 }  // namespace tint::ast

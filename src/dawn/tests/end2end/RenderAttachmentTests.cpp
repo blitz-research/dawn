@@ -17,6 +17,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class RenderAttachmentTest : public DawnTest {};
 
 // Test that it is ok to have more fragment outputs than color attachments.
@@ -24,25 +27,25 @@ class RenderAttachmentTest : public DawnTest {};
 TEST_P(RenderAttachmentTest, MoreFragmentOutputsThanAttachments) {
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
         @vertex
-        fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
 
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
         struct Output {
-            @location(0) color0 : vec4<f32>,
-            @location(1) color1 : vec4<f32>,
-            @location(2) color2 : vec4<f32>,
-            @location(3) color3 : vec4<f32>,
+            @location(0) color0 : vec4f,
+            @location(1) color1 : vec4f,
+            @location(2) color2 : vec4f,
+            @location(3) color3 : vec4f,
         }
 
         @fragment
         fn main() -> Output {
             var output : Output;
-            output.color0 = vec4<f32>(1.0, 0.0, 0.0, 1.0);
-            output.color1 = vec4<f32>(0.0, 1.0, 0.0, 1.0);
-            output.color2 = vec4<f32>(0.0, 0.0, 1.0, 1.0);
-            output.color3 = vec4<f32>(1.0, 1.0, 0.0, 1.0);
+            output.color0 = vec4f(1.0, 0.0, 0.0, 1.0);
+            output.color1 = vec4f(0.0, 1.0, 0.0, 1.0);
+            output.color2 = vec4f(0.0, 0.0, 1.0, 1.0);
+            output.color3 = vec4f(1.0, 1.0, 0.0, 1.0);
             return output;
         })");
 
@@ -76,9 +79,13 @@ TEST_P(RenderAttachmentTest, MoreFragmentOutputsThanAttachments) {
 }
 
 DAWN_INSTANTIATE_TEST(RenderAttachmentTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({}, {"use_d3d12_render_pass"}),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

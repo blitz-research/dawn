@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <cstdio>
 #include <functional>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -134,13 +135,44 @@ struct Hasher<std::tuple<TYPES...>> {
     }
 };
 
-/// Hasher specialization for std::tuple
+/// Hasher specialization for std::pair
+template <typename A, typename B>
+struct Hasher<std::pair<A, B>> {
+    /// @param tuple the tuple to hash
+    /// @returns a hash of the tuple
+    size_t operator()(const std::pair<A, B>& tuple) const { return std::apply(Hash<A, B>, tuple); }
+};
+
+/// Hasher specialization for std::variant
 template <typename... TYPES>
 struct Hasher<std::variant<TYPES...>> {
     /// @param variant the variant to hash
     /// @returns a hash of the tuple
     size_t operator()(const std::variant<TYPES...>& variant) const {
         return std::visit([](auto&& val) { return Hash(val); }, variant);
+    }
+};
+
+/// Hasher specialization for std::string, which also supports hashing of const char* and
+/// std::string_view without first constructing a std::string.
+template <>
+struct Hasher<std::string> {
+    /// @param str the string to hash
+    /// @returns a hash of the string
+    size_t operator()(const std::string& str) const {
+        return std::hash<std::string_view>()(std::string_view(str));
+    }
+
+    /// @param str the string to hash
+    /// @returns a hash of the string
+    size_t operator()(const char* str) const {
+        return std::hash<std::string_view>()(std::string_view(str));
+    }
+
+    /// @param str the string to hash
+    /// @returns a hash of the string
+    size_t operator()(const std::string_view& str) const {
+        return std::hash<std::string_view>()(str);
     }
 };
 
@@ -167,6 +199,47 @@ size_t HashCombine(size_t hash, const ARGS&... values) {
     ((hash ^= Hash(values) + (offset ^ (hash >> 2))), ...);
     return hash;
 }
+
+/// A STL-compatible equal_to implementation that specializes for types.
+template <typename T>
+struct EqualTo {
+    /// @param lhs the left hand side value
+    /// @param rhs the right hand side value
+    /// @returns true if the two values are equal
+    constexpr bool operator()(const T& lhs, const T& rhs) const {
+        return std::equal_to<T>()(lhs, rhs);
+    }
+};
+
+/// A specialization for EqualTo for std::string, which supports additional comparision with
+/// std::string_view and const char*.
+template <>
+struct EqualTo<std::string> {
+    /// @param lhs the left hand side value
+    /// @param rhs the right hand side value
+    /// @returns true if the two values are equal
+    bool operator()(const std::string& lhs, const std::string& rhs) const { return lhs == rhs; }
+
+    /// @param lhs the left hand side value
+    /// @param rhs the right hand side value
+    /// @returns true if the two values are equal
+    bool operator()(const std::string& lhs, const char* rhs) const { return lhs == rhs; }
+
+    /// @param lhs the left hand side value
+    /// @param rhs the right hand side value
+    /// @returns true if the two values are equal
+    bool operator()(const std::string& lhs, std::string_view rhs) const { return lhs == rhs; }
+
+    /// @param lhs the left hand side value
+    /// @param rhs the right hand side value
+    /// @returns true if the two values are equal
+    bool operator()(const char* lhs, const std::string& rhs) const { return lhs == rhs; }
+
+    /// @param lhs the left hand side value
+    /// @param rhs the right hand side value
+    /// @returns true if the two values are equal
+    bool operator()(std::string_view lhs, const std::string& rhs) const { return lhs == rhs; }
+};
 
 /// Wrapper for a hashable type enabling the wrapped value to be used as a key
 /// for an unordered_map or unordered_set.

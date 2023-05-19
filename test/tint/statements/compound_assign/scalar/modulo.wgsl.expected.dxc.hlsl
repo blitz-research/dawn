@@ -3,13 +3,17 @@ void unused_entry_point() {
   return;
 }
 
-RWByteAddressBuffer v : register(u0, space0);
+RWByteAddressBuffer v : register(u0);
 
 int tint_mod(int lhs, int rhs) {
-  return (lhs % (((rhs == 0) | ((lhs == -2147483648) & (rhs == -1))) ? 1 : rhs));
+  const int rhs_or_one = (((rhs == 0) | ((lhs == -2147483648) & (rhs == -1))) ? 1 : rhs);
+  if (any(((uint((lhs | rhs_or_one)) & 2147483648u) != 0u))) {
+    return (lhs - ((lhs / rhs_or_one) * rhs_or_one));
+  } else {
+    return (lhs % rhs_or_one);
+  }
 }
 
 void foo() {
-  const int tint_symbol = tint_mod(asint(v.Load(0u)), 2);
-  v.Store(0u, asuint(tint_symbol));
+  v.Store(0u, asuint(tint_mod(asint(v.Load(0u)), 2)));
 }

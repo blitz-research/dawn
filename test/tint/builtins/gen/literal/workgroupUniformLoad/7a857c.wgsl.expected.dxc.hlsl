@@ -7,8 +7,11 @@ float tint_workgroupUniformLoad_arg_0() {
   return result;
 }
 
+RWByteAddressBuffer prevent_dce : register(u0, space2);
+
 void workgroupUniformLoad_7a857c() {
   float res = tint_workgroupUniformLoad_arg_0();
+  prevent_dce.Store(0u, asuint(res));
 }
 
 struct tint_symbol_1 {

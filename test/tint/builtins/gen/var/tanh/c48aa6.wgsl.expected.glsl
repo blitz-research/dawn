@@ -1,7 +1,7 @@
 #version 310 es
 
 void tanh_c48aa6() {
-  vec2 res = vec2(0.761594176f);
+  vec2 res = vec2(0.76159417629241943359f);
 }
 
 vec4 vertex_main() {
@@ -18,10 +18,10 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
 
 void tanh_c48aa6() {
-  vec2 res = vec2(0.761594176f);
+  vec2 res = vec2(0.76159417629241943359f);
 }
 
 void fragment_main() {
@@ -35,7 +35,7 @@ void main() {
 #version 310 es
 
 void tanh_c48aa6() {
-  vec2 res = vec2(0.761594176f);
+  vec2 res = vec2(0.76159417629241943359f);
 }
 
 void compute_main() {

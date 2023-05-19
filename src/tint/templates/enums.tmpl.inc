@@ -1,16 +1,45 @@
+{{- (Globals).Put "enum_override_names" Map -}}
+
+{{- /* ------------------------------------------------------------------ */ -}}
+{{-                      define "OverrideEnumName"                           -}}
+{{- /* Overrides the C++ name for a sem.Enum.                             */ -}}
+{{- /* Arguments:                                                         */ -}}
+{{- /* * 'Enum' the sem::Enum                                             */ -}}
+{{- /* * 'Name' the new C++ name for enum                                 */ -}}
+{{- /* ------------------------------------------------------------------ */ -}}
+{{-   $enum_override_names := (Globals).Get "enum_override_names" -}}
+{{-   $enum_override_names.Put $.Enum $.Name -}}
+{{- end -}}
+
+
+{{- /* ------------------------------------------------------------------ */ -}}
+{{-                         define "EnumName"                                -}}
+{{- /* Prints the C++ name for the given sem.Enum argument.               */ -}}
+{{- /* ------------------------------------------------------------------ */ -}}
+{{-   $enum_override_names := (Globals).Get "enum_override_names" -}}
+{{-   $override := $enum_override_names.Get $ -}}
+{{    if $override -}}
+{{        $override  -}}
+{{    else -}}
+{{        PascalCase $.Name}}
+{{-   end -}}
+{{- end -}}
+
+
 {{- /* ------------------------------------------------------------------ */ -}}
 {{-                         define "EnumCase"                                -}}
-{{- /* Prints the 'Enum::kEntry' name for the provided  sem.EnumEntry     */ -}}
+{{- /* Prints the 'Enum::kEntry' name for the provided sem.EnumEntry      */ -}}
 {{- /* argument.                                                          */ -}}
 {{- /* ------------------------------------------------------------------ */ -}}
-{{PascalCase $.Enum.Name}}::k{{PascalCase $.Name}}
+{{-   Eval "EnumName" $.Enum}}::k{{PascalCase $.Name}}
 {{- end -}}
+
 
 {{- /* ------------------------------------------------------------------ */ -}}
 {{-                         define "DeclareEnum"                             -}}
 {{- /* Declares the 'enum class' for the provided sem.Enum argument.      */ -}}
 {{- /* ------------------------------------------------------------------ */ -}}
-{{- $enum    := PascalCase $.Name -}}
+{{- $enum := Eval "EnumName" $ -}}
 enum class {{$enum}} {
     kUndefined,
 {{-   range $entry := $.Entries }}
@@ -18,10 +47,10 @@ enum class {{$enum}} {
 {{-   end }}
 };
 
-/// @param out the std::ostream to write to
+/// @param out the stream to write to
 /// @param value the {{$enum}}
 /// @returns `out` so calls can be chained
-std::ostream& operator<<(std::ostream& out, {{$enum}} value);
+utils::StringStream& operator<<(utils::StringStream& out, {{$enum}} value);
 
 /// Parse{{$enum}} parses a {{$enum}} from a string.
 /// @param str the string to parse
@@ -44,7 +73,7 @@ constexpr const char* k{{$enum}}Strings[] = {
 {{- /* Implements the 'ParseEnum' function for the provided sem.Enum      */ -}}
 {{- /* argument.                                                          */ -}}
 {{- /* ------------------------------------------------------------------ */ -}}
-{{- $enum    := PascalCase $.Name -}}
+{{- $enum := Eval "EnumName" $ -}}
 /// Parse{{$enum}} parses a {{$enum}} from a string.
 /// @param str the string to parse
 /// @returns the parsed enum, or {{$enum}}::kUndefined if the string could not be parsed.
@@ -61,11 +90,11 @@ constexpr const char* k{{$enum}}Strings[] = {
 
 {{- /* ------------------------------------------------------------------ */ -}}
 {{-                         define "EnumOStream"                             -}}
-{{- /* Implements the std::ostream 'operator<<()' function to print the   */ -}}
+{{- /* Implements the stream 'operator<<()' function to print the         */ -}}
 {{- /* provided sem.Enum.                                                 */ -}}
 {{- /* ------------------------------------------------------------------ */ -}}
-{{- $enum    := PascalCase $.Name -}}
-std::ostream& operator<<(std::ostream& out, {{$enum}} value) {
+{{- $enum := Eval "EnumName" $ -}}
+    utils::StringStream& operator<<(utils::StringStream& out, {{$enum}} value) {
     switch (value) {
         case {{$enum}}::kUndefined:
             return out << "undefined";
@@ -84,7 +113,7 @@ std::ostream& operator<<(std::ostream& out, {{$enum}} value) {
 {{- /* Implements unit tests for parsing and printing the provided        */ -}}
 {{- /* sem.Enum argument.                                                 */ -}}
 {{- /* ------------------------------------------------------------------ */ -}}
-{{- $enum    := PascalCase $.Name -}}
+{{- $enum := Eval "EnumName" $ -}}
 namespace parse_print_tests {
 
 struct Case {
@@ -142,9 +171,9 @@ INSTANTIATE_TEST_SUITE_P(ValidCases, {{$enum}}PrintTest, testing::ValuesIn(kVali
 {{- /* Implements a micro-benchmark for parsing the provided sem.Enum     */ -}}
 {{- /* argument.                                                          */ -}}
 {{- /* ------------------------------------------------------------------ */ -}}
-{{- $enum    := PascalCase $.Name -}}
+{{- $enum := Eval "EnumName" $ -}}
 void {{$enum}}Parser(::benchmark::State& state) {
-    std::array kStrings{
+    const char* kStrings[] = {
 {{-   $exclude := $.NameSet -}}
 {{-   range $entry := $.PublicEntries }}
         "{{Scramble $entry.Name $exclude}}",
@@ -157,12 +186,12 @@ void {{$enum}}Parser(::benchmark::State& state) {
 {{-   end }}
     };
     for (auto _ : state) {
-        for (auto& str : kStrings) {
+        for (auto* str : kStrings) {
             auto result = Parse{{$enum}}(str);
             benchmark::DoNotOptimize(result);
         }
     }
-}
+} // NOLINT(readability/fn_size)
 
 BENCHMARK({{$enum}}Parser);
 {{- end -}}

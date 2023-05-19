@@ -14,23 +14,27 @@
 
 #include "src/tint/type/depth_texture.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/debug.h"
+#include "src/tint/diagnostic/diagnostic.h"
+#include "src/tint/type/manager.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/hash.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::DepthTexture);
 
 namespace tint::type {
 namespace {
 
-bool IsValidDepthDimension(ast::TextureDimension dim) {
-    return dim == ast::TextureDimension::k2d || dim == ast::TextureDimension::k2dArray ||
-           dim == ast::TextureDimension::kCube || dim == ast::TextureDimension::kCubeArray;
+bool IsValidDepthDimension(TextureDimension dim) {
+    return dim == TextureDimension::k2d || dim == TextureDimension::k2dArray ||
+           dim == TextureDimension::kCube || dim == TextureDimension::kCubeArray;
 }
 
 }  // namespace
 
-DepthTexture::DepthTexture(ast::TextureDimension dim)
-    : Base(utils::Hash(TypeInfo::Of<DepthTexture>().full_hashcode, dim), dim) {
+DepthTexture::DepthTexture(TextureDimension dim)
+    : Base(utils::Hash(utils::TypeInfo::Of<DepthTexture>().full_hashcode, dim), dim) {
     TINT_ASSERT(Type, IsValidDepthDimension(dim));
 }
 
@@ -43,8 +47,8 @@ bool DepthTexture::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string DepthTexture::FriendlyName(const SymbolTable&) const {
-    std::ostringstream out;
+std::string DepthTexture::FriendlyName() const {
+    utils::StringStream out;
     out << "texture_depth_" << dim();
     return out.str();
 }

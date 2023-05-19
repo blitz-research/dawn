@@ -136,7 +136,7 @@ void DoRender(WindowData* data) {
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
     if (data->renderTriangle) {
-        utils::ComboRenderPassDescriptor desc({view});
+        dawn::utils::ComboRenderPassDescriptor desc({view});
         // Use Load to check the swapchain is lazy cleared (we shouldn't see garbage from previous
         // frames).
         desc.cColorAttachments[0].loadOp = wgpu::LoadOp::Load;
@@ -151,7 +151,7 @@ void DoRender(WindowData* data) {
             data->clearCycle = 1.0f;
         }
 
-        utils::ComboRenderPassDescriptor desc({view});
+        dawn::utils::ComboRenderPassDescriptor desc({view});
         desc.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
         desc.cColorAttachments[0].clearValue = {data->clearCycle, 1.0f - data->clearCycle, 0.0f,
                                                 1.0f};
@@ -314,20 +314,20 @@ int main(int argc, const char* argv[]) {
     queue = device.GetQueue();
 
     // The hacky pipeline to render a triangle.
-    utils::ComboRenderPipelineDescriptor pipelineDesc;
-    pipelineDesc.vertex.module = utils::CreateShaderModule(device, R"(
+    dawn::utils::ComboRenderPipelineDescriptor pipelineDesc;
+    pipelineDesc.vertex.module = dawn::utils::CreateShaderModule(device, R"(
         @vertex fn main(@builtin(vertex_index) VertexIndex : u32)
-                            -> @builtin(position) vec4<f32> {
-            var pos = array<vec2<f32>, 3>(
-                vec2<f32>( 0.0,  0.5),
-                vec2<f32>(-0.5, -0.5),
-                vec2<f32>( 0.5, -0.5)
+                            -> @builtin(position) vec4f {
+            var pos = array(
+                vec2f( 0.0,  0.5),
+                vec2f(-0.5, -0.5),
+                vec2f( 0.5, -0.5)
             );
-            return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+            return vec4f(pos[VertexIndex], 0.0, 1.0);
         })");
-    pipelineDesc.cFragment.module = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+    pipelineDesc.cFragment.module = dawn::utils::CreateShaderModule(device, R"(
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(1.0, 0.0, 0.0, 1.0);
         })");
     // BGRA shouldn't be hardcoded. Consider having a map[format -> pipeline].
     pipelineDesc.cTargets[0].format = wgpu::TextureFormat::BGRA8Unorm;
@@ -337,8 +337,9 @@ int main(int argc, const char* argv[]) {
     AddWindow();
 
     while (windows.size() != 0) {
-        utils::ScopedAutoreleasePool pool;
+        dawn::utils::ScopedAutoreleasePool pool;
         glfwPollEvents();
+        wgpuInstanceProcessEvents(instance->Get());
 
         for (auto it = windows.begin(); it != windows.end();) {
             GLFWwindow* window = it->first;

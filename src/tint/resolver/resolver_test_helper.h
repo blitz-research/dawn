@@ -26,12 +26,12 @@
 #include "gtest/gtest.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/resolver/resolver.h"
-#include "src/tint/sem/expression.h"
 #include "src/tint/sem/statement.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/sem/variable.h"
-#include "src/tint/traits.h"
 #include "src/tint/type/abstract_float.h"
 #include "src/tint/type/abstract_int.h"
+#include "src/tint/utils/traits.h"
 #include "src/tint/utils/vector.h"
 
 namespace tint::resolver {
@@ -83,9 +83,12 @@ class TestHelper : public ProgramBuilder {
     /// @return the resolved sem::Variable of the identifier, or nullptr if
     /// the expression did not resolve to a variable.
     const sem::Variable* VarOf(const ast::Expression* expr) {
-        auto* sem_ident = Sem().Get(expr)->UnwrapLoad();
-        auto* var_user = sem_ident ? sem_ident->As<sem::VariableUser>() : nullptr;
-        return var_user ? var_user->Variable() : nullptr;
+        if (auto* sem = Sem().GetVal(expr)) {
+            if (auto* var_user = As<sem::VariableUser>(sem->UnwrapLoad())) {
+                return var_user->Variable();
+            }
+        }
+        return nullptr;
     }
 
     /// Checks that all the users of the given variable are as expected
@@ -94,11 +97,11 @@ class TestHelper : public ProgramBuilder {
     /// @return true if all users are as expected
     bool CheckVarUsers(const ast::Variable* var,
                        utils::VectorRef<const ast::Expression*> expected_users) {
-        auto& var_users = Sem().Get(var)->Users();
-        if (var_users.size() != expected_users.Length()) {
+        auto var_users = Sem().Get(var)->Users();
+        if (var_users.Length() != expected_users.Length()) {
             return false;
         }
-        for (size_t i = 0; i < var_users.size(); i++) {
+        for (size_t i = 0; i < var_users.Length(); i++) {
             if (var_users[i]->Declaration() != expected_users[i]) {
                 return false;
             }
@@ -109,12 +112,12 @@ class TestHelper : public ProgramBuilder {
     /// @param type a type
     /// @returns the name for `type` that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const ast::Type* type) { return type->FriendlyName(Symbols()); }
+    std::string FriendlyName(ast::Type type) { return type->identifier->symbol.Name(); }
 
     /// @param type a type
     /// @returns the name for `type` that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const type::Type* type) { return type->FriendlyName(Symbols()); }
+    std::string FriendlyName(const type::Type* type) { return type->FriendlyName(); }
 
   private:
     std::unique_ptr<Resolver> resolver_;
@@ -196,7 +199,7 @@ T As(const Scalar& s) {
     return std::visit([](auto&& v) { return static_cast<T>(v); }, s);
 }
 
-using ast_type_func_ptr = const ast::Type* (*)(ProgramBuilder& b);
+using ast_type_func_ptr = ast::Type (*)(ProgramBuilder& b);
 using ast_expr_func_ptr = const ast::Expression* (*)(ProgramBuilder& b,
                                                      utils::VectorRef<Scalar> args);
 using ast_expr_from_double_func_ptr = const ast::Expression* (*)(ProgramBuilder& b, double v);
@@ -219,7 +222,7 @@ struct DataType<void> {
     using ElementType = void;
 
     /// @return nullptr
-    static inline const ast::Type* AST(ProgramBuilder&) { return nullptr; }
+    static inline ast::Type AST(ProgramBuilder&) { return {}; }
     /// @return nullptr
     static inline const type::Type* Sem(ProgramBuilder&) { return nullptr; }
 };
@@ -235,7 +238,7 @@ struct DataType<bool> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST bool type
-    static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.bool_(); }
+    static inline ast::Type AST(ProgramBuilder& b) { return b.ty.bool_(); }
     /// @param b the ProgramBuilder
     /// @return the semantic bool type
     static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::Bool>(); }
@@ -266,7 +269,7 @@ struct DataType<i32> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST i32 type
-    static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.i32(); }
+    static inline ast::Type AST(ProgramBuilder& b) { return b.ty.i32(); }
     /// @param b the ProgramBuilder
     /// @return the semantic i32 type
     static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::I32>(); }
@@ -297,7 +300,7 @@ struct DataType<u32> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST u32 type
-    static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.u32(); }
+    static inline ast::Type AST(ProgramBuilder& b) { return b.ty.u32(); }
     /// @param b the ProgramBuilder
     /// @return the semantic u32 type
     static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::U32>(); }
@@ -328,7 +331,7 @@ struct DataType<f32> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST f32 type
-    static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.f32(); }
+    static inline ast::Type AST(ProgramBuilder& b) { return b.ty.f32(); }
     /// @param b the ProgramBuilder
     /// @return the semantic f32 type
     static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::F32>(); }
@@ -359,7 +362,7 @@ struct DataType<f16> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST f16 type
-    static inline const ast::Type* AST(ProgramBuilder& b) { return b.ty.f16(); }
+    static inline ast::Type AST(ProgramBuilder& b) { return b.ty.f16(); }
     /// @param b the ProgramBuilder
     /// @return the semantic f16 type
     static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::F16>(); }
@@ -389,7 +392,7 @@ struct DataType<AFloat> {
     static constexpr bool is_composite = false;
 
     /// @returns nullptr, as abstract floats are un-typeable
-    static inline const ast::Type* AST(ProgramBuilder&) { return nullptr; }
+    static inline ast::Type AST(ProgramBuilder&) { return {}; }
     /// @param b the ProgramBuilder
     /// @return the semantic abstract-float type
     static inline const type::Type* Sem(ProgramBuilder& b) {
@@ -421,7 +424,7 @@ struct DataType<AInt> {
     static constexpr bool is_composite = false;
 
     /// @returns nullptr, as abstract integers are un-typeable
-    static inline const ast::Type* AST(ProgramBuilder&) { return nullptr; }
+    static inline ast::Type AST(ProgramBuilder&) { return {}; }
     /// @param b the ProgramBuilder
     /// @return the semantic abstract-int type
     static inline const type::Type* Sem(ProgramBuilder& b) { return b.create<type::AbstractInt>(); }
@@ -452,8 +455,12 @@ struct DataType<vec<N, T>> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST vector type
-    static inline const ast::Type* AST(ProgramBuilder& b) {
-        return b.ty.vec(DataType<T>::AST(b), N);
+    static inline ast::Type AST(ProgramBuilder& b) {
+        if (IsInferOrAbstract<T>) {
+            return b.ty.vec<Infer, N>();
+        } else {
+            return b.ty.vec(DataType<T>::AST(b), N);
+        }
     }
     /// @param b the ProgramBuilder
     /// @return the semantic vector type
@@ -464,7 +471,7 @@ struct DataType<vec<N, T>> {
     /// @param args args of size 1 or N with values of type T to initialize with
     /// @return a new AST vector value expression
     static inline const ast::Expression* Expr(ProgramBuilder& b, utils::VectorRef<Scalar> args) {
-        return b.Construct(AST(b), ExprArgs(b, std::move(args)));
+        return b.Call(AST(b), ExprArgs(b, std::move(args)));
     }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 or N with values of type T to initialize with
@@ -500,8 +507,12 @@ struct DataType<mat<N, M, T>> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST matrix type
-    static inline const ast::Type* AST(ProgramBuilder& b) {
-        return b.ty.mat(DataType<T>::AST(b), N, M);
+    static inline ast::Type AST(ProgramBuilder& b) {
+        if (IsInferOrAbstract<T>) {
+            return b.ty.mat<Infer, N, M>();
+        } else {
+            return b.ty.mat(DataType<T>::AST(b), N, M);
+        }
     }
     /// @param b the ProgramBuilder
     /// @return the semantic matrix type
@@ -513,7 +524,7 @@ struct DataType<mat<N, M, T>> {
     /// @param args args of size 1 or N*M with values of type T to initialize with
     /// @return a new AST matrix value expression
     static inline const ast::Expression* Expr(ProgramBuilder& b, utils::VectorRef<Scalar> args) {
-        return b.Construct(AST(b), ExprArgs(b, std::move(args)));
+        return b.Call(AST(b), ExprArgs(b, std::move(args)));
     }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 or N*M with values of type T to initialize with
@@ -559,14 +570,15 @@ struct DataType<alias<T, ID>> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST alias type
-    static inline const ast::Type* AST(ProgramBuilder& b) {
+    static inline ast::Type AST(ProgramBuilder& b) {
         auto name = b.Symbols().Register("alias_" + std::to_string(ID));
         if (!b.AST().LookupType(name)) {
-            auto* type = DataType<T>::AST(b);
+            auto type = DataType<T>::AST(b);
             b.AST().AddTypeDecl(b.ty.alias(name, type));
         }
-        return b.create<ast::TypeName>(name);
+        return b.ty(name);
     }
+
     /// @param b the ProgramBuilder
     /// @return the semantic aliased type
     static inline const type::Type* Sem(ProgramBuilder& b) { return DataType<T>::Sem(b); }
@@ -575,22 +587,22 @@ struct DataType<alias<T, ID>> {
     /// @param args the value nested elements will be initialized with
     /// @return a new AST expression of the alias type
     template <bool IS_COMPOSITE = is_composite>
-    static inline traits::EnableIf<!IS_COMPOSITE, const ast::Expression*> Expr(
+    static inline utils::traits::EnableIf<!IS_COMPOSITE, const ast::Expression*> Expr(
         ProgramBuilder& b,
         utils::VectorRef<Scalar> args) {
         // Cast
-        return b.Construct(AST(b), DataType<T>::Expr(b, std::move(args)));
+        return b.Call(AST(b), DataType<T>::Expr(b, std::move(args)));
     }
 
     /// @param b the ProgramBuilder
     /// @param args the value nested elements will be initialized with
     /// @return a new AST expression of the alias type
     template <bool IS_COMPOSITE = is_composite>
-    static inline traits::EnableIf<IS_COMPOSITE, const ast::Expression*> Expr(
+    static inline utils::traits::EnableIf<IS_COMPOSITE, const ast::Expression*> Expr(
         ProgramBuilder& b,
         utils::VectorRef<Scalar> args) {
         // Construct
-        return b.Construct(AST(b), DataType<T>::ExprArgs(b, std::move(args)));
+        return b.Call(AST(b), DataType<T>::ExprArgs(b, std::move(args)));
     }
 
     /// @param b the ProgramBuilder
@@ -615,15 +627,15 @@ struct DataType<ptr<T>> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST alias type
-    static inline const ast::Type* AST(ProgramBuilder& b) {
-        return b.create<ast::Pointer>(DataType<T>::AST(b), ast::AddressSpace::kPrivate,
-                                      ast::Access::kUndefined);
+    static inline ast::Type AST(ProgramBuilder& b) {
+        return b.ty.pointer(DataType<T>::AST(b), builtin::AddressSpace::kPrivate,
+                            builtin::Access::kUndefined);
     }
     /// @param b the ProgramBuilder
     /// @return the semantic aliased type
     static inline const type::Type* Sem(ProgramBuilder& b) {
-        return b.create<type::Pointer>(DataType<T>::Sem(b), ast::AddressSpace::kPrivate,
-                                       ast::Access::kReadWrite);
+        return b.create<type::Pointer>(DataType<T>::Sem(b), builtin::AddressSpace::kPrivate,
+                                       builtin::Access::kReadWrite);
     }
 
     /// @param b the ProgramBuilder
@@ -631,7 +643,7 @@ struct DataType<ptr<T>> {
     static inline const ast::Expression* Expr(ProgramBuilder& b,
                                               utils::VectorRef<Scalar> /*unused*/) {
         auto sym = b.Symbols().New("global_for_ptr");
-        b.GlobalVar(sym, DataType<T>::AST(b), ast::AddressSpace::kPrivate);
+        b.GlobalVar(sym, DataType<T>::AST(b), builtin::AddressSpace::kPrivate);
         return b.AddressOf(sym);
     }
 
@@ -657,11 +669,11 @@ struct DataType<array<N, T>> {
 
     /// @param b the ProgramBuilder
     /// @return a new AST array type
-    static inline const ast::Type* AST(ProgramBuilder& b) {
-        if (auto* ast = DataType<T>::AST(b)) {
+    static inline ast::Type AST(ProgramBuilder& b) {
+        if (auto ast = DataType<T>::AST(b)) {
             return b.ty.array(ast, u32(N));
         }
-        return b.ty.array(nullptr, nullptr);
+        return b.ty.array<Infer>();
     }
     /// @param b the ProgramBuilder
     /// @return the semantic array type
@@ -686,7 +698,7 @@ struct DataType<array<N, T>> {
     /// with
     /// @return a new AST array value expression
     static inline const ast::Expression* Expr(ProgramBuilder& b, utils::VectorRef<Scalar> args) {
-        return b.Construct(AST(b), ExprArgs(b, std::move(args)));
+        return b.Call(AST(b), ExprArgs(b, std::move(args)));
     }
     /// @param b the ProgramBuilder
     /// @param args args of size 1 or N with values of type T to initialize with
@@ -807,7 +819,7 @@ constexpr bool IsValue = std::is_same_v<T, Value>;
 /// Creates a Value of DataType<T> from a scalar `v`
 template <typename T>
 Value Val(T v) {
-    static_assert(traits::IsTypeIn<T, Scalar>, "v must be a Number of bool");
+    static_assert(utils::traits::IsTypeIn<T, Scalar>, "v must be a Number of bool");
     return Value::Create<T>(utils::Vector<Scalar, 1>{v});
 }
 

@@ -27,8 +27,8 @@ using namespace tint::number_suffixes;  // NOLINT
 using MslSanitizerTest = TestHelper;
 
 TEST_F(MslSanitizerTest, Call_ArrayLength) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -39,9 +39,12 @@ TEST_F(MslSanitizerTest, Call_ArrayLength) {
              Stage(ast::PipelineStage::kFragment),
          });
 
-    GeneratorImpl& gen = SanitizeAndBuild();
+    Options opts = DefaultOptions();
+    opts.array_length_from_uniform.ubo_binding = sem::BindingPoint{0, 30};
+    opts.array_length_from_uniform.bindpoint_to_size_index.emplace(sem::BindingPoint{2, 1}, 1);
+    GeneratorImpl& gen = SanitizeAndBuild(opts);
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(#include <metal_stdlib>
@@ -80,9 +83,9 @@ fragment void a_func(const constant tint_symbol* tint_symbol_2 [[buffer(30)]]) {
 TEST_F(MslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
     auto* s = Structure("my_struct", utils::Vector{
                                          Member(0, "z", ty.f32()),
-                                         Member(4, "a", ty.array<f32>(4)),
+                                         Member(4, "a", ty.array<f32>()),
                                      });
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -93,9 +96,12 @@ TEST_F(MslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
              Stage(ast::PipelineStage::kFragment),
          });
 
-    GeneratorImpl& gen = SanitizeAndBuild();
+    Options opts = DefaultOptions();
+    opts.array_length_from_uniform.ubo_binding = sem::BindingPoint{0, 30};
+    opts.array_length_from_uniform.bindpoint_to_size_index.emplace(sem::BindingPoint{2, 1}, 1);
+    GeneratorImpl& gen = SanitizeAndBuild(opts);
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(#include <metal_stdlib>
@@ -134,8 +140,8 @@ fragment void a_func(const constant tint_symbol* tint_symbol_2 [[buffer(30)]]) {
 }
 
 TEST_F(MslSanitizerTest, Call_ArrayLength_ViaLets) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     auto* p = Let("p", AddressOf("b"));
@@ -151,9 +157,12 @@ TEST_F(MslSanitizerTest, Call_ArrayLength_ViaLets) {
              Stage(ast::PipelineStage::kFragment),
          });
 
-    GeneratorImpl& gen = SanitizeAndBuild();
+    Options opts = DefaultOptions();
+    opts.array_length_from_uniform.ubo_binding = sem::BindingPoint{0, 30};
+    opts.array_length_from_uniform.bindpoint_to_size_index.emplace(sem::BindingPoint{2, 1}, 1);
+    GeneratorImpl& gen = SanitizeAndBuild(opts);
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(#include <metal_stdlib>
@@ -191,10 +200,10 @@ fragment void a_func(const constant tint_symbol* tint_symbol_2 [[buffer(30)]]) {
 }
 
 TEST_F(MslSanitizerTest, Call_ArrayLength_ArrayLengthFromUniform) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(0_a));
-    GlobalVar("c", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(2_a),
+    GlobalVar("c", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(2_a),
               Group(0_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -213,7 +222,7 @@ TEST_F(MslSanitizerTest, Call_ArrayLength_ArrayLengthFromUniform) {
     options.array_length_from_uniform.bindpoint_to_size_index.emplace(sem::BindingPoint{0, 2}, 2u);
     GeneratorImpl& gen = SanitizeAndBuild(options);
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(#include <metal_stdlib>
@@ -250,10 +259,10 @@ fragment void a_func(const constant tint_symbol* tint_symbol_2 [[buffer(29)]]) {
 }
 
 TEST_F(MslSanitizerTest, Call_ArrayLength_ArrayLengthFromUniformMissingBinding) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(0_a));
-    GlobalVar("c", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(2_a),
+    GlobalVar("c", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(2_a),
               Group(0_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -272,7 +281,7 @@ TEST_F(MslSanitizerTest, Call_ArrayLength_ArrayLengthFromUniformMissingBinding) 
     GeneratorImpl& gen = SanitizeAndBuild(options);
 
     ASSERT_FALSE(gen.Generate());
-    EXPECT_THAT(gen.error(), HasSubstr("Unable to translate builtin: arrayLength"));
+    EXPECT_THAT(gen.Diagnostics().str(), HasSubstr("Unable to translate builtin: arrayLength"));
 }
 
 }  // namespace

@@ -43,9 +43,9 @@ class ResourceMemoryAllocator;
 
 class Device final : public DeviceBase {
   public:
-    static ResultOrError<Ref<Device>> Create(Adapter* adapter,
+    static ResultOrError<Ref<Device>> Create(AdapterBase* adapter,
                                              const DeviceDescriptor* descriptor,
-                                             const TripleStateTogglesSet& userProvidedToggles);
+                                             const TogglesState& deviceToggles);
     ~Device() override;
 
     MaybeError Initialize(const DeviceDescriptor* descriptor);
@@ -89,15 +89,14 @@ class Device final : public DeviceBase {
 
     MaybeError TickImpl() override;
 
-    ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) override;
-    MaybeError CopyFromStagingToBufferImpl(StagingBufferBase* source,
+    MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                            uint64_t sourceOffset,
                                            BufferBase* destination,
                                            uint64_t destinationOffset,
                                            uint64_t size) override;
-    MaybeError CopyFromStagingToTextureImpl(const StagingBufferBase* source,
+    MaybeError CopyFromStagingToTextureImpl(const BufferBase* source,
                                             const TextureDataLayout& src,
-                                            TextureCopy* dst,
+                                            const TextureCopy& dst,
                                             const Extent3D& copySizePixels) override;
 
     // Return the fixed subgroup size to use for compute shaders on this device or 0 if none
@@ -119,9 +118,9 @@ class Device final : public DeviceBase {
     void ForceEventualFlushOfCommands() override;
 
   private:
-    Device(Adapter* adapter,
+    Device(AdapterBase* adapter,
            const DeviceDescriptor* descriptor,
-           const TripleStateTogglesSet& userProvidedToggles);
+           const TogglesState& deviceToggles);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
@@ -139,10 +138,8 @@ class Device final : public DeviceBase {
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
-        const SwapChainDescriptor* descriptor) override;
-    ResultOrError<Ref<NewSwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
-        NewSwapChainBase* previousSwapChain,
+        SwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) override;
     ResultOrError<Ref<TextureBase>> CreateTextureImpl(const TextureDescriptor* descriptor) override;
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
@@ -160,13 +157,13 @@ class Device final : public DeviceBase {
                                            WGPUCreateRenderPipelineAsyncCallback callback,
                                            void* userdata) override;
 
-    ResultOrError<VulkanDeviceKnobs> CreateDevice(VkPhysicalDevice physicalDevice);
+    ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
+        const Surface* surface) const override;
+
+    ResultOrError<VulkanDeviceKnobs> CreateDevice(VkPhysicalDevice vkPhysicalDevice);
     void GatherQueueFromDevice();
 
     uint32_t FindComputeSubgroupSize() const;
-    void InitTogglesFromDriver();
-    void ApplyDepthStencilFormatToggles();
-    void ApplyUseZeroInitializeWorkgroupMemoryExtensionToggle();
 
     MaybeError CheckDebugLayerAndGenerateErrors();
     void AppendDebugLayerMessages(ErrorData* error) override;

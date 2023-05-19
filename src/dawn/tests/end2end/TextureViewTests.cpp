@@ -24,11 +24,13 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr static unsigned int kRTSize = 64;
 constexpr wgpu::TextureFormat kDefaultFormat = wgpu::TextureFormat::RGBA8Unorm;
 constexpr uint32_t kBytesPerTexel = 4;
 
-namespace {
 wgpu::Texture Create2DTexture(wgpu::Device device,
                               uint32_t width,
                               uint32_t height,
@@ -64,34 +66,33 @@ wgpu::Texture Create3DTexture(wgpu::Device device,
 wgpu::ShaderModule CreateDefaultVertexShaderModule(wgpu::Device device) {
     return utils::CreateShaderModule(device, R"(
             struct VertexOut {
-                @location(0) texCoord : vec2<f32>,
-                @builtin(position) position : vec4<f32>,
+                @location(0) texCoord : vec2f,
+                @builtin(position) position : vec4f,
             }
 
             @vertex
             fn main(@builtin(vertex_index) VertexIndex : u32) -> VertexOut {
                 var output : VertexOut;
-                var pos = array<vec2<f32>, 6>(
-                                            vec2<f32>(-2., -2.),
-                                            vec2<f32>(-2.,  2.),
-                                            vec2<f32>( 2., -2.),
-                                            vec2<f32>(-2.,  2.),
-                                            vec2<f32>( 2., -2.),
-                                            vec2<f32>( 2.,  2.));
-                var texCoord = array<vec2<f32>, 6>(
-                                                 vec2<f32>(0., 0.),
-                                                 vec2<f32>(0., 1.),
-                                                 vec2<f32>(1., 0.),
-                                                 vec2<f32>(0., 1.),
-                                                 vec2<f32>(1., 0.),
-                                                 vec2<f32>(1., 1.));
-                output.position = vec4<f32>(pos[VertexIndex], 0., 1.);
+                var pos = array(
+                                            vec2f(-2., -2.),
+                                            vec2f(-2.,  2.),
+                                            vec2f( 2., -2.),
+                                            vec2f(-2.,  2.),
+                                            vec2f( 2., -2.),
+                                            vec2f( 2.,  2.));
+                var texCoord = array(
+                                                 vec2f(0., 0.),
+                                                 vec2f(0., 1.),
+                                                 vec2f(1., 0.),
+                                                 vec2f(0., 1.),
+                                                 vec2f(1., 0.),
+                                                 vec2f(1., 1.));
+                output.position = vec4f(pos[VertexIndex], 0., 1.);
                 output.texCoord = texCoord[VertexIndex];
                 return output;
             }
         )");
 }
-}  // anonymous namespace
 
 class TextureViewSamplingTest : public DawnTest {
   protected:
@@ -107,12 +108,13 @@ class TextureViewSamplingTest : public DawnTest {
         mRenderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
 
         wgpu::FilterMode kFilterMode = wgpu::FilterMode::Nearest;
+        wgpu::MipmapFilterMode kMipmapFilterMode = wgpu::MipmapFilterMode::Nearest;
         wgpu::AddressMode kAddressMode = wgpu::AddressMode::ClampToEdge;
 
         wgpu::SamplerDescriptor samplerDescriptor = {};
         samplerDescriptor.minFilter = kFilterMode;
         samplerDescriptor.magFilter = kFilterMode;
-        samplerDescriptor.mipmapFilter = kFilterMode;
+        samplerDescriptor.mipmapFilter = kMipmapFilterMode;
         samplerDescriptor.addressModeU = kAddressMode;
         samplerDescriptor.addressModeV = kAddressMode;
         samplerDescriptor.addressModeW = kAddressMode;
@@ -225,7 +227,7 @@ class TextureViewSamplingTest : public DawnTest {
             @group(0) @binding(1) var texture0 : texture_2d<f32>;
 
             @fragment
-            fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
                 return textureSample(texture0, sampler0, texCoord);
             }
         )";
@@ -261,7 +263,7 @@ class TextureViewSamplingTest : public DawnTest {
             @group(0) @binding(1) var texture0 : texture_2d_array<f32>;
 
             @fragment
-            fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
                 return textureSample(texture0, sampler0, texCoord, 0) +
                        textureSample(texture0, sampler0, texCoord, 1) +
                        textureSample(texture0, sampler0, texCoord, 2);
@@ -296,10 +298,10 @@ class TextureViewSamplingTest : public DawnTest {
             @group(0) @binding(1) var texture0 : )"
                << textureType << R"(<f32>;
             @fragment
-            fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
                 var sc : f32 = 2.0 * texCoord.x - 1.0;
                 var tc : f32 = 2.0 * texCoord.y - 1.0;
-                return textureSample(texture0, sampler0, vec3<f32>()"
+                return textureSample(texture0, sampler0, vec3f()"
                << coordToCubeMapFace << ")";
 
         if (isCubeMapArray) {
@@ -370,7 +372,7 @@ TEST_P(TextureViewSamplingTest, Default2DArrayTexture) {
             @group(0) @binding(1) var texture0 : texture_2d_array<f32>;
 
             @fragment
-            fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
                 return textureSample(texture0, sampler0, texCoord, 0) +
                        textureSample(texture0, sampler0, texCoord, 1) +
                        textureSample(texture0, sampler0, texCoord, 2);
@@ -410,7 +412,7 @@ TEST_P(TextureViewSamplingTest, Texture2DArrayViewOnSingleLayer2DTexture) {
         @group(0) @binding(1) var texture0 : texture_2d_array<f32>;
 
         @fragment
-        fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+        fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
             return textureSample(texture0, sampler0, texCoord, 0);
         }
     )";
@@ -439,6 +441,9 @@ TEST_P(TextureViewSamplingTest, Texture2DArrayViewOnOneLevelOf2DArrayTexture) {
 TEST_P(TextureViewSamplingTest, SRGBReinterpretation) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
+
+    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
 
     wgpu::TextureViewDescriptor viewDesc = {};
     viewDesc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
@@ -471,23 +476,23 @@ TEST_P(TextureViewSamplingTest, SRGBReinterpretation) {
     utils::ComboRenderPipelineDescriptor pipelineDesc;
     pipelineDesc.vertex.module = utils::CreateShaderModule(device, R"(
         @vertex
-        fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-            var pos = array<vec2<f32>, 6>(
-                                        vec2<f32>(-1.0, -1.0),
-                                        vec2<f32>(-1.0,  1.0),
-                                        vec2<f32>( 1.0, -1.0),
-                                        vec2<f32>(-1.0,  1.0),
-                                        vec2<f32>( 1.0, -1.0),
-                                        vec2<f32>( 1.0,  1.0));
-            return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+        fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+            var pos = array(
+                                        vec2f(-1.0, -1.0),
+                                        vec2f(-1.0,  1.0),
+                                        vec2f( 1.0, -1.0),
+                                        vec2f(-1.0,  1.0),
+                                        vec2f( 1.0, -1.0),
+                                        vec2f( 1.0,  1.0));
+            return vec4f(pos[VertexIndex], 0.0, 1.0);
         }
     )");
     pipelineDesc.cFragment.module = utils::CreateShaderModule(device, R"(
         @group(0) @binding(0) var texture : texture_2d<f32>;
 
         @fragment
-        fn main(@builtin(position) coord: vec4<f32>) -> @location(0) vec4<f32> {
-            return textureLoad(texture, vec2<i32>(coord.xy), 0);
+        fn main(@builtin(position) coord: vec4f) -> @location(0) vec4f {
+            return textureLoad(texture, vec2i(coord.xy), 0);
         }
     )");
 
@@ -539,6 +544,9 @@ TEST_P(TextureViewSamplingTest, TextureCubeMapViewOnPartOfTexture) {
 
 // Test sampling from a cube map texture view that covers the last layer of a 2D array texture.
 TEST_P(TextureViewSamplingTest, TextureCubeMapViewCoveringLastLayer) {
+    // TODO(dawn:1812): the test fails with DXGI_ERROR_DEVICE_HUNG on Intel D3D11 driver.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntel());
+
     constexpr uint32_t kTotalLayers = 10;
     constexpr uint32_t kBaseLayer = 4;
     TextureCubeMapTest(kTotalLayers, kBaseLayer, kTotalLayers - kBaseLayer, false);
@@ -603,9 +611,9 @@ class TextureViewRenderingTest : public DawnTest {
         renderPassInfo.cColorAttachments[0].clearValue = {1.0f, 0.0f, 0.0f, 1.0f};
 
         const char* oneColorFragmentShader = R"(
-            @fragment fn main(@location(0) texCoord : vec2<f32>) ->
-                @location(0) vec4<f32> {
-                return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+            @fragment fn main(@location(0) texCoord : vec2f) ->
+                @location(0) vec4f {
+                return vec4f(0.0, 1.0, 0.0, 1.0);
             }
         )";
         wgpu::ShaderModule oneColorFsModule =
@@ -695,6 +703,9 @@ TEST_P(TextureViewRenderingTest, Texture2DViewOnALevelOfRectangular2DTextureAsCo
 
 // Test rendering into a 2D texture view created on a layer of a 2D array texture.
 TEST_P(TextureViewRenderingTest, Texture2DViewOnALayerOf2DArrayTextureAsColorAttachment) {
+    // TODO(dawn:1812): the test fails with DXGI_ERROR_DEVICE_HUNG on Intel D3D11 driver.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntel());
+
     constexpr uint32_t kMipLevels = 1;
     constexpr uint32_t kBaseLevel = 0;
     constexpr uint32_t kLayers = 10;
@@ -737,6 +748,9 @@ TEST_P(TextureViewRenderingTest, Texture2DArrayViewOnALevelOf2DTextureAsColorAtt
 
 // Test rendering into a 1-layer 2D array texture view created on a layer of a 2D array texture.
 TEST_P(TextureViewRenderingTest, Texture2DArrayViewOnALayerOf2DArrayTextureAsColorAttachment) {
+    // TODO(dawn:1812): the test fails with DXGI_ERROR_DEVICE_HUNG on Intel D3D11 driver.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntel());
+
     constexpr uint32_t kMipLevels = 1;
     constexpr uint32_t kBaseLevel = 0;
     constexpr uint32_t kLayers = 10;
@@ -761,6 +775,9 @@ TEST_P(TextureViewRenderingTest, Texture2DArrayViewOnALayerOf2DArrayTextureAsCol
 TEST_P(TextureViewRenderingTest, SRGBReinterpretationRenderAttachment) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
+
+    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
 
     // Test will render into an SRGB view
     wgpu::TextureViewDescriptor viewDesc = {};
@@ -803,23 +820,23 @@ TEST_P(TextureViewRenderingTest, SRGBReinterpretationRenderAttachment) {
     utils::ComboRenderPipelineDescriptor pipelineDesc;
     pipelineDesc.vertex.module = utils::CreateShaderModule(device, R"(
         @vertex
-        fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-            var pos = array<vec2<f32>, 6>(
-                                        vec2<f32>(-1.0, -1.0),
-                                        vec2<f32>(-1.0,  1.0),
-                                        vec2<f32>( 1.0, -1.0),
-                                        vec2<f32>(-1.0,  1.0),
-                                        vec2<f32>( 1.0, -1.0),
-                                        vec2<f32>( 1.0,  1.0));
-            return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+        fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+            var pos = array(
+                                        vec2f(-1.0, -1.0),
+                                        vec2f(-1.0,  1.0),
+                                        vec2f( 1.0, -1.0),
+                                        vec2f(-1.0,  1.0),
+                                        vec2f( 1.0, -1.0),
+                                        vec2f( 1.0,  1.0));
+            return vec4f(pos[VertexIndex], 0.0, 1.0);
         }
     )");
     pipelineDesc.cFragment.module = utils::CreateShaderModule(device, R"(
         @group(0) @binding(0) var texture : texture_2d<f32>;
 
         @fragment
-        fn main(@builtin(position) coord: vec4<f32>) -> @location(0) vec4<f32> {
-            return textureLoad(texture, vec2<i32>(coord.xy), 0);
+        fn main(@builtin(position) coord: vec4f) -> @location(0) vec4f {
+            return textureLoad(texture, vec2i(coord.xy), 0);
         }
     )");
     pipelineDesc.cTargets[0].format = viewDesc.format;
@@ -867,6 +884,9 @@ TEST_P(TextureViewRenderingTest, SRGBReinterpretationRenderAttachment) {
 TEST_P(TextureViewRenderingTest, SRGBReinterpretionResolveAttachment) {
     // TODO(crbug.com/dawn/1360): OpenGLES doesn't support view format reinterpretation.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
+
+    // TODO(dawn:1810): D3D11 doesn't support view format reinterpretation.
+    DAWN_SUPPRESS_TEST_IF(IsD3D11());
 
     // Test will resolve into an SRGB view
     wgpu::TextureViewDescriptor viewDesc = {};
@@ -917,23 +937,23 @@ TEST_P(TextureViewRenderingTest, SRGBReinterpretionResolveAttachment) {
     utils::ComboRenderPipelineDescriptor pipelineDesc;
     pipelineDesc.vertex.module = utils::CreateShaderModule(device, R"(
         @vertex
-        fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-            var pos = array<vec2<f32>, 6>(
-                                        vec2<f32>(-1.0, -1.0),
-                                        vec2<f32>(-1.0,  1.0),
-                                        vec2<f32>( 1.0, -1.0),
-                                        vec2<f32>(-1.0,  1.0),
-                                        vec2<f32>( 1.0, -1.0),
-                                        vec2<f32>( 1.0,  1.0));
-            return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+        fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+            var pos = array(
+                                        vec2f(-1.0, -1.0),
+                                        vec2f(-1.0,  1.0),
+                                        vec2f( 1.0, -1.0),
+                                        vec2f(-1.0,  1.0),
+                                        vec2f( 1.0, -1.0),
+                                        vec2f( 1.0,  1.0));
+            return vec4f(pos[VertexIndex], 0.0, 1.0);
         }
     )");
     pipelineDesc.cFragment.module = utils::CreateShaderModule(device, R"(
         @group(0) @binding(0) var texture : texture_2d<f32>;
 
         @fragment
-        fn main(@builtin(position) coord: vec4<f32>) -> @location(0) vec4<f32> {
-            return textureLoad(texture, vec2<i32>(coord.xy), 0);
+        fn main(@builtin(position) coord: vec4f) -> @location(0) vec4f {
+            return textureLoad(texture, vec2i(coord.xy), 0);
         }
     )");
     pipelineDesc.cTargets[0].format = viewDesc.format;
@@ -977,6 +997,7 @@ TEST_P(TextureViewRenderingTest, SRGBReinterpretionResolveAttachment) {
 }
 
 DAWN_INSTANTIATE_TEST(TextureViewSamplingTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -984,6 +1005,7 @@ DAWN_INSTANTIATE_TEST(TextureViewSamplingTest,
                       VulkanBackend());
 
 DAWN_INSTANTIATE_TEST(TextureViewRenderingTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       D3D12Backend({}, {"use_d3d12_render_pass"}),
                       MetalBackend(),
@@ -1024,6 +1046,7 @@ TEST_P(TextureViewTest, DestroyedTexture) {
 }
 
 DAWN_INSTANTIATE_TEST(TextureViewTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1040,6 +1063,7 @@ TEST_P(TextureView3DTest, BasicTest) {
 }
 
 DAWN_INSTANTIATE_TEST(TextureView3DTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1067,18 +1091,18 @@ TEST_P(TextureView1DTest, Sampling) {
     // Create a pipeline that will sample from the 1D texture and output to an attachment.
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         @vertex
-        fn vs(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-            var pos = array<vec4<f32>, 3>(
-                vec4<f32>( 0.,  2., 0., 1.),
-                vec4<f32>(-3., -1., 0., 1.),
-                vec4<f32>( 3., -1., 0., 1.));
+        fn vs(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+            var pos = array(
+                vec4f( 0.,  2., 0., 1.),
+                vec4f(-3., -1., 0., 1.),
+                vec4f( 3., -1., 0., 1.));
             return pos[VertexIndex];
         }
 
         @group(0) @binding(0) var tex : texture_1d<f32>;
         @group(0) @binding(1) var samp : sampler;
         @fragment
-        fn fs(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+        fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
             return textureSample(tex, samp, pos.x / 4.0);
         }
     )");
@@ -1114,8 +1138,12 @@ TEST_P(TextureView1DTest, Sampling) {
 }
 
 DAWN_INSTANTIATE_TEST(TextureView1DTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       VulkanBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

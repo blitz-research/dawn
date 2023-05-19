@@ -26,7 +26,7 @@ struct Branch {
     FlowNode* target = nullptr;
 
     /// The arguments provided for that branch. These arguments could be the
-    /// return value in the case of a branch to the terminator, or they could
+    /// return value in the case of a branch to the function terminator, or they could
     /// be the basic block arguments passed into the block.
     utils::Vector<Value*, 2> args;
 };

@@ -27,7 +27,7 @@ namespace {
 using HlslGeneratorImplTest_WorkgroupVar = TestHelper;
 
 TEST_F(HlslGeneratorImplTest_WorkgroupVar, Basic) {
-    GlobalVar("wg", ty.f32(), ast::AddressSpace::kWorkgroup);
+    GlobalVar("wg", ty.f32(), builtin::AddressSpace::kWorkgroup);
 
     Func("main", utils::Empty, ty.void_(), utils::Vector{Assign("wg", 1.2_f)},
          utils::Vector{
@@ -36,14 +36,14 @@ TEST_F(HlslGeneratorImplTest_WorkgroupVar, Basic) {
          });
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_THAT(gen.result(), HasSubstr("groupshared float wg;\n"));
 }
 
 TEST_F(HlslGeneratorImplTest_WorkgroupVar, Aliased) {
     auto* alias = Alias("F32", ty.f32());
 
-    GlobalVar("wg", ty.Of(alias), ast::AddressSpace::kWorkgroup);
+    GlobalVar("wg", ty.Of(alias), builtin::AddressSpace::kWorkgroup);
 
     Func("main", utils::Empty, ty.void_(), utils::Vector{Assign("wg", 1.2_f)},
          utils::Vector{
@@ -52,7 +52,7 @@ TEST_F(HlslGeneratorImplTest_WorkgroupVar, Aliased) {
          });
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_THAT(gen.result(), HasSubstr("groupshared float wg;\n"));
 }
 

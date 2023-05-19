@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/sem/load.h"
+#include "gmock/gmock.h"
 #include "src/tint/resolver/resolver.h"
 #include "src/tint/resolver/resolver_test_helper.h"
 #include "src/tint/sem/test_helper.h"
-
-#include "src/tint/sem/load.h"
 #include "src/tint/type/reference.h"
-
-#include "gmock/gmock.h"
+#include "src/tint/type/texture_dimension.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -155,7 +154,7 @@ TEST_F(ResolverLoadTest, MultiComponentSwizzle) {
     // var ref = vec4(1);
     // var v = ref.xyz;
     auto* ident = Expr("ref");
-    WrapInFunction(Var("ref", Construct(ty.vec4<i32>(), 1_i)),  //
+    WrapInFunction(Var("ref", vec4<i32>(1_i)),  //
                    Var("v", MemberAccessor(ident, "xyz")));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
@@ -220,17 +219,18 @@ TEST_F(ResolverLoadTest, FunctionArg_Handles) {
     //   return textureSampleLevel(tp, sp, vec2(), 0);
     // }
     // f(t, s);
-    GlobalVar("t", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()),
+    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()),
               utils::Vector{Group(0_a), Binding(0_a)});
-    GlobalVar("s", ty.sampler(ast::SamplerKind::kSampler), utils::Vector{Group(0_a), Binding(1_a)});
+    GlobalVar("s", ty.sampler(type::SamplerKind::kSampler),
+              utils::Vector{Group(0_a), Binding(1_a)});
     Func("f",
          utils::Vector{
-             Param("tp", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32())),
-             Param("sp", ty.sampler(ast::SamplerKind::kSampler)),
+             Param("tp", ty.sampled_texture(type::TextureDimension::k2d, ty.f32())),
+             Param("sp", ty.sampler(type::SamplerKind::kSampler)),
          },
          ty.vec4<f32>(),
          utils::Vector{
-             Return(Call("textureSampleLevel", "tp", "sp", Construct(ty.vec2<f32>()), 0_a)),
+             Return(Call("textureSampleLevel", "tp", "sp", vec2<f32>(), 0_a)),
          });
     auto* t_ident = Expr("t");
     auto* s_ident = Expr("s");
@@ -361,7 +361,7 @@ TEST_F(ResolverLoadTest, AddressOf) {
                    Let("l", AddressOf(ident)));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
-    auto* no_load = Sem().Get(ident);
+    auto* no_load = Sem().GetVal(ident);
     ASSERT_NE(no_load, nullptr);
     EXPECT_TRUE(no_load->Type()->Is<type::Reference>());  // No load
 }

@@ -14,14 +14,16 @@
 
 #include "src/tint/writer/wgsl/test_helper.h"
 
+#include "gmock/gmock.h"
+
 namespace tint::writer::wgsl {
 namespace {
 
 using WgslGeneratorImplTest = TestHelper;
 
 TEST_F(WgslGeneratorImplTest, Emit_Assign) {
-    auto* lhs = GlobalVar("lhs", ty.i32(), ast::AddressSpace::kPrivate);
-    auto* rhs = GlobalVar("rhs", ty.i32(), ast::AddressSpace::kPrivate);
+    auto* lhs = GlobalVar("lhs", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* rhs = GlobalVar("rhs", ty.i32(), builtin::AddressSpace::kPrivate);
     auto* assign = Assign(lhs, rhs);
     WrapInFunction(assign);
 
@@ -29,7 +31,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Assign) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(assign)) << gen.error();
+    gen.EmitStatement(assign);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), "  lhs = rhs;\n");
 }
 

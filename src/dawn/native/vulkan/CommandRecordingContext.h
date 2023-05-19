@@ -39,6 +39,7 @@ struct CommandPoolAndBuffer {
 struct CommandRecordingContext {
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     std::vector<VkSemaphore> waitSemaphores = {};
+    std::vector<VkSemaphore> signalSemaphores = {};
 
     // The internal buffers used in the workaround of texture-to-texture copies with compressed
     // formats.
@@ -47,6 +48,10 @@ struct CommandRecordingContext {
     // External textures that will be eagerly transitioned just before VkSubmit. The textures are
     // kept alive by the CommandBuffer so they don't need to be Ref-ed.
     std::set<Texture*> externalTexturesForEagerTransition;
+
+    // Mappable buffers which will be eagerly transitioned to usage MapRead or MapWrite after
+    // VkSubmit.
+    std::set<Ref<Buffer>> mappableBuffersForEagerTransition;
 
     // For Device state tracking only.
     VkCommandPool commandPool = VK_NULL_HANDLE;

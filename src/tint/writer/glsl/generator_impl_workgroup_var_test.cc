@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gmock/gmock.h"
 #include "src/tint/ast/id_attribute.h"
 #include "src/tint/ast/stage_attribute.h"
 #include "src/tint/writer/glsl/test_helper.h"
+
+#include "gmock/gmock.h"
 
 using ::testing::HasSubstr;
 
@@ -27,7 +28,7 @@ namespace {
 using GlslGeneratorImplTest_WorkgroupVar = TestHelper;
 
 TEST_F(GlslGeneratorImplTest_WorkgroupVar, Basic) {
-    GlobalVar("wg", ty.f32(), ast::AddressSpace::kWorkgroup);
+    GlobalVar("wg", ty.f32(), builtin::AddressSpace::kWorkgroup);
 
     Func("main", utils::Empty, ty.void_(), utils::Vector{Assign("wg", 1.2_f)},
          utils::Vector{
@@ -35,15 +36,15 @@ TEST_F(GlslGeneratorImplTest_WorkgroupVar, Basic) {
              WorkgroupSize(1_i),
          });
     GeneratorImpl& gen = Build();
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_THAT(gen.result(), HasSubstr("shared float wg;\n"));
 }
 
 TEST_F(GlslGeneratorImplTest_WorkgroupVar, Aliased) {
     auto* alias = Alias("F32", ty.f32());
 
-    GlobalVar("wg", ty.Of(alias), ast::AddressSpace::kWorkgroup);
+    GlobalVar("wg", ty.Of(alias), builtin::AddressSpace::kWorkgroup);
 
     Func("main", utils::Empty, ty.void_(), utils::Vector{Assign("wg", 1.2_f)},
          utils::Vector{
@@ -51,8 +52,8 @@ TEST_F(GlslGeneratorImplTest_WorkgroupVar, Aliased) {
              WorkgroupSize(1_i),
          });
     GeneratorImpl& gen = Build();
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_THAT(gen.result(), HasSubstr("shared float wg;\n"));
 }
 

@@ -14,7 +14,7 @@
 
 #include "dawn/utils/TextureUtils.h"
 
-namespace utils {
+namespace dawn::utils {
 bool TextureFormatSupportsStorageTexture(wgpu::TextureFormat format) {
     switch (format) {
         case wgpu::TextureFormat::R32Uint:
@@ -656,6 +656,8 @@ const char* GetWGSLImageFormatQualifier(wgpu::TextureFormat textureFormat) {
             return "rgba8uint";
         case wgpu::TextureFormat::RGBA8Sint:
             return "rgba8sint";
+        case wgpu::TextureFormat::BGRA8Unorm:
+            return "bgra8unorm";
         case wgpu::TextureFormat::RGBA16Uint:
             return "rgba16uint";
         case wgpu::TextureFormat::RGBA16Sint:
@@ -738,4 +740,4 @@ wgpu::TextureDimension ViewDimensionToTextureDimension(const wgpu::TextureViewDi
     }
 }
 
-}  // namespace utils
+}  // namespace dawn::utils

@@ -22,6 +22,7 @@
 #include "dawn/tests/DawnTest.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
 
 // Helper for replacing all occurrences of substr in str with replacement
@@ -242,8 +243,8 @@ class MemoryDataBuilder {
 // offset and size are in units of bytes.
 using DataMatcherCallback = std::function<void(uint32_t offset, uint32_t size)>;
 
-// Field describe a type that has contiguous data bytes, e.g. `i32`, `vec2<f32>`, `mat4x4<f32>` or
-// `array<f32, 5>`, or have a fixed data stride, e.g. `mat3x3<f32>` or `array<vec3<f32>, 4>`.
+// Field describe a type that has contiguous data bytes, e.g. `i32`, `vec2f`, `mat4x4<f32>` or
+// `array<f32, 5>`, or have a fixed data stride, e.g. `mat3x3<f32>` or `array<vec3f, 4>`.
 // `@size` and `@align` attributes, when used as a struct member, can also described by this struct.
 class Field {
   public:
@@ -309,19 +310,18 @@ class Field {
 
     bool IsStorageBufferOnly() const { return mStorageBufferOnly; }
 
-    // Call the DataMatcherCallback `callback` for continious or strided data bytes, based on the
+    // Call the DataMatcherCallback `callback` for continuous or strided data bytes, based on the
     // strided information of this field. The callback may be called once or multiple times. Note
-    // that padding bytes introduced by @size attribute are not tested.
+    // that padding bytes are tested as well, as they must be preserved by the implementation.
     void CheckData(DataMatcherCallback callback) const {
-        // Calls `callback` with the strided intervals of length mStrideDataBytes, skipping
-        // mStridePaddingBytes. For example, for a field of mSize = 18, mStrideDataBytes = 2,
-        // and mStridePaddingBytes = 4, calls `callback` with the intervals: [0, 2), [6, 8),
-        // [12, 14). If the data is continious, i.e. mStrideDataBytes = 18 and
-        // mStridePaddingBytes = 0, `callback` would be called only once with the whole interval
-        // [0, 18).
+        // Calls `callback` with the strided intervals of length mStrideDataBytes +
+        // mStridePaddingBytes. For example, for a field of mSize = 18, mStrideDataBytes = 2, and
+        // mStridePaddingBytes = 4, calls `callback` with the intervals: [0, 6), [6, 12), [12, 18).
+        // If the data is continuous, i.e. mStrideDataBytes = 18 and mStridePaddingBytes = 0,
+        // `callback` would be called only once with the whole interval [0, 18).
         size_t offset = 0;
         while (offset < mSize) {
-            callback(offset, mStrideDataBytes);
+            callback(offset, mStrideDataBytes + mStridePaddingBytes);
             offset += mStrideDataBytes + mStridePaddingBytes;
         }
     }
@@ -529,6 +529,8 @@ TEST_P(ComputeLayoutMemoryBufferTests, StructMember) {
     // TODO(crbug.com/dawn/1606): find out why these tests fail on Windows for OpenGL.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES() && IsWindows());
 
+    const bool isUniform = GetParam().mAddressSpace == AddressSpace::Uniform;
+
     // Sentinel value markers codes used to check that the start and end of
     // structures are correctly aligned. Each of these codes are distinct and
     // are not likely to be confused with data.
@@ -549,8 +551,6 @@ TEST_P(ComputeLayoutMemoryBufferTests, StructMember) {
     if (field.IsRequireF16Feature() && !device.HasFeature(wgpu::FeatureName::ShaderF16)) {
         return;
     }
-
-    const bool isUniform = GetParam().mAddressSpace == AddressSpace::Uniform;
 
     std::string shader = std::string(field.IsRequireF16Feature() ? "enable f16;" : "") +
                          R"(
@@ -595,9 +595,9 @@ fn main() {
 })";
 
     // https://www.w3.org/TR/WGSL/#alignment-and-size
-    // Structure size: roundUp(AlignOf(S), OffsetOf(S, L) + SizeOf(S, L))
+    // Structure size: RoundUp(AlignOf(S), OffsetOf(S, L) + SizeOf(S, L))
     // https://www.w3.org/TR/WGSL/#storage-class-constraints
-    // RequiredAlignOf(S, uniform): roundUp(16, max(AlignOf(T0), ..., AlignOf(TN)))
+    // RequiredAlignOf(S, uniform): RoundUp(16, max(AlignOf(T0), ..., AlignOf(TN)))
     uint32_t dataAlign = isUniform ? std::max(size_t(16u), field.GetAlign()) : field.GetAlign();
 
     // https://www.w3.org/TR/WGSL/#structure-layout-rules
@@ -700,6 +700,8 @@ TEST_P(ComputeLayoutMemoryBufferTests, NonStructMember) {
     // TODO(crbug.com/dawn/1606): find out why these tests fail on Windows for OpenGL.
     DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES() && IsWindows());
 
+    const bool isUniform = GetParam().mAddressSpace == AddressSpace::Uniform;
+
     auto params = GetParam();
 
     Field& field = params.mField;
@@ -712,8 +714,6 @@ TEST_P(ComputeLayoutMemoryBufferTests, NonStructMember) {
     if (field.IsRequireF16Feature() && !device.HasFeature(wgpu::FeatureName::ShaderF16)) {
         return;
     }
-
-    const bool isUniform = GetParam().mAddressSpace == AddressSpace::Uniform;
 
     std::string shader = std::string(field.IsRequireF16Feature() ? "enable f16;" : "") +
                          R"(
@@ -779,6 +779,7 @@ fn main() {
 auto GenerateParams() {
     auto params = MakeParamGenerator<ComputeLayoutMemoryBufferTestParams>(
         {
+            D3D11Backend(),
             D3D12Backend(),
             D3D12Backend({"use_dxc"}),
             MetalBackend(),
@@ -921,36 +922,36 @@ auto GenerateParams() {
                 .StorageBufferOnly(),
             Field("array<u32, 4>", /* align */ 4, /* size */ 16, /* requireF16Feature */ false)
                 .StorageBufferOnly(),
-            Field("array<vec2<u32>, 1>", /* align */ 8, /* size */ 8, /* requireF16Feature */ false)
+            Field("array<vec2u, 1>", /* align */ 8, /* size */ 8, /* requireF16Feature */ false)
                 .StorageBufferOnly(),
-            Field("array<vec2<u32>, 2>", /* align */ 8, /* size */ 16,
-                  /* requireF16Feature */ false)
-                .StorageBufferOnly(),
-            Field("array<vec2<u32>, 3>", /* align */ 8, /* size */ 24,
+            Field("array<vec2u, 2>", /* align */ 8, /* size */ 16,
                   /* requireF16Feature */ false)
                 .StorageBufferOnly(),
-            Field("array<vec2<u32>, 4>", /* align */ 8, /* size */ 32,
+            Field("array<vec2u, 3>", /* align */ 8, /* size */ 24,
                   /* requireF16Feature */ false)
                 .StorageBufferOnly(),
-            Field("array<vec3<u32>, 1>", /* align */ 16, /* size */ 16,
+            Field("array<vec2u, 4>", /* align */ 8, /* size */ 32,
+                  /* requireF16Feature */ false)
+                .StorageBufferOnly(),
+            Field("array<vec3u, 1>", /* align */ 16, /* size */ 16,
                   /* requireF16Feature */ false)
                 .Strided(12, 4),
-            Field("array<vec3<u32>, 2>", /* align */ 16, /* size */ 32,
+            Field("array<vec3u, 2>", /* align */ 16, /* size */ 32,
                   /* requireF16Feature */ false)
                 .Strided(12, 4),
-            Field("array<vec3<u32>, 3>", /* align */ 16, /* size */ 48,
+            Field("array<vec3u, 3>", /* align */ 16, /* size */ 48,
                   /* requireF16Feature */ false)
                 .Strided(12, 4),
-            Field("array<vec3<u32>, 4>", /* align */ 16, /* size */ 64,
+            Field("array<vec3u, 4>", /* align */ 16, /* size */ 64,
                   /* requireF16Feature */ false)
                 .Strided(12, 4),
-            Field("array<vec4<u32>, 1>", /* align */ 16, /* size */ 16,
+            Field("array<vec4u, 1>", /* align */ 16, /* size */ 16,
                   /* requireF16Feature */ false),
-            Field("array<vec4<u32>, 2>", /* align */ 16, /* size */ 32,
+            Field("array<vec4u, 2>", /* align */ 16, /* size */ 32,
                   /* requireF16Feature */ false),
-            Field("array<vec4<u32>, 3>", /* align */ 16, /* size */ 48,
+            Field("array<vec4u, 3>", /* align */ 16, /* size */ 48,
                   /* requireF16Feature */ false),
-            Field("array<vec4<u32>, 4>", /* align */ 16, /* size */ 64,
+            Field("array<vec4u, 4>", /* align */ 16, /* size */ 64,
                   /* requireF16Feature */ false),
 
             // Array types with custom alignment
@@ -966,47 +967,47 @@ auto GenerateParams() {
             Field("array<u32, 4>", /* align */ 4, /* size */ 16, /* requireF16Feature */ false)
                 .AlignAttribute(32)
                 .StorageBufferOnly(),
-            Field("array<vec2<u32>, 1>", /* align */ 8, /* size */ 8, /* requireF16Feature */ false)
+            Field("array<vec2u, 1>", /* align */ 8, /* size */ 8, /* requireF16Feature */ false)
                 .AlignAttribute(32)
                 .StorageBufferOnly(),
-            Field("array<vec2<u32>, 2>", /* align */ 8, /* size */ 16,
-                  /* requireF16Feature */ false)
-                .AlignAttribute(32)
-                .StorageBufferOnly(),
-            Field("array<vec2<u32>, 3>", /* align */ 8, /* size */ 24,
+            Field("array<vec2u, 2>", /* align */ 8, /* size */ 16,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32)
                 .StorageBufferOnly(),
-            Field("array<vec2<u32>, 4>", /* align */ 8, /* size */ 32,
+            Field("array<vec2u, 3>", /* align */ 8, /* size */ 24,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32)
                 .StorageBufferOnly(),
-            Field("array<vec3<u32>, 1>", /* align */ 16, /* size */ 16,
+            Field("array<vec2u, 4>", /* align */ 8, /* size */ 32,
+                  /* requireF16Feature */ false)
+                .AlignAttribute(32)
+                .StorageBufferOnly(),
+            Field("array<vec3u, 1>", /* align */ 16, /* size */ 16,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32)
                 .Strided(12, 4),
-            Field("array<vec3<u32>, 2>", /* align */ 16, /* size */ 32,
+            Field("array<vec3u, 2>", /* align */ 16, /* size */ 32,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32)
                 .Strided(12, 4),
-            Field("array<vec3<u32>, 3>", /* align */ 16, /* size */ 48,
+            Field("array<vec3u, 3>", /* align */ 16, /* size */ 48,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32)
                 .Strided(12, 4),
-            Field("array<vec3<u32>, 4>", /* align */ 16, /* size */ 64,
+            Field("array<vec3u, 4>", /* align */ 16, /* size */ 64,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32)
                 .Strided(12, 4),
-            Field("array<vec4<u32>, 1>", /* align */ 16, /* size */ 16,
+            Field("array<vec4u, 1>", /* align */ 16, /* size */ 16,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32),
-            Field("array<vec4<u32>, 2>", /* align */ 16, /* size */ 32,
+            Field("array<vec4u, 2>", /* align */ 16, /* size */ 32,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32),
-            Field("array<vec4<u32>, 3>", /* align */ 16, /* size */ 48,
+            Field("array<vec4u, 3>", /* align */ 16, /* size */ 48,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32),
-            Field("array<vec4<u32>, 4>", /* align */ 16, /* size */ 64,
+            Field("array<vec4u, 4>", /* align */ 16, /* size */ 64,
                   /* requireF16Feature */ false)
                 .AlignAttribute(32),
 
@@ -1023,7 +1024,7 @@ auto GenerateParams() {
             Field("array<u32, 4>", /* align */ 4, /* size */ 16, /* requireF16Feature */ false)
                 .SizeAttribute(128)
                 .StorageBufferOnly(),
-            Field("array<vec3<u32>, 4>", /* align */ 16, /* size */ 64,
+            Field("array<vec3u, 4>", /* align */ 16, /* size */ 64,
                   /* requireF16Feature */ false)
                 .SizeAttribute(128)
                 .Strided(12, 4),
@@ -1152,4 +1153,5 @@ INSTANTIATE_TEST_SUITE_P(,
                          DawnTestBase::PrintToStringParamName("ComputeLayoutMemoryBufferTests"));
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(ComputeLayoutMemoryBufferTests);
 
-}  // namespace
+}  // anonymous namespace
+}  // namespace dawn

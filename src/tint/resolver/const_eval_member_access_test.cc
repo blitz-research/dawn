@@ -28,12 +28,11 @@ TEST_F(ResolverConstEvalTest, StructMemberAccess) {
                        });
 
     Structure("Outer", utils::Vector{
-                           Member("o1", ty.type_name("Inner")),
-                           Member("o2", ty.type_name("Inner")),
+                           Member("o1", ty("Inner")),
+                           Member("o2", ty("Inner")),
                        });
-    auto* outer_expr = Construct(ty.type_name("Outer"),  //
-                                 Construct(ty.type_name("Inner"), 1_i, 2_u, 3_f, true),
-                                 Construct(ty.type_name("Inner")));
+    auto* outer_expr = Call("Outer",  //
+                            Call("Inner", 1_i, 2_u, 3_f, true), Call("Inner"));
     auto* o1_expr = MemberAccessor(outer_expr, "o1");
     auto* i2_expr = MemberAccessor(o1_expr, "i2");
     WrapInFunction(i2_expr);
@@ -42,21 +41,19 @@ TEST_F(ResolverConstEvalTest, StructMemberAccess) {
 
     auto* outer = Sem().Get(outer_expr);
     ASSERT_NE(outer, nullptr);
-    auto* str = outer->Type()->As<sem::Struct>();
+    auto* str = outer->Type()->As<type::Struct>();
     ASSERT_NE(str, nullptr);
     EXPECT_EQ(str->Members().Length(), 2u);
     ASSERT_NE(outer->ConstantValue(), nullptr);
     EXPECT_TYPE(outer->ConstantValue()->Type(), outer->Type());
-    EXPECT_FALSE(outer->ConstantValue()->AllEqual());
     EXPECT_TRUE(outer->ConstantValue()->AnyZero());
     EXPECT_FALSE(outer->ConstantValue()->AllZero());
 
     auto* o1 = Sem().Get(o1_expr);
     ASSERT_NE(o1->ConstantValue(), nullptr);
-    EXPECT_FALSE(o1->ConstantValue()->AllEqual());
     EXPECT_FALSE(o1->ConstantValue()->AnyZero());
     EXPECT_FALSE(o1->ConstantValue()->AllZero());
-    EXPECT_TRUE(o1->ConstantValue()->Type()->Is<sem::Struct>());
+    EXPECT_TRUE(o1->ConstantValue()->Type()->Is<type::Struct>());
     EXPECT_EQ(o1->ConstantValue()->Index(0)->ValueAs<i32>(), 1_i);
     EXPECT_EQ(o1->ConstantValue()->Index(1)->ValueAs<u32>(), 2_u);
     EXPECT_EQ(o1->ConstantValue()->Index(2)->ValueAs<f32>(), 3_f);
@@ -64,7 +61,6 @@ TEST_F(ResolverConstEvalTest, StructMemberAccess) {
 
     auto* i2 = Sem().Get(i2_expr);
     ASSERT_NE(i2->ConstantValue(), nullptr);
-    EXPECT_TRUE(i2->ConstantValue()->AllEqual());
     EXPECT_FALSE(i2->ConstantValue()->AnyZero());
     EXPECT_FALSE(i2->ConstantValue()->AllZero());
     EXPECT_TRUE(i2->ConstantValue()->Type()->Is<type::U32>());
@@ -72,9 +68,9 @@ TEST_F(ResolverConstEvalTest, StructMemberAccess) {
 }
 
 TEST_F(ResolverConstEvalTest, Matrix_AFloat_Construct_From_AInt_Vectors) {
-    auto* c = Const("a", Construct(ty.mat(nullptr, 2, 2),  //
-                                   Construct(ty.vec(nullptr, 2), Expr(1_a), Expr(2_a)),
-                                   Construct(ty.vec(nullptr, 2), Expr(3_a), Expr(4_a))));
+    auto* c = Const("a", Call(ty.mat2x2<Infer>(),  //
+                              Call(ty.vec<Infer>(2), Expr(1_a), Expr(2_a)),
+                              Call(ty.vec<Infer>(2), Expr(3_a), Expr(4_a))));
     WrapInFunction(c);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -86,7 +82,6 @@ TEST_F(ResolverConstEvalTest, Matrix_AFloat_Construct_From_AInt_Vectors) {
     EXPECT_TYPE(cv->Type(), sem->Type());
     EXPECT_TRUE(cv->Index(0)->Type()->Is<type::Vector>());
     EXPECT_TRUE(cv->Index(0)->Index(0)->Type()->Is<type::AbstractFloat>());
-    EXPECT_FALSE(cv->AllEqual());
     EXPECT_FALSE(cv->AnyZero());
     EXPECT_FALSE(cv->AllZero());
     auto* c0 = cv->Index(0);
@@ -98,10 +93,9 @@ TEST_F(ResolverConstEvalTest, Matrix_AFloat_Construct_From_AInt_Vectors) {
 }
 
 TEST_F(ResolverConstEvalTest, MatrixMemberAccess_AFloat) {
-    auto* c =
-        Const("a", Construct(ty.mat(nullptr, 2, 3),  //
-                             Construct(ty.vec(nullptr, 3), Expr(1.0_a), Expr(2.0_a), Expr(3.0_a)),
-                             Construct(ty.vec(nullptr, 3), Expr(4.0_a), Expr(5.0_a), Expr(6.0_a))));
+    auto* c = Const("a", Call(ty.mat2x3<Infer>(),  //
+                              Call(ty.vec3<Infer>(), Expr(1.0_a), Expr(2.0_a), Expr(3.0_a)),
+                              Call(ty.vec3<Infer>(), Expr(4.0_a), Expr(5.0_a), Expr(6.0_a))));
 
     auto* col_0 = Const("col_0", IndexAccessor("a", Expr(0_i)));
     auto* col_1 = Const("col_1", IndexAccessor("a", Expr(1_i)));
@@ -126,7 +120,6 @@ TEST_F(ResolverConstEvalTest, MatrixMemberAccess_AFloat) {
     EXPECT_TYPE(cv->Type(), sem->Type());
     EXPECT_TRUE(cv->Index(0)->Type()->Is<type::Vector>());
     EXPECT_TRUE(cv->Index(0)->Index(0)->Type()->Is<type::AbstractFloat>());
-    EXPECT_FALSE(cv->AllEqual());
     EXPECT_FALSE(cv->AnyZero());
     EXPECT_FALSE(cv->AllZero());
 
@@ -176,10 +169,9 @@ TEST_F(ResolverConstEvalTest, MatrixMemberAccess_AFloat) {
 }
 
 TEST_F(ResolverConstEvalTest, MatrixMemberAccess_f32) {
-    auto* c =
-        Const("a", Construct(ty.mat(nullptr, 2, 3),  //
-                             Construct(ty.vec(nullptr, 3), Expr(1.0_f), Expr(2.0_f), Expr(3.0_f)),
-                             Construct(ty.vec(nullptr, 3), Expr(4.0_f), Expr(5.0_f), Expr(6.0_f))));
+    auto* c = Const("a", Call(ty.mat2x3<Infer>(),  //
+                              Call(ty.vec3<Infer>(), Expr(1.0_f), Expr(2.0_f), Expr(3.0_f)),
+                              Call(ty.vec3<Infer>(), Expr(4.0_f), Expr(5.0_f), Expr(6.0_f))));
 
     auto* col_0 = Const("col_0", IndexAccessor("a", Expr(0_i)));
     auto* col_1 = Const("col_1", IndexAccessor("a", Expr(1_i)));
@@ -204,7 +196,6 @@ TEST_F(ResolverConstEvalTest, MatrixMemberAccess_f32) {
     EXPECT_TYPE(cv->Type(), sem->Type());
     EXPECT_TRUE(cv->Index(0)->Type()->Is<type::Vector>());
     EXPECT_TRUE(cv->Index(0)->Index(0)->Type()->Is<type::F32>());
-    EXPECT_FALSE(cv->AllEqual());
     EXPECT_FALSE(cv->AnyZero());
     EXPECT_FALSE(cv->AllZero());
 
@@ -266,7 +257,7 @@ static std::ostream& operator<<(std::ostream& o, const Case& c) {
 
 using ResolverConstEvalArrayAccessTest = ResolverTestWithParam<Case>;
 TEST_P(ResolverConstEvalArrayAccessTest, Test) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto& param = GetParam();
     auto* expr = param.input.Expr(*this);
@@ -287,7 +278,7 @@ TEST_P(ResolverConstEvalArrayAccessTest, Test) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = Sem().Get(expr);
+    auto* sem = Sem().GetVal(expr);
     ASSERT_NE(sem, nullptr);
     auto* arr = sem->Type()->As<type::Array>();
     ASSERT_NE(arr, nullptr);
@@ -341,7 +332,7 @@ static std::ostream& operator<<(std::ostream& o, const Case& c) {
 
 using ResolverConstEvalVectorAccessTest = ResolverTestWithParam<Case>;
 TEST_P(ResolverConstEvalVectorAccessTest, Test) {
-    Enable(ast::Extension::kF16);
+    Enable(builtin::Extension::kF16);
 
     auto& param = GetParam();
     auto* expr = param.input.Expr(*this);
@@ -362,7 +353,7 @@ TEST_P(ResolverConstEvalVectorAccessTest, Test) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    auto* sem = Sem().Get(expr);
+    auto* sem = Sem().GetVal(expr);
     ASSERT_NE(sem, nullptr);
     auto* vec = sem->Type()->As<type::Vector>();
     ASSERT_NE(vec, nullptr);

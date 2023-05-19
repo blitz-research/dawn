@@ -15,9 +15,11 @@
 #include "src/tint/bench/benchmark.h"
 
 #include <filesystem>
-#include <sstream>
+#include <iostream>
 #include <utility>
 #include <vector>
+
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::bench {
 namespace {
@@ -44,7 +46,7 @@ std::variant<std::vector<T>, Error> ReadFile(const std::string& input_file) {
     fseek(file, 0, SEEK_END);
     const auto file_size = static_cast<size_t>(ftell(file));
     if (0 != (file_size % sizeof(T))) {
-        std::stringstream err;
+        utils::StringStream err;
         err << "File " << input_file
             << " does not contain an integral number of objects: " << file_size
             << " bytes in the file, require " << sizeof(T) << " bytes per object";
@@ -87,12 +89,30 @@ bool FindBenchmarkInputDir() {
 }  // namespace
 
 std::variant<tint::Source::File, Error> LoadInputFile(std::string name) {
-    auto path = (kInputFileDir / name).string();
-    auto data = ReadFile<uint8_t>(path);
-    if (auto* buf = std::get_if<std::vector<uint8_t>>(&data)) {
-        return tint::Source::File(path, std::string(buf->begin(), buf->end()));
+    auto path = std::filesystem::path(name).is_absolute() ? name : (kInputFileDir / name).string();
+    if (utils::HasSuffix(path, ".wgsl")) {
+        auto data = ReadFile<uint8_t>(path);
+        if (auto* buf = std::get_if<std::vector<uint8_t>>(&data)) {
+            return tint::Source::File(path, std::string(buf->begin(), buf->end()));
+        }
+        return std::get<Error>(data);
     }
-    return std::get<Error>(data);
+    if (utils::HasSuffix(path, ".spv")) {
+        auto spirv = ReadFile<uint32_t>(path);
+        if (auto* buf = std::get_if<std::vector<uint32_t>>(&spirv)) {
+            auto program = tint::reader::spirv::Parse(*buf, {});
+            if (!program.IsValid()) {
+                return Error{program.Diagnostics().str()};
+            }
+            auto result = tint::writer::wgsl::Generate(&program, {});
+            if (!result.success) {
+                return Error{result.error};
+            }
+            return tint::Source::File(path, result.wgsl);
+        }
+        return std::get<Error>(spirv);
+    }
+    return Error{"unsupported file extension: '" + name + "'"};
 }
 
 std::variant<ProgramAndFile, Error> LoadProgram(std::string name) {

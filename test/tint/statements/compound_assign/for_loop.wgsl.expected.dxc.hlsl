@@ -3,7 +3,7 @@ void unused_entry_point() {
   return;
 }
 
-RWByteAddressBuffer v : register(u0, space0);
+RWByteAddressBuffer v : register(u0);
 static uint i = 0u;
 
 int idx1() {
@@ -23,8 +23,8 @@ int idx3() {
 
 void foo() {
   float a[4] = (float[4])0;
-  const int tint_symbol_save = idx1();
   {
+    const int tint_symbol_save = idx1();
     a[tint_symbol_save] = (a[tint_symbol_save] * 2.0f);
     while (true) {
       const int tint_symbol_2 = idx2();

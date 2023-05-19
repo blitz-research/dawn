@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "src/dawn/node/binding/GPUAdapter.h"
 
@@ -95,9 +96,10 @@ namespace wgpu::binding {
 // wgpu::bindings::GPU
 ////////////////////////////////////////////////////////////////////////////////
 GPU::GPU(Flags flags) : flags_(std::move(flags)) {
-    // TODO(dawn:1123): Disable in 'release'
-    instance_.EnableBackendValidation(true);
-    instance_.SetBackendValidationLevel(dawn::native::BackendValidationLevel::Full);
+    if (auto validate = flags_.Get("validate"); validate == "1" || validate == "true") {
+        instance_.EnableBackendValidation(true);
+        instance_.SetBackendValidationLevel(dawn::native::BackendValidationLevel::Full);
+    }
 
     // Setting the DllDir changes where we load adapter DLLs from (e.g. d3dcompiler_47.dll)
     if (auto dir = flags_.Get("dlldir")) {
@@ -226,6 +228,22 @@ interop::Promise<std::optional<interop::Interface<interop::GPUAdapter>>> GPU::re
 
 interop::GPUTextureFormat GPU::getPreferredCanvasFormat(Napi::Env) {
     UNIMPLEMENTED();
+}
+
+interop::Interface<interop::WGSLLanguageFeatures> GPU::getWgslLanguageFeatures(Napi::Env env) {
+    // TODO(crbug.com/dawn/1777)
+    struct Features : public interop::WGSLLanguageFeatures {
+        ~Features() = default;
+        bool has(Napi::Env, std::string) {
+            UNIMPLEMENTED();
+            return false;
+        }
+        std::vector<std::string> keys(Napi::Env) {
+            UNIMPLEMENTED();
+            return {};
+        }
+    };
+    return interop::WGSLLanguageFeatures::Create<Features>(env);
 }
 
 }  // namespace wgpu::binding

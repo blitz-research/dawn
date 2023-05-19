@@ -18,6 +18,7 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
 
 constexpr uint32_t kRTSize = 16;
@@ -25,8 +26,6 @@ constexpr wgpu::TextureFormat kFormat = wgpu::TextureFormat::RGBA8Unorm;
 
 using RequireShaderF16Feature = bool;
 DAWN_TEST_PARAM_STRUCT(ShaderF16TestsParams, RequireShaderF16Feature);
-
-}  // anonymous namespace
 
 class ShaderF16Tests : public DawnTestWithParams<ShaderF16TestsParams> {
   public:
@@ -99,9 +98,9 @@ TEST_P(ShaderF16Tests, BasicShaderF16FeaturesTest) {
         GetParam().mRequireShaderF16Feature &&
         // Adapter support the feature
         IsShaderF16SupportedOnAdapter() &&
-        // Proper toggle, disallow_unsafe_apis and use_dxc if d3d12
-        // Note that "disallow_unsafe_apis" is always disabled in DawnTestBase::CreateDeviceImpl.
-        !HasToggleEnabled("disallow_unsafe_apis") && UseDxcEnabledOrNonD3D12();
+        // Proper toggle, allow_unsafe_apis and use_dxc if d3d12
+        // Note that "allow_unsafe_apis" is always enabled in DawnTestBase::CreateDeviceImpl.
+        HasToggleEnabled("allow_unsafe_apis") && UseDxcEnabledOrNonD3D12();
     const bool deviceSupportShaderF16Feature = device.HasFeature(wgpu::FeatureName::ShaderF16);
     EXPECT_EQ(deviceSupportShaderF16Feature, shouldShaderF16FeatureSupportedByDevice);
 
@@ -147,13 +146,13 @@ TEST_P(ShaderF16Tests, RenderPipelineIOF16_RenderTarget) {
 enable f16;
 
 @vertex
-fn VSMain(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-    var pos = array<vec2<f32>, 3>(
-        vec2<f32>(-1.0,  1.0),
-        vec2<f32>( 1.0, -1.0),
-        vec2<f32>(-1.0, -1.0));
+fn VSMain(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+    var pos = array(
+        vec2f(-1.0,  1.0),
+        vec2f( 1.0, -1.0),
+        vec2f(-1.0, -1.0));
 
-    return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+    return vec4f(pos[VertexIndex], 0.0, 1.0);
 }
 
 @fragment
@@ -215,23 +214,23 @@ enable f16;
 
 struct VSOutput{
     @builtin(position)
-    pos: vec4<f32>,
+    pos: vec4f,
     @location(3)
     color_vsout: vec4<f16>,
 }
 
 @vertex
 fn VSMain(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
-    var pos = array<vec2<f32>, 3>(
-        vec2<f32>(-1.0,  1.0),
-        vec2<f32>( 1.0, -1.0),
-        vec2<f32>(-1.0, -1.0));
+    var pos = array(
+        vec2f(-1.0,  1.0),
+        vec2f( 1.0, -1.0),
+        vec2f(-1.0, -1.0));
 
     // Blue
     var color = vec4<f16>(0.0h, 0.0h, 1.0h, 1.0h);
 
     var result: VSOutput;
-    result.pos = vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+    result.pos = vec4f(pos[VertexIndex], 0.0, 1.0);
     result.color_vsout = color;
 
     return result;
@@ -243,9 +242,9 @@ struct FSInput{
 }
 
 @fragment
-fn FSMain(fsInput: FSInput) -> @location(0) vec4<f32> {
+fn FSMain(fsInput: FSInput) -> @location(0) vec4f {
     // Paint it with given color
-    return vec4<f32>(fsInput.color_fsin);
+    return vec4f(fsInput.color_fsin);
 })";
 
     wgpu::ShaderModule shaderModule = utils::CreateShaderModule(device, shader);
@@ -307,17 +306,17 @@ struct VSInput {
 }
 
 struct VSOutput {
-    @builtin(position) pos : vec4<f32>,
-    @location(0) color : vec4<f32>,
+    @builtin(position) pos : vec4f,
+    @location(0) color : vec4f,
 }
 
 @vertex
 fn VSMain(in: VSInput) -> VSOutput {
-    return VSOutput(vec4<f32>(vec2<f32>(in.pos_half * 2.0h), 0.0, 1.0), vec4<f32>(in.color_quarter * 4.0h));
+    return VSOutput(vec4f(vec2f(in.pos_half * 2.0h), 0.0, 1.0), vec4f(in.color_quarter * 4.0h));
 }
 
 @fragment
-fn FSMain(@location(0) color : vec4<f32>) -> @location(0) vec4<f32> {
+fn FSMain(@location(0) color : vec4f) -> @location(0) vec4f {
     return color;
 })";
 
@@ -440,7 +439,7 @@ fn FSMain(@location(0) color : vec4<f32>) -> @location(0) vec4<f32> {
     }
 }
 
-// DawnTestBase::CreateDeviceImpl always disable disallow_unsafe_apis toggle.
+// DawnTestBase::CreateDeviceImpl always enables allow_unsafe_apis toggle.
 DAWN_INSTANTIATE_TEST_P(ShaderF16Tests,
                         {
                             D3D12Backend(),
@@ -451,3 +450,6 @@ DAWN_INSTANTIATE_TEST_P(ShaderF16Tests,
                             OpenGLESBackend(),
                         },
                         {true, false});
+
+}  // anonymous namespace
+}  // namespace dawn

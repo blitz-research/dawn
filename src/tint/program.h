@@ -138,11 +138,11 @@ class Program {
     /// expression has no resolved type.
     const type::Type* TypeOf(const ast::Expression* expr) const;
 
-    /// Helper for returning the resolved semantic type of the AST type `type`.
-    /// @param type the AST type
-    /// @return the resolved semantic type for the type, or nullptr if the type
-    /// has no resolved type.
-    const type::Type* TypeOf(const ast::Type* type) const;
+    /// Helper for returning the resolved semantic type of the variable `var`.
+    /// @param var the AST variable
+    /// @return the resolved semantic type for the variable, or nullptr if the
+    /// variable has no resolved type.
+    const type::Type* TypeOf(const ast::Variable* var) const;
 
     /// Helper for returning the resolved semantic type of the AST type
     /// declaration `type_decl`.
@@ -150,21 +150,6 @@ class Program {
     /// @return the resolved semantic type for the type declaration, or nullptr if
     /// the type declaration has no resolved type.
     const type::Type* TypeOf(const ast::TypeDecl* type_decl) const;
-
-    /// @param type a type
-    /// @returns the name for `type` that closely resembles how it would be
-    /// declared in WGSL.
-    std::string FriendlyName(const ast::Type* type) const;
-
-    /// @param type a type
-    /// @returns the name for `type` that closely resembles how it would be
-    /// declared in WGSL.
-    std::string FriendlyName(const type::Type* type) const;
-
-    /// Overload of FriendlyName, which removes an ambiguity when passing nullptr.
-    /// Simplifies test code.
-    /// @returns "<null>"
-    std::string FriendlyName(std::nullptr_t) const;
 
     /// A function that can be used to print a program
     using Printer = std::string (*)(const Program*);

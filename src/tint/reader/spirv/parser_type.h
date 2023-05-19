@@ -19,26 +19,25 @@
 #include <string>
 #include <vector>
 
-#include "src/tint/ast/access.h"
-#include "src/tint/ast/address_space.h"
-#include "src/tint/ast/sampler.h"
-#include "src/tint/ast/storage_texture.h"
-#include "src/tint/ast/texture.h"
-#include "src/tint/castable.h"
+#include "src/tint/ast/type.h"
+#include "src/tint/builtin/access.h"
+#include "src/tint/builtin/address_space.h"
+#include "src/tint/builtin/texel_format.h"
+#include "src/tint/symbol.h"
+#include "src/tint/type/sampler_kind.h"
+#include "src/tint/type/texture_dimension.h"
 #include "src/tint/utils/block_allocator.h"
+#include "src/tint/utils/castable.h"
 
 // Forward declarations
 namespace tint {
 class ProgramBuilder;
 }  // namespace tint
-namespace tint::ast {
-class Type;
-}  // namespace tint::ast
 
 namespace tint::reader::spirv {
 
 /// Type is the base class for all types
-class Type : public Castable<Type> {
+class Type : public utils::Castable<Type> {
   public:
     /// Constructor
     Type();
@@ -49,7 +48,7 @@ class Type : public Castable<Type> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    virtual const ast::Type* Build(ProgramBuilder& b) const = 0;
+    virtual ast::Type Build(ProgramBuilder& b) const = 0;
 
     /// @returns the inner most store type if this is a pointer, `this` otherwise
     const Type* UnwrapPtr() const;
@@ -98,10 +97,10 @@ class Type : public Castable<Type> {
 using TypeList = std::vector<const Type*>;
 
 /// `void` type
-struct Void final : public Castable<Void, Type> {
+struct Void final : public utils::Castable<Void, Type> {
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -110,10 +109,10 @@ struct Void final : public Castable<Void, Type> {
 };
 
 /// `bool` type
-struct Bool final : public Castable<Bool, Type> {
+struct Bool final : public utils::Castable<Bool, Type> {
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -122,10 +121,10 @@ struct Bool final : public Castable<Bool, Type> {
 };
 
 /// `u32` type
-struct U32 final : public Castable<U32, Type> {
+struct U32 final : public utils::Castable<U32, Type> {
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -134,10 +133,10 @@ struct U32 final : public Castable<U32, Type> {
 };
 
 /// `f32` type
-struct F32 final : public Castable<F32, Type> {
+struct F32 final : public utils::Castable<F32, Type> {
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -146,10 +145,10 @@ struct F32 final : public Castable<F32, Type> {
 };
 
 /// `i32` type
-struct I32 final : public Castable<I32, Type> {
+struct I32 final : public utils::Castable<I32, Type> {
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -158,12 +157,12 @@ struct I32 final : public Castable<I32, Type> {
 };
 
 /// `ptr<SC, T, AM>` type
-struct Pointer final : public Castable<Pointer, Type> {
+struct Pointer final : public utils::Castable<Pointer, Type> {
     /// Constructor
     /// @param ty the store type
     /// @param sc the pointer address space
     /// @param access the declared access mode
-    Pointer(const Type* ty, ast::AddressSpace sc, ast::Access access);
+    Pointer(const Type* ty, builtin::AddressSpace sc, builtin::Access access);
 
     /// Copy constructor
     /// @param other the other type to copy
@@ -171,7 +170,7 @@ struct Pointer final : public Castable<Pointer, Type> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -181,20 +180,20 @@ struct Pointer final : public Castable<Pointer, Type> {
     /// the store type
     Type const* const type;
     /// the pointer address space
-    ast::AddressSpace const address_space;
+    builtin::AddressSpace const address_space;
     /// the pointer declared access mode
-    ast::Access const access;
+    builtin::Access const access;
 };
 
 /// `ref<SC, T, AM>` type
 /// Note this has no AST representation, but is used for type tracking in the
 /// reader.
-struct Reference final : public Castable<Reference, Type> {
+struct Reference final : public utils::Castable<Reference, Type> {
     /// Constructor
     /// @param ty the referenced type
     /// @param sc the reference address space
     /// @param access the reference declared access mode
-    Reference(const Type* ty, ast::AddressSpace sc, ast::Access access);
+    Reference(const Type* ty, builtin::AddressSpace sc, builtin::Access access);
 
     /// Copy constructor
     /// @param other the other type to copy
@@ -202,7 +201,7 @@ struct Reference final : public Castable<Reference, Type> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -212,13 +211,13 @@ struct Reference final : public Castable<Reference, Type> {
     /// the store type
     Type const* const type;
     /// the pointer address space
-    ast::AddressSpace const address_space;
+    builtin::AddressSpace const address_space;
     /// the pointer declared access mode
-    ast::Access const access;
+    builtin::Access const access;
 };
 
 /// `vecN<T>` type
-struct Vector final : public Castable<Vector, Type> {
+struct Vector final : public utils::Castable<Vector, Type> {
     /// Constructor
     /// @param ty the element type
     /// @param sz the number of elements in the vector
@@ -230,7 +229,7 @@ struct Vector final : public Castable<Vector, Type> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -244,7 +243,7 @@ struct Vector final : public Castable<Vector, Type> {
 };
 
 /// `matNxM<T>` type
-struct Matrix final : public Castable<Matrix, Type> {
+struct Matrix final : public utils::Castable<Matrix, Type> {
     /// Constructor
     /// @param ty the matrix element type
     /// @param c the number of columns in the matrix
@@ -257,7 +256,7 @@ struct Matrix final : public Castable<Matrix, Type> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -273,7 +272,7 @@ struct Matrix final : public Castable<Matrix, Type> {
 };
 
 /// `array<T, N>` type
-struct Array final : public Castable<Array, Type> {
+struct Array final : public utils::Castable<Array, Type> {
     /// Constructor
     /// @param el the element type
     /// @param sz the number of elements in the array. 0 represents runtime-sized
@@ -287,7 +286,7 @@ struct Array final : public Castable<Array, Type> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -303,10 +302,10 @@ struct Array final : public Castable<Array, Type> {
 };
 
 /// `sampler` type
-struct Sampler final : public Castable<Sampler, Type> {
+struct Sampler final : public utils::Castable<Sampler, Type> {
     /// Constructor
     /// @param k the sampler kind
-    explicit Sampler(ast::SamplerKind k);
+    explicit Sampler(type::SamplerKind k);
 
     /// Copy constructor
     /// @param other the other type to copy
@@ -314,7 +313,7 @@ struct Sampler final : public Castable<Sampler, Type> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -322,30 +321,30 @@ struct Sampler final : public Castable<Sampler, Type> {
 #endif  // NDEBUG
 
     /// the sampler kind
-    ast::SamplerKind const kind;
+    type::SamplerKind const kind;
 };
 
 /// Base class for texture types
-struct Texture : public Castable<Texture, Type> {
+struct Texture : public utils::Castable<Texture, Type> {
     ~Texture() override;
 
     /// Constructor
     /// @param d the texture dimensions
-    explicit Texture(ast::TextureDimension d);
+    explicit Texture(type::TextureDimension d);
 
     /// Copy constructor
     /// @param other the other type to copy
     Texture(const Texture& other);
 
     /// the texture dimensions
-    ast::TextureDimension const dims;
+    type::TextureDimension const dims;
 };
 
 /// `texture_depth_D` type
-struct DepthTexture final : public Castable<DepthTexture, Texture> {
+struct DepthTexture final : public utils::Castable<DepthTexture, Texture> {
     /// Constructor
     /// @param d the texture dimensions
-    explicit DepthTexture(ast::TextureDimension d);
+    explicit DepthTexture(type::TextureDimension d);
 
     /// Copy constructor
     /// @param other the other type to copy
@@ -353,7 +352,7 @@ struct DepthTexture final : public Castable<DepthTexture, Texture> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -362,10 +361,10 @@ struct DepthTexture final : public Castable<DepthTexture, Texture> {
 };
 
 /// `texture_depth_multisampled_D` type
-struct DepthMultisampledTexture final : public Castable<DepthMultisampledTexture, Texture> {
+struct DepthMultisampledTexture final : public utils::Castable<DepthMultisampledTexture, Texture> {
     /// Constructor
     /// @param d the texture dimensions
-    explicit DepthMultisampledTexture(ast::TextureDimension d);
+    explicit DepthMultisampledTexture(type::TextureDimension d);
 
     /// Copy constructor
     /// @param other the other type to copy
@@ -373,7 +372,7 @@ struct DepthMultisampledTexture final : public Castable<DepthMultisampledTexture
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -382,11 +381,11 @@ struct DepthMultisampledTexture final : public Castable<DepthMultisampledTexture
 };
 
 /// `texture_multisampled_D<T>` type
-struct MultisampledTexture final : public Castable<MultisampledTexture, Texture> {
+struct MultisampledTexture final : public utils::Castable<MultisampledTexture, Texture> {
     /// Constructor
     /// @param d the texture dimensions
     /// @param t the multisampled texture type
-    MultisampledTexture(ast::TextureDimension d, const Type* t);
+    MultisampledTexture(type::TextureDimension d, const Type* t);
 
     /// Copy constructor
     /// @param other the other type to copy
@@ -394,7 +393,7 @@ struct MultisampledTexture final : public Castable<MultisampledTexture, Texture>
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -406,11 +405,11 @@ struct MultisampledTexture final : public Castable<MultisampledTexture, Texture>
 };
 
 /// `texture_D<T>` type
-struct SampledTexture final : public Castable<SampledTexture, Texture> {
+struct SampledTexture final : public utils::Castable<SampledTexture, Texture> {
     /// Constructor
     /// @param d the texture dimensions
     /// @param t the sampled texture type
-    SampledTexture(ast::TextureDimension d, const Type* t);
+    SampledTexture(type::TextureDimension d, const Type* t);
 
     /// Copy constructor
     /// @param other the other type to copy
@@ -418,7 +417,7 @@ struct SampledTexture final : public Castable<SampledTexture, Texture> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -430,12 +429,12 @@ struct SampledTexture final : public Castable<SampledTexture, Texture> {
 };
 
 /// `texture_storage_D<F>` type
-struct StorageTexture final : public Castable<StorageTexture, Texture> {
+struct StorageTexture final : public utils::Castable<StorageTexture, Texture> {
     /// Constructor
     /// @param d the texture dimensions
     /// @param f the storage image format
     /// @param a the access control
-    StorageTexture(ast::TextureDimension d, ast::TexelFormat f, ast::Access a);
+    StorageTexture(type::TextureDimension d, builtin::TexelFormat f, builtin::Access a);
 
     /// Copy constructor
     /// @param other the other type to copy
@@ -443,7 +442,7 @@ struct StorageTexture final : public Castable<StorageTexture, Texture> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
 #ifndef NDEBUG
     /// @returns a string representation of the type, for debug purposes only
@@ -451,14 +450,14 @@ struct StorageTexture final : public Castable<StorageTexture, Texture> {
 #endif  // NDEBUG
 
     /// the storage image format
-    ast::TexelFormat const format;
+    builtin::TexelFormat const format;
 
     /// the access control
-    ast::Access const access;
+    builtin::Access const access;
 };
 
 /// Base class for named types
-struct Named : public Castable<Named, Type> {
+struct Named : public utils::Castable<Named, Type> {
     /// Constructor
     /// @param n the type name
     explicit Named(Symbol n);
@@ -480,7 +479,7 @@ struct Named : public Castable<Named, Type> {
 };
 
 /// `type T = N` type
-struct Alias final : public Castable<Alias, Named> {
+struct Alias final : public utils::Castable<Alias, Named> {
     /// Constructor
     /// @param n the alias name
     /// @param t the aliased type
@@ -492,14 +491,14 @@ struct Alias final : public Castable<Alias, Named> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
     /// the aliased type
     Type const* const type;
 };
 
 /// `struct N { ... };` type
-struct Struct final : public Castable<Struct, Named> {
+struct Struct final : public utils::Castable<Struct, Named> {
     /// Constructor
     /// @param n the struct name
     /// @param m the member types
@@ -514,7 +513,7 @@ struct Struct final : public Castable<Struct, Named> {
 
     /// @param b the ProgramBuilder used to construct the AST types
     /// @returns the constructed ast::Type node for the given type
-    const ast::Type* Build(ProgramBuilder& b) const override;
+    ast::Type Build(ProgramBuilder& b) const override;
 
     /// the member types
     const TypeList members;
@@ -550,16 +549,16 @@ class TypeManager {
     /// @return a Pointer type. Repeated calls with the same arguments will return
     /// the same pointer.
     const spirv::Pointer* Pointer(const Type* ty,
-                                  ast::AddressSpace address_space,
-                                  ast::Access access = ast::Access::kUndefined);
+                                  builtin::AddressSpace address_space,
+                                  builtin::Access access = builtin::Access::kUndefined);
     /// @param ty the referenced type
     /// @param address_space the reference address space
     /// @param access the declared access mode
     /// @return a Reference type. Repeated calls with the same arguments will
     /// return the same pointer.
     const spirv::Reference* Reference(const Type* ty,
-                                      ast::AddressSpace address_space,
-                                      ast::Access access = ast::Access::kUndefined);
+                                      builtin::AddressSpace address_space,
+                                      builtin::Access access = builtin::Access::kUndefined);
     /// @param ty the element type
     /// @param sz the number of elements in the vector
     /// @return a Vector type. Repeated calls with the same arguments will return
@@ -591,33 +590,33 @@ class TypeManager {
     /// @param k the sampler kind
     /// @return a Sampler type. Repeated calls with the same arguments will return
     /// the same pointer.
-    const spirv::Sampler* Sampler(ast::SamplerKind k);
+    const spirv::Sampler* Sampler(type::SamplerKind k);
     /// @param d the texture dimensions
     /// @return a DepthTexture type. Repeated calls with the same arguments will
     /// return the same pointer.
-    const spirv::DepthTexture* DepthTexture(ast::TextureDimension d);
+    const spirv::DepthTexture* DepthTexture(type::TextureDimension d);
     /// @param d the texture dimensions
     /// @return a DepthMultisampledTexture type. Repeated calls with the same
     /// arguments will return the same pointer.
-    const spirv::DepthMultisampledTexture* DepthMultisampledTexture(ast::TextureDimension d);
+    const spirv::DepthMultisampledTexture* DepthMultisampledTexture(type::TextureDimension d);
     /// @param d the texture dimensions
     /// @param t the multisampled texture type
     /// @return a MultisampledTexture type. Repeated calls with the same arguments
     /// will return the same pointer.
-    const spirv::MultisampledTexture* MultisampledTexture(ast::TextureDimension d, const Type* t);
+    const spirv::MultisampledTexture* MultisampledTexture(type::TextureDimension d, const Type* t);
     /// @param d the texture dimensions
     /// @param t the sampled texture type
     /// @return a SampledTexture type. Repeated calls with the same arguments will
     /// return the same pointer.
-    const spirv::SampledTexture* SampledTexture(ast::TextureDimension d, const Type* t);
+    const spirv::SampledTexture* SampledTexture(type::TextureDimension d, const Type* t);
     /// @param d the texture dimensions
     /// @param f the storage image format
     /// @param a the access control
     /// @return a StorageTexture type. Repeated calls with the same arguments will
     /// return the same pointer.
-    const spirv::StorageTexture* StorageTexture(ast::TextureDimension d,
-                                                ast::TexelFormat f,
-                                                ast::Access a);
+    const spirv::StorageTexture* StorageTexture(type::TextureDimension d,
+                                                builtin::TexelFormat f,
+                                                builtin::Access a);
 
   private:
     struct State;

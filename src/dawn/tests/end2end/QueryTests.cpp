@@ -18,6 +18,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 // Clear the content of the result buffer into 0xFFFFFFFF.
 constexpr static uint64_t kSentinelValue = ~uint64_t(0u);
 constexpr static uint64_t kZero = 0u;
@@ -89,17 +92,17 @@ class OcclusionQueryTests : public QueryTests {
         // Create basic render pipeline
         vsModule = utils::CreateShaderModule(device, R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 3>(
-                    vec2<f32>( 1.0,  1.0),
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 1.0, -1.0));
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f( 1.0,  1.0),
+                    vec2f(-1.0, -1.0),
+                    vec2f( 1.0, -1.0));
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             })");
 
         fsModule = utils::CreateShaderModule(device, R"(
-            @fragment fn main() -> @location(0) vec4<f32> {
-                return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(0.0, 1.0, 0.0, 1.0);
             })");
 
         utils::ComboRenderPipelineDescriptor descriptor;
@@ -293,11 +296,6 @@ TEST_P(OcclusionQueryTests, Rewrite) {
 // Test resolving occlusion query correctly if the queries are written sparsely, which also tests
 // the query resetting at the start of render passes on Vulkan backend.
 TEST_P(OcclusionQueryTests, ResolveSparseQueries) {
-    // TODO(hao.x.li@intel.com): Investigate why it's failed on D3D12 on Nvidia when running with
-    // the previous occlusion tests. Expect resolve to 0 for these unwritten queries but the
-    // occlusion result of the previous tests is got.
-    DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsNvidia());
-
     constexpr uint32_t kQueryCount = 7;
 
     wgpu::QuerySet querySet = CreateOcclusionQuerySet(kQueryCount);
@@ -353,11 +351,6 @@ TEST_P(OcclusionQueryTests, ResolveSparseQueries) {
 
 // Test resolving occlusion query to 0 if all queries are not written
 TEST_P(OcclusionQueryTests, ResolveWithoutWritten) {
-    // TODO(hao.x.li@intel.com): Investigate why it's failed on D3D12 on Nvidia when running with
-    // the previous occlusion tests. Expect resolve to 0 but the occlusion result of the previous
-    // tests is got.
-    DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsNvidia());
-
     constexpr uint32_t kQueryCount = 1;
 
     wgpu::QuerySet querySet = CreateOcclusionQuerySet(kQueryCount);
@@ -372,6 +365,143 @@ TEST_P(OcclusionQueryTests, ResolveWithoutWritten) {
     queue.Submit(1, &commands);
 
     EXPECT_BUFFER_U64_RANGE_EQ(&kZero, destination, 0, 1);
+}
+
+// Test setting an occlusion query to non-zero, then rewriting it without drawing, resolves to 0.
+TEST_P(OcclusionQueryTests, RewriteNoDrawToZero) {
+    constexpr uint32_t kQueryCount = 1;
+
+    wgpu::QuerySet querySet = CreateOcclusionQuerySet(kQueryCount);
+    wgpu::Buffer destination = CreateResolveBuffer(kQueryCount * sizeof(uint64_t));
+    // Set all bits in buffer to check 0 is correctly written if there is no sample passed the
+    // occlusion testing
+    queue.WriteBuffer(destination, 0, &kSentinelValue, sizeof(kSentinelValue));
+
+    utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
+    renderPass.renderPassInfo.occlusionQuerySet = querySet;
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+
+    // Do an occlusion query with a draw call
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
+    pass.SetPipeline(pipeline);
+    pass.BeginOcclusionQuery(0);
+    pass.Draw(3);
+    pass.EndOcclusionQuery();
+    pass.End();
+
+    // Do another occlusion query with no draw calls, rewriting the same index.
+    wgpu::RenderPassEncoder rewritePass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
+    rewritePass.BeginOcclusionQuery(0);
+    rewritePass.EndOcclusionQuery();
+    rewritePass.End();
+
+    encoder.ResolveQuerySet(querySet, 0, kQueryCount, destination, 0);
+    wgpu::CommandBuffer commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    EXPECT_BUFFER(destination, 0, sizeof(uint64_t),
+                  new OcclusionExpectation(OcclusionExpectation::Result::Zero));
+}
+
+// Test setting an occlusion query to non-zero, then rewriting it without drawing, resolves to 0.
+// Do the two queries+resolves in separate submits.
+TEST_P(OcclusionQueryTests, RewriteNoDrawToZeroSeparateSubmit) {
+    constexpr uint32_t kQueryCount = 1;
+
+    wgpu::QuerySet querySet = CreateOcclusionQuerySet(kQueryCount);
+    wgpu::Buffer destination = CreateResolveBuffer(kQueryCount * sizeof(uint64_t));
+    // Set all bits in buffer to check 0 is correctly written if there is no sample passed the
+    // occlusion testing
+    queue.WriteBuffer(destination, 0, &kSentinelValue, sizeof(kSentinelValue));
+
+    utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
+    renderPass.renderPassInfo.occlusionQuerySet = querySet;
+
+    // Do an occlusion query with a draw call
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
+    pass.SetPipeline(pipeline);
+    pass.BeginOcclusionQuery(0);
+    pass.Draw(3);
+    pass.EndOcclusionQuery();
+    pass.End();
+    encoder.ResolveQuerySet(querySet, 0, kQueryCount, destination, 0);
+    wgpu::CommandBuffer commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    // Do another occlusion query with no draw calls, rewriting the same index.
+    encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder rewritePass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
+    rewritePass.BeginOcclusionQuery(0);
+    rewritePass.EndOcclusionQuery();
+    rewritePass.End();
+    encoder.ResolveQuerySet(querySet, 0, kQueryCount, destination, 0);
+    commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    EXPECT_BUFFER(destination, 0, sizeof(uint64_t),
+                  new OcclusionExpectation(OcclusionExpectation::Result::Zero));
+}
+
+// Test that resetting an occlusion query to zero works when a draw is done where all primitives
+// fail the depth test.
+TEST_P(OcclusionQueryTests, RewriteToZeroWithDraw) {
+    constexpr uint32_t kQueryCount = 1;
+
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = vsModule;
+    descriptor.cFragment.module = fsModule;
+
+    // Enable depth and stencil tests and set comparison tests to never pass.
+    wgpu::DepthStencilState* depthStencil = descriptor.EnableDepthStencil(kDepthStencilFormat);
+    depthStencil->depthCompare = wgpu::CompareFunction::Never;
+    depthStencil->stencilFront.compare = wgpu::CompareFunction::Never;
+    depthStencil->stencilBack.compare = wgpu::CompareFunction::Never;
+
+    wgpu::RenderPipeline renderPipeline = device.CreateRenderPipeline(&descriptor);
+
+    wgpu::Texture renderTarget = CreateRenderTexture(kColorFormat);
+    wgpu::TextureView renderTargetView = renderTarget.CreateView();
+
+    wgpu::Texture depthTexture = CreateRenderTexture(kDepthStencilFormat);
+    wgpu::TextureView depthTextureView = depthTexture.CreateView();
+
+    wgpu::QuerySet querySet = CreateOcclusionQuerySet(kQueryCount);
+    wgpu::Buffer destination = CreateResolveBuffer(kQueryCount * sizeof(uint64_t));
+    // Set all bits in buffer to check 0 is correctly written if there is no sample passed the
+    // occlusion testing
+    queue.WriteBuffer(destination, 0, &kSentinelValue, sizeof(kSentinelValue));
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    {
+        utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(device, kRTSize, kRTSize);
+        renderPass.renderPassInfo.occlusionQuerySet = querySet;
+
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
+        pass.SetPipeline(pipeline);
+        pass.BeginOcclusionQuery(0);
+        pass.Draw(3);
+        pass.EndOcclusionQuery();
+        pass.End();
+    }
+    {
+        utils::ComboRenderPassDescriptor renderPass({renderTargetView}, depthTextureView);
+        renderPass.occlusionQuerySet = querySet;
+
+        wgpu::RenderPassEncoder rewritePass = encoder.BeginRenderPass(&renderPass);
+        rewritePass.SetPipeline(renderPipeline);
+        rewritePass.BeginOcclusionQuery(0);
+        rewritePass.Draw(3);
+        rewritePass.EndOcclusionQuery();
+        rewritePass.End();
+    }
+    encoder.ResolveQuerySet(querySet, 0, kQueryCount, destination, 0);
+    wgpu::CommandBuffer commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    EXPECT_BUFFER(destination, 0, sizeof(uint64_t),
+                  new OcclusionExpectation(OcclusionExpectation::Result::Zero));
 }
 
 // Test resolving occlusion query to the destination buffer with offset
@@ -534,18 +664,18 @@ class TimestampQueryTests : public QueryTests {
 
         descriptor.vertex.module = utils::CreateShaderModule(device, R"(
                 @vertex
-                fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                    var pos = array<vec2<f32>, 3>(
-                        vec2<f32>( 1.0,  1.0),
-                        vec2<f32>(-1.0, -1.0),
-                        vec2<f32>( 1.0, -1.0));
-                    return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+                fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                    var pos = array(
+                        vec2f( 1.0,  1.0),
+                        vec2f(-1.0, -1.0),
+                        vec2f( 1.0, -1.0));
+                    return vec4f(pos[VertexIndex], 0.0, 1.0);
                 })");
 
         if (hasFragmentStage) {
             descriptor.cFragment.module = utils::CreateShaderModule(device, R"(
-                @fragment fn main() -> @location(0) vec4<f32> {
-                    return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+                @fragment fn main() -> @location(0) vec4f {
+                    return vec4f(0.0, 1.0, 0.0, 1.0);
                 })");
         } else {
             descriptor.fragment = nullptr;
@@ -737,35 +867,12 @@ TEST_P(TimestampQueryTests, TimestampWritesQuerySetOnComputePass) {
 
 // Test timestampWrites with query index in compute pass descriptor
 TEST_P(TimestampQueryTests, TimestampWritesQueryIndexOnComputePass) {
-    constexpr uint32_t kQueryCount = 2;
+    // Set timestampWrites with different query indexes and locations, not need test write same
+    // query index due to it's not allowed on compute pass.
+    wgpu::QuerySet querySet = CreateQuerySetForTimestamp(2);
 
-    // Set timestampWrites with different query indexes on same compute pass
-    {
-        wgpu::QuerySet querySet = CreateQuerySetForTimestamp(kQueryCount);
-
-        TestTimestampWritesOnComputePass(
-            {{querySet, 0, wgpu::ComputePassTimestampLocation::Beginning},
-             {querySet, 1, wgpu::ComputePassTimestampLocation::End}});
-    }
-
-    // Set timestampWrites with same query index on same compute pass
-    {
-        wgpu::QuerySet querySet = CreateQuerySetForTimestamp(kQueryCount);
-
-        TestTimestampWritesOnComputePass(
-            {{querySet, 0, wgpu::ComputePassTimestampLocation::Beginning},
-             {querySet, 0, wgpu::ComputePassTimestampLocation::End}});
-    }
-
-    // Set timestampWrites with same query indexes on different compute pass
-    {
-        wgpu::QuerySet querySet0 = CreateQuerySetForTimestamp(kQueryCount);
-        wgpu::QuerySet querySet1 = CreateQuerySetForTimestamp(kQueryCount);
-
-        TestTimestampWritesOnComputePass(
-            {{querySet0, 0, wgpu::ComputePassTimestampLocation::Beginning}},
-            {{querySet1, 0, wgpu::ComputePassTimestampLocation::End}});
-    }
+    TestTimestampWritesOnComputePass({{querySet, 0, wgpu::ComputePassTimestampLocation::Beginning},
+                                      {querySet, 1, wgpu::ComputePassTimestampLocation::End}});
 }
 
 // Test timestampWrites with timestamp location in compute pass descriptor
@@ -984,10 +1091,6 @@ TEST_P(TimestampQueryTests, ResolveToBufferWithOffset) {
 // Test resolving a query set twice into the same destination buffer with potentially overlapping
 // ranges
 TEST_P(TimestampQueryTests, ResolveTwiceToSameBuffer) {
-    // TODO(dawn:1546): Intel D3D driver regression on Gen12 GPUs. The compute shader in two
-    // ResolveQuerySet execute wrong.
-    DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsIntelGen12());
-
     constexpr uint32_t kQueryCount = kMinCount + 2;
 
     wgpu::QuerySet querySet = CreateQuerySetForTimestamp(kQueryCount);
@@ -1008,6 +1111,9 @@ TEST_P(TimestampQueryTests, ResolveTwiceToSameBuffer) {
 // Test calling WriteTimestamp many times into separate query sets.
 // Regression test for crbug.com/dawn/1603.
 TEST_P(TimestampQueryTests, ManyWriteTimestampDistinctQuerySets) {
+    // TODO(crbug.com/dawn/1829): Avoid OOM on Apple GPUs.
+    DAWN_SUPPRESS_TEST_IF(IsApple());
+
     constexpr uint32_t kQueryCount = 100;
     // Write timestamp with a different query sets many times
     for (uint32_t i = 0; i < kQueryCount; ++i) {
@@ -1156,7 +1262,11 @@ TEST_P(TimestampQueryInsidePassesTests, FromComputePass) {
     }
 }
 
-DAWN_INSTANTIATE_TEST(OcclusionQueryTests, D3D12Backend(), MetalBackend(), VulkanBackend());
+DAWN_INSTANTIATE_TEST(OcclusionQueryTests,
+                      D3D12Backend(),
+                      MetalBackend(),
+                      MetalBackend({"metal_fill_empty_occlusion_queries_with_zero"}),
+                      VulkanBackend());
 DAWN_INSTANTIATE_TEST(PipelineStatisticsQueryTests,
                       D3D12Backend(),
                       MetalBackend(),
@@ -1175,3 +1285,6 @@ DAWN_INSTANTIATE_TEST(TimestampQueryInsidePassesTests,
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

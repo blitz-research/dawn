@@ -22,6 +22,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 // Vertex format tests all work the same way: the test will render a triangle.
 // Each test will set up a vertex buffer, and the vertex shader will check that
 // the vertex content is the same as what we expected. On success it outputs green,
@@ -33,7 +36,7 @@ constexpr uint32_t kVertexNum = 3;
 std::vector<uint16_t> Float32ToFloat16(std::vector<float> data) {
     std::vector<uint16_t> expectedData;
     for (auto& element : data) {
-        expectedData.push_back(Float32ToFloat16(element));
+        expectedData.push_back(dawn::Float32ToFloat16(element));
     }
     return expectedData;
 }
@@ -269,18 +272,18 @@ class VertexFormatTest : public DawnTest {
             }
 
             struct VertexOut {
-                @location(0) color : vec4<f32>,
-                @builtin(position) position : vec4<f32>,
+                @location(0) color : vec4f,
+                @builtin(position) position : vec4f,
             }
 
             @vertex
             fn main(input : VertexIn) -> VertexOut {
-                var pos = array<vec2<f32>, 3>(
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 2.0,  0.0),
-                    vec2<f32>( 0.0,  2.0));
+                var pos = array(
+                    vec2f(-1.0, -1.0),
+                    vec2f( 2.0,  0.0),
+                    vec2f( 0.0,  2.0));
                 var output : VertexOut;
-                output.position = vec4<f32>(pos[input.VertexIndex], 0.0, 1.0);
+                output.position = vec4f(pos[input.VertexIndex], 0.0, 1.0);
         )";
 
         // Declare expected values.
@@ -353,9 +356,9 @@ class VertexFormatTest : public DawnTest {
         }
         vs << R"(
             if (success) {
-                output.color = vec4<f32>(0.0, 1.0, 0.0, 1.0);
+                output.color = vec4f(0.0, 1.0, 0.0, 1.0);
             } else {
-                output.color = vec4<f32>(1.0, 0.0, 0.0, 1.0);
+                output.color = vec4f(1.0, 0.0, 0.0, 1.0);
             }
             return output;
         })";
@@ -363,7 +366,7 @@ class VertexFormatTest : public DawnTest {
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, vs.str().c_str());
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
                 @fragment
-                fn main(@location(0) color : vec4<f32>) -> @location(0) vec4<f32> {
+                fn main(@location(0) color : vec4f) -> @location(0) vec4f {
                     return color;
                 })");
 
@@ -829,8 +832,12 @@ TEST_P(VertexFormatTest, Sint32x4) {
 }
 
 DAWN_INSTANTIATE_TEST(VertexFormatTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

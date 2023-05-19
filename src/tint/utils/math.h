@@ -15,7 +15,8 @@
 #ifndef SRC_TINT_UTILS_MATH_H_
 #define SRC_TINT_UTILS_MATH_H_
 
-#include <sstream>
+#include <stdint.h>
+
 #include <string>
 #include <type_traits>
 
@@ -46,7 +47,7 @@ inline constexpr uint32_t Log2(uint64_t value) {
 #elif defined(_MSC_VER) && !defined(__clang__) && __cplusplus >= 202002L  // MSVC and C++20+
     // note: std::is_constant_evaluated() added in C++20
     //       required here as _BitScanReverse64 is not constexpr
-    if constexpr (!std::is_constant_evaluated()) {
+    if (!std::is_constant_evaluated()) {
         // NOLINTNEXTLINE(runtime/int)
         if constexpr (sizeof(unsigned long) == 8) {  // 64-bit
             // NOLINTNEXTLINE(runtime/int)
@@ -66,10 +67,10 @@ inline constexpr uint32_t Log2(uint64_t value) {
 #endif
 
     // Non intrinsic (slow) path. Supports constexpr evaluation.
-    for (size_t clz = 0; clz < 64; clz++) {
-        size_t bit = 63 - clz;
-        if (value & (static_cast<size_t>(1u) << bit)) {
-            return bit;
+    for (uint64_t clz = 0; clz < 64; clz++) {
+        uint64_t bit = 63 - clz;
+        if (value & (static_cast<uint64_t>(1u) << bit)) {
+            return static_cast<uint32_t>(bit);
         }
     }
     return 64;

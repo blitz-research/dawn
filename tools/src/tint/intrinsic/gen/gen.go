@@ -50,7 +50,7 @@ type IntrinsicTable struct {
 	Builtins                  []Intrinsic      // kBuiltins table content
 	UnaryOperators            []Intrinsic      // kUnaryOperators table content
 	BinaryOperators           []Intrinsic      // kBinaryOperators table content
-	InitializersAndConverters []Intrinsic      // kInitializersAndConverters table content
+	ConstructorsAndConverters []Intrinsic      // kInitializersAndConverters table content
 }
 
 // TemplateType is used to create the C++ TemplateTypeInfo structure
@@ -106,6 +106,8 @@ type Overload struct {
 	ReturnMatcherIndicesOffset *int
 	// StageUses describes the stages an overload can be used in
 	CanBeUsedInStage sem.StageUses
+	// True if the overload is marked as @must_use
+	MustUse bool
 	// True if the overload is marked as deprecated
 	IsDeprecated bool
 	// The kind of overload
@@ -211,6 +213,7 @@ func (b *IntrinsicTableBuilder) buildOverload(o *sem.Overload) (Overload, error)
 		ParametersOffset:           b.lut.parameters.Add(ob.parameters),
 		ReturnMatcherIndicesOffset: ob.returnTypeMatcherIndicesOffset,
 		CanBeUsedInStage:           o.CanBeUsedInStage,
+		MustUse:                    o.MustUse,
 		IsDeprecated:               o.IsDeprecated,
 		Kind:                       string(o.Decl.Kind),
 		ConstEvalFunction:          o.ConstEvalFunction,
@@ -384,7 +387,7 @@ func BuildIntrinsicTable(s *sem.Sem) (*IntrinsicTable, error) {
 		{s.Builtins, &b.Builtins},
 		{s.UnaryOperators, &b.UnaryOperators},
 		{s.BinaryOperators, &b.BinaryOperators},
-		{s.InitializersAndConverters, &b.InitializersAndConverters},
+		{s.ConstructorsAndConverters, &b.ConstructorsAndConverters},
 	} {
 		out := make([]Intrinsic, len(intrinsics.in))
 		for i, f := range intrinsics.in {
@@ -474,6 +477,10 @@ func DeepestElementType(fqn sem.FullyQualifiedName) sem.FullyQualifiedName {
 		return fqn.TemplateArguments[0].(sem.FullyQualifiedName)
 	case "vec":
 		return fqn.TemplateArguments[1].(sem.FullyQualifiedName)
+	case "mat2x2", "mat2x3", "mat2x4",
+		"mat3x2", "mat3x3", "mat3x4",
+		"mat4x2", "mat4x3", "mat4x4":
+		return DeepestElementType(fqn.TemplateArguments[0].(sem.FullyQualifiedName))
 	case "mat":
 		return DeepestElementType(fqn.TemplateArguments[2].(sem.FullyQualifiedName))
 	case "array":
@@ -498,6 +505,12 @@ func IsAbstract(fqn sem.FullyQualifiedName) bool {
 // numeric type, or if it starts with a leading underscore.
 func IsDeclarable(fqn sem.FullyQualifiedName) bool {
 	return !IsAbstract(DeepestElementType(fqn)) && !strings.HasPrefix(fqn.Target.GetName(), "_")
+}
+
+// IsHostShareable returns true if the FullyQualifiedName refers to a type that is host-sharable.
+// See https://www.w3.org/TR/WGSL/#host-shareable-types
+func IsHostShareable(fqn sem.FullyQualifiedName) bool {
+	return IsDeclarable(fqn) && DeepestElementType(fqn).Target.GetName() != "bool"
 }
 
 // OverloadUsesF16 returns true if the overload uses the f16 type anywhere in the signature.

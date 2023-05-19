@@ -14,21 +14,23 @@
 
 #include "src/tint/type/abstract_float.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
 #include "src/tint/utils/hash.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::AbstractFloat);
 
 namespace tint::type {
 
-AbstractFloat::AbstractFloat() : Base(utils::Hash(TypeInfo::Of<AbstractFloat>().full_hashcode)) {}
+AbstractFloat::AbstractFloat()
+    : Base(utils::Hash(utils::TypeInfo::Of<AbstractFloat>().full_hashcode)) {}
+
 AbstractFloat::~AbstractFloat() = default;
 
 bool AbstractFloat::Equals(const UniqueNode& other) const {
     return other.Is<AbstractFloat>();
 }
 
-std::string AbstractFloat::FriendlyName(const SymbolTable&) const {
+std::string AbstractFloat::FriendlyName() const {
     return "abstract-float";
 }
 

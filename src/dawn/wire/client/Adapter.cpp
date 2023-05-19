@@ -71,7 +71,7 @@ void Adapter::RequestDevice(const WGPUDeviceDescriptor* descriptor,
         return;
     }
 
-    Device* device = client->Make<Device>();
+    Device* device = client->Make<Device>(descriptor);
     uint64_t serial = mRequestDeviceRequests.Add({callback, device->GetWireId(), userdata});
 
     AdapterRequestDeviceCmd cmd;
@@ -125,6 +125,11 @@ bool Adapter::OnRequestDeviceCallback(uint64_t requestSerial,
 
     request.callback(status, ToAPI(device), message, request.userdata);
     return true;
+}
+
+WGPUInstance Adapter::GetInstance() const {
+    dawn::ErrorLog() << "adapter.GetInstance not supported with dawn_wire.";
+    return nullptr;
 }
 
 WGPUDevice Adapter::CreateDevice(const WGPUDeviceDescriptor*) {

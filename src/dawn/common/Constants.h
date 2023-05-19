@@ -19,7 +19,7 @@
 #include <cstdint>
 
 static constexpr uint32_t kMaxBindGroups = 4u;
-static constexpr uint32_t kMaxBindingsPerBindGroup = 640u;
+static constexpr uint32_t kMaxBindingsPerBindGroup = 1000u;
 static constexpr uint8_t kMaxVertexAttributes = 16u;
 static constexpr uint8_t kMaxVertexBuffers = 8u;
 static constexpr uint32_t kMaxVertexBufferArrayStride = 2048u;
@@ -31,16 +31,12 @@ static constexpr uint32_t kMaxInterStageShaderVariables = 16u;
 static constexpr uint64_t kAssumedMaxBufferSize =
     0x80000000u;  // Use 2 GB when the limit is unavailable
 
-// Per stage limits
+// Per stage maximum limits used to optimized Dawn internals.
 static constexpr uint32_t kMaxSampledTexturesPerShaderStage = 16;
 static constexpr uint32_t kMaxSamplersPerShaderStage = 16;
 static constexpr uint32_t kMaxStorageBuffersPerShaderStage = 8;
-static constexpr uint32_t kMaxStorageTexturesPerShaderStage = 4;
+static constexpr uint32_t kMaxStorageTexturesPerShaderStage = 8;
 static constexpr uint32_t kMaxUniformBuffersPerShaderStage = 12;
-
-// Per pipeline layout limits
-static constexpr uint32_t kMaxDynamicUniformBuffersPerPipelineLayout = 8u;
-static constexpr uint32_t kMaxDynamicStorageBuffersPerPipelineLayout = 4u;
 
 // Indirect command sizes
 static constexpr uint64_t kDispatchIndirectSize = 3 * sizeof(uint32_t);

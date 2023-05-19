@@ -23,14 +23,14 @@
 namespace tint::ast {
 
 /// A group attribute
-class GroupAttribute final : public Castable<GroupAttribute, Attribute> {
+class GroupAttribute final : public utils::Castable<GroupAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param src the source of this node
     /// @param expr the group expression
-    GroupAttribute(ProgramID pid, NodeID nid, const Source& src, const ast::Expression* expr);
+    GroupAttribute(ProgramID pid, NodeID nid, const Source& src, const Expression* expr);
     ~GroupAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -43,7 +43,7 @@ class GroupAttribute final : public Castable<GroupAttribute, Attribute> {
     const GroupAttribute* Clone(CloneContext* ctx) const override;
 
     /// The group expression
-    const ast::Expression* const expr;
+    const Expression* const expr;
 };
 
 }  // namespace tint::ast

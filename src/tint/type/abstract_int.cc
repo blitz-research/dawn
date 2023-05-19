@@ -14,14 +14,14 @@
 
 #include "src/tint/type/abstract_int.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/manager.h"
 #include "src/tint/utils/hash.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::AbstractInt);
 
 namespace tint::type {
 
-AbstractInt::AbstractInt() : Base(utils::Hash(TypeInfo::Of<AbstractInt>().full_hashcode)) {}
+AbstractInt::AbstractInt() : Base(utils::Hash(utils::TypeInfo::Of<AbstractInt>().full_hashcode)) {}
 
 AbstractInt::~AbstractInt() = default;
 
@@ -29,7 +29,7 @@ bool AbstractInt::Equals(const UniqueNode& other) const {
     return other.Is<AbstractInt>();
 }
 
-std::string AbstractInt::FriendlyName(const SymbolTable&) const {
+std::string AbstractInt::FriendlyName() const {
     return "abstract-int";
 }
 

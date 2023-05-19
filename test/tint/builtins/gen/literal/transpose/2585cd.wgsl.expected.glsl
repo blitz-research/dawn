@@ -1,7 +1,12 @@
 #version 310 es
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  mat3x4 inner;
+} prevent_dce;
+
 void transpose_2585cd() {
   mat3x4 res = mat3x4(vec4(1.0f), vec4(1.0f), vec4(1.0f));
+  prevent_dce.inner = res;
 }
 
 vec4 vertex_main() {
@@ -18,10 +23,15 @@ void main() {
   return;
 }
 #version 310 es
-precision mediump float;
+precision highp float;
+
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  mat3x4 inner;
+} prevent_dce;
 
 void transpose_2585cd() {
   mat3x4 res = mat3x4(vec4(1.0f), vec4(1.0f), vec4(1.0f));
+  prevent_dce.inner = res;
 }
 
 void fragment_main() {
@@ -34,8 +44,13 @@ void main() {
 }
 #version 310 es
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  mat3x4 inner;
+} prevent_dce;
+
 void transpose_2585cd() {
   mat3x4 res = mat3x4(vec4(1.0f), vec4(1.0f), vec4(1.0f));
+  prevent_dce.inner = res;
 }
 
 void compute_main() {

@@ -133,18 +133,15 @@ ExternalTextureBase::ExternalTextureBase(DeviceBase* device,
     : ApiObjectBase(device, descriptor->label),
       mVisibleOrigin(descriptor->visibleOrigin),
       mVisibleSize(descriptor->visibleSize),
-      mState(ExternalTextureState::Alive) {
-    GetObjectTrackingList()->Track(this);
-}
-
-ExternalTextureBase::ExternalTextureBase(DeviceBase* device)
-    : ApiObjectBase(device, kLabelNotImplemented), mState(ExternalTextureState::Alive) {
+      mState(ExternalTextureState::Active) {
     GetObjectTrackingList()->Track(this);
 }
 
 // Error external texture cannot be used in bind group.
-ExternalTextureBase::ExternalTextureBase(DeviceBase* device, ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag), mState(ExternalTextureState::Destroyed) {}
+ExternalTextureBase::ExternalTextureBase(DeviceBase* device,
+                                         ObjectBase::ErrorTag tag,
+                                         const char* label)
+    : ApiObjectBase(device, tag, label), mState(ExternalTextureState::Destroyed) {}
 
 ExternalTextureBase::~ExternalTextureBase() = default;
 
@@ -270,8 +267,8 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
         case wgpu::ExternalTextureRotation::Rotate0Degrees:
             break;
         case wgpu::ExternalTextureRotation::Rotate90Degrees:
-            coordTransformMatrix = Mul(mat2x3{0, +1, 0,   // x' = y
-                                              -1, 0, 0},  // y' = -x
+            coordTransformMatrix = Mul(mat2x3{0, -1, 0,   // x' = -y
+                                              +1, 0, 0},  // y' = x
                                        coordTransformMatrix);
             break;
         case wgpu::ExternalTextureRotation::Rotate180Degrees:
@@ -280,8 +277,8 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
                                        coordTransformMatrix);
             break;
         case wgpu::ExternalTextureRotation::Rotate270Degrees:
-            coordTransformMatrix = Mul(mat2x3{0, -1, 0,   // x' = -y
-                                              +1, 0, 0},  // y' = x
+            coordTransformMatrix = Mul(mat2x3{0, +1, 0,   // x' = y
+                                              -1, 0, 0},  // y' = -x
                                        coordTransformMatrix);
             break;
     }
@@ -329,8 +326,8 @@ const std::array<Ref<TextureViewBase>, kMaxPlanesPerFormat>& ExternalTextureBase
 
 MaybeError ExternalTextureBase::ValidateCanUseInSubmitNow() const {
     ASSERT(!IsError());
-    DAWN_INVALID_IF(mState == ExternalTextureState::Destroyed,
-                    "Destroyed external texture %s is used in a submit.", this);
+    DAWN_INVALID_IF(mState != ExternalTextureState::Active,
+                    "External texture %s used in a submit is not active.", this);
 
     for (uint32_t i = 0; i < kMaxPlanesPerFormat; ++i) {
         if (mTextureViews[i] != nullptr) {
@@ -341,10 +338,33 @@ MaybeError ExternalTextureBase::ValidateCanUseInSubmitNow() const {
     return {};
 }
 
-void ExternalTextureBase::APIDestroy() {
-    if (GetDevice()->ConsumedError(GetDevice()->ValidateObject(this))) {
+MaybeError ExternalTextureBase::ValidateRefresh() {
+    DAWN_TRY(GetDevice()->ValidateObject(this));
+    DAWN_INVALID_IF(mState == ExternalTextureState::Destroyed, "%s is destroyed.", this);
+    return {};
+}
+
+MaybeError ExternalTextureBase::ValidateExpire() {
+    DAWN_TRY(GetDevice()->ValidateObject(this));
+    DAWN_INVALID_IF(mState != ExternalTextureState::Active, "%s is not active.", this);
+    return {};
+}
+
+void ExternalTextureBase::APIRefresh() {
+    if (GetDevice()->ConsumedError(ValidateRefresh(), "calling %s.Refresh()", this)) {
         return;
     }
+    mState = ExternalTextureState::Active;
+}
+
+void ExternalTextureBase::APIExpire() {
+    if (GetDevice()->ConsumedError(ValidateExpire(), "calling %s.Expire()", this)) {
+        return;
+    }
+    mState = ExternalTextureState::Expired;
+}
+
+void ExternalTextureBase::APIDestroy() {
     Destroy();
 }
 
@@ -353,8 +373,8 @@ void ExternalTextureBase::DestroyImpl() {
 }
 
 // static
-ExternalTextureBase* ExternalTextureBase::MakeError(DeviceBase* device) {
-    return new ExternalTextureBase(device, ObjectBase::kError);
+ExternalTextureBase* ExternalTextureBase::MakeError(DeviceBase* device, const char* label) {
+    return new ExternalTextureBase(device, ObjectBase::kError, label);
 }
 
 BufferBase* ExternalTextureBase::GetParamsBuffer() const {

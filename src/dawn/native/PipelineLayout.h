@@ -57,7 +57,7 @@ class PipelineLayoutBase : public ApiObjectBase, public CachedObject {
     PipelineLayoutBase(DeviceBase* device, const PipelineLayoutDescriptor* descriptor);
     ~PipelineLayoutBase() override;
 
-    static PipelineLayoutBase* MakeError(DeviceBase* device);
+    static PipelineLayoutBase* MakeError(DeviceBase* device, const char* label);
     static ResultOrError<Ref<PipelineLayoutBase>> CreateDefault(
         DeviceBase* device,
         std::vector<StageAndDescriptor> stages);
@@ -84,9 +84,7 @@ class PipelineLayoutBase : public ApiObjectBase, public CachedObject {
     };
 
   protected:
-    // Constructor used only for mocking and testing.
-    explicit PipelineLayoutBase(DeviceBase* device);
-    PipelineLayoutBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+    PipelineLayoutBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
     void DestroyImpl() override;
 
     BindGroupLayoutArray mBindGroupLayouts;

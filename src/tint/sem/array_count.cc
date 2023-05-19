@@ -14,13 +14,15 @@
 
 #include "src/tint/sem/array_count.h"
 
+#include "src/tint/ast/identifier.h"
+
 TINT_INSTANTIATE_TYPEINFO(tint::sem::NamedOverrideArrayCount);
 TINT_INSTANTIATE_TYPEINFO(tint::sem::UnnamedOverrideArrayCount);
 
 namespace tint::sem {
 
 NamedOverrideArrayCount::NamedOverrideArrayCount(const GlobalVariable* var)
-    : Base(static_cast<size_t>(TypeInfo::Of<NamedOverrideArrayCount>().full_hashcode)),
+    : Base(static_cast<size_t>(utils::TypeInfo::Of<NamedOverrideArrayCount>().full_hashcode)),
       variable(var) {}
 NamedOverrideArrayCount::~NamedOverrideArrayCount() = default;
 
@@ -31,8 +33,8 @@ bool NamedOverrideArrayCount::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string NamedOverrideArrayCount::FriendlyName(const SymbolTable& symbols) const {
-    return symbols.NameFor(variable->Declaration()->symbol);
+std::string NamedOverrideArrayCount::FriendlyName() const {
+    return variable->Declaration()->name->symbol.Name();
 }
 
 type::ArrayCount* NamedOverrideArrayCount::Clone(type::CloneContext&) const {
@@ -40,8 +42,9 @@ type::ArrayCount* NamedOverrideArrayCount::Clone(type::CloneContext&) const {
     return nullptr;
 }
 
-UnnamedOverrideArrayCount::UnnamedOverrideArrayCount(const Expression* e)
-    : Base(static_cast<size_t>(TypeInfo::Of<UnnamedOverrideArrayCount>().full_hashcode)), expr(e) {}
+UnnamedOverrideArrayCount::UnnamedOverrideArrayCount(const ValueExpression* e)
+    : Base(static_cast<size_t>(utils::TypeInfo::Of<UnnamedOverrideArrayCount>().full_hashcode)),
+      expr(e) {}
 UnnamedOverrideArrayCount::~UnnamedOverrideArrayCount() = default;
 
 bool UnnamedOverrideArrayCount::Equals(const UniqueNode& other) const {
@@ -51,7 +54,7 @@ bool UnnamedOverrideArrayCount::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string UnnamedOverrideArrayCount::FriendlyName(const SymbolTable&) const {
+std::string UnnamedOverrideArrayCount::FriendlyName() const {
     return "[unnamed override-expression]";
 }
 

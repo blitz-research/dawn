@@ -55,8 +55,7 @@
 	</Type>
 
 	<Type Name="tint::Symbol">
-		<!-- Requires TINT_SYMBOL_STORE_DEBUG_NAME defined to 1 -->
-		<DisplayString Optional="true">{debug_name_,sb}</DisplayString>
+		<DisplayString Optional="true">{name_,sb}</DisplayString>
 	</Type>
 
 	<!--=================================================================-->
@@ -147,10 +146,6 @@
 
 	<Type Name="tint::ast::BoolLiteralExpression">
 		<DisplayString>{value}</DisplayString>
-	</Type>
-
-	<Type Name="tint::ast::Void">
-		<DisplayString>void</DisplayString>
 	</Type>
 
 	<Type Name="tint::ast::UnaryOpExpression">
@@ -260,7 +255,7 @@
 		<DisplayString>Type={*Type()} Value={Value()}</DisplayString>
 	</Type>
 
-	<Type Name="tint::sem::Expression">
+	<Type Name="tint::sem::ValueExpression">
 		<DisplayString>Decl={*declaration_}</DisplayString>
 	</Type>
 

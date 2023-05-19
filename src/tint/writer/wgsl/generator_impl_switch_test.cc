@@ -14,6 +14,8 @@
 
 #include "src/tint/writer/wgsl/test_helper.h"
 
+#include "gmock/gmock.h"
+
 using namespace tint::number_suffixes;  // NOLINT
 
 namespace tint::writer::wgsl {
@@ -22,7 +24,7 @@ namespace {
 using WgslGeneratorImplTest = TestHelper;
 
 TEST_F(WgslGeneratorImplTest, Emit_Switch) {
-    GlobalVar("cond", ty.i32(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.i32(), builtin::AddressSpace::kPrivate);
 
     auto* def_body = Block(create<ast::BreakStatement>());
     auto* def = Case(DefaultCaseSelector(), def_body);
@@ -43,7 +45,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Switch) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.EmitStatement(s)) << gen.error();
+    gen.EmitStatement(s);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  switch(cond) {
     case 5i: {
       break;
@@ -56,7 +59,7 @@ TEST_F(WgslGeneratorImplTest, Emit_Switch) {
 }
 
 TEST_F(WgslGeneratorImplTest, Emit_Switch_MixedDefault) {
-    GlobalVar("cond", ty.i32(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.i32(), builtin::AddressSpace::kPrivate);
 
     auto* def_body = Block(create<ast::BreakStatement>());
     auto* def = Case(utils::Vector{CaseSelector(5_i), DefaultCaseSelector()}, def_body);
@@ -68,8 +71,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Switch_MixedDefault) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitStatement(s)) << gen.error();
+    gen.EmitStatement(s);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  switch(cond) {
     case 5i, default: {
       break;

@@ -156,8 +156,8 @@ bool Converter::Convert(BufferSource& out, interop::BufferSource in) {
         std::visit(
             [&](auto&& v) {
                 auto arr = v.ArrayBuffer();
-                out.data = arr.Data();
-                out.size = arr.ByteLength();
+                out.data = static_cast<uint8_t*>(arr.Data()) + v.ByteOffset();
+                out.size = v.ByteLength();
                 out.bytesPerElement = v.ElementSize();
             },
             *view);
@@ -1652,7 +1652,10 @@ bool Converter::Convert(wgpu::FeatureName& out, interop::GPUFeatureName in) {
             out = wgpu::FeatureName::RG11B10UfloatRenderable;
             return true;
         case interop::GPUFeatureName::kBgra8UnormStorage:
-            // TODO(dawn:1123) Add support for these extensions when possible.
+            out = wgpu::FeatureName::BGRA8UnormStorage;
+            return true;
+        case interop::GPUFeatureName::kFloat32Filterable:
+            UNIMPLEMENTED("TODO(crbug.com/dawn/1687)");
             return false;
     }
     return false;
@@ -1687,6 +1690,9 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::RG11B10UfloatRenderable:
             out = interop::GPUFeatureName::kRg11B10UfloatRenderable;
             return true;
+        case wgpu::FeatureName::BGRA8UnormStorage:
+            out = interop::GPUFeatureName::kBgra8UnormStorage;
+            return true;
 
         case wgpu::FeatureName::PipelineStatisticsQuery:
         case wgpu::FeatureName::DawnShaderFloat16:
@@ -1695,6 +1701,8 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::DawnNative:
         case wgpu::FeatureName::ChromiumExperimentalDp4a:
         case wgpu::FeatureName::TimestampQueryInsidePasses:
+        case wgpu::FeatureName::ImplicitDeviceSynchronization:
+        case wgpu::FeatureName::SurfaceCapabilities:
         case wgpu::FeatureName::Undefined:
             return false;
     }
@@ -1712,6 +1720,21 @@ bool Converter::Convert(interop::GPUQueryType& out, wgpu::QueryType in) {
         case wgpu::QueryType::PipelineStatistics:
             // TODO(dawn:1123): Add support for pipeline statistics if they are in WebGPU one day.
             return false;
+    }
+    return false;
+}
+
+bool Converter::Convert(interop::GPUBufferMapState& out, wgpu::BufferMapState in) {
+    switch (in) {
+        case wgpu::BufferMapState::Unmapped:
+            out = interop::GPUBufferMapState::kUnmapped;
+            return true;
+        case wgpu::BufferMapState::Pending:
+            out = interop::GPUBufferMapState::kPending;
+            return true;
+        case wgpu::BufferMapState::Mapped:
+            out = interop::GPUBufferMapState::kMapped;
+            return true;
     }
     return false;
 }
@@ -1747,17 +1770,17 @@ bool Converter::Convert(wgpu::FilterMode& out, const interop::GPUFilterMode& in)
     return false;
 }
 
-bool Converter::Convert(wgpu::FilterMode& out, const interop::GPUMipmapFilterMode& in) {
-    out = wgpu::FilterMode::Nearest;
+bool Converter::Convert(wgpu::MipmapFilterMode& out, const interop::GPUMipmapFilterMode& in) {
+    out = wgpu::MipmapFilterMode::Nearest;
     switch (in) {
         case interop::GPUMipmapFilterMode::kNearest:
-            out = wgpu::FilterMode::Nearest;
+            out = wgpu::MipmapFilterMode::Nearest;
             return true;
         case interop::GPUMipmapFilterMode::kLinear:
-            out = wgpu::FilterMode::Linear;
+            out = wgpu::MipmapFilterMode::Linear;
             return true;
     }
-    Napi::Error::New(env, "invalid value for GPUFilterMode").ThrowAsJavaScriptException();
+    Napi::Error::New(env, "invalid value for GPUMipmapFilterMode").ThrowAsJavaScriptException();
     return false;
 }
 

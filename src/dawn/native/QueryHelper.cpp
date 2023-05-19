@@ -67,7 +67,7 @@ static const char sConvertTimestampsToNanoseconds[] = R"(
             const sizeofTimestamp : u32 = 8u;
 
             @compute @workgroup_size(8, 1, 1)
-            fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+            fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
                 if (GlobalInvocationID.x >= params.count) { return; }
 
                 var index = GlobalInvocationID.x + params.offset / sizeofTimestamp;
@@ -187,6 +187,7 @@ MaybeError EncodeConvertTimestampsToNanoseconds(CommandEncoder* encoder,
                                                 BufferBase* availability,
                                                 BufferBase* params) {
     DeviceBase* device = encoder->GetDevice();
+    ASSERT(device->IsLockedByCurrentThreadIfNeeded());
 
     ComputePipelineBase* pipeline;
     DAWN_TRY_ASSIGN(pipeline, GetOrCreateTimestampComputePipeline(device));

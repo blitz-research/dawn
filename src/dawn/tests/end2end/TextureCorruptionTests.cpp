@@ -20,12 +20,14 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 // 2D array textures with particular dimensions may corrupt on some devices. This test creates some
 // 2d-array textures with different dimensions, and test them one by one. For each sub-test, the
 // tested texture is written via different methods, then read back from the texture and verify the
 // data.
 
-namespace {
 enum class WriteType {
     ClearTexture,
     WriteTexture,    // Write the tested texture via writeTexture API
@@ -84,8 +86,6 @@ DAWN_TEST_PARAM_STRUCT(TextureCorruptionTestsParams,
                        MipLevelCount,
                        SampleCount,
                        WriteType);
-
-}  // namespace
 
 class TextureCorruptionTests : public DawnTestWithParams<TextureCorruptionTestsParams> {
   protected:
@@ -220,22 +220,22 @@ class TextureCorruptionTests : public DawnTestWithParams<TextureCorruptionTestsP
         // Draw the whole texture (a rectangle) via two triangles
         pipelineDescriptor.vertex.module = utils::CreateShaderModule(device, R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 6>(
-                    vec2<f32>(-1.0,  1.0),
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 1.0,  1.0),
-                    vec2<f32>( 1.0,  1.0),
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 1.0, -1.0));
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f(-1.0,  1.0),
+                    vec2f(-1.0, -1.0),
+                    vec2f( 1.0,  1.0),
+                    vec2f( 1.0,  1.0),
+                    vec2f(-1.0, -1.0),
+                    vec2f( 1.0, -1.0));
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             })");
 
         if (type == WriteType::RenderConstant) {
             pipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
             @fragment
-            fn main(@builtin(position) FragCoord : vec4<f32>) -> @location(0) vec4<f32> {
-                return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+            fn main(@builtin(position) FragCoord : vec4f) -> @location(0) vec4f {
+                return vec4f(1.0, 1.0, 1.0, 1.0);
             })");
         } else if (type == WriteType::RenderFromTextureSample) {
             pipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
@@ -243,7 +243,7 @@ class TextureCorruptionTests : public DawnTestWithParams<TextureCorruptionTestsP
             @group(0) @binding(1) var tex : texture_2d<f32>;
 
             @fragment
-            fn main(@builtin(position) FragCoord : vec4<f32>) -> @location(0) vec4<f32> {
+            fn main(@builtin(position) FragCoord : vec4f) -> @location(0) vec4f {
                 return textureSample(tex, samp, FragCoord.xy);
             })");
         } else {
@@ -251,8 +251,8 @@ class TextureCorruptionTests : public DawnTestWithParams<TextureCorruptionTestsP
             @group(0) @binding(0) var tex : texture_2d<f32>;
 
             @fragment
-            fn main(@builtin(position) Fragcoord: vec4<f32>) -> @location(0) vec4<f32> {
-                return textureLoad(tex, vec2<i32>(Fragcoord.xy), 0);
+            fn main(@builtin(position) Fragcoord: vec4f) -> @location(0) vec4f {
+                return textureLoad(tex, vec2i(Fragcoord.xy), 0);
             })");
         }
 
@@ -461,3 +461,6 @@ DAWN_INSTANTIATE_TEST_P(TextureCorruptionTests_WriteType,
                         {WriteType::ClearTexture, WriteType::WriteTexture, WriteType::B2TCopy,
                          WriteType::RenderConstant, WriteType::RenderFromTextureSample,
                          WriteType::RenderFromTextureLoad});
+
+}  // anonymous namespace
+}  // namespace dawn

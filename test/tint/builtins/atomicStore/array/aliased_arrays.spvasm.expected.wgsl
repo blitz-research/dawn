@@ -1,16 +1,16 @@
-type Arr = array<u32, 1u>;
+alias Arr = array<u32, 1u>;
 
-type Arr_1 = array<Arr, 2u>;
+alias Arr_1 = array<Arr, 2u>;
 
-type Arr_2 = array<Arr_1, 3u>;
+alias Arr_2 = array<Arr_1, 3u>;
 
 var<private> local_invocation_index_1 : u32;
 
 var<workgroup> wg : array<array<array<atomic<u32>, 1u>, 2u>, 3u>;
 
-fn compute_main_inner(local_invocation_index : u32) {
+fn compute_main_inner(local_invocation_index_2 : u32) {
   var idx : u32 = 0u;
-  idx = local_invocation_index;
+  idx = local_invocation_index_2;
   loop {
     let x_25 : u32 = idx;
     if (!((x_25 < 6u))) {

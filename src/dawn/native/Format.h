@@ -66,11 +66,15 @@ struct TexelBlockInfo {
     uint32_t height;
 };
 
+enum class TextureComponentType {
+    Float,
+    Sint,
+    Uint,
+};
+
 struct AspectInfo {
     TexelBlockInfo block;
-    // TODO(crbug.com/dawn/367): Replace TextureComponentType with TextureSampleType, or make it
-    // an internal Dawn enum.
-    wgpu::TextureComponentType baseType{};
+    TextureComponentType baseType{};
     SampleTypeBit supportedSampleTypes{};
     wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
 };
@@ -106,6 +110,7 @@ struct Format {
     bool HasDepth() const;
     bool HasStencil() const;
     bool HasDepthOrStencil() const;
+    bool HasAlphaChannel() const;
 
     // IsMultiPlanar() returns true if the format allows selecting a plane index. This is only
     // allowed by multi-planar formats (ex. NV12).

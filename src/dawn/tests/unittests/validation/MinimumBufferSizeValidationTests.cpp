@@ -21,7 +21,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
+
 // Helper for describing bindings throughout the tests
 struct BindingDescriptor {
     uint32_t group;
@@ -126,9 +128,9 @@ std::string CreateComputeShaderWithBindings(const std::vector<BindingDescriptor>
 // Creates a vertex shader with given bindings
 std::string CreateVertexShaderWithBindings(const std::vector<BindingDescriptor>& bindings) {
     return kStructs + GenerateBindingString(bindings) +
-           "@vertex fn main() -> @builtin(position) vec4<f32> {\n" +
-           GenerateReferenceString(bindings, wgpu::ShaderStage::Vertex) +
-           "\n   return vec4<f32>(); " + "}";
+           "@vertex fn main() -> @builtin(position) vec4f {\n" +
+           GenerateReferenceString(bindings, wgpu::ShaderStage::Vertex) + "\n   return vec4f(); " +
+           "}";
 }
 
 // Creates a fragment shader with given bindings
@@ -146,7 +148,6 @@ std::vector<BindingDescriptor> CombineBindings(
     }
     return result;
 }
-}  // namespace
 
 class MinBufferSizeTestsBase : public ValidationTest {
   public:
@@ -255,13 +256,15 @@ class MinBufferSizeTestsBase : public ValidationTest {
                                     const std::vector<BindingDescriptor>& bindings,
                                     const std::vector<uint64_t>& bindingSizes) {
         ASSERT(bindings.size() == bindingSizes.size());
-        wgpu::Buffer buffer =
-            CreateBuffer(1024, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage);
 
         std::vector<wgpu::BindGroupEntry> entries;
         entries.reserve(bindingSizes.size());
 
         for (uint32_t i = 0; i < bindingSizes.size(); ++i) {
+            // Create separate buffer for each bindings to avoid potential binding aliasing.
+            wgpu::Buffer buffer =
+                CreateBuffer(1024, wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage);
+
             wgpu::BindGroupEntry entry = {};
             entry.binding = bindings[i].binding;
             entry.buffer = buffer;
@@ -581,7 +584,7 @@ TEST_F(MinBufferSizeDefaultLayoutTests, RenderPassConsidersBothStages) {
     std::string vertexShader = CreateVertexShaderWithBindings(
         {{0, 0, "a : f32, b : f32,", "f32", "a", 8, wgpu::BufferBindingType::Uniform,
           wgpu::ShaderStage::Vertex},
-         {0, 1, "c : vec4<f32>,", "vec4<f32>", "c", 16, wgpu::BufferBindingType::Uniform,
+         {0, 1, "c : vec4f,", "vec4f", "c", 16, wgpu::BufferBindingType::Uniform,
           wgpu::ShaderStage::Vertex}});
     std::string fragShader = CreateFragmentShaderWithBindings(
         {{0, 0, "a : f32,", "f32", "a", 4, wgpu::BufferBindingType::Uniform,
@@ -600,7 +603,7 @@ TEST_F(MinBufferSizePipelineCreationTests, NonStructVec3) {
 
     auto MakeShader = [](const char* stageAttributes) {
         std::ostringstream ostream;
-        ostream << "@group(0) @binding(0) var<storage, read_write> buffer : vec3<u32>;\n";
+        ostream << "@group(0) @binding(0) var<storage, read_write> buffer : vec3u;\n";
         ostream << stageAttributes << " fn main() { buffer = vec3(42, 0, 7); }\n";
         return ostream.str();
     };
@@ -621,3 +624,6 @@ TEST_F(MinBufferSizePipelineCreationTests, NonStructVec3) {
         }
     });
 }
+
+}  // anonymous namespace
+}  // namespace dawn

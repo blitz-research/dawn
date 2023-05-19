@@ -16,6 +16,7 @@
 #include "src/tint/reader/spirv/function.h"
 #include "src/tint/reader/spirv/parser_impl_test_helper.h"
 #include "src/tint/reader/spirv/spirv_tools_helpers_test.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::spirv {
 namespace {
@@ -26,7 +27,7 @@ using ::testing::HasSubstr;
 /// @returns a SPIR-V assembly segment which assigns debug names
 /// to particular IDs.
 std::string Names(std::vector<std::string> ids) {
-    std::ostringstream outs;
+    utils::StringStream outs;
     for (auto& id : ids) {
         outs << "    OpName %" << id << " \"" << id << "\"\n";
     }
@@ -234,7 +235,7 @@ TEST_F(SpvParserFunctionVarTest, EmitFunctionVariables_VectorInitializer) {
 
     auto ast_body = fe.ast_body();
     EXPECT_THAT(test::ToString(p->program(), ast_body),
-                HasSubstr("var x_200 : vec2<f32> = vec2<f32>(1.5f, 2.0f);"));
+                HasSubstr("var x_200 : vec2f = vec2f(1.5f, 2.0f);"));
 }
 
 TEST_F(SpvParserFunctionVarTest, EmitFunctionVariables_MatrixInitializer) {
@@ -259,11 +260,10 @@ TEST_F(SpvParserFunctionVarTest, EmitFunctionVariables_MatrixInitializer) {
     EXPECT_TRUE(fe.EmitFunctionVariables());
 
     auto ast_body = fe.ast_body();
-    EXPECT_THAT(test::ToString(p->program(), ast_body),
-                HasSubstr("var x_200 : mat3x2<f32> = mat3x2<f32>("
-                          "vec2<f32>(1.5f, 2.0f), "
-                          "vec2<f32>(2.0f, 3.0f), "
-                          "vec2<f32>(3.0f, 4.0f));"));
+    EXPECT_THAT(test::ToString(p->program(), ast_body), HasSubstr("var x_200 : mat3x2f = mat3x2f("
+                                                                  "vec2f(1.5f, 2.0f), "
+                                                                  "vec2f(2.0f, 3.0f), "
+                                                                  "vec2f(3.0f, 4.0f));"));
 }
 
 TEST_F(SpvParserFunctionVarTest, EmitFunctionVariables_ArrayInitializer) {
@@ -1730,14 +1730,14 @@ TEST_F(SpvParserFunctionVarTest, EmitStatement_Hoist_CompositeInsert) {
     auto fe = p->function_emitter(100);
     EXPECT_TRUE(fe.EmitBody()) << p->error();
 
-    const auto* expected = R"(var x_200 : vec2<i32>;
+    const auto* expected = R"(var x_200 : vec2i;
 if (true) {
-  x_200 = vec2<i32>();
+  x_200 = vec2i();
   x_200.x = 0i;
 } else {
   return;
 }
-let x_201 : vec2<i32> = x_200;
+let x_201 : vec2i = x_200;
 return;
 )";
     auto ast_body = fe.ast_body();
@@ -1773,14 +1773,14 @@ TEST_F(SpvParserFunctionVarTest, EmitStatement_Hoist_VectorInsertDynamic) {
 
     auto ast_body = fe.ast_body();
     const auto got = test::ToString(p->program(), ast_body);
-    const auto* expected = R"(var x_200 : vec2<i32>;
+    const auto* expected = R"(var x_200 : vec2i;
 if (true) {
-  x_200 = vec2<i32>();
+  x_200 = vec2i();
   x_200[1i] = 3i;
 } else {
   return;
 }
-let x_201 : vec2<i32> = x_200;
+let x_201 : vec2i = x_200;
 return;
 )";
     EXPECT_EQ(got, expected) << got;

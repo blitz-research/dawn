@@ -16,18 +16,18 @@
 
 #include <utility>
 
+#include "src/tint/ast/transform/decompose_strided_array.h"
+#include "src/tint/ast/transform/decompose_strided_matrix.h"
+#include "src/tint/ast/transform/remove_unreachable_statements.h"
+#include "src/tint/ast/transform/simplify_pointers.h"
+#include "src/tint/ast/transform/spirv_atomic.h"
+#include "src/tint/ast/transform/unshadow.h"
 #include "src/tint/reader/spirv/parser_impl.h"
-#include "src/tint/transform/decompose_strided_array.h"
-#include "src/tint/transform/decompose_strided_matrix.h"
 #include "src/tint/transform/manager.h"
-#include "src/tint/transform/remove_unreachable_statements.h"
-#include "src/tint/transform/simplify_pointers.h"
-#include "src/tint/transform/spirv_atomic.h"
-#include "src/tint/transform/unshadow.h"
 
 namespace tint::reader::spirv {
 
-Program Parse(const std::vector<uint32_t>& input) {
+Program Parse(const std::vector<uint32_t>& input, const Options& options) {
     ParserImpl parser(input);
     bool parsed = parser.Parse();
 
@@ -36,6 +36,12 @@ Program Parse(const std::vector<uint32_t>& input) {
         // TODO(bclayton): Migrate spirv::ParserImpl to using diagnostics.
         builder.Diagnostics().add_error(diag::System::Reader, parser.error());
         return Program(std::move(builder));
+    }
+
+    if (options.allow_non_uniform_derivatives) {
+        // Suppress errors regarding non-uniform derivative operations if requested, by adding a
+        // diagnostic directive to the module.
+        builder.DiagnosticDirective(builtin::DiagnosticSeverity::kOff, "derivative_uniformity");
     }
 
     // The SPIR-V parser can construct disjoint AST nodes, which is invalid for
@@ -51,13 +57,14 @@ Program Parse(const std::vector<uint32_t>& input) {
     }
 
     transform::Manager manager;
-    manager.Add<transform::Unshadow>();
-    manager.Add<transform::SimplifyPointers>();
-    manager.Add<transform::DecomposeStridedMatrix>();
-    manager.Add<transform::DecomposeStridedArray>();
-    manager.Add<transform::RemoveUnreachableStatements>();
-    manager.Add<transform::SpirvAtomic>();
-    return manager.Run(&program).program;
+    transform::DataMap outputs;
+    manager.Add<ast::transform::Unshadow>();
+    manager.Add<ast::transform::SimplifyPointers>();
+    manager.Add<ast::transform::DecomposeStridedMatrix>();
+    manager.Add<ast::transform::DecomposeStridedArray>();
+    manager.Add<ast::transform::RemoveUnreachableStatements>();
+    manager.Add<ast::transform::SpirvAtomic>();
+    return manager.Run(&program, {}, outputs);
 }
 
 }  // namespace tint::reader::spirv

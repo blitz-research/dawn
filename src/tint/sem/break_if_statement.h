@@ -22,13 +22,13 @@ namespace tint::ast {
 class BreakIfStatement;
 }  // namespace tint::ast
 namespace tint::sem {
-class Expression;
+class ValueExpression;
 }  // namespace tint::sem
 
 namespace tint::sem {
 
 /// Holds semantic information about a break-if statement
-class BreakIfStatement final : public Castable<BreakIfStatement, CompoundStatement> {
+class BreakIfStatement final : public utils::Castable<BreakIfStatement, CompoundStatement> {
   public:
     /// Constructor
     /// @param declaration the AST node for this break-if statement
@@ -45,14 +45,14 @@ class BreakIfStatement final : public Castable<BreakIfStatement, CompoundStateme
     const ast::BreakIfStatement* Declaration() const;
 
     /// @returns the break-if-statement condition expression
-    const Expression* Condition() const { return condition_; }
+    const ValueExpression* Condition() const { return condition_; }
 
     /// Sets the break-if-statement condition expression
     /// @param condition the break-if condition expression
-    void SetCondition(const Expression* condition) { condition_ = condition; }
+    void SetCondition(const ValueExpression* condition) { condition_ = condition; }
 
   private:
-    const Expression* condition_ = nullptr;
+    const ValueExpression* condition_ = nullptr;
 };
 
 }  // namespace tint::sem

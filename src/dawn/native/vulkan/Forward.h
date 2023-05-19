@@ -19,13 +19,13 @@
 
 namespace dawn::native::vulkan {
 
-class Adapter;
 class BindGroup;
 class BindGroupLayout;
 class Buffer;
 class CommandBuffer;
 class ComputePipeline;
 class Device;
+class PhysicalDevice;
 class PipelineCache;
 class PipelineLayout;
 class QuerySet;
@@ -34,19 +34,18 @@ class RenderPipeline;
 class ResourceHeap;
 class Sampler;
 class ShaderModule;
-class StagingBuffer;
 class SwapChain;
 class Texture;
 class TextureView;
 
 struct VulkanBackendTraits {
-    using AdapterType = Adapter;
     using BindGroupType = BindGroup;
     using BindGroupLayoutType = BindGroupLayout;
     using BufferType = Buffer;
     using CommandBufferType = CommandBuffer;
     using ComputePipelineType = ComputePipeline;
     using DeviceType = Device;
+    using PhysicalDeviceType = PhysicalDevice;
     using PipelineCacheType = PipelineCache;
     using PipelineLayoutType = PipelineLayout;
     using QuerySetType = QuerySet;
@@ -55,7 +54,6 @@ struct VulkanBackendTraits {
     using ResourceHeapType = ResourceHeap;
     using SamplerType = Sampler;
     using ShaderModuleType = ShaderModule;
-    using StagingBufferType = StagingBuffer;
     using SwapChainType = SwapChain;
     using TextureType = Texture;
     using TextureViewType = TextureView;

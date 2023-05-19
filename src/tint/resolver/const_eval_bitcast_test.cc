@@ -64,7 +64,7 @@ TEST_P(ResolverConstEvalBitcastTest, Test) {
         target_create_ptrs = expected.Failure().create_ptrs;
     }
 
-    auto* target_ty = target_create_ptrs.ast(*this);
+    auto target_ty = target_create_ptrs.ast(*this);
     ASSERT_NE(target_ty, nullptr);
     auto* input_val = input.Expr(*this);
     const ast::Expression* expr = Bitcast(Source{{12, 34}}, target_ty, input_val);
@@ -76,7 +76,7 @@ TEST_P(ResolverConstEvalBitcastTest, Test) {
     if (expected) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-        auto* sem = Sem().Get(expr);
+        auto* sem = Sem().GetVal(expr);
         ASSERT_NE(sem, nullptr);
         EXPECT_TYPE(sem->Type(), target_sem_ty);
         ASSERT_NE(sem->ConstantValue(), nullptr);

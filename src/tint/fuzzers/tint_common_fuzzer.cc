@@ -14,22 +14,28 @@
 
 #include "src/tint/fuzzers/tint_common_fuzzer.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
-#if TINT_BUILD_SPV_READER
+#if TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 #include "spirv-tools/libspirv.hpp"
-#endif  // TINT_BUILD_SPV_READER
+#endif  // TINT_BUILD_SPV_READER || TINT_BUILD_SPV_WRITER
 
 #include "src/tint/ast/module.h"
 #include "src/tint/diagnostic/formatter.h"
 #include "src/tint/program.h"
+#include "src/tint/sem/binding_point.h"
+#include "src/tint/sem/variable.h"
+#include "src/tint/type/external_texture.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/writer/flatten_bindings.h"
 
@@ -149,8 +155,8 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
 #endif
 
     switch (input_) {
-#if TINT_BUILD_WGSL_READER
         case InputFormat::kWGSL: {
+#if TINT_BUILD_WGSL_READER
             // Clear any existing diagnostics, as these will hold pointers to file_,
             // which we are about to release.
             diagnostics_ = {};
@@ -160,11 +166,12 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
                 dump_input_data(str, ".wgsl");
             }
             program = reader::wgsl::Parse(file_.get());
+#endif  // TINT_BUILD_WGSL_READER
             break;
         }
-#endif  // TINT_BUILD_WGSL_READER
-#if TINT_BUILD_SPV_READER
+
         case InputFormat::kSpv: {
+#if TINT_BUILD_SPV_READER
             // `spirv_input` has been initialized with the capacity to store `size /
             // sizeof(uint32_t)` uint32_t values. If `size` is not a multiple of
             // sizeof(uint32_t) then not all of `data` can be copied into
@@ -177,9 +184,9 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
                 dump_input_data(spirv_input, ".spv");
             }
             program = reader::spirv::Parse(spirv_input);
+#endif  // TINT_BUILD_SPV_READER
             break;
         }
-#endif  // TINT_BUILD_SPV_READER
     }
 
     if (!program.IsValid()) {
@@ -198,10 +205,10 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
     diagnostics_ = program.Diagnostics();
 
     auto validate_program = [&](auto& out) {
-        if (!out.program.IsValid()) {
+        if (!out.IsValid()) {
             // Transforms can produce error messages for bad input.
             // Catch ICEs and errors from non transform systems.
-            for (const auto& diag : out.program.Diagnostics()) {
+            for (const auto& diag : out.Diagnostics()) {
                 if (diag.severity > diag::Severity::Error ||
                     diag.system != diag::System::Transform) {
                     VALIDITY_ERROR(program.Diagnostics(),
@@ -212,13 +219,14 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
             return 0;
         }
 
-        program = std::move(out.program);
+        program = std::move(out);
         RunInspector(&program);
         return 1;
     };
 
     if (transform_manager_) {
-        auto out = transform_manager_->Run(&program, *transform_inputs_);
+        transform::DataMap outputs;
+        auto out = transform_manager_->Run(&program, *transform_inputs_, outputs);
         if (!validate_program(out)) {
             return 0;
         }
@@ -227,7 +235,7 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
     {
         // Run SubstituteOverride if required
 
-        transform::SubstituteOverride::Config cfg;
+        ast::transform::SubstituteOverride::Config cfg;
         inspector::Inspector inspector(&program);
         auto default_values = inspector.GetOverrideDefaultValues();
         for (const auto& [override_id, scalar] : default_values) {
@@ -242,15 +250,65 @@ int CommonFuzzer::Run(const uint8_t* data, size_t size) {
 
         if (!cfg.map.empty()) {
             transform::DataMap override_data;
-            override_data.Add<transform::SubstituteOverride::Config>(cfg);
+            override_data.Add<ast::transform::SubstituteOverride::Config>(cfg);
 
             transform::Manager mgr;
-            mgr.append(std::make_unique<transform::SubstituteOverride>());
+            mgr.append(std::make_unique<ast::transform::SubstituteOverride>());
 
-            auto out = mgr.Run(&program, override_data);
+            transform::DataMap outputs;
+            auto out = mgr.Run(&program, override_data, outputs);
             if (!validate_program(out)) {
                 return 0;
             }
+        }
+    }
+
+    // For the generates which use MultiPlanar, make sure the configuration options are provided so
+    // that the transformer will execute.
+    if (output_ == OutputFormat::kMSL || output_ == OutputFormat::kHLSL ||
+        output_ == OutputFormat::kSpv) {
+        // Gather external texture binding information
+        // Collect next valid binding number per group
+        std::unordered_map<uint32_t, uint32_t> group_to_next_binding_number;
+        std::vector<sem::BindingPoint> ext_tex_bps;
+        for (auto* var : program.AST().GlobalVariables()) {
+            if (auto* sem_var = program.Sem().Get(var)->As<sem::GlobalVariable>()) {
+                if (auto bp = sem_var->BindingPoint()) {
+                    auto& n = group_to_next_binding_number[bp->group];
+                    n = std::max(n, bp->binding + 1);
+
+                    if (sem_var->Type()->UnwrapRef()->Is<type::ExternalTexture>()) {
+                        ext_tex_bps.emplace_back(*bp);
+                    }
+                }
+            }
+        }
+
+        writer::ExternalTextureOptions::BindingsMap new_bindings_map;
+        for (auto bp : ext_tex_bps) {
+            uint32_t g = bp.group;
+            uint32_t& next_num = group_to_next_binding_number[g];
+            auto new_bps =
+                writer::ExternalTextureOptions::BindingPoints{{g, next_num++}, {g, next_num++}};
+
+            new_bindings_map[bp] = new_bps;
+        }
+
+        switch (output_) {
+            case OutputFormat::kMSL: {
+                options_msl_.external_texture_options.bindings_map = new_bindings_map;
+                break;
+            }
+            case OutputFormat::kHLSL: {
+                options_hlsl_.external_texture_options.bindings_map = new_bindings_map;
+                break;
+            }
+            case OutputFormat::kSpv: {
+                options_spirv_.external_texture_options.bindings_map = new_bindings_map;
+                break;
+            }
+            default:
+                break;
         }
     }
 

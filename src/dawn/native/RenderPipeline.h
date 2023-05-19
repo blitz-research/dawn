@@ -65,7 +65,7 @@ class RenderPipelineBase : public PipelineBase {
     RenderPipelineBase(DeviceBase* device, const RenderPipelineDescriptor* descriptor);
     ~RenderPipelineBase() override;
 
-    static RenderPipelineBase* MakeError(DeviceBase* device);
+    static RenderPipelineBase* MakeError(DeviceBase* device, const char* label);
 
     ObjectType GetType() const override;
 
@@ -113,12 +113,10 @@ class RenderPipelineBase : public PipelineBase {
     };
 
   protected:
-    // Constructor used only for mocking and testing.
-    explicit RenderPipelineBase(DeviceBase* device);
     void DestroyImpl() override;
 
   private:
-    RenderPipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+    RenderPipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
 
     // Vertex state
     uint32_t mVertexBufferCount;

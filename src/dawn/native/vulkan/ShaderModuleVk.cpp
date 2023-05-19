@@ -163,19 +163,19 @@ void ShaderModule::DestroyImpl() {
 
 ShaderModule::~ShaderModule() = default;
 
-#define SPIRV_COMPILATION_REQUEST_MEMBERS(X)                                                \
-    X(SingleShaderStage, stage)                                                             \
-    X(const tint::Program*, inputProgram)                                                   \
-    X(tint::transform::BindingRemapper::BindingPoints, bindingPoints)                       \
-    X(tint::transform::MultiplanarExternalTexture::BindingsMap, newBindingsMap)             \
-    X(std::optional<tint::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
-    X(LimitsForCompilationRequest, limits)                                                  \
-    X(std::string_view, entryPointName)                                                     \
-    X(bool, isRobustnessEnabled)                                                            \
-    X(bool, disableWorkgroupInit)                                                           \
-    X(bool, disableSymbolRenaming)                                                          \
-    X(bool, useZeroInitializeWorkgroupMemoryExtension)                                      \
-    X(bool, clampFragDepth)                                                                 \
+#define SPIRV_COMPILATION_REQUEST_MEMBERS(X)                                                     \
+    X(SingleShaderStage, stage)                                                                  \
+    X(const tint::Program*, inputProgram)                                                        \
+    X(tint::writer::BindingRemapperOptions, bindingRemapper)                                     \
+    X(tint::writer::ExternalTextureOptions, externalTextureOptions)                              \
+    X(std::optional<tint::ast::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
+    X(LimitsForCompilationRequest, limits)                                                       \
+    X(std::string_view, entryPointName)                                                          \
+    X(bool, isRobustnessEnabled)                                                                 \
+    X(bool, disableWorkgroupInit)                                                                \
+    X(bool, disableSymbolRenaming)                                                               \
+    X(bool, useZeroInitializeWorkgroupMemoryExtension)                                           \
+    X(bool, clampFragDepth)                                                                      \
     X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, tracePlatform)
 
 DAWN_MAKE_CACHE_REQUEST(SpirvCompilationRequest, SPIRV_COMPILATION_REQUEST_MEMBERS);
@@ -204,9 +204,9 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     // Creation of module and spirv is deferred to this point when using tint generator
 
     // Remap BindingNumber to BindingIndex in WGSL shader
-    using BindingRemapper = tint::transform::BindingRemapper;
-    using BindingPoint = tint::transform::BindingPoint;
-    BindingRemapper::BindingPoints bindingPoints;
+    using BindingPoint = tint::writer::BindingPoint;
+
+    tint::writer::BindingRemapperOptions bindingRemapper;
 
     const BindingInfoArray& moduleBindingInfo =
         GetEntryPoint(programmableStage.entryPoint.c_str()).bindings;
@@ -222,20 +222,21 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             BindingPoint dstBindingPoint{static_cast<uint32_t>(group),
                                          static_cast<uint32_t>(bindingIndex)};
             if (srcBindingPoint != dstBindingPoint) {
-                bindingPoints.emplace(srcBindingPoint, dstBindingPoint);
+                bindingRemapper.binding_points.emplace(srcBindingPoint, dstBindingPoint);
             }
         }
     }
 
     // Transform external textures into the binding locations specified in the bgl
     // TODO(dawn:1082): Replace this block with BuildExternalTextureTransformBindings.
-    tint::transform::MultiplanarExternalTexture::BindingsMap newBindingsMap;
+    tint::writer::ExternalTextureOptions externalTextureOptions;
     for (BindGroupIndex i : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
         const BindGroupLayoutBase* bgl = layout->GetBindGroupLayout(i);
 
         for (const auto& [_, expansion] : bgl->GetExternalTextureBindingExpansionMap()) {
-            newBindingsMap[{static_cast<uint32_t>(i),
-                            static_cast<uint32_t>(bgl->GetBindingIndex(expansion.plane0))}] = {
+            externalTextureOptions
+                .bindings_map[{static_cast<uint32_t>(i),
+                               static_cast<uint32_t>(bgl->GetBindingIndex(expansion.plane0))}] = {
                 {static_cast<uint32_t>(i),
                  static_cast<uint32_t>(bgl->GetBindingIndex(expansion.plane1))},
                 {static_cast<uint32_t>(i),
@@ -243,7 +244,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
         }
     }
 
-    std::optional<tint::transform::SubstituteOverride::Config> substituteOverrideConfig;
+    std::optional<tint::ast::transform::SubstituteOverride::Config> substituteOverrideConfig;
     if (!programmableStage.metadata->overrides.empty()) {
         substituteOverrideConfig = BuildSubstituteOverridesTransformConfig(programmableStage);
     }
@@ -252,8 +253,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     SpirvCompilationRequest req = {};
     req.stage = stage;
     req.inputProgram = GetTintProgram();
-    req.bindingPoints = std::move(bindingPoints);
-    req.newBindingsMap = std::move(newBindingsMap);
+    req.bindingRemapper = std::move(bindingRemapper);
+    req.externalTextureOptions = std::move(externalTextureOptions);
     req.entryPointName = programmableStage.entryPoint;
     req.isRobustnessEnabled = GetDevice()->IsRobustnessEnabled();
     req.disableWorkgroupInit = GetDevice()->IsToggleEnabled(Toggle::DisableWorkgroupInit);
@@ -276,40 +277,21 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
             // Many Vulkan drivers can't handle multi-entrypoint shader modules.
             // Run before the renamer so that the entry point name matches `entryPointName` still.
-            transformManager.append(std::make_unique<tint::transform::SingleEntryPoint>());
-            transformInputs.Add<tint::transform::SingleEntryPoint::Config>(
+            transformManager.append(std::make_unique<tint::ast::transform::SingleEntryPoint>());
+            transformInputs.Add<tint::ast::transform::SingleEntryPoint::Config>(
                 std::string(r.entryPointName));
 
             // Needs to run before all other transforms so that they can use builtin names safely.
             if (!r.disableSymbolRenaming) {
-                transformManager.Add<tint::transform::Renamer>();
+                transformManager.Add<tint::ast::transform::Renamer>();
             }
 
-            if (r.isRobustnessEnabled) {
-                transformManager.append(std::make_unique<tint::transform::Robustness>());
-            }
-
-            // Run the binding remapper after SingleEntryPoint to avoid collisions with
-            // unused entryPoints.
-            transformManager.append(std::make_unique<tint::transform::BindingRemapper>());
-            transformInputs.Add<BindingRemapper::Remappings>(std::move(r.bindingPoints),
-                                                             BindingRemapper::AccessControls{},
-                                                             /* mayCollide */ false);
-            if (!r.newBindingsMap.empty()) {
-                transformManager.Add<tint::transform::MultiplanarExternalTexture>();
-                transformInputs.Add<tint::transform::MultiplanarExternalTexture::NewBindingPoints>(
-                    r.newBindingsMap);
-            }
             if (r.substituteOverrideConfig) {
                 // This needs to run after SingleEntryPoint transform which removes unused overrides
                 // for current entry point.
-                transformManager.Add<tint::transform::SubstituteOverride>();
-                transformInputs.Add<tint::transform::SubstituteOverride::Config>(
+                transformManager.Add<tint::ast::transform::SubstituteOverride>();
+                transformInputs.Add<tint::ast::transform::SubstituteOverride::Config>(
                     std::move(r.substituteOverrideConfig).value());
-            }
-
-            if (r.clampFragDepth) {
-                transformManager.Add<tint::transform::ClampFragDepth>();
             }
 
             tint::Program program;
@@ -326,7 +308,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             if (r.disableSymbolRenaming) {
                 remappedEntryPoint = r.entryPointName;
             } else {
-                auto* data = transformOutputs.Get<tint::transform::Renamer::Data>();
+                auto* data = transformOutputs.Get<tint::ast::transform::Renamer::Data>();
                 ASSERT(data != nullptr);
 
                 auto it = data->remappings.find(r.entryPointName.data());
@@ -343,10 +325,14 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             }
 
             tint::writer::spirv::Options options;
+            options.clamp_frag_depth = r.clampFragDepth;
+            options.disable_robustness = !r.isRobustnessEnabled;
             options.emit_vertex_point_size = true;
             options.disable_workgroup_init = r.disableWorkgroupInit;
             options.use_zero_initialize_workgroup_memory_extension =
                 r.useZeroInitializeWorkgroupMemoryExtension;
+            options.binding_remapper_options = r.bindingRemapper;
+            options.external_texture_options = r.externalTextureOptions;
 
             TRACE_EVENT0(r.tracePlatform.UnsafeGetValue(), General,
                          "tint::writer::spirv::Generate()");
@@ -360,8 +346,10 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             return result;
         });
 
+#ifdef DAWN_ENABLE_SPIRV_VALIDATION
     DAWN_TRY(ValidateSpirv(GetDevice(), compilation->spirv.data(), compilation->spirv.size(),
                            GetDevice()->IsToggleEnabled(Toggle::DumpShaders)));
+#endif
 
     VkShaderModuleCreateInfo createInfo;
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

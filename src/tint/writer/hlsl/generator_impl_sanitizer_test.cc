@@ -25,8 +25,8 @@ namespace {
 using HlslSanitizerTest = TestHelper;
 
 TEST_F(HlslSanitizerTest, Call_ArrayLength) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -39,7 +39,7 @@ TEST_F(HlslSanitizerTest, Call_ArrayLength) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(ByteAddressBuffer b : register(t1, space2);
@@ -58,9 +58,9 @@ void a_func() {
 TEST_F(HlslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
     auto* s = Structure("my_struct", utils::Vector{
                                          Member(0, "z", ty.f32()),
-                                         Member(4, "a", ty.array<f32>(4)),
+                                         Member(4, "a", ty.array<f32>()),
                                      });
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -73,7 +73,7 @@ TEST_F(HlslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(ByteAddressBuffer b : register(t1, space2);
@@ -91,8 +91,8 @@ void a_func() {
 }
 
 TEST_F(HlslSanitizerTest, Call_ArrayLength_ViaLets) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
 
     auto* p = Let("p", AddressOf("b"));
@@ -110,7 +110,7 @@ TEST_F(HlslSanitizerTest, Call_ArrayLength_ViaLets) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(ByteAddressBuffer b : register(t1, space2);
@@ -128,10 +128,10 @@ void a_func() {
 }
 
 TEST_F(HlslSanitizerTest, Call_ArrayLength_ArrayLengthFromUniform) {
-    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
-    GlobalVar("b", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(1_a),
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>())});
+    GlobalVar("b", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(1_a),
               Group(2_a));
-    GlobalVar("c", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(2_a),
+    GlobalVar("c", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead, Binding(2_a),
               Group(2_a));
 
     Func("a_func", utils::Empty, ty.void_(),
@@ -149,7 +149,7 @@ TEST_F(HlslSanitizerTest, Call_ArrayLength_ArrayLengthFromUniform) {
     options.array_length_from_uniform.bindpoint_to_size_index.emplace(sem::BindingPoint{2, 2}, 7u);
     GeneratorImpl& gen = SanitizeAndBuild(options);
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(cbuffer cbuffer_tint_symbol_1 : register(b4, space3) {
@@ -159,10 +159,10 @@ ByteAddressBuffer b : register(t1, space2);
 ByteAddressBuffer c : register(t2, space2);
 
 void a_func() {
-  uint tint_symbol_4 = 0u;
-  b.GetDimensions(tint_symbol_4);
-  const uint tint_symbol_5 = ((tint_symbol_4 - 0u) / 4u);
-  uint len = (tint_symbol_5 + ((tint_symbol_1[1].w - 0u) / 4u));
+  uint tint_symbol_3 = 0u;
+  b.GetDimensions(tint_symbol_3);
+  const uint tint_symbol_4 = ((tint_symbol_3 - 0u) / 4u);
+  uint len = (tint_symbol_4 + ((tint_symbol_1[1].w - 0u) / 4u));
   return;
 }
 )";
@@ -183,7 +183,7 @@ TEST_F(HlslSanitizerTest, PromoteArrayInitializerToConstVar) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(void main() {
@@ -203,7 +203,7 @@ TEST_F(HlslSanitizerTest, PromoteStructInitializerToConstVar) {
                                    Member("b", ty.vec3<f32>()),
                                    Member("c", ty.i32()),
                                });
-    auto* struct_init = Construct(ty.Of(str), 1_i, vec3<f32>(2_f, runtime_value, 4_f), 4_i);
+    auto* struct_init = Call(ty.Of(str), 1_i, vec3<f32>(2_f, runtime_value, 4_f), 4_i);
     auto* struct_access = MemberAccessor(struct_init, "b");
     auto* pos = Var("pos", ty.vec3<f32>(), struct_access);
 
@@ -218,7 +218,7 @@ TEST_F(HlslSanitizerTest, PromoteStructInitializerToConstVar) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(struct S {
@@ -237,12 +237,12 @@ void main() {
     EXPECT_EQ(expect, got);
 }
 
-TEST_F(HlslSanitizerTest, InlinePtrLetsBasic) {
+TEST_F(HlslSanitizerTest, SimplifyPointersBasic) {
     // var v : i32;
     // let p : ptr<function, i32> = &v;
     // let x : i32 = *p;
     auto* v = Var("v", ty.i32());
-    auto* p = Let("p", ty.pointer<i32>(ast::AddressSpace::kFunction), AddressOf(v));
+    auto* p = Let("p", ty.pointer<i32>(builtin::AddressSpace::kFunction), AddressOf(v));
     auto* x = Var("x", ty.i32(), Deref(p));
 
     Func("main", utils::Empty, ty.void_(),
@@ -257,7 +257,7 @@ TEST_F(HlslSanitizerTest, InlinePtrLetsBasic) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(void main() {
@@ -269,18 +269,19 @@ TEST_F(HlslSanitizerTest, InlinePtrLetsBasic) {
     EXPECT_EQ(expect, got);
 }
 
-TEST_F(HlslSanitizerTest, InlinePtrLetsComplexChain) {
+TEST_F(HlslSanitizerTest, SimplifyPointersComplexChain) {
     // var a : array<mat4x4<f32>, 4u>;
     // let ap : ptr<function, array<mat4x4<f32>, 4u>> = &a;
     // let mp : ptr<function, mat4x4<f32>> = &(*ap)[3i];
     // let vp : ptr<function, vec4<f32>> = &(*mp)[2i];
     // let v : vec4<f32> = *vp;
     auto* a = Var("a", ty.array(ty.mat4x4<f32>(), 4_u));
-    auto* ap = Let("ap", ty.pointer(ty.array(ty.mat4x4<f32>(), 4_u), ast::AddressSpace::kFunction),
-                   AddressOf(a));
-    auto* mp = Let("mp", ty.pointer(ty.mat4x4<f32>(), ast::AddressSpace::kFunction),
+    auto* ap =
+        Let("ap", ty.pointer(ty.array(ty.mat4x4<f32>(), 4_u), builtin::AddressSpace::kFunction),
+            AddressOf(a));
+    auto* mp = Let("mp", ty.pointer(ty.mat4x4<f32>(), builtin::AddressSpace::kFunction),
                    AddressOf(IndexAccessor(Deref(ap), 3_i)));
-    auto* vp = Let("vp", ty.pointer(ty.vec4<f32>(), ast::AddressSpace::kFunction),
+    auto* vp = Let("vp", ty.pointer(ty.vec4<f32>(), builtin::AddressSpace::kFunction),
                    AddressOf(IndexAccessor(Deref(mp), 2_i)));
     auto* v = Var("v", ty.vec4<f32>(), Deref(vp));
 
@@ -298,7 +299,7 @@ TEST_F(HlslSanitizerTest, InlinePtrLetsComplexChain) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
 
     auto got = gen.result();
     auto* expect = R"(void main() {

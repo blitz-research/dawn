@@ -15,16 +15,17 @@
 #include "dawn/native/Texture.h"
 
 #include <algorithm>
+#include <string>
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
-#include "dawn/native/Adapter.h"
 #include "dawn/native/ChainUtils_autogen.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/PassResourceUsage.h"
+#include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 
 namespace dawn::native {
@@ -84,14 +85,13 @@ MaybeError ValidateCanViewTextureAs(const DeviceBase* device,
             "The formats must be compatible, and the view format "
             "must be passed in the list of view formats on texture creation.",
             viewFormat.format, format.format);
-    } else {
-        // The view format is compatible, but not in the list.
-        return DAWN_VALIDATION_ERROR(
-            "%s was not created with the texture view format (%s) "
-            "in the list of compatible view formats.",
-            texture, viewFormat.format);
     }
-    return {};
+
+    // The view format is compatible, but not in the list.
+    return DAWN_VALIDATION_ERROR(
+        "%s was not created with the texture view format (%s) "
+        "in the list of compatible view formats.",
+        texture, viewFormat.format);
 }
 
 bool IsTextureViewDimensionCompatibleWithTextureDimension(
@@ -286,7 +286,8 @@ MaybeError ValidateTextureSize(const DeviceBase* device,
     return {};
 }
 
-MaybeError ValidateTextureUsage(const TextureDescriptor* descriptor,
+MaybeError ValidateTextureUsage(const DeviceBase* device,
+                                const TextureDescriptor* descriptor,
                                 wgpu::TextureUsage usage,
                                 const Format* format) {
     DAWN_TRY(dawn::native::ValidateTextureUsage(usage));
@@ -317,6 +318,21 @@ MaybeError ValidateTextureUsage(const TextureDescriptor* descriptor,
         !format->supportsStorageUsage && (usage & wgpu::TextureUsage::StorageBinding),
         "The texture usage (%s) includes %s, which is incompatible with the format (%s).", usage,
         wgpu::TextureUsage::StorageBinding, format->format);
+
+    const auto kTransientAttachment = wgpu::TextureUsage::TransientAttachment;
+    if (usage & kTransientAttachment) {
+        DAWN_INVALID_IF(
+            !device->HasFeature(Feature::TransientAttachments),
+            "The texture usage (%s) includes %s, which requires the %s feature to be set", usage,
+            kTransientAttachment, FeatureEnumToAPIFeature(Feature::TransientAttachments));
+
+        const auto kAllowedTransientUsage =
+            kTransientAttachment | wgpu::TextureUsage::RenderAttachment;
+        DAWN_INVALID_IF(usage != kAllowedTransientUsage,
+                        "The texture usage (%s) includes %s, which requires that the texture usage "
+                        "be exactly %s",
+                        usage, kTransientAttachment, kAllowedTransientUsage);
+    }
 
     // Only allows simple readonly texture usages.
     constexpr wgpu::TextureUsage kValidMultiPlanarUsages =
@@ -356,7 +372,7 @@ MaybeError ValidateTextureDescriptor(const DeviceBase* device,
         usage |= internalUsageDesc->internalUsage;
     }
 
-    DAWN_TRY(ValidateTextureUsage(descriptor, usage, format));
+    DAWN_TRY(ValidateTextureUsage(device, descriptor, usage, format));
     DAWN_TRY(ValidateTextureDimension(descriptor->dimension));
     DAWN_TRY(ValidateSampleCount(descriptor, usage, format));
 
@@ -372,20 +388,11 @@ MaybeError ValidateTextureDescriptor(const DeviceBase* device,
     // Depth/stencil formats are valid for 2D textures only. Metal has this limit. And D3D12
     // doesn't support depth/stencil formats on 3D textures.
     DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D &&
-                        (format->aspects & (Aspect::Depth | Aspect::Stencil)) != 0,
+                        (format->aspects & (Aspect::Depth | Aspect::Stencil)),
                     "The dimension (%s) of a texture with a depth/stencil format (%s) is not 2D.",
                     descriptor->dimension, format->format);
 
     DAWN_TRY(ValidateTextureSize(device, descriptor, format));
-
-    // TODO(crbug.com/dawn/838): Implement a workaround for this issue.
-    // Readbacks from the non-zero mip of a stencil texture may contain garbage data.
-    DAWN_INVALID_IF(device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs) && format->HasStencil() &&
-                        descriptor->mipLevelCount > 1 &&
-                        device->GetAdapter()->GetBackendType() == wgpu::BackendType::Metal,
-                    "https://crbug.com/dawn/838: Stencil textures with more than one mip level are "
-                    "disabled on Metal.");
-
     return {};
 }
 
@@ -563,21 +570,45 @@ TextureBase::TextureBase(DeviceBase* device,
     if (applyAlwaysResolveIntoZeroLevelAndLayerToggle) {
         AddInternalUsage(wgpu::TextureUsage::CopyDst);
     }
+
+    if (mFormat.HasStencil() && (mInternalUsage & wgpu::TextureUsage::CopyDst) &&
+        device->IsToggleEnabled(Toggle::UseBlitForBufferToStencilTextureCopy)) {
+        // Add render attachment usage so we can blit to the stencil texture
+        // in a render pass.
+        AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
+    }
+    if (mFormat.HasDepth() && (mInternalUsage & wgpu::TextureUsage::CopyDst) &&
+        device->IsToggleEnabled(Toggle::UseBlitForBufferToDepthTextureCopy)) {
+        // Add render attachment usage so we can blit to the depth texture
+        // in a render pass.
+        AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
+    }
+    if (mFormat.HasDepth() &&
+        device->IsToggleEnabled(Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource)) {
+        if (mInternalUsage & wgpu::TextureUsage::CopySrc) {
+            AddInternalUsage(wgpu::TextureUsage::TextureBinding);
+        }
+        if (mInternalUsage & wgpu::TextureUsage::CopyDst) {
+            AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
+        }
+    }
+    if (mFormat.HasDepth() &&
+        (device->IsToggleEnabled(Toggle::UseBlitForDepth16UnormTextureToBufferCopy) ||
+         device->IsToggleEnabled(Toggle::UseBlitForDepth32FloatTextureToBufferCopy))) {
+        if (mInternalUsage & wgpu::TextureUsage::CopySrc) {
+            AddInternalUsage(wgpu::TextureUsage::TextureBinding);
+        }
+    }
 }
 
 TextureBase::~TextureBase() = default;
 
 static constexpr Format kUnusedFormat;
 
-TextureBase::TextureBase(DeviceBase* device, TextureState state)
-    : ApiObjectBase(device, kLabelNotImplemented), mFormat(kUnusedFormat), mState(state) {
-    GetObjectTrackingList()->Track(this);
-}
-
 TextureBase::TextureBase(DeviceBase* device,
                          const TextureDescriptor* descriptor,
                          ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag),
+    : ApiObjectBase(device, tag, descriptor->label),
       mDimension(descriptor->dimension),
       mFormat(kUnusedFormat),
       mSize(descriptor->size),
@@ -726,6 +757,18 @@ bool TextureBase::IsMultisampledTexture() const {
     return mSampleCount > 1;
 }
 
+bool TextureBase::CoverFullSubresource(uint32_t mipLevel, const Extent3D& size) const {
+    Extent3D levelSize = GetMipLevelSingleSubresourcePhysicalSize(mipLevel);
+    switch (GetDimension()) {
+        case wgpu::TextureDimension::e1D:
+            return size.width == levelSize.width;
+        case wgpu::TextureDimension::e2D:
+            return size.width == levelSize.width && size.height == levelSize.height;
+        case wgpu::TextureDimension::e3D:
+            return size == levelSize;
+    }
+}
+
 Extent3D TextureBase::GetMipLevelSingleSubresourceVirtualSize(uint32_t level) const {
     Extent3D extent = {std::max(mSize.width >> level, 1u), 1u, 1u};
     if (mDimension == wgpu::TextureDimension::e1D) {
@@ -789,16 +832,12 @@ TextureViewBase* TextureBase::APICreateView(const TextureViewDescriptor* descrip
     Ref<TextureViewBase> result;
     if (device->ConsumedError(CreateView(descriptor), &result, "calling %s.CreateView(%s).", this,
                               descriptor)) {
-        return TextureViewBase::MakeError(device);
+        return TextureViewBase::MakeError(device, descriptor ? descriptor->label : nullptr);
     }
     return result.Detach();
 }
 
 void TextureBase::APIDestroy() {
-    if (GetDevice()->ConsumedError(ValidateDestroy(), "calling %s.Destroy().", this)) {
-        return;
-    }
-    ASSERT(!IsError());
     Destroy();
 }
 
@@ -833,11 +872,6 @@ wgpu::TextureUsage TextureBase::APIGetUsage() const {
     return mUsage;
 }
 
-MaybeError TextureBase::ValidateDestroy() const {
-    DAWN_TRY(GetDevice()->ValidateObject(this));
-    return {};
-}
-
 // TextureViewBase
 
 TextureViewBase::TextureViewBase(TextureBase* texture, const TextureViewDescriptor* descriptor)
@@ -851,27 +885,38 @@ TextureViewBase::TextureViewBase(TextureBase* texture, const TextureViewDescript
     GetObjectTrackingList()->Track(this);
 }
 
-TextureViewBase::TextureViewBase(TextureBase* texture)
-    : ApiObjectBase(texture->GetDevice(), kLabelNotImplemented),
-      mTexture(texture),
-      mFormat(kUnusedFormat) {
-    GetObjectTrackingList()->Track(this);
-}
-
-TextureViewBase::TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag), mFormat(kUnusedFormat) {}
+TextureViewBase::TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label)
+    : ApiObjectBase(device, tag, label), mFormat(kUnusedFormat) {}
 
 TextureViewBase::~TextureViewBase() = default;
 
 void TextureViewBase::DestroyImpl() {}
 
 // static
-TextureViewBase* TextureViewBase::MakeError(DeviceBase* device) {
-    return new TextureViewBase(device, ObjectBase::kError);
+TextureViewBase* TextureViewBase::MakeError(DeviceBase* device, const char* label) {
+    return new TextureViewBase(device, ObjectBase::kError, label);
 }
 
 ObjectType TextureViewBase::GetType() const {
     return ObjectType::TextureView;
+}
+
+void TextureViewBase::FormatLabel(absl::FormatSink* s) const {
+    s->Append(ObjectTypeAsString(GetType()));
+
+    const std::string& label = GetLabel();
+    if (!label.empty()) {
+        s->Append(absl::StrFormat(" \"%s\"", label));
+    }
+    if (IsError()) {
+        return;
+    }
+
+    const std::string& textureLabel = mTexture->GetLabel();
+    if (!textureLabel.empty()) {
+        s->Append(" of ");
+        GetTexture()->FormatLabel(s);
+    }
 }
 
 const TextureBase* TextureViewBase::GetTexture() const {

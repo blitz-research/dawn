@@ -20,8 +20,8 @@
 #include <utility>
 
 #include "gtest/gtest.h"
+#include "src/tint/ast/transform/renamer.h"
 #include "src/tint/transform/manager.h"
-#include "src/tint/transform/renamer.h"
 #include "src/tint/writer/hlsl/generator.h"
 #include "src/tint/writer/hlsl/generator_impl.h"
 
@@ -33,6 +33,14 @@ class TestHelperBase : public BODY, public ProgramBuilder {
   public:
     TestHelperBase() = default;
     ~TestHelperBase() override = default;
+
+    /// @returns the default generator options for SanitizeAndBuild(), if no explicit options are
+    /// provided.
+    static Options DefaultOptions() {
+        Options opts;
+        opts.disable_robustness = true;
+        return opts;
+    }
 
     /// Builds the program and returns a GeneratorImpl from the program.
     /// @note The generator is only built once. Multiple calls to Build() will
@@ -60,7 +68,7 @@ class TestHelperBase : public BODY, public ProgramBuilder {
     /// @note The generator is only built once. Multiple calls to Build() will
     /// return the same GeneratorImpl without rebuilding.
     /// @return the built generator
-    GeneratorImpl& SanitizeAndBuild(const Options& options = {}) {
+    GeneratorImpl& SanitizeAndBuild(const Options& options = DefaultOptions()) {
         if (gen_) {
             return *gen_;
         }
@@ -80,14 +88,14 @@ class TestHelperBase : public BODY, public ProgramBuilder {
 
         transform::Manager transform_manager;
         transform::DataMap transform_data;
-        transform_data.Add<transform::Renamer::Config>(transform::Renamer::Target::kHlslKeywords,
-                                                       /* preserve_unicode */ true);
-        transform_manager.Add<tint::transform::Renamer>();
-        auto result = transform_manager.Run(&sanitized_result.program, transform_data);
-        [&]() {
-            ASSERT_TRUE(result.program.IsValid()) << formatter.format(result.program.Diagnostics());
-        }();
-        *program = std::move(result.program);
+        transform::DataMap outputs;
+        transform_data.Add<ast::transform::Renamer::Config>(
+            ast::transform::Renamer::Target::kHlslKeywords,
+            /* preserve_unicode */ true);
+        transform_manager.Add<tint::ast::transform::Renamer>();
+        auto result = transform_manager.Run(&sanitized_result.program, transform_data, outputs);
+        [&]() { ASSERT_TRUE(result.IsValid()) << formatter.format(result.Diagnostics()); }();
+        *program = std::move(result);
         gen_ = std::make_unique<GeneratorImpl>(program.get());
         return *gen_;
     }

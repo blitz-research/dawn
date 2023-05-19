@@ -22,7 +22,9 @@
 #include "dawn/utils/TextureUtils.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
+
 static constexpr wgpu::TextureFormat kTextureFormat = wgpu::TextureFormat::RGBA8Unorm;
 
 // Set default texture size to single line texture for color conversion tests.
@@ -148,7 +150,6 @@ static constexpr std::array<ColorSpaceInfo, kSupportedColorSpaceCount> ColorSpac
     }
     //
 }};
-}  // anonymous namespace
 
 template <typename Parent>
 class CopyTextureForBrowserTests : public Parent {
@@ -247,9 +248,9 @@ class CopyTextureForBrowserTests : public Parent {
             struct Uniforms {
                 dstTextureFlipY : u32,
                 channelCount    : u32,
-                srcCopyOrigin   : vec2<u32>,
-                dstCopyOrigin   : vec2<u32>,
-                copySize        : vec2<u32>,
+                srcCopyOrigin   : vec2u,
+                dstCopyOrigin   : vec2u,
+                copySize        : vec2u,
                 srcAlphaMode    : u32,
                 dstAlphaMode    : u32,
             }
@@ -265,11 +266,11 @@ class CopyTextureForBrowserTests : public Parent {
                 return abs(value - expect) < 0.01;
             }
             @compute @workgroup_size(1, 1, 1)
-            fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
+            fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3u) {
                 let srcSize = textureDimensions(src);
                 let dstSize = textureDimensions(dst);
-                let dstTexCoord = vec2<u32>(GlobalInvocationID.xy);
-                let nonCoveredColor = vec4<f32>(0.0, 1.0, 0.0, 1.0); // should be green
+                let dstTexCoord = vec2u(GlobalInvocationID.xy);
+                let nonCoveredColor = vec4f(0.0, 1.0, 0.0, 1.0); // should be green
 
                 var success : bool = true;
                 if (dstTexCoord.x < uniforms.dstCopyOrigin.x ||
@@ -277,21 +278,20 @@ class CopyTextureForBrowserTests : public Parent {
                     dstTexCoord.x >= uniforms.dstCopyOrigin.x + uniforms.copySize.x ||
                     dstTexCoord.y >= uniforms.dstCopyOrigin.y + uniforms.copySize.y) {
                     success = success &&
-                              all(textureLoad(dst, vec2<i32>(dstTexCoord), 0) == nonCoveredColor);
+                              all(textureLoad(dst, vec2i(dstTexCoord), 0) == nonCoveredColor);
                 } else {
                     // Calculate source texture coord.
-                    var srcTexCoord = dstTexCoord - uniforms.dstCopyOrigin +
-                                                  uniforms.srcCopyOrigin;
-                    // Note that |flipY| equals flip src texture firstly and then do copy from src
-                    // subrect to dst subrect. This helps on blink part to handle some input texture
-                    // which is flipped and need to unpack flip during the copy.
-                    // We need to calculate the expect y coord based on this rule.
+                    var srcTexCoordInRect = dstTexCoord - uniforms.dstCopyOrigin;
+
+                    // Note that |flipY| equals flip src texture in copy sub rect.
                     if (uniforms.dstTextureFlipY == 1u) {
-                        srcTexCoord.y = u32(srcSize.y) - srcTexCoord.y - 1u;
+                        srcTexCoordInRect.y = uniforms.copySize.y - srcTexCoordInRect.y - 1;
                     }
 
-                    var srcColor = textureLoad(src, vec2<i32>(srcTexCoord), 0);
-                    var dstColor = textureLoad(dst, vec2<i32>(dstTexCoord), 0);
+                    var srcTexCoord = srcTexCoordInRect + uniforms.srcCopyOrigin;
+
+                    var srcColor = textureLoad(src, vec2i(srcTexCoord), 0);
+                    var dstColor = textureLoad(dst, vec2i(dstTexCoord), 0);
 
                     // Expect the dst texture channels should be all equal to alpha value
                     // after premultiply.
@@ -303,12 +303,12 @@ class CopyTextureForBrowserTests : public Parent {
                     }
 
                     if (uniforms.srcAlphaMode == unpremultiplied && uniforms.dstAlphaMode == premultiplied) {
-                        srcColor = vec4<f32>(srcColor.rgb * srcColor.a, srcColor.a);
+                        srcColor = vec4f(srcColor.rgb * srcColor.a, srcColor.a);
                     }
 
                     if (uniforms.srcAlphaMode == premultiplied && uniforms.dstAlphaMode == unpremultiplied) {
                         if (srcColor.a != 0.0) {
-                            srcColor = vec4<f32>(srcColor.rgb / srcColor.a, srcColor.a);
+                            srcColor = vec4f(srcColor.rgb / srcColor.a, srcColor.a);
                         }
                     }
 
@@ -1117,6 +1117,7 @@ TEST_P(CopyTextureForBrowser_Basic, VerifyFlipYInSlimTexture) {
 }
 
 DAWN_INSTANTIATE_TEST(CopyTextureForBrowser_Basic,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
@@ -1171,8 +1172,8 @@ TEST_P(CopyTextureForBrowser_SubRects, CopySubRect) {
 }
 
 DAWN_INSTANTIATE_TEST_P(CopyTextureForBrowser_SubRects,
-                        {D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
-                         VulkanBackend()},
+                        {D3D11Backend(), D3D12Backend(), MetalBackend(), OpenGLBackend(),
+                         OpenGLESBackend(), VulkanBackend()},
                         std::vector<wgpu::Origin3D>({{1, 1}, {1, 2}, {2, 1}}),
                         std::vector<wgpu::Origin3D>({{1, 1}, {1, 2}, {2, 1}}),
                         std::vector<wgpu::Extent3D>({{1, 1}, {2, 1}, {1, 2}, {2, 2}}),
@@ -1195,7 +1196,8 @@ TEST_P(CopyTextureForBrowser_AlphaMode, alphaMode) {
 
 DAWN_INSTANTIATE_TEST_P(
     CopyTextureForBrowser_AlphaMode,
-    {D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(), VulkanBackend()},
+    {D3D11Backend(), D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
+     VulkanBackend()},
     std::vector<wgpu::AlphaMode>({wgpu::AlphaMode::Premultiplied, wgpu::AlphaMode::Unpremultiplied,
                                   wgpu::AlphaMode::Opaque}),
     std::vector<wgpu::AlphaMode>({wgpu::AlphaMode::Premultiplied, wgpu::AlphaMode::Unpremultiplied,
@@ -1214,8 +1216,8 @@ TEST_P(CopyTextureForBrowser_ColorSpace, colorSpaceConversion) {
 }
 
 DAWN_INSTANTIATE_TEST_P(CopyTextureForBrowser_ColorSpace,
-                        {D3D12Backend(), MetalBackend(), OpenGLBackend(), OpenGLESBackend(),
-                         VulkanBackend()},
+                        {D3D11Backend(), D3D12Backend(), MetalBackend(), OpenGLBackend(),
+                         OpenGLESBackend(), VulkanBackend()},
                         std::vector<wgpu::TextureFormat>({wgpu::TextureFormat::RGBA16Float,
                                                           wgpu::TextureFormat::RGBA32Float}),
                         std::vector<ColorSpace>({ColorSpace::SRGB, ColorSpace::DisplayP3}),
@@ -1224,3 +1226,6 @@ DAWN_INSTANTIATE_TEST_P(CopyTextureForBrowser_ColorSpace,
                                                       wgpu::AlphaMode::Unpremultiplied}),
                         std::vector<wgpu::AlphaMode>({wgpu::AlphaMode::Premultiplied,
                                                       wgpu::AlphaMode::Unpremultiplied}));
+
+}  // anonymous namespace
+}  // namespace dawn

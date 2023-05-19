@@ -91,6 +91,9 @@ function byteSize(s) {
 
 async function setupWebsocket(port) {
   socket = new WebSocket('ws://127.0.0.1:' + port)
+  socket.addEventListener('open', () => {
+    socket.send('{"type":"CONNECTION_ACK"}');
+  });
   socket.addEventListener('message', runCtsTestViaSocket);
 }
 
@@ -135,7 +138,7 @@ wrapPromiseWithHeartbeat(GPUDevice.prototype, 'createComputePipelineAsync');
 wrapPromiseWithHeartbeat(GPUDevice.prototype, 'popErrorScope');
 wrapPromiseWithHeartbeat(GPUQueue.prototype, 'onSubmittedWorkDone');
 wrapPromiseWithHeartbeat(GPUBuffer.prototype, 'mapAsync');
-wrapPromiseWithHeartbeat(GPUShaderModule.prototype, 'compilationInfo');
+wrapPromiseWithHeartbeat(GPUShaderModule.prototype, 'getCompilationInfo');
 
 globalTestConfig.testHeartbeatCallback = sendHeartbeat;
 globalTestConfig.noRaceWithRejectOnTimeout = true;

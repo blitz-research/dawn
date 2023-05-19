@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/hlsl/test_helper.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -34,14 +35,13 @@ using HlslImportData_SingleParamTest = TestParamHelper<HlslImportData>;
 TEST_P(HlslImportData_SingleParamTest, FloatScalar) {
     auto param = GetParam();
 
-    auto* ident = Expr(param.name);
-    auto* expr = Call(ident, 1_f);
+    auto* expr = Call(param.name, 1_f);
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), std::string(param.hlsl_name) + "(1.0f)");
 }
 INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
@@ -66,8 +66,7 @@ INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
                                          HlslImportData{"sinh", "sinh"},
                                          HlslImportData{"sqrt", "sqrt"},
                                          HlslImportData{"tan", "tan"},
-                                         HlslImportData{"tanh", "tanh"},
-                                         HlslImportData{"trunc", "trunc"}));
+                                         HlslImportData{"tanh", "tanh"}));
 
 using HlslImportData_SingleIntParamTest = TestParamHelper<HlslImportData>;
 TEST_P(HlslImportData_SingleIntParamTest, IntScalar) {
@@ -78,8 +77,8 @@ TEST_P(HlslImportData_SingleIntParamTest, IntScalar) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), std::string(param.hlsl_name) + "(1)");
 }
 INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
@@ -90,16 +89,17 @@ using HlslImportData_SingleVectorParamTest = TestParamHelper<HlslImportData>;
 TEST_P(HlslImportData_SingleVectorParamTest, FloatVector) {
     auto param = GetParam();
 
-    auto* ident = Expr(param.name);
-    auto* expr = Call(ident, vec3<f32>(0.1_f, 0.2_f, 0.3_f));
+    auto* expr = Call(param.name, vec3<f32>(0.1_f, 0.2_f, 0.3_f));
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
-    EXPECT_EQ(out.str(),
-              std::string(param.hlsl_name) + "(float3(0.100000001f, 0.200000003f, 0.300000012f))");
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
+    EXPECT_EQ(
+        out.str(),
+        std::string(param.hlsl_name) +
+            "(float3(0.10000000149011611938f, 0.20000000298023223877f, 0.30000001192092895508f))");
 }
 INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
                          HlslImportData_SingleVectorParamTest,
@@ -124,8 +124,7 @@ INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
                                          HlslImportData{"sinh", "sinh"},
                                          HlslImportData{"sqrt", "sqrt"},
                                          HlslImportData{"tan", "tan"},
-                                         HlslImportData{"tanh", "tanh"},
-                                         HlslImportData{"trunc", "trunc"}));
+                                         HlslImportData{"tanh", "tanh"}));
 
 using HlslImportData_DualParam_ScalarTest = TestParamHelper<HlslImportData>;
 TEST_P(HlslImportData_DualParam_ScalarTest, Float) {
@@ -136,8 +135,8 @@ TEST_P(HlslImportData_DualParam_ScalarTest, Float) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), std::string(param.hlsl_name) + "(1.0f, 2.0f)");
 }
 INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
@@ -158,8 +157,8 @@ TEST_P(HlslImportData_DualParam_VectorTest, Float) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), std::string(param.hlsl_name) +
                              "(float3(1.0f, 2.0f, 3.0f), float3(4.0f, 5.0f, 6.0f))");
 }
@@ -183,8 +182,8 @@ TEST_P(HlslImportData_DualParam_Int_Test, IntScalar) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), std::string(param.hlsl_name) + "(1, 2)");
 }
 INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
@@ -201,8 +200,8 @@ TEST_P(HlslImportData_TripleParam_ScalarTest, Float) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), std::string(param.hlsl_name) + "(1.0f, 2.0f, 3.0f)");
 }
 INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
@@ -222,8 +221,8 @@ TEST_P(HlslImportData_TripleParam_VectorTest, Float) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(
         out.str(),
         std::string(param.hlsl_name) +
@@ -245,8 +244,8 @@ TEST_P(HlslImportData_TripleParam_Int_Test, IntScalar) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), std::string(param.hlsl_name) + "(1, 2, 3)");
 }
 INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
@@ -254,42 +253,42 @@ INSTANTIATE_TEST_SUITE_P(HlslGeneratorImplTest_Import,
                          testing::Values(HlslImportData{"clamp", "clamp"}));
 
 TEST_F(HlslGeneratorImplTest_Import, HlslImportData_Determinant) {
-    GlobalVar("var", ty.mat3x3<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat3x3<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call("determinant", "var");
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), std::string("determinant(var)"));
 }
 
 TEST_F(HlslGeneratorImplTest_Import, HlslImportData_QuantizeToF16_Scalar) {
-    GlobalVar("v", Expr(2_f), ast::AddressSpace::kPrivate);
+    GlobalVar("v", Expr(2_f), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call("quantizeToF16", "v");
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
-    EXPECT_EQ(out.str(), std::string("float(min16float(v))"));
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
+    EXPECT_EQ(out.str(), std::string("f16tof32(f32tof16(v))"));
 }
 
 TEST_F(HlslGeneratorImplTest_Import, HlslImportData_QuantizeToF16_Vector) {
-    GlobalVar("v", vec3<f32>(2_f), ast::AddressSpace::kPrivate);
+    GlobalVar("v", vec3<f32>(2_f), builtin::AddressSpace::kPrivate);
 
     auto* expr = Call("quantizeToF16", "v");
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.error();
-    EXPECT_EQ(out.str(), std::string("float3(min16float3(v))"));
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitCall(out, expr)) << gen.Diagnostics();
+    EXPECT_EQ(out.str(), std::string("f16tof32(f32tof16(v))"));
 }
 
 }  // namespace

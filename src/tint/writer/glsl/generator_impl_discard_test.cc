@@ -14,13 +14,15 @@
 
 #include "src/tint/writer/glsl/test_helper.h"
 
+#include "gmock/gmock.h"
+
 namespace tint::writer::glsl {
 namespace {
 
 using GlslGeneratorImplTest_Discard = TestHelper;
 
 TEST_F(GlslGeneratorImplTest_Discard, Emit_Discard) {
-    auto* stmt = create<ast::DiscardStatement>();
+    auto* stmt = Discard();
 
     Func("F", utils::Empty, ty.void_(), utils::Vector{stmt},
          utils::Vector{Stage(ast::PipelineStage::kFragment)});
@@ -28,8 +30,8 @@ TEST_F(GlslGeneratorImplTest_Discard, Emit_Discard) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitStatement(stmt)) << gen.error();
+    gen.EmitStatement(stmt);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), "  discard;\n");
 }
 

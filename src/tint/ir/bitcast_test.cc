@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <sstream>
-
+#include "src/tint/ir/builder.h"
+#include "src/tint/ir/constant.h"
 #include "src/tint/ir/instruction.h"
 #include "src/tint/ir/test_helper.h"
 
@@ -21,44 +21,35 @@ namespace tint::ir {
 namespace {
 
 using namespace tint::number_suffixes;  // NOLINT
-                                        //
+
 using IR_InstructionTest = TestHelper;
 
 TEST_F(IR_InstructionTest, Bitcast) {
-    auto& b = CreateEmptyBuilder();
+    Module mod;
+    Builder b{mod};
+    const auto* inst = b.Bitcast(b.ir.types.Get<type::I32>(), b.Constant(4_i));
 
-    b.builder.next_temp_id = Temp::Id(42);
-    const auto* instr =
-        b.builder.Bitcast(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
+    ASSERT_TRUE(inst->Is<ir::Bitcast>());
+    ASSERT_NE(inst->Type(), nullptr);
 
-    ASSERT_TRUE(instr->Result()->Is<Temp>());
-    EXPECT_EQ(Temp::Id(42), instr->Result()->As<Temp>()->AsId());
-    ASSERT_NE(instr->Result()->Type(), nullptr);
-
-    ASSERT_TRUE(instr->Val()->Is<Constant>());
-    auto val = instr->Val()->As<Constant>()->value;
+    const auto args = inst->Args();
+    ASSERT_EQ(args.Length(), 1u);
+    ASSERT_TRUE(args[0]->Is<Constant>());
+    auto val = args[0]->As<Constant>()->Value();
     ASSERT_TRUE(val->Is<constant::Scalar<i32>>());
     EXPECT_EQ(4_i, val->As<constant::Scalar<i32>>()->ValueAs<i32>());
-
-    std::stringstream str;
-    instr->ToString(str, b.builder.ir.symbols);
-    EXPECT_EQ(str.str(), "%42 (i32) = bitcast(4)");
 }
 
 TEST_F(IR_InstructionTest, Bitcast_Usage) {
-    auto& b = CreateEmptyBuilder();
+    Module mod;
+    Builder b{mod};
+    const auto* inst = b.Bitcast(b.ir.types.Get<type::I32>(), b.Constant(4_i));
 
-    b.builder.next_temp_id = Temp::Id(42);
-    const auto* instr =
-        b.builder.Bitcast(b.builder.ir.types.Get<type::I32>(), b.builder.Constant(4_i));
-
-    ASSERT_NE(instr->Result(), nullptr);
-    ASSERT_EQ(instr->Result()->Usage().Length(), 1);
-    EXPECT_EQ(instr->Result()->Usage()[0], instr);
-
-    ASSERT_NE(instr->Val(), nullptr);
-    ASSERT_EQ(instr->Val()->Usage().Length(), 1);
-    EXPECT_EQ(instr->Val()->Usage()[0], instr);
+    const auto args = inst->Args();
+    ASSERT_EQ(args.Length(), 1u);
+    ASSERT_NE(args[0], nullptr);
+    ASSERT_EQ(args[0]->Usage().Length(), 1u);
+    EXPECT_EQ(args[0]->Usage()[0], inst);
 }
 
 }  // namespace

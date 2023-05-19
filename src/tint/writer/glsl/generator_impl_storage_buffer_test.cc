@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gmock/gmock.h"
 #include "src/tint/number.h"
 #include "src/tint/writer/glsl/test_helper.h"
+
+#include "gmock/gmock.h"
 
 using ::testing::HasSubstr;
 using namespace tint::number_suffixes;  // NOLINT
@@ -37,8 +38,8 @@ void TestAlign(ProgramBuilder* ctx) {
                        ctx->Member("dewey", ctx->ty.f32(), utils::Vector{ctx->MemberAlign(256_i)}),
                        ctx->Member("louie", ctx->ty.f32(), utils::Vector{ctx->MemberAlign(256_i)}),
                    });
-    ctx->GlobalVar("nephews", ctx->ty.Of(nephews), ast::AddressSpace::kStorage, ctx->Binding(0_a),
-                   ctx->Group(0_a));
+    ctx->GlobalVar("nephews", ctx->ty.Of(nephews), builtin::AddressSpace::kStorage,
+                   ctx->Binding(0_a), ctx->Group(0_a));
 }
 
 TEST_F(GlslGeneratorImplTest_StorageBuffer, Align) {
@@ -48,7 +49,8 @@ TEST_F(GlslGeneratorImplTest_StorageBuffer, Align) {
 
     // TODO(crbug.com/tint/1421) offsets do not currently work on GLSL ES.
     // They will likely require manual padding.
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(#version 310 es
 
 struct Nephews {
@@ -70,8 +72,8 @@ TEST_F(GlslGeneratorImplTest_StorageBuffer, Align_Desktop) {
     TestAlign(this);
 
     GeneratorImpl& gen = Build(Version(Version::Standard::kDesktop, 4, 4));
-
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    gen.Generate();
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(#version 440
 
 struct Nephews {

@@ -21,6 +21,8 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/Compiler.h"
 
+namespace dawn {
+
 // A common class for various smart-pointers acting on referenceable/releasable pointer-like
 // objects. Logic for each specialization can be customized using a Traits type that looks
 // like the following:
@@ -110,6 +112,8 @@ class RefBase {
     const T operator->() const { return mValue; }
     T operator->() { return mValue; }
 
+    bool operator<(const RefBase<T, Traits>& other) const { return mValue < other.mValue; }
+
     // Smart pointer methods.
     const T& Get() const { return mValue; }
     T& Get() { return mValue; }
@@ -159,5 +163,7 @@ class RefBase {
 
     T mValue;
 };
+
+}  // namespace dawn
 
 #endif  // SRC_DAWN_COMMON_REFBASE_H_

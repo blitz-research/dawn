@@ -5,8 +5,13 @@ layout(binding = 0, std430) buffer SB_RW_ssbo {
   float16_t arg_0[];
 } sb_rw;
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uint inner;
+} prevent_dce;
+
 void arrayLength_cbd6b5() {
   uint res = uint(sb_rw.arg_0.length());
+  prevent_dce.inner = res;
 }
 
 vec4 vertex_main() {
@@ -24,14 +29,19 @@ void main() {
 }
 #version 310 es
 #extension GL_AMD_gpu_shader_half_float : require
-precision mediump float;
+precision highp float;
 
 layout(binding = 0, std430) buffer SB_RW_ssbo {
   float16_t arg_0[];
 } sb_rw;
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uint inner;
+} prevent_dce;
+
 void arrayLength_cbd6b5() {
   uint res = uint(sb_rw.arg_0.length());
+  prevent_dce.inner = res;
 }
 
 void fragment_main() {
@@ -49,8 +59,13 @@ layout(binding = 0, std430) buffer SB_RW_ssbo {
   float16_t arg_0[];
 } sb_rw;
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  uint inner;
+} prevent_dce;
+
 void arrayLength_cbd6b5() {
   uint res = uint(sb_rw.arg_0.length());
+  prevent_dce.inner = res;
 }
 
 void compute_main() {

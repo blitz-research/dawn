@@ -15,6 +15,7 @@
 #ifndef SRC_TINT_WRITER_SPIRV_BUILDER_H_
 #define SRC_TINT_WRITER_SPIRV_BUILDER_H_
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -33,19 +34,21 @@
 #include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/unary_op_expression.h"
 #include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/builtin/builtin_value.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/builtin.h"
 #include "src/tint/type/storage_texture.h"
 #include "src/tint/writer/spirv/function.h"
+#include "src/tint/writer/spirv/module.h"
 #include "src/tint/writer/spirv/scalar_constant.h"
 
 // Forward declarations
 namespace tint::sem {
 class Call;
 class Load;
-class TypeInitializer;
-class TypeConversion;
+class ValueConstructor;
+class ValueConversion;
 }  // namespace tint::sem
 namespace tint::type {
 class Reference;
@@ -53,7 +56,7 @@ class Reference;
 
 namespace tint::writer::spirv {
 
-/// Builder class to create SPIR-V instructions from a module.
+/// Builder class to create a SPIR-V module from a Tint AST.
 class Builder {
   public:
     /// Contains information for generating accessor chains
@@ -86,105 +89,23 @@ class Builder {
     /// @returns true if the SPIR-V was successfully built
     bool Build();
 
-    /// @returns the error string or blank if no error was reported.
-    const std::string& error() const { return error_; }
+    /// @returns the list of diagnostics raised by the builder
+    const diag::List& Diagnostics() const { return builder_.Diagnostics(); }
+
     /// @returns true if the builder encountered an error
-    bool has_error() const { return !error_.empty(); }
+    bool has_error() const { return Diagnostics().contains_errors(); }
 
-    /// @returns the number of uint32_t's needed to make up the results
-    uint32_t total_size() const;
+    /// @returns the module that this builder has produced
+    spirv::Module& Module() { return module_; }
 
-    /// @returns the id bound for this program
-    uint32_t id_bound() const { return next_id_; }
-
-    /// @returns the next id to be used
-    uint32_t next_id() {
-        auto id = next_id_;
-        next_id_ += 1;
-        return id;
+    /// Add an empty function to the builder, to be used for testing purposes.
+    void PushFunctionForTesting() {
+        current_function_ = Function(Instruction(spv::Op::OpFunction, {}), {}, {});
     }
 
-    /// Iterates over all the instructions in the correct order and calls the
-    /// given callback
-    /// @param cb the callback to execute
-    void iterate(std::function<void(const Instruction&)> cb) const;
+    /// @returns the current function
+    const Function& CurrentFunction() { return current_function_; }
 
-    /// Adds an instruction to the list of capabilities, if the capability
-    /// hasn't already been added.
-    /// @param cap the capability to set
-    void push_capability(uint32_t cap);
-    /// @returns the capabilities
-    const InstructionList& capabilities() const { return capabilities_; }
-    /// Adds an instruction to the extensions
-    /// @param extension the name of the extension
-    void push_extension(const char* extension);
-    /// @returns the extensions
-    const InstructionList& extensions() const { return extensions_; }
-    /// Adds an instruction to the ext import
-    /// @param op the op to set
-    /// @param operands the operands for the instruction
-    void push_ext_import(spv::Op op, const OperandList& operands) {
-        ext_imports_.push_back(Instruction{op, operands});
-    }
-    /// @returns the ext imports
-    const InstructionList& ext_imports() const { return ext_imports_; }
-    /// Adds an instruction to the memory model
-    /// @param op the op to set
-    /// @param operands the operands for the instruction
-    void push_memory_model(spv::Op op, const OperandList& operands) {
-        memory_model_.push_back(Instruction{op, operands});
-    }
-    /// @returns the memory model
-    const InstructionList& memory_model() const { return memory_model_; }
-    /// Adds an instruction to the entry points
-    /// @param op the op to set
-    /// @param operands the operands for the instruction
-    void push_entry_point(spv::Op op, const OperandList& operands) {
-        entry_points_.push_back(Instruction{op, operands});
-    }
-    /// @returns the entry points
-    const InstructionList& entry_points() const { return entry_points_; }
-    /// Adds an instruction to the execution modes
-    /// @param op the op to set
-    /// @param operands the operands for the instruction
-    void push_execution_mode(spv::Op op, const OperandList& operands) {
-        execution_modes_.push_back(Instruction{op, operands});
-    }
-    /// @returns the execution modes
-    const InstructionList& execution_modes() const { return execution_modes_; }
-    /// Adds an instruction to the debug
-    /// @param op the op to set
-    /// @param operands the operands for the instruction
-    void push_debug(spv::Op op, const OperandList& operands) {
-        debug_.push_back(Instruction{op, operands});
-    }
-    /// @returns the debug instructions
-    const InstructionList& debug() const { return debug_; }
-    /// Adds an instruction to the types
-    /// @param op the op to set
-    /// @param operands the operands for the instruction
-    void push_type(spv::Op op, const OperandList& operands) {
-        types_.push_back(Instruction{op, operands});
-    }
-    /// @returns the type instructions
-    const InstructionList& types() const { return types_; }
-    /// Adds an instruction to the annotations
-    /// @param op the op to set
-    /// @param operands the operands for the instruction
-    void push_annot(spv::Op op, const OperandList& operands) {
-        annotations_.push_back(Instruction{op, operands});
-    }
-    /// @returns the annotations
-    const InstructionList& annots() const { return annotations_; }
-
-    /// Adds a function to the builder
-    /// @param func the function to add
-    void push_function(const Function& func) {
-        functions_.push_back(func);
-        current_label_id_ = func.label_id();
-    }
-    /// @returns the functions
-    const std::vector<Function>& functions() const { return functions_; }
     /// Pushes an instruction to the current function. If we're outside
     /// a function then issue an internal error and return false.
     /// @param op the operation
@@ -194,11 +115,11 @@ class Builder {
     /// Pushes a variable to the current function
     /// @param operands the variable operands
     void push_function_var(const OperandList& operands) {
-        if (TINT_UNLIKELY(functions_.empty())) {
+        if (TINT_UNLIKELY(!current_function_)) {
             TINT_ICE(Writer, builder_.Diagnostics())
                 << "push_function_var() called without a function";
         }
-        functions_.back().push_var(operands);
+        current_function_.push_var(operands);
     }
 
     /// @returns true if the current instruction insertion point is
@@ -208,12 +129,12 @@ class Builder {
     /// Converts a address space to a SPIR-V address space.
     /// @param klass the address space to convert
     /// @returns the SPIR-V address space or SpvStorageClassMax on error.
-    SpvStorageClass ConvertAddressSpace(ast::AddressSpace klass) const;
+    SpvStorageClass ConvertAddressSpace(builtin::AddressSpace klass) const;
     /// Converts a builtin to a SPIR-V builtin and pushes a capability if needed.
     /// @param builtin the builtin to convert
     /// @param storage the address space that this builtin is being used with
     /// @returns the SPIR-V builtin or SpvBuiltInMax on error.
-    SpvBuiltIn ConvertBuiltin(ast::BuiltinValue builtin, ast::AddressSpace storage);
+    SpvBuiltIn ConvertBuiltin(builtin::BuiltinValue builtin, builtin::AddressSpace storage);
 
     /// Converts an interpolate attribute to SPIR-V decorations and pushes a
     /// capability if needed.
@@ -221,14 +142,14 @@ class Builder {
     /// @param type the interpolation type
     /// @param sampling the interpolation sampling
     void AddInterpolationDecorations(uint32_t id,
-                                     ast::InterpolationType type,
-                                     ast::InterpolationSampling sampling);
+                                     builtin::InterpolationType type,
+                                     builtin::InterpolationSampling sampling);
 
     /// Generates the enabling of an extension. Emits an error and returns false if the extension is
     /// not supported.
     /// @param ext the extension to generate
     /// @returns true on success.
-    bool GenerateExtension(ast::Extension ext);
+    bool GenerateExtension(builtin::Extension ext);
     /// Generates a label for the given id. Emits an error and returns false if
     /// we're currently outside a function.
     /// @param id the id to use for the label
@@ -308,9 +229,9 @@ class Builder {
     /// For more information on accessors see the "Pointer evaluation" section of
     /// the WGSL specification.
     ///
-    /// @param expr the expresssion to generate
+    /// @param expr the expression to generate
     /// @returns the id of the expression or 0 on failure
-    uint32_t GenerateAccessorExpression(const ast::Expression* expr);
+    uint32_t GenerateAccessorExpression(const ast::AccessorExpression* expr);
     /// Generates an index accessor
     /// @param expr the accessor to generate
     /// @param info the current accessor information
@@ -322,7 +243,7 @@ class Builder {
     /// @returns true if the accessor was generated successfully
     bool GenerateMemberAccessor(const ast::MemberAccessorExpression* expr, AccessorInfo* info);
     /// Generates an identifier expression
-    /// @param expr the expresssion to generate
+    /// @param expr the expression to generate
     /// @returns the id of the expression or 0 on failure
     uint32_t GenerateIdentifierExpression(const ast::IdentifierExpression* expr);
     /// Generates a unary op expression
@@ -337,11 +258,11 @@ class Builder {
     /// instruction set, if one doesn't exist yet, and returns the import ID.
     /// @returns the import ID, or 0 on error.
     uint32_t GetGLSLstd450Import();
-    /// Generates a initializer expression
+    /// Generates a constructor expression
     /// @param var the variable generated for, nullptr if no variable associated.
     /// @param expr the expression to generate
     /// @returns the ID of the expression or 0 on failure.
-    uint32_t GenerateInitializerExpression(const ast::Variable* var, const ast::Expression* expr);
+    uint32_t GenerateConstructorExpression(const ast::Variable* var, const ast::Expression* expr);
     /// Generates a literal constant if needed
     /// @param lit the literal to generate
     /// @returns the ID on success or 0 on failure
@@ -372,11 +293,11 @@ class Builder {
     /// @param builtin the builtin being called
     /// @returns the expression ID on success or 0 otherwise
     uint32_t GenerateBuiltinCall(const sem::Call* call, const sem::Builtin* builtin);
-    /// Handles generating a type initializer or type conversion expression
+    /// Handles generating a value constructor or value conversion expression
     /// @param call the call expression
     /// @param var the variable that is being initialized. May be null.
     /// @returns the expression ID on success or 0 otherwise
-    uint32_t GenerateTypeInitializerOrConversion(const sem::Call* call, const ast::Variable* var);
+    uint32_t GenerateValueConstructorOrConversion(const sem::Call* call, const ast::Variable* var);
     /// Generates a texture builtin call. Emits an error and returns false if
     /// we're currently outside a function.
     /// @param call the call expression
@@ -495,7 +416,7 @@ class Builder {
     /// @param struct_type the vector to generate
     /// @param result the result operand
     /// @returns true if the vector was successfully generated
-    bool GenerateStructType(const sem::Struct* struct_type, const Operand& result);
+    bool GenerateStructType(const type::Struct* struct_type, const Operand& result);
     /// Generates a struct member
     /// @param struct_id the id of the parent structure
     /// @param idx the index of the member
@@ -503,7 +424,7 @@ class Builder {
     /// @returns the id of the struct member or 0 on error.
     uint32_t GenerateStructMember(uint32_t struct_id,
                                   uint32_t idx,
-                                  const sem::StructMember* member);
+                                  const type::StructMember* member);
     /// Generates a variable declaration statement
     /// @param stmt the statement to generate
     /// @returns true on successfull generation
@@ -535,12 +456,12 @@ class Builder {
     /// Converts TexelFormat to SPIR-V and pushes an appropriate capability.
     /// @param format AST image format type
     /// @returns SPIR-V image format type
-    SpvImageFormat convert_texel_format_to_spv(const ast::TexelFormat format);
+    SpvImageFormat convert_texel_format_to_spv(const builtin::TexelFormat format);
 
-    /// Determines if the given type initializer is created from constant values
+    /// Determines if the given value constructor is created from constant values
     /// @param expr the expression to check
-    /// @returns true if the initializer is constant
-    bool IsInitializerConst(const ast::Expression* expr);
+    /// @returns true if the constructor is constant
+    bool IsConstructorConst(const ast::Expression* expr);
 
   private:
     /// @returns an Operand with a new result ID in it. Increments the next_id_
@@ -589,19 +510,9 @@ class Builder {
     void PopScope();
 
     ProgramBuilder builder_;
-    std::string error_;
-    uint32_t next_id_ = 1;
+    spirv::Module module_;
+    Function current_function_;
     uint32_t current_label_id_ = 0;
-    InstructionList capabilities_;
-    InstructionList extensions_;
-    InstructionList ext_imports_;
-    InstructionList memory_model_;
-    InstructionList entry_points_;
-    InstructionList execution_modes_;
-    InstructionList debug_;
-    InstructionList types_;
-    InstructionList annotations_;
-    std::vector<Function> functions_;
 
     // Scope holds per-block information
     struct Scope {
@@ -624,7 +535,6 @@ class Builder {
     std::vector<Scope> scope_stack_;
     std::vector<uint32_t> merge_stack_;
     std::vector<uint32_t> continue_stack_;
-    std::unordered_set<uint32_t> capability_set_;
     bool zero_initialize_workgroup_memory_ = false;
 
     struct ContinuingInfo {

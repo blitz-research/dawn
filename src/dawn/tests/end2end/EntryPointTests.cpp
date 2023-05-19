@@ -17,6 +17,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class EntryPointTests : public DawnTest {};
 
 // Test creating a render pipeline from two entryPoints in the same module.
@@ -24,12 +27,12 @@ TEST_P(EntryPointTests, FragAndVertexSameModule) {
     // TODO(crbug.com/dawn/658): Crashes on bots
     DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
-        @vertex fn vertex_main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn vertex_main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         }
 
-        @fragment fn fragment_main() -> @location(0) vec4<f32> {
-          return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+        @fragment fn fragment_main() -> @location(0) vec4f {
+          return vec4f(1.0, 0.0, 0.0, 1.0);
         }
     )");
 
@@ -143,8 +146,12 @@ TEST_P(EntryPointTests, TwoComputeInModule) {
 }
 
 DAWN_INSTANTIATE_TEST(EntryPointTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

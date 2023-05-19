@@ -17,6 +17,8 @@
 
 #include <array>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -37,6 +39,8 @@ class Platform;
 
 namespace dawn::native {
 
+class CallbackTaskManager;
+class DeviceBase;
 class Surface;
 class XlibXcbFunctions;
 
@@ -57,7 +61,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     void DiscoverDefaultAdapters();
     bool DiscoverAdapters(const AdapterDiscoveryOptionsBase* options);
 
-    const std::vector<Ref<AdapterBase>>& GetAdapters() const;
+    std::vector<Ref<AdapterBase>> GetAdapters() const;
 
     // Used to handle error that happen up to device creation.
     bool ConsumedError(MaybeError maybeError);
@@ -71,6 +75,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
         *result = resultOrError.AcquireSuccess();
         return false;
     }
+
+    const TogglesState& GetTogglesState() const;
 
     // Used to query the details of a toggle. Return nullptr if toggleName is not a valid name
     // of a toggle supported in Dawn.
@@ -88,27 +94,33 @@ class InstanceBase final : public RefCountedWithExternalCount {
     void EnableBeginCaptureOnStartup(bool beginCaptureOnStartup);
     bool IsBeginCaptureOnStartupEnabled() const;
 
-    // TODO(dawn:1374): SetPlatform should become a private helper, and SetPlatformForTesting
-    // will become the NOT thread-safe testing version exposed for special testing cases.
-    void SetPlatform(dawn::platform::Platform* platform);
+    // TODO(crbug.com/dawn/1495): Move this to a Toggle, perhaps on RequestAdapterOptions
+    // after Toggle refactor is complete.
+    void EnableAdapterBlocklist(bool enable);
+    bool IsAdapterBlocklistEnabled() const;
+
+    // Testing only API that is NOT thread-safe.
     void SetPlatformForTesting(dawn::platform::Platform* platform);
     dawn::platform::Platform* GetPlatform();
     BlobCache* GetBlobCache(bool enabled = true);
 
     uint64_t GetDeviceCountForTesting() const;
-    void IncrementDeviceCountForTesting();
-    void DecrementDeviceCountForTesting();
+    void AddDevice(DeviceBase* device);
+    void RemoveDevice(DeviceBase* device);
 
     const std::vector<std::string>& GetRuntimeSearchPaths() const;
+
+    const Ref<CallbackTaskManager>& GetCallbackTaskManager() const;
 
     // Get backend-independent libraries that need to be loaded dynamically.
     const XlibXcbFunctions* GetOrCreateXlibXcbFunctions();
 
     // Dawn API
     Surface* APICreateSurface(const SurfaceDescriptor* descriptor);
+    bool APIProcessEvents();
 
   private:
-    InstanceBase();
+    explicit InstanceBase(const TogglesState& instanceToggles);
     ~InstanceBase() override;
 
     void WillDropLastExternalRef() override;
@@ -117,6 +129,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     InstanceBase& operator=(const InstanceBase& other) = delete;
 
     MaybeError Initialize(const InstanceDescriptor* descriptor);
+    void SetPlatform(dawn::platform::Platform* platform);
 
     // Lazily creates connections to all backends that have been compiled.
     void EnsureBackendConnection(wgpu::BackendType backendType);
@@ -134,6 +147,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     bool mDiscoveredDefaultAdapters = false;
 
     bool mBeginCaptureOnStartup = false;
+    bool mEnableAdapterBlocklist = false;
     BackendValidationLevel mBackendValidationLevel = BackendValidationLevel::Disabled;
 
     dawn::platform::Platform* mPlatform = nullptr;
@@ -142,7 +156,9 @@ class InstanceBase final : public RefCountedWithExternalCount {
     BlobCache mPassthroughBlobCache;
 
     std::vector<std::unique_ptr<BackendConnection>> mBackends;
-    std::vector<Ref<AdapterBase>> mAdapters;
+    std::vector<Ref<PhysicalDeviceBase>> mPhysicalDevices;
+
+    TogglesState mToggles;
 
     FeaturesInfo mFeaturesInfo;
     TogglesInfo mTogglesInfo;
@@ -151,7 +167,10 @@ class InstanceBase final : public RefCountedWithExternalCount {
     std::unique_ptr<XlibXcbFunctions> mXlibXcbFunctions;
 #endif  // defined(DAWN_USE_X11)
 
-    std::atomic_uint64_t mDeviceCountForTesting{0};
+    Ref<CallbackTaskManager> mCallbackTaskManager;
+
+    std::set<DeviceBase*> mDevicesList;
+    mutable std::mutex mDevicesListMutex;
 };
 
 }  // namespace dawn::native

@@ -14,6 +14,10 @@
 
 #include "src/tint/writer/glsl/test_helper.h"
 
+#include "src/tint/utils/string_stream.h"
+
+#include "gmock/gmock.h"
+
 using namespace tint::number_suffixes;  // NOLINT
 
 namespace tint::writer::glsl {
@@ -22,14 +26,15 @@ namespace {
 using GlslGeneratorImplTest_Expression = TestHelper;
 
 TEST_F(GlslGeneratorImplTest_Expression, IndexAccessor) {
-    GlobalVar("ary", ty.array<i32, 10>(), ast::AddressSpace::kPrivate);
+    GlobalVar("ary", ty.array<i32, 10>(), builtin::AddressSpace::kPrivate);
     auto* expr = IndexAccessor("ary", 5_i);
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, expr);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "ary[5]");
 }
 

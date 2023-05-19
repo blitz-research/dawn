@@ -19,6 +19,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class ObjectCachingTest : public DawnTest {};
 
 // Test that BindGroupLayouts are correctly deduplicated.
@@ -106,16 +109,16 @@ TEST_P(ObjectCachingTest, PipelineLayoutDeduplication) {
 // Test that ShaderModules are correctly deduplicated.
 TEST_P(ObjectCachingTest, ShaderModuleDeduplication) {
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
     wgpu::ShaderModule sameModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
     wgpu::ShaderModule otherModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 0.0);
         })");
 
     EXPECT_NE(module.Get(), otherModule.Get());
@@ -252,8 +255,8 @@ TEST_P(ObjectCachingTest, RenderPipelineDeduplicationOnLayout) {
     utils::ComboRenderPipelineDescriptor desc;
     desc.cTargets[0].writeMask = wgpu::ColorWriteMask::None;
     desc.vertex.module = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 0.0);
         })");
     desc.cFragment.module = utils::CreateShaderModule(device, R"(
         @fragment fn main() {
@@ -275,16 +278,16 @@ TEST_P(ObjectCachingTest, RenderPipelineDeduplicationOnLayout) {
 // Test that RenderPipelines are correctly deduplicated wrt. their vertex module
 TEST_P(ObjectCachingTest, RenderPipelineDeduplicationOnVertexModule) {
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 0.0);
         })");
     wgpu::ShaderModule sameModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 0.0);
         })");
     wgpu::ShaderModule otherModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(1.0, 1.0, 1.0, 1.0);
         })");
 
     EXPECT_NE(module.Get(), otherModule.Get());
@@ -318,8 +321,8 @@ TEST_P(ObjectCachingTest, RenderPipelineDeduplicationOnFragmentModule) {
         @fragment fn main() {
         })");
     wgpu::ShaderModule otherModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 0.0);
         })");
 
     EXPECT_NE(module.Get(), otherModule.Get());
@@ -327,8 +330,8 @@ TEST_P(ObjectCachingTest, RenderPipelineDeduplicationOnFragmentModule) {
 
     utils::ComboRenderPipelineDescriptor desc;
     desc.vertex.module = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 0.0);
         })");
 
     desc.cFragment.module = module;
@@ -349,11 +352,11 @@ TEST_P(ObjectCachingTest, RenderPipelineDeduplicationOnFragmentModule) {
 TEST_P(ObjectCachingTest, RenderPipelineDeduplicationOnOverrides) {
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         override a: f32 = 1.0;
-        @vertex fn vertexMain() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        @vertex fn vertexMain() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 0.0);
         }
-        @fragment fn fragmentMain() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, a);
+        @fragment fn fragmentMain() -> @location(0) vec4f {
+            return vec4f(0.0, 0.0, 0.0, a);
         })");
 
     utils::ComboRenderPipelineDescriptor desc;
@@ -416,7 +419,7 @@ TEST_P(ObjectCachingTest, SamplerDeduplication) {
     wgpu::Sampler otherSamplerMinFilter = device.CreateSampler(&otherSamplerDescMinFilter);
 
     wgpu::SamplerDescriptor otherSamplerDescMipmapFilter;
-    otherSamplerDescMipmapFilter.mipmapFilter = wgpu::FilterMode::Linear;
+    otherSamplerDescMipmapFilter.mipmapFilter = wgpu::MipmapFilterMode::Linear;
     wgpu::Sampler otherSamplerMipmapFilter = device.CreateSampler(&otherSamplerDescMipmapFilter);
 
     wgpu::SamplerDescriptor otherSamplerDescLodMinClamp;
@@ -445,8 +448,12 @@ TEST_P(ObjectCachingTest, SamplerDeduplication) {
 }
 
 DAWN_INSTANTIATE_TEST(ObjectCachingTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

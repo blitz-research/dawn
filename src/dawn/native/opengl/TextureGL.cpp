@@ -15,6 +15,7 @@
 #include "dawn/native/opengl/TextureGL.h"
 
 #include <limits>
+#include <utility>
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/Constants.h"
@@ -170,6 +171,16 @@ void AllocateTexture(const OpenGLFunctions& gl,
 
 // Texture
 
+// static
+ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
+    Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
+    if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+        DAWN_TRY(
+            texture->ClearTexture(texture->GetAllSubresources(), TextureBase::ClearValue::NonZero));
+    }
+    return std::move(texture);
+}
+
 Texture::Texture(Device* device, const TextureDescriptor* descriptor)
     : Texture(device, descriptor, 0, TextureState::OwnedInternal) {
     const OpenGLFunctions& gl = device->GetGL();
@@ -186,11 +197,6 @@ Texture::Texture(Device* device, const TextureDescriptor* descriptor)
     // The texture is not complete if it uses mipmapping and not all levels up to
     // MAX_LEVEL have been defined.
     gl.TexParameteri(mTarget, GL_TEXTURE_MAX_LEVEL, levels - 1);
-
-    if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-        GetDevice()->ConsumedError(
-            ClearTexture(GetAllSubresources(), TextureBase::ClearValue::NonZero));
-    }
 }
 
 void Texture::Touch() {
@@ -246,7 +252,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
     float fClearColor = (clearValue == TextureBase::ClearValue::Zero) ? 0.f : 1.f;
 
     if (GetFormat().isRenderable) {
-        if ((range.aspects & (Aspect::Depth | Aspect::Stencil)) != 0) {
+        if (range.aspects & (Aspect::Depth | Aspect::Stencil)) {
             GLfloat depth = fClearColor;
             GLint stencil = clearColor;
             if (range.aspects & Aspect::Depth) {
@@ -366,7 +372,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
             constexpr std::array<GLbyte, MAX_TEXEL_SIZE> kClearColorDataBytes255 = {
                 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 
-            wgpu::TextureComponentType baseType = GetFormat().GetAspectInfo(Aspect::Color).baseType;
+            TextureComponentType baseType = GetFormat().GetAspectInfo(Aspect::Color).baseType;
 
             const GLFormat& glFormat = GetGLFormat();
             for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
@@ -403,21 +409,21 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
 
                     auto DoClear = [&]() {
                         switch (baseType) {
-                            case wgpu::TextureComponentType::Float: {
+                            case TextureComponentType::Float: {
                                 gl.ClearBufferfv(GL_COLOR, 0,
                                                  clearValue == TextureBase::ClearValue::Zero
                                                      ? kClearColorDataFloat0.data()
                                                      : kClearColorDataFloat1.data());
                                 break;
                             }
-                            case wgpu::TextureComponentType::Uint: {
+                            case TextureComponentType::Uint: {
                                 gl.ClearBufferuiv(GL_COLOR, 0,
                                                   clearValue == TextureBase::ClearValue::Zero
                                                       ? kClearColorDataUint0.data()
                                                       : kClearColorDataUint1.data());
                                 break;
                             }
-                            case wgpu::TextureComponentType::Sint: {
+                            case TextureComponentType::Sint: {
                                 gl.ClearBufferiv(GL_COLOR, 0,
                                                  reinterpret_cast<const GLint*>(
                                                      clearValue == TextureBase::ClearValue::Zero
@@ -425,9 +431,6 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
                                                          : kClearColorDataUint1.data()));
                                 break;
                             }
-
-                            case wgpu::TextureComponentType::DepthComparison:
-                                UNREACHABLE();
                         }
                     };
 
@@ -498,7 +501,7 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
 
         // Fill the buffer with clear color
         memset(srcBuffer->GetMappedRange(0, bufferSize), clearColor, bufferSize);
-        srcBuffer->Unmap();
+        DAWN_TRY(srcBuffer->Unmap());
 
         gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER, srcBuffer->GetHandle());
         for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
@@ -539,13 +542,14 @@ MaybeError Texture::ClearTexture(const SubresourceRange& range,
     return {};
 }
 
-void Texture::EnsureSubresourceContentInitialized(const SubresourceRange& range) {
+MaybeError Texture::EnsureSubresourceContentInitialized(const SubresourceRange& range) {
     if (!GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
-        return;
+        return {};
     }
     if (!IsSubresourceContentInitialized(range)) {
-        GetDevice()->ConsumedError(ClearTexture(range, TextureBase::ClearValue::Zero));
+        DAWN_TRY(ClearTexture(range, TextureBase::ClearValue::Zero));
     }
+    return {};
 }
 
 // TextureView

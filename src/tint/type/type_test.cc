@@ -44,51 +44,45 @@ struct TypeTest : public TestHelper {
     const Matrix* mat4x3_f16 = create<Matrix>(vec3_f16, 4u);
     const Matrix* mat4x3_af = create<Matrix>(vec3_af, 4u);
     const Reference* ref_u32 =
-        create<Reference>(u32, ast::AddressSpace::kPrivate, ast::Access::kReadWrite);
-    const Struct* str_f32 = create<Struct>(Source{},
-                                           Sym("str_f32"),
+        create<Reference>(u32, builtin::AddressSpace::kPrivate, builtin::Access::kReadWrite);
+    const Struct* str_f32 = create<Struct>(Sym("str_f32"),
                                            utils::Vector{
                                                create<StructMember>(
-                                                   /* source */ Source{},
                                                    /* name */ Sym("x"),
                                                    /* type */ f32,
                                                    /* index */ 0u,
                                                    /* offset */ 0u,
                                                    /* align */ 4u,
                                                    /* size */ 4u,
-                                                   /* location */ std::nullopt),
+                                                   /* attributes */ type::StructMemberAttributes{}),
                                            },
                                            /* align*/ 4u,
                                            /* size*/ 4u,
                                            /* size_no_padding*/ 4u);
-    const Struct* str_f16 = create<Struct>(Source{},
-                                           Sym("str_f16"),
+    const Struct* str_f16 = create<Struct>(Sym("str_f16"),
                                            utils::Vector{
                                                create<StructMember>(
-                                                   /* source */ Source{},
                                                    /* name */ Sym("x"),
                                                    /* type */ f16,
                                                    /* index */ 0u,
                                                    /* offset */ 0u,
                                                    /* align */ 4u,
                                                    /* size */ 4u,
-                                                   /* location */ std::nullopt),
+                                                   /* attributes */ type::StructMemberAttributes{}),
                                            },
                                            /* align*/ 4u,
                                            /* size*/ 4u,
                                            /* size_no_padding*/ 4u);
-    Struct* str_af = create<Struct>(Source{},
-                                    Sym("str_af"),
+    Struct* str_af = create<Struct>(Sym("str_af"),
                                     utils::Vector{
                                         create<StructMember>(
-                                            /* source */ Source{},
                                             /* name */ Sym("x"),
                                             /* type */ af,
                                             /* index */ 0u,
                                             /* offset */ 0u,
                                             /* align */ 4u,
                                             /* size */ 4u,
-                                            /* location */ std::nullopt),
+                                            /* attributes */ type::StructMemberAttributes{}),
                                     },
                                     /* align*/ 4u,
                                     /* size*/ 4u,

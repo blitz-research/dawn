@@ -14,16 +14,11 @@
 
 #include "src/tint/ast/expression.h"
 
-#include "src/tint/sem/expression.h"
-#include "src/tint/sem/info.h"
-
 TINT_INSTANTIATE_TYPEINFO(tint::ast::Expression);
 
 namespace tint::ast {
 
 Expression::Expression(ProgramID pid, NodeID nid, const Source& src) : Base(pid, nid, src) {}
-
-Expression::Expression(Expression&&) = default;
 
 Expression::~Expression() = default;
 

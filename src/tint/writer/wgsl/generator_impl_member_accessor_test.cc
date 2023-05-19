@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/wgsl/test_helper.h"
+
+#include "gmock/gmock.h"
 
 namespace tint::writer::wgsl {
 namespace {
@@ -21,21 +24,22 @@ using WgslGeneratorImplTest = TestHelper;
 
 TEST_F(WgslGeneratorImplTest, EmitExpression_MemberAccessor) {
     auto* s = Structure("Data", utils::Vector{Member("mem", ty.f32())});
-    GlobalVar("str", ty.Of(s), ast::AddressSpace::kPrivate);
+    GlobalVar("str", ty.Of(s), builtin::AddressSpace::kPrivate);
 
     auto* expr = MemberAccessor("str", "mem");
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, expr);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "str.mem");
 }
 
 TEST_F(WgslGeneratorImplTest, EmitExpression_MemberAccessor_OfDref) {
     auto* s = Structure("Data", utils::Vector{Member("mem", ty.f32())});
-    GlobalVar("str", ty.Of(s), ast::AddressSpace::kPrivate);
+    GlobalVar("str", ty.Of(s), builtin::AddressSpace::kPrivate);
 
     auto* p = Let("p", AddressOf("str"));
     auto* expr = MemberAccessor(Deref("p"), "mem");
@@ -43,8 +47,9 @@ TEST_F(WgslGeneratorImplTest, EmitExpression_MemberAccessor_OfDref) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
+    utils::StringStream out;
+    gen.EmitExpression(out, expr);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(out.str(), "(*(p)).mem");
 }
 

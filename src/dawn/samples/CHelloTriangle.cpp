@@ -26,29 +26,29 @@ WGPURenderPipeline pipeline;
 WGPUTextureFormat swapChainFormat;
 
 void init() {
-    device = CreateCppDawnDevice().Release();
+    device = CreateCppDawnDevice().MoveToCHandle();
     queue = wgpuDeviceGetQueue(device);
-    swapchain = GetSwapChain().Release();
+    swapchain = GetSwapChain().MoveToCHandle();
     swapChainFormat = static_cast<WGPUTextureFormat>(GetPreferredSwapChainTextureFormat());
 
     const char* vs = R"(
         @vertex fn main(
             @builtin(vertex_index) VertexIndex : u32
-        ) -> @builtin(position) vec4<f32> {
-            var pos = array<vec2<f32>, 3>(
-                vec2<f32>( 0.0,  0.5),
-                vec2<f32>(-0.5, -0.5),
-                vec2<f32>( 0.5, -0.5)
+        ) -> @builtin(position) vec4f {
+            var pos = array(
+                vec2f( 0.0,  0.5),
+                vec2f(-0.5, -0.5),
+                vec2f( 0.5, -0.5)
             );
-            return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+            return vec4f(pos[VertexIndex], 0.0, 1.0);
         })";
-    WGPUShaderModule vsModule = utils::CreateShaderModule(device, vs).Release();
+    WGPUShaderModule vsModule = dawn::utils::CreateShaderModule(device, vs).MoveToCHandle();
 
     const char* fs = R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(1.0, 0.0, 0.0, 1.0);
         })";
-    WGPUShaderModule fsModule = utils::CreateShaderModule(device, fs).Release();
+    WGPUShaderModule fsModule = dawn::utils::CreateShaderModule(device, fs).MoveToCHandle();
 
     {
         WGPURenderPipelineDescriptor descriptor = {};
@@ -107,7 +107,6 @@ void frame() {
         colorAttachment.view = backbufferView;
         colorAttachment.resolveTarget = nullptr;
         colorAttachment.clearValue = {0.0f, 0.0f, 0.0f, 0.0f};
-        colorAttachment.clearColor = {NAN, NAN, NAN, NAN};
         colorAttachment.loadOp = WGPULoadOp_Clear;
         colorAttachment.storeOp = WGPUStoreOp_Store;
         renderpassInfo.colorAttachmentCount = 1;
@@ -143,8 +142,9 @@ int main(int argc, const char* argv[]) {
     init();
 
     while (!ShouldQuit()) {
-        utils::ScopedAutoreleasePool pool;
+        dawn::utils::ScopedAutoreleasePool pool;
+        ProcessEvents();
         frame();
-        utils::USleep(16000);
+        dawn::utils::USleep(16000);
     }
 }

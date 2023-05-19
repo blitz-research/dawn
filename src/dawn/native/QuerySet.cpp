@@ -54,8 +54,8 @@ MaybeError ValidateQuerySetDescriptor(DeviceBase* device, const QuerySetDescript
 
         case wgpu::QueryType::PipelineStatistics: {
             // TODO(crbug.com/1177506): Pipeline statistics query is not fully implemented.
-            // Disallow it as unsafe until the implementaion is completed.
-            DAWN_INVALID_IF(device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs),
+            // Allow it only as unsafe until the implementaion is completed.
+            DAWN_INVALID_IF(!device->AllowUnsafeAPIs(),
                             "Pipeline statistics queries are disallowed because they are not "
                             "fully implemented");
 
@@ -78,7 +78,7 @@ MaybeError ValidateQuerySetDescriptor(DeviceBase* device, const QuerySetDescript
         } break;
 
         case wgpu::QueryType::Timestamp:
-            DAWN_INVALID_IF(device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs),
+            DAWN_INVALID_IF(!device->AllowUnsafeAPIs(),
                             "Timestamp queries are disallowed because they may expose precise "
                             "timing information.");
 
@@ -111,14 +111,12 @@ QuerySetBase::QuerySetBase(DeviceBase* device, const QuerySetDescriptor* descrip
     GetObjectTrackingList()->Track(this);
 }
 
-QuerySetBase::QuerySetBase(DeviceBase* device) : ApiObjectBase(device, kLabelNotImplemented) {
-    GetObjectTrackingList()->Track(this);
-}
-
 QuerySetBase::QuerySetBase(DeviceBase* device,
                            const QuerySetDescriptor* descriptor,
                            ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag), mQueryType(descriptor->type), mQueryCount(descriptor->count) {}
+    : ApiObjectBase(device, tag, descriptor->label),
+      mQueryType(descriptor->type),
+      mQueryCount(descriptor->count) {}
 
 QuerySetBase::~QuerySetBase() {
     // Uninitialized or already destroyed
@@ -165,9 +163,6 @@ MaybeError QuerySetBase::ValidateCanUseInSubmitNow() const {
 }
 
 void QuerySetBase::APIDestroy() {
-    if (GetDevice()->ConsumedError(ValidateDestroy())) {
-        return;
-    }
     Destroy();
 }
 
@@ -177,11 +172,6 @@ wgpu::QueryType QuerySetBase::APIGetType() const {
 
 uint32_t QuerySetBase::APIGetCount() const {
     return mQueryCount;
-}
-
-MaybeError QuerySetBase::ValidateDestroy() const {
-    DAWN_TRY(GetDevice()->ValidateObject(this));
-    return {};
 }
 
 }  // namespace dawn::native

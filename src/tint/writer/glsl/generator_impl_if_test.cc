@@ -14,13 +14,15 @@
 
 #include "src/tint/writer/glsl/test_helper.h"
 
+#include "gmock/gmock.h"
+
 namespace tint::writer::glsl {
 namespace {
 
 using GlslGeneratorImplTest_If = TestHelper;
 
 TEST_F(GlslGeneratorImplTest_If, Emit_If) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* cond = Expr("cond");
     auto* body = Block(Return());
@@ -30,7 +32,8 @@ TEST_F(GlslGeneratorImplTest_If, Emit_If) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    gen.EmitStatement(i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   }
@@ -38,8 +41,8 @@ TEST_F(GlslGeneratorImplTest_If, Emit_If) {
 }
 
 TEST_F(GlslGeneratorImplTest_If, Emit_IfWithElseIf) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
-    GlobalVar("else_cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
+    GlobalVar("else_cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_cond = Expr("else_cond");
     auto* else_body = Block(Return());
@@ -52,8 +55,8 @@ TEST_F(GlslGeneratorImplTest_If, Emit_IfWithElseIf) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    gen.EmitStatement(i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else {
@@ -65,7 +68,7 @@ TEST_F(GlslGeneratorImplTest_If, Emit_IfWithElseIf) {
 }
 
 TEST_F(GlslGeneratorImplTest_If, Emit_IfWithElse) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_body = Block(Return());
 
@@ -77,8 +80,8 @@ TEST_F(GlslGeneratorImplTest_If, Emit_IfWithElse) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    gen.EmitStatement(i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else {
@@ -88,13 +91,11 @@ TEST_F(GlslGeneratorImplTest_If, Emit_IfWithElse) {
 }
 
 TEST_F(GlslGeneratorImplTest_If, Emit_IfWithMultiple) {
-    GlobalVar("cond", ty.bool_(), ast::AddressSpace::kPrivate);
-    GlobalVar("else_cond", ty.bool_(), ast::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.bool_(), builtin::AddressSpace::kPrivate);
+    GlobalVar("else_cond", ty.bool_(), builtin::AddressSpace::kPrivate);
 
     auto* else_cond = Expr("else_cond");
-
     auto* else_body = Block(Return());
-
     auto* else_body_2 = Block(Return());
 
     auto* cond = Expr("cond");
@@ -105,8 +106,8 @@ TEST_F(GlslGeneratorImplTest_If, Emit_IfWithMultiple) {
     GeneratorImpl& gen = Build();
 
     gen.increment_indent();
-
-    ASSERT_TRUE(gen.EmitStatement(i)) << gen.error();
+    gen.EmitStatement(i);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
     EXPECT_EQ(gen.result(), R"(  if (cond) {
     return;
   } else {

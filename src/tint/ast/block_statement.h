@@ -19,22 +19,29 @@
 
 #include "src/tint/ast/statement.h"
 
+// Forward declarations
+namespace tint::ast {
+class Attribute;
+}  // namespace tint::ast
+
 namespace tint::ast {
 
 /// A block statement
-class BlockStatement final : public Castable<BlockStatement, Statement> {
+class BlockStatement final : public utils::Castable<BlockStatement, Statement> {
   public:
     /// Constructor
     /// @param pid the identifier of the program that owns this node
     /// @param nid the unique node identifier
     /// @param source the block statement source
     /// @param statements the statements
+    /// @param attributes the block statement attributes
     BlockStatement(ProgramID pid,
                    NodeID nid,
                    const Source& source,
-                   utils::VectorRef<const Statement*> statements);
-    /// Move constructor
-    BlockStatement(BlockStatement&&);
+                   utils::VectorRef<const Statement*> statements,
+                   utils::VectorRef<const Attribute*> attributes);
+
+    /// Destructor
     ~BlockStatement() override;
 
     /// @returns true if the block has no statements
@@ -51,6 +58,9 @@ class BlockStatement final : public Castable<BlockStatement, Statement> {
 
     /// the statement list
     const utils::Vector<const Statement*, 8> statements;
+
+    /// the attribute list
+    const utils::Vector<const Attribute*, 4> attributes;
 };
 
 }  // namespace tint::ast

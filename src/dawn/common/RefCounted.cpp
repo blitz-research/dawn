@@ -15,8 +15,15 @@
 #include "dawn/common/RefCounted.h"
 
 #include <cstddef>
+#if defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#include <sanitizer/tsan_interface.h>
+#endif
+#endif
 
 #include "dawn/common/Assert.h"
+
+namespace dawn {
 
 static constexpr size_t kPayloadBits = 1;
 static constexpr uint64_t kPayloadMask = (uint64_t(1) << kPayloadBits) - 1;
@@ -68,6 +75,14 @@ bool RefCount::Decrement() {
         // Note that on ARM64 this will generate a `dmb ish` instruction which is a global
         // memory barrier, when an acquire load on mRefCount (using the `ldar` instruction)
         // should be enough and could end up being faster.
+
+        // https://github.com/google/sanitizers/issues/1415 There is false positive bug in TSAN
+        // when using standalone fence.
+#if defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+        __tsan_acquire(&mRefCount);
+#endif
+#endif
         std::atomic_thread_fence(std::memory_order_acquire);
         return true;
     }
@@ -95,6 +110,18 @@ void RefCounted::Release() {
     }
 }
 
+void RefCounted::ReleaseAndLockBeforeDestroy() {
+    if (mRefCount.Decrement()) {
+        LockAndDeleteThis();
+    }
+}
+
 void RefCounted::DeleteThis() {
     delete this;
 }
+
+void RefCounted::LockAndDeleteThis() {
+    DeleteThis();
+}
+
+}  // namespace dawn

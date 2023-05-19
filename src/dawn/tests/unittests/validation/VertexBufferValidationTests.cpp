@@ -20,6 +20,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class VertexBufferValidationTest : public ValidationTest {
   protected:
     void SetUp() override {
@@ -27,12 +30,12 @@ class VertexBufferValidationTest : public ValidationTest {
 
         // Placeholder vertex shader module
         vsModule = utils::CreateShaderModule(device, R"(
-            @vertex fn main() -> @builtin(position) vec4<f32> {
-                return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+            @vertex fn main() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 0.0);
             })");
         fsModule = utils::CreateShaderModule(device, R"(
-            @fragment fn main() -> @location(0) vec4<f32> {
-                return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(0.0, 1.0, 0.0, 1.0);
             })");
     }
 
@@ -53,11 +56,11 @@ class VertexBufferValidationTest : public ValidationTest {
             if (i != 0) {
                 vs << ", ";
             }
-            vs << "@location(" << i << ") a_position" << i << " : vec3<f32>\n";
+            vs << "@location(" << i << ") a_position" << i << " : vec3f\n";
         }
-        vs << ") -> @builtin(position) vec4<f32> {";
+        vs << ") -> @builtin(position) vec4f {";
 
-        vs << "return vec4<f32>(";
+        vs << "return vec4f(";
         for (unsigned int i = 0; i < bufferCount; ++i) {
             vs << "a_position" << i;
             if (i != bufferCount - 1) {
@@ -104,6 +107,61 @@ class VertexBufferValidationTest : public ValidationTest {
     wgpu::ShaderModule fsModule;
 };
 
+// Check that unset vertex buffer works.
+TEST_F(VertexBufferValidationTest, UnsetVertexBuffer) {
+    PlaceholderRenderPass renderPass(device);
+    wgpu::ShaderModule vsModule = MakeVertexShader(1);
+
+    wgpu::RenderPipeline pipeline = MakeRenderPipeline(vsModule, 1);
+
+    wgpu::Buffer vertexBuffer = MakeVertexBuffer();
+    wgpu::Buffer vb;
+
+    // Control case: set the vertex buffer needed by a pipeline in render pass is valid.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetPipeline(pipeline);
+        pass.SetVertexBuffer(0, vertexBuffer);
+        pass.Draw(3);
+        pass.End();
+        encoder.Finish();
+    }
+    // Error case: unset the vertex buffer needed by a pipeline in render pass is an error.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetPipeline(pipeline);
+        pass.SetVertexBuffer(0, vertexBuffer);
+        pass.SetVertexBuffer(0, vb);
+        pass.Draw(3);
+        pass.End();
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+
+    utils::ComboRenderBundleEncoderDescriptor renderBundleDesc = {};
+    renderBundleDesc.colorFormatsCount = 1;
+    renderBundleDesc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
+    // Control case: set the vertex buffer needed by a pipeline in render bundle encoder is valid.
+    {
+        wgpu::RenderBundleEncoder encoder = device.CreateRenderBundleEncoder(&renderBundleDesc);
+        encoder.SetPipeline(pipeline);
+        encoder.SetVertexBuffer(0, vertexBuffer);
+        encoder.Draw(3);
+        encoder.Finish();
+    }
+    // Error case: unset the vertex buffer needed by a pipeline in render bundle encoder is an
+    // error.
+    {
+        wgpu::RenderBundleEncoder encoder = device.CreateRenderBundleEncoder(&renderBundleDesc);
+        encoder.SetPipeline(pipeline);
+        encoder.SetVertexBuffer(0, vertexBuffer);
+        encoder.SetVertexBuffer(0, vb);
+        encoder.Draw(3);
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+}
+
 // Check that vertex buffers still count as bound if we switch the pipeline.
 TEST_F(VertexBufferValidationTest, VertexBuffersInheritedBetweenPipelines) {
     PlaceholderRenderPass renderPass(device);
@@ -139,6 +197,55 @@ TEST_F(VertexBufferValidationTest, VertexBuffersInheritedBetweenPipelines) {
         pass.End();
     }
     encoder.Finish();
+}
+
+// Check that inherited vertex buffers can be unset, and the unset operation does not impact
+// previous pipeline.
+TEST_F(VertexBufferValidationTest, UnsetInheritedVertexBuffers) {
+    PlaceholderRenderPass renderPass(device);
+    wgpu::ShaderModule vsModule2 = MakeVertexShader(2);
+    wgpu::ShaderModule vsModule1 = MakeVertexShader(1);
+
+    wgpu::RenderPipeline pipeline2 = MakeRenderPipeline(vsModule2, 2);
+    wgpu::RenderPipeline pipeline1 = MakeRenderPipeline(vsModule1, 1);
+
+    wgpu::Buffer vertexBuffer1 = MakeVertexBuffer();
+    wgpu::Buffer vertexBuffer2 = MakeVertexBuffer();
+    wgpu::Buffer vb;
+
+    // Control case: inherited vertex buffers can be unset, and the unset operation does not impact
+    // previous pipeline.
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetPipeline(pipeline2);
+        pass.SetVertexBuffer(0, vertexBuffer1);
+        pass.SetVertexBuffer(1, vertexBuffer2);
+        pass.Draw(3);
+        pass.SetPipeline(pipeline1);
+        pass.SetVertexBuffer(1, vb);
+        pass.Draw(3);
+        pass.End();
+        encoder.Finish();
+    }
+
+    // Error case: inherited vertex buffers can be unset, incorrect unset operation can make the
+    // pipeline lack of vertex buffer.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetPipeline(pipeline2);
+        pass.SetVertexBuffer(0, vertexBuffer1);
+        pass.SetVertexBuffer(1, vertexBuffer2);
+        pass.Draw(3);
+        pass.SetPipeline(pipeline1);
+        pass.SetVertexBuffer(1, vb);
+        pass.SetVertexBuffer(0, vb);
+        pass.Draw(3);
+        pass.End();
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
 }
 
 // Check that vertex buffers that are set are reset between render passes.
@@ -194,6 +301,7 @@ TEST_F(VertexBufferValidationTest, VertexBuffersNotInheritedBetweenRenderPasses)
 // Check validation of the vertex buffer slot for OOB.
 TEST_F(VertexBufferValidationTest, VertexBufferSlotValidation) {
     wgpu::Buffer buffer = MakeVertexBuffer();
+    wgpu::Buffer vb;
 
     PlaceholderRenderPass renderPass(device);
 
@@ -215,6 +323,24 @@ TEST_F(VertexBufferValidationTest, VertexBufferSlotValidation) {
         ASSERT_DEVICE_ERROR(encoder.Finish());
     }
 
+    // Control case: unset the last vertex buffer slot in render passes is ok.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetVertexBuffer(kMaxVertexBuffers - 1, vb);
+        pass.End();
+        encoder.Finish();
+    }
+
+    // Error case: unset past the last vertex buffer slot in render pass fails.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetVertexBuffer(kMaxVertexBuffers, vb);
+        pass.End();
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+
     utils::ComboRenderBundleEncoderDescriptor renderBundleDesc = {};
     renderBundleDesc.colorFormatsCount = 1;
     renderBundleDesc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
@@ -232,6 +358,32 @@ TEST_F(VertexBufferValidationTest, VertexBufferSlotValidation) {
         encoder.SetVertexBuffer(kMaxVertexBuffers, buffer, 0);
         ASSERT_DEVICE_ERROR(encoder.Finish());
     }
+
+    // Control case: unset the last vertex buffer slot in render bundles is ok.
+    {
+        wgpu::RenderBundleEncoder encoder = device.CreateRenderBundleEncoder(&renderBundleDesc);
+        encoder.SetVertexBuffer(kMaxVertexBuffers - 1, vb);
+        encoder.Finish();
+    }
+
+    // Error case: unset past the last vertex buffer slot in render bundle fails.
+    {
+        wgpu::RenderBundleEncoder encoder = device.CreateRenderBundleEncoder(&renderBundleDesc);
+        encoder.SetVertexBuffer(kMaxVertexBuffers, vb);
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+}
+
+// Test that it is valid to unset a slot which is not set before.
+TEST_F(VertexBufferValidationTest, UnsetANonSetSlot) {
+    wgpu::Buffer vb;
+
+    PlaceholderRenderPass renderPass(device);
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+    pass.SetVertexBuffer(0, vb);
+    pass.End();
+    encoder.Finish();
 }
 
 // Test that for OOB validation of vertex buffer offset and size.
@@ -302,6 +454,54 @@ TEST_F(VertexBufferValidationTest, VertexBufferOffsetOOBValidation) {
     {
         wgpu::RenderBundleEncoder encoder = device.CreateRenderBundleEncoder(&renderBundleDesc);
         encoder.SetVertexBuffer(0, buffer, 256 + 4, 0);
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+}
+
+// Test that both offset and size must be 0 when unset vertex buffer.
+TEST_F(VertexBufferValidationTest, UnsetVertexBufferWithInvalidOffsetAndSize) {
+    wgpu::Buffer buffer = MakeVertexBuffer();
+    wgpu::Buffer vb;
+
+    PlaceholderRenderPass renderPass(device);
+    // Control case, it valid when both offset and size are 0.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetVertexBuffer(0, buffer, 0, 256);
+        pass.SetVertexBuffer(0, vb, 0, 0);
+        pass.End();
+        encoder.Finish();
+    }
+
+    // It's valid to set size to wgpu::kWholeSize when unset vertex buffer and offset is 0, because
+    // kWholeSize of a null buffer is considered to be 0.
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetVertexBuffer(0, buffer, 0, 256);
+        pass.SetVertexBuffer(0, vb, 0, wgpu::kWholeSize);
+        pass.End();
+        encoder.Finish();
+    }
+
+    // Invalid offset
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetVertexBuffer(0, buffer, 0, 256);
+        pass.SetVertexBuffer(0, vb, 4, 0);
+        pass.End();
+        ASSERT_DEVICE_ERROR(encoder.Finish());
+    }
+
+    // Invalid size
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.SetVertexBuffer(0, buffer, 0, 256);
+        pass.SetVertexBuffer(0, vb, 0, 256);
+        pass.End();
         ASSERT_DEVICE_ERROR(encoder.Finish());
     }
 }
@@ -844,3 +1044,6 @@ TEST_F(VertexBufferValidationTest, DrawStrideLimitsVertexMultipleAttributes) {
     }
     ASSERT_DEVICE_ERROR(encoder.Finish());
 }
+
+}  // anonymous namespace
+}  // namespace dawn

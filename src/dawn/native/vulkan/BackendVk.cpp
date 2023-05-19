@@ -23,8 +23,8 @@
 #include "dawn/common/SystemUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/VulkanBackend.h"
-#include "dawn/native/vulkan/AdapterVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
+#include "dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
 
@@ -78,33 +78,26 @@ constexpr SkippedMessage kSkippedMessages[] = {
     {"SYNC-HAZARD-WRITE-AFTER-READ",
      "depth aspect during store with storeOp VK_ATTACHMENT_STORE_OP_STORE. Access info (usage: "
      "SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, prior_usage: "
-     "SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ, read_barriers: VK_PIPELINE_STAGE_2_NONE"},
+     "SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ, read_barriers: VkPipelineStageFlags2KHR(0)"},
     // Depth used in sampling
     {"SYNC-HAZARD-WRITE-AFTER-READ",
      "depth aspect during store with storeOp VK_ATTACHMENT_STORE_OP_STORE. Access info (usage: "
      "SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, prior_usage: "
-     "SYNC_FRAGMENT_SHADER_SHADER_SAMPLED_READ, read_barriers: VK_PIPELINE_STAGE_2_NONE"},
+     "SYNC_FRAGMENT_SHADER_SHADER_SAMPLED_READ, read_barriers: VkPipelineStageFlags2KHR(0)"},
     // Stencil used as storage
     {"SYNC-HAZARD-WRITE-AFTER-READ",
      "stencil aspect during store with stencilStoreOp VK_ATTACHMENT_STORE_OP_STORE. Access info "
      "(usage: SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, prior_usage: "
-     "SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ, read_barriers: VK_PIPELINE_STAGE_2_NONE"},
+     "SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ, read_barriers: VkPipelineStageFlags2KHR(0)"},
     // Stencil used in sampling (note no tests actually hit this)
     {"SYNC-HAZARD-WRITE-AFTER-READ",
      "stencil aspect during store with stencilStoreOp VK_ATTACHMENT_STORE_OP_STORE. Access info "
      "(usage: SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, prior_usage: "
-     "SYNC_FRAGMENT_SHADER_SHADER_SAMPLED_READ, read_barriers: VK_PIPELINE_STAGE_2_NONE"},
+     "SYNC_FRAGMENT_SHADER_SHADER_SAMPLED_READ, read_barriers: VkPipelineStageFlags2KHR(0)"},
 
     // http://anglebug.com/7513
     {"VUID-VkGraphicsPipelineCreateInfo-pStages-06896",
      "contains fragment shader state, but stages"},
-    // http://crbug.com/dawn/1627
-    {"VUID-vkCmdBindDescriptorSets-pDescriptorSets-00358",
-     "is empty (has no bindings). Use VK_NULL_HANDLE to indicate this set is unused if using "
-     "VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT"},
-    // http://crbug.com/dawn/1615
-    {"VUID-vkUpdateDescriptorSets-None-03047",
-     "Cannot call vkUpdateDescriptorSets() to perform write update on VkDescriptorSet"},
 
     // A warning that's generated on valid usage of the WebGPU API where a fragment output doesn't
     // have a corresponding attachment
@@ -130,6 +123,11 @@ static constexpr ICD kICDs[] = {
 
 // Suppress validation errors that are known. Returns false in that case.
 bool ShouldReportDebugMessage(const char* messageId, const char* message) {
+    // pMessageIdName may be NULL
+    if (messageId == nullptr) {
+        return true;
+    }
+
     for (const SkippedMessage& msg : kSkippedMessages) {
         if (strstr(messageId, msg.messageId) != nullptr &&
             strstr(message, msg.messageContents) != nullptr) {
@@ -224,8 +222,8 @@ const VulkanGlobalInfo& VulkanInstance::GetGlobalInfo() const {
     return mGlobalInfo;
 }
 
-const std::vector<VkPhysicalDevice>& VulkanInstance::GetPhysicalDevices() const {
-    return mPhysicalDevices;
+const std::vector<VkPhysicalDevice>& VulkanInstance::GetVkPhysicalDevices() const {
+    return mVkPhysicalDevices;
 }
 
 // static
@@ -310,7 +308,7 @@ MaybeError VulkanInstance::Initialize(const InstanceBase* instance, ICD icd) {
         DAWN_TRY(RegisterDebugUtils());
     }
 
-    DAWN_TRY_ASSIGN(mPhysicalDevices, GatherPhysicalDevices(mInstance, mFunctions));
+    DAWN_TRY_ASSIGN(mVkPhysicalDevices, GatherPhysicalDevices(mInstance, mFunctions));
 
     return {};
 }
@@ -459,7 +457,7 @@ Backend::Backend(InstanceBase* instance) : BackendConnection(instance, wgpu::Bac
 
 Backend::~Backend() = default;
 
-std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters() {
+std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverDefaultAdapters() {
     AdapterDiscoveryOptions options;
     auto result = DiscoverAdapters(&options);
     if (result.IsError()) {
@@ -469,14 +467,14 @@ std::vector<Ref<AdapterBase>> Backend::DiscoverDefaultAdapters() {
     return result.AcquireSuccess();
 }
 
-ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
+ResultOrError<std::vector<Ref<PhysicalDeviceBase>>> Backend::DiscoverAdapters(
     const AdapterDiscoveryOptionsBase* optionsBase) {
     ASSERT(optionsBase->backendType == WGPUBackendType_Vulkan);
 
     const AdapterDiscoveryOptions* options =
         static_cast<const AdapterDiscoveryOptions*>(optionsBase);
 
-    std::vector<Ref<AdapterBase>> adapters;
+    std::vector<Ref<PhysicalDeviceBase>> physicalDevices;
 
     InstanceBase* instance = GetInstance();
     for (ICD icd : kICDs) {
@@ -496,18 +494,18 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
             // Instance failed to initialize.
             continue;
         }
-        const std::vector<VkPhysicalDevice>& physicalDevices =
-            mVulkanInstances[icd]->GetPhysicalDevices();
-        for (uint32_t i = 0; i < physicalDevices.size(); ++i) {
-            Ref<Adapter> adapter =
-                AcquireRef(new Adapter(instance, mVulkanInstances[icd].Get(), physicalDevices[i]));
-            if (instance->ConsumedError(adapter->Initialize())) {
+        const std::vector<VkPhysicalDevice>& vkPhysicalDevices =
+            mVulkanInstances[icd]->GetVkPhysicalDevices();
+        for (uint32_t i = 0; i < vkPhysicalDevices.size(); ++i) {
+            Ref<PhysicalDevice> physicalDevice = AcquireRef(
+                new PhysicalDevice(instance, mVulkanInstances[icd].Get(), vkPhysicalDevices[i]));
+            if (instance->ConsumedError(physicalDevice->Initialize())) {
                 continue;
             }
-            adapters.push_back(std::move(adapter));
+            physicalDevices.push_back(std::move(physicalDevice));
         }
     }
-    return adapters;
+    return physicalDevices;
 }
 
 BackendConnection* Connect(InstanceBase* instance) {

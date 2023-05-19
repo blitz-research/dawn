@@ -1,14 +1,18 @@
+uint3 tint_ftou(float3 v) {
+  return ((v < (4294967040.0f).xxx) ? ((v < (0.0f).xxx) ? (0u).xxx : uint3(v)) : (4294967295u).xxx);
+}
+
 void marg8uintin() {
 }
 
-cbuffer cbuffer_uniforms : register(b0, space0) {
+cbuffer cbuffer_uniforms : register(b0) {
   uint4 uniforms[3];
 };
-RWByteAddressBuffer indices : register(u10, space0);
-RWByteAddressBuffer positions : register(u11, space0);
-RWByteAddressBuffer counters : register(u20, space0);
-RWByteAddressBuffer LUT : register(u21, space0);
-RWByteAddressBuffer dbg : register(u50, space0);
+RWByteAddressBuffer indices : register(u10);
+RWByteAddressBuffer positions : register(u11);
+RWByteAddressBuffer counters : register(u20);
+RWByteAddressBuffer LUT : register(u21);
+RWByteAddressBuffer dbg : register(u50);
 
 float3 toVoxelPos(float3 position) {
   float3 bbMin = float3(asfloat(uniforms[1].x), asfloat(uniforms[1].y), asfloat(uniforms[1].z));
@@ -23,7 +27,7 @@ float3 toVoxelPos(float3 position) {
 }
 
 uint toIndex1D(uint gridSize, float3 voxelPos) {
-  uint3 icoord = uint3(voxelPos);
+  uint3 icoord = tint_ftou(voxelPos);
   return ((icoord.x + (gridSize * icoord.y)) + ((gridSize * gridSize) * icoord.z));
 }
 
@@ -36,10 +40,10 @@ uint tint_mod(uint lhs, uint rhs) {
 }
 
 uint3 toIndex4D(uint gridSize, uint index) {
-  uint z_1 = tint_div(gridSize, (index * index));
-  uint y_1 = tint_div((gridSize - ((gridSize * gridSize) * z_1)), gridSize);
-  uint x_1 = tint_mod(index, gridSize);
-  return uint3(z_1, y_1, y_1);
+  uint z = tint_div(gridSize, (index * index));
+  uint y = tint_div((gridSize - ((gridSize * gridSize) * z)), gridSize);
+  uint x = tint_mod(index, gridSize);
+  return uint3(z, y, y);
 }
 
 float3 loadPosition(uint vertexIndex) {
@@ -47,16 +51,16 @@ float3 loadPosition(uint vertexIndex) {
   return position;
 }
 
-uint tint_atomicLoad(RWByteAddressBuffer buffer, uint offset) {
+uint countersatomicLoad(uint offset) {
   uint value = 0;
-  buffer.InterlockedOr(offset, 0, value);
+  counters.InterlockedOr(offset, 0, value);
   return value;
 }
 
 
-int tint_atomicLoad_1(RWByteAddressBuffer buffer, uint offset) {
+int LUTatomicLoad(uint offset) {
   int value = 0;
-  buffer.InterlockedOr(offset, 0, value);
+  LUT.InterlockedOr(offset, 0, value);
   return value;
 }
 
@@ -64,19 +68,19 @@ int tint_atomicLoad_1(RWByteAddressBuffer buffer, uint offset) {
 void doIgnore() {
   uint g43 = uniforms[0].x;
   uint kj6 = dbg.Load(20u);
-  uint b53 = tint_atomicLoad(counters, 0u);
+  uint b53 = countersatomicLoad(0u);
   uint rwg = indices.Load(0u);
   float rb5 = asfloat(positions.Load(0u));
-  int g55 = tint_atomicLoad_1(LUT, 0u);
+  int g55 = LUTatomicLoad(0u);
 }
 
 struct tint_symbol_1 {
   uint3 GlobalInvocationID : SV_DispatchThreadID;
 };
 
-int tint_atomicAdd(RWByteAddressBuffer buffer, uint offset, int value) {
+int LUTatomicAdd(uint offset, int value) {
   int original_value = 0;
-  buffer.InterlockedAdd(offset, value, original_value);
+  LUT.InterlockedAdd(offset, value, original_value);
   return original_value;
 }
 
@@ -96,7 +100,7 @@ void main_count_inner(uint3 GlobalInvocationID) {
   float3 center = (((p0 + p2) + p1) / 3.0f);
   float3 voxelPos = toVoxelPos(p1);
   uint lIndex = toIndex1D(uniforms[0].y, p0);
-  int triangleOffset = tint_atomicAdd(LUT, (4u * i1), 1);
+  int triangleOffset = LUTatomicAdd((4u * i1), 1);
 }
 
 [numthreads(128, 1, 1)]

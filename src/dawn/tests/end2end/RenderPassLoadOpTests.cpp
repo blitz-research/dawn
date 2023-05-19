@@ -24,6 +24,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr static unsigned int kRTSize = 16;
 
 class DrawQuad {
@@ -82,21 +85,21 @@ class RenderPassLoadOpTests : public DawnTest {
         // draws a blue quad on the right half of the screen
         const char* vsSource = R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 6>(
-                    vec2<f32>( 0.0, -1.0),
-                    vec2<f32>( 1.0, -1.0),
-                    vec2<f32>( 0.0,  1.0),
-                    vec2<f32>( 0.0,  1.0),
-                    vec2<f32>( 1.0, -1.0),
-                    vec2<f32>( 1.0,  1.0));
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f( 0.0, -1.0),
+                    vec2f( 1.0, -1.0),
+                    vec2f( 0.0,  1.0),
+                    vec2f( 0.0,  1.0),
+                    vec2f( 1.0, -1.0),
+                    vec2f( 1.0,  1.0));
 
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             })";
 
         const char* fsSource = R"(
-            @fragment fn main() -> @location(0) vec4<f32> {
-                return vec4<f32>(0.0, 0.0, 1.0, 1.0);
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(0.0, 0.0, 1.0, 1.0);
             })";
         blueQuad = DrawQuad(device, vsSource, fsSource);
     }
@@ -714,8 +717,12 @@ TEST_P(RenderPassLoadOpTests, MixedUseOfLoadOpLoadAndLoadOpClearWithBigIntegerVa
 }
 
 DAWN_INSTANTIATE_TEST(RenderPassLoadOpTests,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

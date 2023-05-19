@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/msl/test_helper.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -28,13 +29,13 @@ TEST_F(MslGeneratorImplTest, IndexAccessor) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "ary[5]");
 }
 
 TEST_F(MslGeneratorImplTest, IndexAccessor_OfDref) {
-    GlobalVar("ary", ty.array<i32, 10>(), ast::AddressSpace::kPrivate);
+    GlobalVar("ary", ty.array<i32, 10>(), builtin::AddressSpace::kPrivate);
 
     auto* p = Let("p", AddressOf("ary"));
     auto* expr = IndexAccessor(Deref("p"), 5_i);
@@ -42,8 +43,8 @@ TEST_F(MslGeneratorImplTest, IndexAccessor_OfDref) {
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "(*(p))[5]");
 }
 

@@ -18,9 +18,10 @@
 #include "src/tint/ast/call_statement.h"
 #include "src/tint/ast/variable_decl_statement.h"
 #include "src/tint/debug.h"
-#include "src/tint/demangler.h"
-#include "src/tint/sem/expression.h"
+#include "src/tint/sem/type_expression.h"
+#include "src/tint/sem/value_expression.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/switch.h"
 #include "src/tint/utils/compiler_macros.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -75,7 +76,7 @@ ProgramBuilder ProgramBuilder::Wrap(const Program* program) {
     builder.ast_ =
         builder.create<ast::Module>(program->AST().source, program->AST().GlobalDeclarations());
     builder.sem_ = sem::Info::Wrap(program->Sem());
-    builder.symbols_ = program->Symbols();
+    builder.symbols_.Wrap(program->Symbols());
     builder.diagnostics_ = program->Diagnostics();
     return builder;
 }
@@ -97,8 +98,10 @@ void ProgramBuilder::AssertNotMoved() const {
 }
 
 const type::Type* ProgramBuilder::TypeOf(const ast::Expression* expr) const {
-    auto* sem = Sem().Get(expr);
-    return sem ? sem->Type() : nullptr;
+    return tint::Switch(
+        Sem().Get(expr),  //
+        [](const sem::ValueExpression* e) { return e->Type(); },
+        [](const sem::TypeExpression* e) { return e->Type(); });
 }
 
 const type::Type* ProgramBuilder::TypeOf(const ast::Variable* var) const {
@@ -106,29 +109,8 @@ const type::Type* ProgramBuilder::TypeOf(const ast::Variable* var) const {
     return sem ? sem->Type() : nullptr;
 }
 
-const type::Type* ProgramBuilder::TypeOf(const ast::Type* type) const {
-    return Sem().Get(type);
-}
-
 const type::Type* ProgramBuilder::TypeOf(const ast::TypeDecl* type_decl) const {
     return Sem().Get(type_decl);
-}
-
-std::string ProgramBuilder::FriendlyName(const ast::Type* type) const {
-    TINT_ASSERT_PROGRAM_IDS_EQUAL(ProgramBuilder, type, ID());
-    return type ? type->FriendlyName(Symbols()) : "<null>";
-}
-
-std::string ProgramBuilder::FriendlyName(const type::Type* type) const {
-    return type ? type->FriendlyName(Symbols()) : "<null>";
-}
-
-std::string ProgramBuilder::FriendlyName(std::nullptr_t) const {
-    return "<null>";
-}
-
-const ast::TypeName* ProgramBuilder::TypesBuilder::Of(const ast::TypeDecl* decl) const {
-    return type_name(decl->name);
 }
 
 ProgramBuilder::TypesBuilder::TypesBuilder(ProgramBuilder* pb) : builder(pb) {}

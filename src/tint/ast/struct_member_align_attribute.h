@@ -24,7 +24,8 @@
 namespace tint::ast {
 
 /// A struct member align attribute
-class StructMemberAlignAttribute final : public Castable<StructMemberAlignAttribute, Attribute> {
+class StructMemberAlignAttribute final
+    : public utils::Castable<StructMemberAlignAttribute, Attribute> {
   public:
     /// constructor
     /// @param pid the identifier of the program that owns this node
@@ -34,7 +35,7 @@ class StructMemberAlignAttribute final : public Castable<StructMemberAlignAttrib
     StructMemberAlignAttribute(ProgramID pid,
                                NodeID nid,
                                const Source& src,
-                               const ast::Expression* align);
+                               const Expression* align);
     ~StructMemberAlignAttribute() override;
 
     /// @returns the WGSL name for the attribute
@@ -47,7 +48,7 @@ class StructMemberAlignAttribute final : public Castable<StructMemberAlignAttrib
     const StructMemberAlignAttribute* Clone(CloneContext* ctx) const override;
 
     /// The align expression
-    const ast::Expression* const expr;
+    const Expression* const expr;
 };
 
 }  // namespace tint::ast

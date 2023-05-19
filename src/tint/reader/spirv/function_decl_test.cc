@@ -16,6 +16,7 @@
 #include "src/tint/reader/spirv/function.h"
 #include "src/tint/reader/spirv/parser_impl_test_helper.h"
 #include "src/tint/reader/spirv/spirv_tools_helpers_test.h"
+#include "src/tint/utils/string_stream.h"
 
 namespace tint::reader::spirv {
 namespace {
@@ -34,7 +35,7 @@ std::string Preamble() {
 /// @returns a SPIR-V assembly segment which assigns debug names
 /// to particular IDs.
 std::string Names(std::vector<std::string> ids) {
-    std::ostringstream outs;
+    utils::StringStream outs;
     for (auto& id : ids) {
         outs << "    OpName %" << id << " \"" << id << "\"\n";
     }
@@ -185,7 +186,7 @@ TEST_F(SpvParserTest, Emit_FunctionDecl_ParamPtrTexture_ParamPtrSampler) {
 
     auto got = test::ToString(p->program());
     std::string expect = R"(fn x_200(x_14 : texture_2d<f32>, x_15 : sampler) {
-  let x_20 : vec4<f32> = textureSample(x_14, x_15, vec2<f32>());
+  let x_20 : vec4f = textureSample(x_14, x_15, vec2f());
   return;
 }
 )";
@@ -215,7 +216,7 @@ TEST_F(SpvParserTest, Emit_FunctionDecl_ParamTexture_ParamSampler) {
 
     auto got = test::ToString(p->program());
     std::string expect = R"(fn x_200(x_14 : texture_2d<f32>, x_15 : sampler) {
-  let x_20 : vec4<f32> = textureSample(x_14, x_15, vec2<f32>());
+  let x_20 : vec4f = textureSample(x_14, x_15, vec2f());
   return;
 }
 )";

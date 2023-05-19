@@ -23,38 +23,38 @@ namespace {
 using BuilderTest = TestHelper;
 
 TEST_F(BuilderTest, Bitcast) {
-    auto* bitcast = create<ast::BitcastExpression>(ty.u32(), Expr(2.4_f));
+    auto* bitcast = Bitcast<u32>(Expr(2.4_f));
 
     WrapInFunction(bitcast);
 
     spirv::Builder& b = Build();
 
-    b.push_function(Function{});
+    b.PushFunctionForTesting();
     EXPECT_EQ(b.GenerateBitcastExpression(bitcast), 1u);
 
-    EXPECT_EQ(DumpInstructions(b.types()), R"(%2 = OpTypeInt 32 0
+    EXPECT_EQ(DumpInstructions(b.Module().Types()), R"(%2 = OpTypeInt 32 0
 %3 = OpTypeFloat 32
 %4 = OpConstant %3 2.4000001
 )");
-    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+    EXPECT_EQ(DumpInstructions(b.CurrentFunction().instructions()),
               R"(%1 = OpBitcast %2 %4
 )");
 }
 
 TEST_F(BuilderTest, Bitcast_DuplicateType) {
-    auto* bitcast = create<ast::BitcastExpression>(ty.f32(), Expr(2.4_f));
+    auto* bitcast = Bitcast<f32>(Expr(2.4_f));
 
     WrapInFunction(bitcast);
 
     spirv::Builder& b = Build();
 
-    b.push_function(Function{});
+    b.PushFunctionForTesting();
     EXPECT_EQ(b.GenerateBitcastExpression(bitcast), 1u);
 
-    EXPECT_EQ(DumpInstructions(b.types()), R"(%2 = OpTypeFloat 32
+    EXPECT_EQ(DumpInstructions(b.Module().Types()), R"(%2 = OpTypeFloat 32
 %3 = OpConstant %2 2.4000001
 )");
-    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+    EXPECT_EQ(DumpInstructions(b.CurrentFunction().instructions()),
               R"(%1 = OpCopyObject %2 %3
 )");
 }

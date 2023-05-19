@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/utils/string_stream.h"
 #include "src/tint/writer/msl/test_helper.h"
 
 namespace tint::writer::msl {
@@ -21,39 +22,39 @@ using MslGeneratorImplTest = TestHelper;
 
 TEST_F(MslGeneratorImplTest, EmitExpression_MemberAccessor) {
     GlobalVar("str", ty.Of(Structure("my_str", utils::Vector{Member("mem", ty.f32())})),
-              ast::AddressSpace::kPrivate);
+              builtin::AddressSpace::kPrivate);
     auto* expr = MemberAccessor("str", "mem");
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
 
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.Diagnostics();
     EXPECT_EQ(out.str(), "str.mem");
 }
 
 TEST_F(MslGeneratorImplTest, EmitExpression_MemberAccessor_Swizzle_xyz) {
-    GlobalVar("my_vec", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = MemberAccessor("my_vec", "xyz");
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
-    EXPECT_EQ(out.str(), "float4(my_vec).xyz");
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.Diagnostics();
+    EXPECT_EQ(out.str(), "my_vec.xyz");
 }
 
 TEST_F(MslGeneratorImplTest, EmitExpression_MemberAccessor_Swizzle_gbr) {
-    GlobalVar("my_vec", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
 
     auto* expr = MemberAccessor("my_vec", "gbr");
     WrapInFunction(expr);
 
     GeneratorImpl& gen = Build();
-    std::stringstream out;
-    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.error();
-    EXPECT_EQ(out.str(), "float4(my_vec).gbr");
+    utils::StringStream out;
+    ASSERT_TRUE(gen.EmitExpression(out, expr)) << gen.Diagnostics();
+    EXPECT_EQ(out.str(), "my_vec.gbr");
 }
 
 }  // namespace

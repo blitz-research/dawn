@@ -18,6 +18,8 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+
 VideoViewsTestBackend::PlatformTexture::PlatformTexture(wgpu::Texture&& texture)
     : wgpuTexture(texture) {}
 VideoViewsTestBackend::PlatformTexture::~PlatformTexture() = default;
@@ -71,45 +73,58 @@ std::vector<uint8_t> VideoViewsTests::GetTestTextureData(wgpu::TextureFormat for
     constexpr uint8_t Yu = kYellowYUVColor[kYUVChromaPlaneIndex].r;
     constexpr uint8_t Yv = kYellowYUVColor[kYUVChromaPlaneIndex].g;
 
+    constexpr uint8_t Wy = kWhiteYUVColor[kYUVLumaPlaneIndex].r;
+    constexpr uint8_t Wu = kWhiteYUVColor[kYUVChromaPlaneIndex].r;
+    constexpr uint8_t Wv = kWhiteYUVColor[kYUVChromaPlaneIndex].g;
+
+    constexpr uint8_t Ry = kRedYUVColor[kYUVLumaPlaneIndex].r;
+    constexpr uint8_t Ru = kRedYUVColor[kYUVChromaPlaneIndex].r;
+    constexpr uint8_t Rv = kRedYUVColor[kYUVChromaPlaneIndex].g;
+
+    constexpr uint8_t By = kBlueYUVColor[kYUVLumaPlaneIndex].r;
+    constexpr uint8_t Bu = kBlueYUVColor[kYUVChromaPlaneIndex].r;
+    constexpr uint8_t Bv = kBlueYUVColor[kYUVChromaPlaneIndex].g;
+
     switch (format) {
         // The first 16 bytes is the luma plane (Y), followed by the chroma plane (UV) which
         // is half the number of bytes (subsampled by 2) but same bytes per line as luma
         // plane.
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
             if (isCheckerboard) {
-                constexpr uint8_t Wy = kWhiteYUVColor[kYUVLumaPlaneIndex].r;
-                constexpr uint8_t Wu = kWhiteYUVColor[kYUVChromaPlaneIndex].r;
-                constexpr uint8_t Wv = kWhiteYUVColor[kYUVChromaPlaneIndex].g;
-
-                constexpr uint8_t Ry = kRedYUVColor[kYUVLumaPlaneIndex].r;
-                constexpr uint8_t Ru = kRedYUVColor[kYUVChromaPlaneIndex].r;
-                constexpr uint8_t Rv = kRedYUVColor[kYUVChromaPlaneIndex].g;
-
-                constexpr uint8_t By = kBlueYUVColor[kYUVLumaPlaneIndex].r;
-                constexpr uint8_t Bu = kBlueYUVColor[kYUVChromaPlaneIndex].r;
-                constexpr uint8_t Bv = kBlueYUVColor[kYUVChromaPlaneIndex].g;
-
-                // clang-format off
-                        return {
-                            Wy, Wy, Ry, Ry,  // plane 0, start + 0
-                            Wy, Wy, Ry, Ry,
-                            Yy, Yy, By, By,
-                            Yy, Yy, By, By,
-                            Wu, Wv, Ru, Rv,  // plane 1, start + 16
-                            Yu, Yv, Bu, Bv,
-                        };
-                // clang-format on
+                return {
+                    Wy, Wy, Ry, Ry,  // plane 0, start + 0
+                    Wy, Wy, Ry, Ry,  //
+                    Yy, Yy, By, By,  //
+                    Yy, Yy, By, By,  //
+                    Wu, Wv, Ru, Rv,  // plane 1, start + 16
+                    Yu, Yv, Bu, Bv,  //
+                };
             } else {
-                // clang-format off
-                        return {
-                            Yy, Yy, Yy, Yy,  // plane 0, start + 0
-                            Yy, Yy, Yy, Yy,
-                            Yy, Yy, Yy, Yy,
-                            Yy, Yy, Yy, Yy,
-                            Yu, Yv, Yu, Yv,  // plane 1, start + 16
-                            Yu, Yv, Yu, Yv,
-                        };
-                // clang-format on
+                return {
+                    Yy, Yy, Yy, Yy,  // plane 0, start + 0
+                    Yy, Yy, Yy, Yy,  //
+                    Yy, Yy, Yy, Yy,  //
+                    Yy, Yy, Yy, Yy,  //
+                    Yu, Yv, Yu, Yv,  // plane 1, start + 16
+                    Yu, Yv, Yu, Yv,  //
+                };
+            }
+        case wgpu::TextureFormat::RGBA8Unorm:
+            // Combines both NV12 planes by directly mapping back to RGB: R=Y, G=U, B=V.
+            if (isCheckerboard) {
+                return {
+                    Yy, Yu, Yv, Yy, Yu, Yv, By, Bu, Bv, By, Bu, Bv,  //
+                    Yy, Yu, Yv, Yy, Yu, Yv, By, Bu, Bv, By, Bu, Bv,  //
+                    Wy, Wu, Wv, Wy, Wu, Wv, Ry, Ru, Rv, Ry, Ru, Rv,  //
+                    Wy, Wu, Wv, Wy, Wu, Wv, Ry, Ru, Rv, Ry, Ru, Rv,  //
+                };
+            } else {
+                return {
+                    Yy, Yu, Yv, Yy, Yu, Yv, Yy, Yu, Yv, Yy, Yu, Yv,  //
+                    Yy, Yu, Yv, Yy, Yu, Yv, Yy, Yu, Yv, Yy, Yu, Yv,  //
+                    Yy, Yu, Yv, Yy, Yu, Yv, Yy, Yu, Yv, Yy, Yu, Yv,  //
+                    Yy, Yu, Yv, Yy, Yu, Yv, Yy, Yu, Yv, Yy, Yu, Yv,  //
+                };
             }
         default:
             UNREACHABLE();
@@ -174,22 +189,22 @@ wgpu::ShaderModule VideoViewsTests::GetTestVertexShaderModule() const {
     return utils::CreateShaderModule(device, R"(
                 struct VertexOut {
                     @location(0) texCoord : vec2 <f32>,
-                    @builtin(position) position : vec4<f32>,
+                    @builtin(position) position : vec4f,
                 }
 
                 @vertex
                 fn main(@builtin(vertex_index) VertexIndex : u32) -> VertexOut {
-                    var pos = array<vec2<f32>, 6>(
-                        vec2<f32>(-1.0, 1.0),
-                        vec2<f32>(-1.0, -1.0),
-                        vec2<f32>(1.0, -1.0),
-                        vec2<f32>(-1.0, 1.0),
-                        vec2<f32>(1.0, -1.0),
-                        vec2<f32>(1.0, 1.0)
+                    var pos = array(
+                        vec2f(-1.0, 1.0),
+                        vec2f(-1.0, -1.0),
+                        vec2f(1.0, -1.0),
+                        vec2f(-1.0, 1.0),
+                        vec2f(1.0, -1.0),
+                        vec2f(1.0, 1.0)
                     );
                     var output : VertexOut;
-                    output.position = vec4<f32>(pos[VertexIndex], 0.0, 1.0);
-                    output.texCoord = vec2<f32>(output.position.xy * 0.5) + vec2<f32>(0.5, 0.5);
+                    output.position = vec4f(pos[VertexIndex], 0.0, 1.0);
+                    output.texCoord = vec2f(output.position.xy * 0.5) + vec2f(0.5, 0.5);
                     return output;
             })");
 }
@@ -204,6 +219,8 @@ TEST_P(VideoViewsTests, CreateVideoTextureWithoutInitializedData) {
     ASSERT_NE(platformTexture.get(), nullptr);
     mBackend->DestroyVideoTextureForTest(std::move(platformTexture));
 }
+
+namespace {
 
 // Samples the luminance (Y) plane from an imported NV12 texture into a single channel of an RGBA
 // output attachment and checks for the expected pixel value in the rendered quad.
@@ -231,9 +248,9 @@ TEST_P(VideoViewsTests, NV12SampleYtoR) {
             @group(0) @binding(1) var texture : texture_2d<f32>;
 
             @fragment
-            fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
                let y : f32 = textureSample(texture, sampler0, texCoord).r;
-               return vec4<f32>(y, 0.0, 0.0, 1.0);
+               return vec4f(y, 0.0, 0.0, 1.0);
             })");
 
     utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(
@@ -290,10 +307,10 @@ TEST_P(VideoViewsTests, NV12SampleUVtoRG) {
             @group(0) @binding(1) var texture : texture_2d<f32>;
 
             @fragment
-            fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
                let u : f32 = textureSample(texture, sampler0, texCoord).r;
                let v : f32 = textureSample(texture, sampler0, texCoord).g;
-               return vec4<f32>(u, v, 0.0, 1.0);
+               return vec4f(u, v, 0.0, 1.0);
             })");
 
     utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(
@@ -323,8 +340,8 @@ TEST_P(VideoViewsTests, NV12SampleUVtoRG) {
     mBackend->DestroyVideoTextureForTest(std::move(platformTexture));
 }
 
-// Renders a NV12 "checkerboard" texture into a RGB quad then checks the color at specific
-// points to ensure the image has not been flipped.
+// Renders a NV12 "checkerboard" texture into a RGB quad, then checks the the entire
+// contents to ensure the image has not been flipped.
 TEST_P(VideoViewsTests, NV12SampleYUVtoRGB) {
     std::unique_ptr<VideoViewsTestBackend::PlatformTexture> platformTexture =
         mBackend->CreateVideoTextureForTest(wgpu::TextureFormat::R8BG8Biplanar420Unorm,
@@ -356,11 +373,11 @@ TEST_P(VideoViewsTests, NV12SampleYUVtoRGB) {
             @group(0) @binding(2) var chromaTexture : texture_2d<f32>;
 
             @fragment
-            fn main(@location(0) texCoord : vec2<f32>) -> @location(0) vec4<f32> {
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
                let y : f32 = textureSample(lumaTexture, sampler0, texCoord).r;
                let u : f32 = textureSample(chromaTexture, sampler0, texCoord).r;
                let v : f32 = textureSample(chromaTexture, sampler0, texCoord).g;
-               return vec4<f32>(y, u, v, 1.0);
+               return vec4f(y, u, v, 1.0);
             })");
 
     utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(
@@ -385,28 +402,94 @@ TEST_P(VideoViewsTests, NV12SampleYUVtoRGB) {
     wgpu::CommandBuffer commands = encoder.Finish();
     queue.Submit(1, &commands);
 
-    // Test four corners of the checkerboard image (YUV color space).
-    utils::RGBA8 yellowYUV(kYellowYUVColor[kYUVLumaPlaneIndex].r,
-                           kYellowYUVColor[kYUVChromaPlaneIndex].r,
-                           kYellowYUVColor[kYUVChromaPlaneIndex].g, 0xFF);
-    EXPECT_PIXEL_RGBA8_EQ(yellowYUV, renderPass.color, 0, 0);  // top left
+    std::vector<uint8_t> expectedData = GetTestTextureData(wgpu::TextureFormat::RGBA8Unorm, true);
+    std::vector<utils::RGBA8> expectedRGBA;
+    for (uint8_t i = 0; i < expectedData.size(); i += 3) {
+        expectedRGBA.push_back({expectedData[i], expectedData[i + 1], expectedData[i + 2], 0xFF});
+    }
 
-    utils::RGBA8 redYUV(kRedYUVColor[kYUVLumaPlaneIndex].r, kRedYUVColor[kYUVChromaPlaneIndex].r,
-                        kRedYUVColor[kYUVChromaPlaneIndex].g, 0xFF);
-    EXPECT_PIXEL_RGBA8_EQ(redYUV, renderPass.color, kYUVImageDataWidthInTexels - 1,
-                          kYUVImageDataHeightInTexels - 1);  // bottom right
+    EXPECT_TEXTURE_EQ(expectedRGBA.data(), renderPass.color, {0, 0},
+                      {kYUVImageDataWidthInTexels, kYUVImageDataHeightInTexels});
+    mBackend->DestroyVideoTextureForTest(std::move(platformTexture));
+}
 
-    utils::RGBA8 blueYUV(kBlueYUVColor[kYUVLumaPlaneIndex].r, kBlueYUVColor[kYUVChromaPlaneIndex].r,
-                         kBlueYUVColor[kYUVChromaPlaneIndex].g, 0xFF);
-    EXPECT_PIXEL_RGBA8_EQ(blueYUV, renderPass.color, kYUVImageDataWidthInTexels - 1,
-                          0);  // top right
+// Renders a NV12 "checkerboard" texture into a RGB quad with two samplers, then checks the the
+// entire contents to ensure the image has not been flipped.
+TEST_P(VideoViewsTests, NV12SampleYUVtoRGBMultipleSamplers) {
+    std::unique_ptr<VideoViewsTestBackend::PlatformTexture> platformTexture =
+        mBackend->CreateVideoTextureForTest(wgpu::TextureFormat::R8BG8Biplanar420Unorm,
+                                            wgpu::TextureUsage::TextureBinding,
+                                            /*isCheckerboard*/ true,
+                                            /*initialized*/ true);
+    ASSERT_NE(platformTexture.get(), nullptr);
+    if (!platformTexture->CanWrapAsWGPUTexture()) {
+        mBackend->DestroyVideoTextureForTest(std::move(platformTexture));
+        GTEST_SKIP() << "Skipped because not supported.";
+    }
 
-    utils::RGBA8 whiteYUV(kWhiteYUVColor[kYUVLumaPlaneIndex].r,
-                          kWhiteYUVColor[kYUVChromaPlaneIndex].r,
-                          kWhiteYUVColor[kYUVChromaPlaneIndex].g, 0xFF);
-    EXPECT_PIXEL_RGBA8_EQ(whiteYUV, renderPass.color, 0,
-                          kYUVImageDataHeightInTexels - 1);  // bottom left
+    wgpu::TextureViewDescriptor lumaViewDesc;
+    lumaViewDesc.format = wgpu::TextureFormat::R8Unorm;
+    lumaViewDesc.aspect = wgpu::TextureAspect::Plane0Only;
+    wgpu::TextureView lumaTextureView = platformTexture->wgpuTexture.CreateView(&lumaViewDesc);
+
+    wgpu::TextureViewDescriptor chromaViewDesc;
+    chromaViewDesc.format = wgpu::TextureFormat::RG8Unorm;
+    chromaViewDesc.aspect = wgpu::TextureAspect::Plane1Only;
+    wgpu::TextureView chromaTextureView = platformTexture->wgpuTexture.CreateView(&chromaViewDesc);
+
+    utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
+    renderPipelineDescriptor.vertex.module = GetTestVertexShaderModule();
+
+    renderPipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
+            @group(0) @binding(0) var sampler0 : sampler;
+            @group(0) @binding(1) var sampler1 : sampler;
+            @group(0) @binding(2) var lumaTexture : texture_2d<f32>;
+            @group(0) @binding(3) var chromaTexture : texture_2d<f32>;
+
+            @fragment
+            fn main(@location(0) texCoord : vec2f) -> @location(0) vec4f {
+               let y : f32 = textureSample(lumaTexture, sampler0, texCoord).r;
+               let u : f32 = textureSample(chromaTexture, sampler1, texCoord).r;
+               let v : f32 = textureSample(chromaTexture, sampler1, texCoord).g;
+               return vec4f(y, u, v, 1.0);
+            })");
+
+    utils::BasicRenderPass renderPass = utils::CreateBasicRenderPass(
+        device, kYUVImageDataWidthInTexels, kYUVImageDataHeightInTexels);
+    renderPipelineDescriptor.cTargets[0].format = renderPass.colorFormat;
+
+    wgpu::RenderPipeline renderPipeline = device.CreateRenderPipeline(&renderPipelineDescriptor);
+
+    wgpu::Sampler sampler0 = device.CreateSampler();
+    wgpu::Sampler sampler1 = device.CreateSampler();
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    {
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
+        pass.SetPipeline(renderPipeline);
+        pass.SetBindGroup(
+            0, utils::MakeBindGroup(
+                   device, renderPipeline.GetBindGroupLayout(0),
+                   {{0, sampler0}, {1, sampler1}, {2, lumaTextureView}, {3, chromaTextureView}}));
+        pass.Draw(6);
+        pass.End();
+    }
+
+    wgpu::CommandBuffer commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    std::vector<uint8_t> expectedData = GetTestTextureData(wgpu::TextureFormat::RGBA8Unorm, true);
+    std::vector<utils::RGBA8> expectedRGBA;
+    for (uint8_t i = 0; i < expectedData.size(); i += 3) {
+        expectedRGBA.push_back({expectedData[i], expectedData[i + 1], expectedData[i + 2], 0xFF});
+    }
+
+    EXPECT_TEXTURE_EQ(expectedRGBA.data(), renderPass.color, {0, 0},
+                      {kYUVImageDataWidthInTexels, kYUVImageDataHeightInTexels});
     mBackend->DestroyVideoTextureForTest(std::move(platformTexture));
 }
 
 DAWN_INSTANTIATE_TEST(VideoViewsTests, VideoViewsTestBackend::Backend());
+
+}  // anonymous namespace
+}  // namespace dawn

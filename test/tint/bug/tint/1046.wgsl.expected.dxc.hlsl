@@ -1,9 +1,9 @@
-cbuffer cbuffer_uniforms : register(b0, space0) {
+cbuffer cbuffer_uniforms : register(b0) {
   uint4 uniforms[10];
 };
-ByteAddressBuffer pointLights : register(t1, space0);
-SamplerState mySampler : register(s2, space0);
-Texture2D<float4> myTexture : register(t3, space0);
+ByteAddressBuffer pointLights : register(t1);
+SamplerState mySampler : register(s2);
+Texture2D<float4> myTexture : register(t3);
 
 struct FragmentInput {
   float4 position;
@@ -55,8 +55,8 @@ FragmentOutput main_inner(FragmentInput fragment) {
 }
 
 tint_symbol_2 main(tint_symbol_1 tint_symbol) {
-  const FragmentInput tint_symbol_5 = {tint_symbol.position, tint_symbol.view_position, tint_symbol.normal, tint_symbol.uv, tint_symbol.color};
-  const FragmentOutput inner_result = main_inner(tint_symbol_5);
+  const FragmentInput tint_symbol_3 = {tint_symbol.position, tint_symbol.view_position, tint_symbol.normal, tint_symbol.uv, tint_symbol.color};
+  const FragmentOutput inner_result = main_inner(tint_symbol_3);
   tint_symbol_2 wrapper_result = (tint_symbol_2)0;
   wrapper_result.color = inner_result.color;
   return wrapper_result;

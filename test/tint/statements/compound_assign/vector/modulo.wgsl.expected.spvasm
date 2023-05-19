@@ -1,7 +1,7 @@
 ; SPIR-V
 ; Version: 1.3
 ; Generator: Google Tint Compiler; 0
-; Bound: 43
+; Bound: 58
 ; Schema: 0
                OpCapability Shader
                OpMemoryModel Logical GLSL450
@@ -41,10 +41,14 @@
       %int_1 = OpConstant %int 1
          %30 = OpConstantComposite %v4int %int_1 %int_1 %int_1 %int_1
        %uint = OpTypeInt 32 0
+     %v4uint = OpTypeVector %uint 4
+%uint_2147483648 = OpConstant %uint 2147483648
+         %37 = OpConstantComposite %v4uint %uint_2147483648 %uint_2147483648 %uint_2147483648 %uint_2147483648
+         %39 = OpConstantNull %v4uint
      %uint_0 = OpConstant %uint 0
 %_ptr_StorageBuffer_v4int = OpTypePointer StorageBuffer %v4int
       %int_2 = OpConstant %int 2
-         %41 = OpConstantComposite %v4int %int_2 %int_2 %int_2 %int_2
+         %57 = OpConstantComposite %v4int %int_2 %int_2 %int_2 %int_2
 %unused_entry_point = OpFunction %void None %7
          %10 = OpLabel
                OpReturn
@@ -59,15 +63,30 @@
          %27 = OpLogicalAnd %v4bool %23 %26
          %28 = OpLogicalOr %v4bool %18 %27
          %16 = OpSelect %v4int %28 %30 %rhs
-         %31 = OpSMod %v4int %lhs %16
-               OpReturnValue %31
+         %35 = OpBitwiseOr %v4int %lhs %16
+         %32 = OpBitcast %v4uint %35
+         %38 = OpBitwiseAnd %v4uint %32 %37
+         %40 = OpINotEqual %v4bool %38 %39
+         %31 = OpAny %bool %40
+               OpSelectionMerge %41 None
+               OpBranchConditional %31 %42 %43
+         %42 = OpLabel
+         %44 = OpSDiv %v4int %lhs %16
+         %45 = OpIMul %v4int %44 %16
+         %46 = OpISub %v4int %lhs %45
+               OpReturnValue %46
+         %43 = OpLabel
+         %47 = OpSRem %v4int %lhs %16
+               OpReturnValue %47
+         %41 = OpLabel
+               OpReturnValue %17
                OpFunctionEnd
         %foo = OpFunction %void None %7
-         %33 = OpLabel
-         %38 = OpAccessChain %_ptr_StorageBuffer_v4int %v %uint_0 %uint_0
-         %39 = OpLoad %v4int %38
-         %34 = OpFunctionCall %v4int %tint_mod %39 %41
-         %42 = OpAccessChain %_ptr_StorageBuffer_v4int %v %uint_0 %uint_0
-               OpStore %42 %34
+         %49 = OpLabel
+         %52 = OpAccessChain %_ptr_StorageBuffer_v4int %v %uint_0 %uint_0
+         %54 = OpAccessChain %_ptr_StorageBuffer_v4int %v %uint_0 %uint_0
+         %55 = OpLoad %v4int %54
+         %53 = OpFunctionCall %v4int %tint_mod %55 %57
+               OpStore %52 %53
                OpReturn
                OpFunctionEnd

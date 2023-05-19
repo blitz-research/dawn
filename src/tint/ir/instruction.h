@@ -15,41 +15,25 @@
 #ifndef SRC_TINT_IR_INSTRUCTION_H_
 #define SRC_TINT_IR_INSTRUCTION_H_
 
-#include <ostream>
-
-#include "src/tint/castable.h"
 #include "src/tint/ir/value.h"
-#include "src/tint/symbol_table.h"
+#include "src/tint/utils/castable.h"
 
 namespace tint::ir {
 
 /// An instruction in the IR.
-class Instruction : public Castable<Instruction> {
+class Instruction : public utils::Castable<Instruction, Value> {
   public:
-    Instruction(const Instruction& instr) = delete;
-    Instruction(Instruction&& instr) = delete;
+    Instruction(const Instruction& inst) = delete;
+    Instruction(Instruction&& inst) = delete;
     /// Destructor
     ~Instruction() override;
 
-    Instruction& operator=(const Instruction& instr) = delete;
-    Instruction& operator=(Instruction&& instr) = delete;
-
-    /// @returns the result value for the instruction
-    Value* Result() const { return result_; }
-
-    /// Write the instruction to the given stream
-    /// @param out the stream to write to
-    /// @param st the symbol table
-    /// @returns the stream
-    virtual std::ostream& ToString(std::ostream& out, const SymbolTable& st) const = 0;
+    Instruction& operator=(const Instruction& inst) = delete;
+    Instruction& operator=(Instruction&& inst) = delete;
 
   protected:
     /// Constructor
-    /// @param result the result value
-    explicit Instruction(Value* result);
-
-  private:
-    Value* result_ = nullptr;
+    Instruction();
 };
 
 }  // namespace tint::ir

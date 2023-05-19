@@ -22,6 +22,9 @@
 
 #include "GLFW/glfw3.h"
 
+namespace dawn {
+namespace {
+
 class SwapChainValidationTests : public DawnTest {
   public:
     void SetUp() override {
@@ -30,7 +33,7 @@ class SwapChainValidationTests : public DawnTest {
         DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("skip_validation"));
 
         glfwSetErrorCallback([](int code, const char* message) {
-            dawn::ErrorLog() << "GLFW error " << code << " " << message;
+            ErrorLog() << "GLFW error " << code << " " << message;
         });
         DAWN_TEST_UNSUPPORTED_IF(!glfwInit());
 
@@ -166,13 +169,6 @@ TEST_P(SwapChainValidationTests, InvalidCreationFormat) {
     ASSERT_DEVICE_ERROR(device.CreateSwapChain(surface, &desc));
 }
 
-// Checks that the implementation must be zero.
-TEST_P(SwapChainValidationTests, InvalidWithImplementation) {
-    wgpu::SwapChainDescriptor desc = goodDescriptor;
-    desc.implementation = 1;
-    ASSERT_DEVICE_ERROR(device.CreateSwapChain(surface, &desc));
-}
-
 // Check swapchain operations with an error swapchain are errors
 TEST_P(SwapChainValidationTests, OperationsOnErrorSwapChain) {
     wgpu::SwapChain swapchain;
@@ -225,17 +221,17 @@ TEST_P(SwapChainValidationTests, ViewDestroyedAfterPresent) {
 TEST_P(SwapChainValidationTests, ReturnedViewCharacteristics) {
     utils::ComboRenderPipelineDescriptor pipelineDesc;
     pipelineDesc.vertex.module = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
     pipelineDesc.cFragment.module = utils::CreateShaderModule(device, R"(
         struct FragmentOut {
-            @location(0) target0 : vec4<f32>,
+            @location(0) target0 : vec4f,
             @location(1) target1 : f32,
         }
         @fragment fn main() -> FragmentOut {
             var out : FragmentOut;
-            out.target0 = vec4<f32>(0.0, 1.0, 0.0, 1.0);
+            out.target0 = vec4f(0.0, 1.0, 0.0, 1.0);
             out.target1 = 0.5;
             return out;
         })");
@@ -322,7 +318,7 @@ TEST_P(SwapChainValidationTests, SwapChainIsInvalidAfterSurfaceDestruction_After
 }
 
 // Test that new swap chain present fails after device is lost
-TEST_P(SwapChainValidationTests, NewSwapChainPresentFailsAfterDeviceLost) {
+TEST_P(SwapChainValidationTests, SwapChainPresentFailsAfterDeviceLost) {
     wgpu::SwapChain swapchain = device.CreateSwapChain(surface, &goodDescriptor);
     wgpu::TextureView view = swapchain.GetCurrentTextureView();
 
@@ -331,7 +327,7 @@ TEST_P(SwapChainValidationTests, NewSwapChainPresentFailsAfterDeviceLost) {
 }
 
 // Test that new swap chain get current texture view fails after device is lost
-TEST_P(SwapChainValidationTests, NewSwapChainGetCurrentTextureViewFailsAfterDevLost) {
+TEST_P(SwapChainValidationTests, SwapChainGetCurrentTextureViewFailsAfterDevLost) {
     wgpu::SwapChain swapchain = device.CreateSwapChain(surface, &goodDescriptor);
 
     LoseDeviceForTesting();
@@ -339,9 +335,12 @@ TEST_P(SwapChainValidationTests, NewSwapChainGetCurrentTextureViewFailsAfterDevL
 }
 
 // Test that creation of a new swapchain fails after device is lost
-TEST_P(SwapChainValidationTests, CreateNewSwapChainFailsAfterDevLost) {
+TEST_P(SwapChainValidationTests, CreateSwapChainFailsAfterDevLost) {
     LoseDeviceForTesting();
     ASSERT_DEVICE_ERROR(device.CreateSwapChain(surface, &goodDescriptor));
 }
 
 DAWN_INSTANTIATE_TEST(SwapChainValidationTests, MetalBackend(), NullBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -21,6 +21,7 @@
 #include "src/dawn/node/binding/Converter.h"
 #include "src/dawn/node/binding/Errors.h"
 #include "src/dawn/node/binding/Flags.h"
+#include "src/dawn/node/binding/GPUAdapterInfo.h"
 #include "src/dawn/node/binding/GPUDevice.h"
 #include "src/dawn/node/binding/GPUSupportedFeatures.h"
 #include "src/dawn/node/binding/GPUSupportedLimits.h"
@@ -162,23 +163,23 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
     }
 
     // Propogate enabled/disabled dawn features
-    // Note: DawnDeviceTogglesDescriptor::forceEnabledToggles and forceDisabledToggles are
-    // vectors of 'const char*', so we make sure the parsed strings survive the CreateDevice()
-    // call by storing them on the stack.
-    std::vector<std::string> enabledToggles;
-    std::vector<std::string> disabledToggles;
-    std::vector<const char*> forceEnabledToggles;
-    std::vector<const char*> forceDisabledToggles;
+    // Note: DawnTogglesDescriptor::enabledToggles and disabledToggles are vectors of 'const char*',
+    // so we make sure the parsed strings survive the CreateDevice() call by storing them on the
+    // stack.
+    std::vector<std::string> enabledTogglesString;
+    std::vector<std::string> disabledTogglesString;
+    std::vector<const char*> enabledToggles;
+    std::vector<const char*> disabledToggles;
     if (auto values = flags_.Get("enable-dawn-features")) {
-        enabledToggles = Split(*values, ',');
-        for (auto& t : enabledToggles) {
-            forceEnabledToggles.emplace_back(t.c_str());
+        enabledTogglesString = Split(*values, ',');
+        for (auto& t : enabledTogglesString) {
+            enabledToggles.emplace_back(t.c_str());
         }
     }
     if (auto values = flags_.Get("disable-dawn-features")) {
-        disabledToggles = Split(*values, ',');
-        for (auto& t : disabledToggles) {
-            forceDisabledToggles.emplace_back(t.c_str());
+        disabledTogglesString = Split(*values, ',');
+        for (auto& t : disabledTogglesString) {
+            disabledToggles.emplace_back(t.c_str());
         }
     }
 
@@ -186,12 +187,12 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
     desc.requiredFeatures = requiredFeatures.data();
     desc.requiredLimits = &limits;
 
-    DawnTogglesDeviceDescriptor togglesDesc = {};
-    desc.nextInChain = &togglesDesc;
-    togglesDesc.forceEnabledTogglesCount = forceEnabledToggles.size();
-    togglesDesc.forceEnabledToggles = forceEnabledToggles.data();
-    togglesDesc.forceDisabledTogglesCount = forceDisabledToggles.size();
-    togglesDesc.forceDisabledToggles = forceDisabledToggles.data();
+    DawnTogglesDescriptor deviceTogglesDesc = {};
+    desc.nextInChain = &deviceTogglesDesc;
+    deviceTogglesDesc.enabledTogglesCount = enabledToggles.size();
+    deviceTogglesDesc.enabledToggles = enabledToggles.data();
+    deviceTogglesDesc.disabledTogglesCount = disabledToggles.size();
+    deviceTogglesDesc.disabledToggles = disabledToggles.data();
 
     auto wgpu_device = adapter_.CreateDevice(&desc);
     if (wgpu_device) {
@@ -203,9 +204,15 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
 }
 
 interop::Promise<interop::Interface<interop::GPUAdapterInfo>> GPUAdapter::requestAdapterInfo(
-    Napi::Env,
+    Napi::Env env,
     std::vector<std::string> unmaskHints) {
-    UNIMPLEMENTED();
+    interop::Promise<interop::Interface<interop::GPUAdapterInfo>> promise(env, PROMISE_INFO);
+
+    WGPUAdapterProperties adapterProperties = {};
+    adapter_.GetProperties(&adapterProperties);
+
+    promise.Resolve(interop::GPUAdapterInfo::Create<GPUAdapterInfo>(env, adapterProperties));
+    return promise;
 }
 
 }  // namespace wgpu::binding

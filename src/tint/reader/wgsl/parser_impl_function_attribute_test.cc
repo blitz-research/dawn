@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "src/tint/ast/stage_attribute.h"
+#include "src/tint/ast/test_helper.h"
 #include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/reader/wgsl/parser_impl_test_helper.h"
 
@@ -99,7 +100,7 @@ TEST_F(ParserImplTest, Attribute_Workgroup_1Param_TrailingComma_Double) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:18: expected workgroup_size y parameter");
+    EXPECT_EQ(p->error(), "1:18: expected expression for workgroup_size");
 }
 
 TEST_F(ParserImplTest, Attribute_Workgroup_2Param) {
@@ -194,7 +195,7 @@ TEST_F(ParserImplTest, Attribute_Workgroup21Param_TrailingComma_Double) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:20: expected workgroup_size z parameter");
+    EXPECT_EQ(p->error(), "1:20: expected expression for workgroup_size");
 }
 
 TEST_F(ParserImplTest, Attribute_Workgroup_3Param) {
@@ -310,9 +311,7 @@ TEST_F(ParserImplTest, Attribute_Workgroup_WithIdent) {
               ast::IntLiteralExpression::Suffix::kNone);
 
     ASSERT_NE(values[1], nullptr);
-    auto* y_ident = values[1]->As<ast::IdentifierExpression>();
-    ASSERT_NE(y_ident, nullptr);
-    EXPECT_EQ(p->builder().Symbols().NameFor(y_ident->symbol), "height");
+    ast::CheckIdentifier(values[1], "height");
 
     ASSERT_EQ(values[2], nullptr);
 }
@@ -324,7 +323,7 @@ TEST_F(ParserImplTest, Attribute_Workgroup_TooManyValues) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:25: expected ')' for workgroup_size attribute");
+    EXPECT_EQ(p->error(), "1:1: workgroup_size expects at most 3 arguments, got 4");
 }
 
 TEST_F(ParserImplTest, Attribute_Workgroup_MissingLeftParam) {
@@ -354,7 +353,7 @@ TEST_F(ParserImplTest, Attribute_Workgroup_MissingValues) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:16: expected workgroup_size x parameter");
+    EXPECT_EQ(p->error(), "1:1: workgroup_size expects at least 1 argument");
 }
 
 TEST_F(ParserImplTest, Attribute_Workgroup_Missing_X_Value) {
@@ -364,7 +363,7 @@ TEST_F(ParserImplTest, Attribute_Workgroup_Missing_X_Value) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:16: expected workgroup_size x parameter");
+    EXPECT_EQ(p->error(), "1:16: expected expression for workgroup_size");
 }
 
 TEST_F(ParserImplTest, Attribute_Workgroup_Missing_Y_Comma) {
@@ -384,7 +383,7 @@ TEST_F(ParserImplTest, Attribute_Workgroup_Missing_Y_Value) {
     EXPECT_TRUE(attr.errored);
     EXPECT_EQ(attr.value, nullptr);
     EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:19: expected workgroup_size y parameter");
+    EXPECT_EQ(p->error(), "1:19: expected expression for workgroup_size");
 }
 
 TEST_F(ParserImplTest, Attribute_Workgroup_Missing_Z_Comma) {
@@ -434,6 +433,18 @@ TEST_F(ParserImplTest, Attribute_Fragment) {
     ASSERT_NE(func_attr, nullptr);
     ASSERT_TRUE(func_attr->Is<ast::StageAttribute>());
     EXPECT_EQ(func_attr->As<ast::StageAttribute>()->stage, ast::PipelineStage::kFragment);
+}
+
+TEST_F(ParserImplTest, Attribute_MustUse) {
+    auto p = parser("must_use");
+    auto attr = p->attribute();
+    EXPECT_TRUE(attr.matched);
+    EXPECT_FALSE(attr.errored);
+    ASSERT_NE(attr.value, nullptr) << p->error();
+    ASSERT_FALSE(p->has_error());
+    auto* func_attr = attr.value->As<ast::Attribute>();
+    ASSERT_NE(func_attr, nullptr);
+    EXPECT_TRUE(func_attr->Is<ast::MustUseAttribute>());
 }
 
 }  // namespace

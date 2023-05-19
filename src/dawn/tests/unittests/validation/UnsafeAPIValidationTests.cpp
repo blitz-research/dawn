@@ -20,81 +20,27 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
+
 using testing::HasSubstr;
-}  // anonymous namespace
 
 class UnsafeAPIValidationTest : public ValidationTest {
   protected:
-    WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter) override {
-        wgpu::DeviceDescriptor descriptor;
-        wgpu::DawnTogglesDeviceDescriptor togglesDesc;
-        descriptor.nextInChain = &togglesDesc;
-        const char* toggle = "disallow_unsafe_apis";
-        togglesDesc.forceEnabledToggles = &toggle;
-        togglesDesc.forceEnabledTogglesCount = 1;
+    // UnsafeAPIValidationTest create the device with the AllowUnsafeAPIs toggle explicitly
+    // disabled, which overrides the inheritance.
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
+        // Disable the AllowUnsafeAPIs toggles in device toggles descriptor to override the
+        // inheritance and create a device disallowing unsafe apis.
+        wgpu::DawnTogglesDescriptor deviceTogglesDesc;
+        descriptor.nextInChain = &deviceTogglesDesc;
+        const char* toggle = "allow_unsafe_apis";
+        deviceTogglesDesc.disabledToggles = &toggle;
+        deviceTogglesDesc.disabledTogglesCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 };
-
-class UnsafeQueryAPIValidationTest : public ValidationTest {
-  protected:
-    WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter) override {
-        wgpu::DeviceDescriptor descriptor;
-        wgpu::FeatureName requiredFeatures[2] = {wgpu::FeatureName::PipelineStatisticsQuery,
-                                                 wgpu::FeatureName::TimestampQuery};
-        descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 2;
-
-        wgpu::DawnTogglesDeviceDescriptor togglesDesc;
-        descriptor.nextInChain = &togglesDesc;
-        const char* toggle = "disallow_unsafe_apis";
-        togglesDesc.forceEnabledToggles = &toggle;
-        togglesDesc.forceEnabledTogglesCount = 1;
-
-        return dawnAdapter.CreateDevice(&descriptor);
-    }
-};
-
-// Check that pipeline statistics query are disallowed.
-TEST_F(UnsafeQueryAPIValidationTest, PipelineStatisticsDisallowed) {
-    wgpu::QuerySetDescriptor descriptor;
-    descriptor.count = 1;
-
-    // Control case: occlusion query creation is allowed.
-    {
-        descriptor.type = wgpu::QueryType::Occlusion;
-        device.CreateQuerySet(&descriptor);
-    }
-
-    // Error case: pipeline statistics query creation is disallowed.
-    {
-        descriptor.type = wgpu::QueryType::PipelineStatistics;
-        std::vector<wgpu::PipelineStatisticName> pipelineStatistics = {
-            wgpu::PipelineStatisticName::VertexShaderInvocations};
-        descriptor.pipelineStatistics = pipelineStatistics.data();
-        descriptor.pipelineStatisticsCount = pipelineStatistics.size();
-        ASSERT_DEVICE_ERROR(device.CreateQuerySet(&descriptor));
-    }
-}
-
-// Check timestamp queries are disallowed.
-TEST_F(UnsafeQueryAPIValidationTest, TimestampQueryDisallowed) {
-    wgpu::QuerySetDescriptor descriptor;
-    descriptor.count = 1;
-
-    // Control case: occlusion query creation is allowed.
-    {
-        descriptor.type = wgpu::QueryType::Occlusion;
-        device.CreateQuerySet(&descriptor);
-    }
-
-    // Error case: timestamp query creation is disallowed.
-    {
-        descriptor.type = wgpu::QueryType::Timestamp;
-        ASSERT_DEVICE_ERROR(device.CreateQuerySet(&descriptor));
-    }
-}
 
 // Check chromium_disable_uniformity_analysis is an unsafe API.
 TEST_F(UnsafeAPIValidationTest, chromium_disable_uniformity_analysis) {
@@ -102,7 +48,7 @@ TEST_F(UnsafeAPIValidationTest, chromium_disable_uniformity_analysis) {
         enable chromium_disable_uniformity_analysis;
 
         @compute @workgroup_size(8) fn uniformity_error(
-            @builtin(local_invocation_id) local_invocation_id : vec3<u32>
+            @builtin(local_invocation_id) local_invocation_id : vec3u
         ) {
             if (local_invocation_id.x == 0u) {
                 workgroupBarrier();
@@ -110,3 +56,6 @@ TEST_F(UnsafeAPIValidationTest, chromium_disable_uniformity_analysis) {
         }
     )"));
 }
+
+}  // anonymous namespace
+}  // namespace dawn

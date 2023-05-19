@@ -249,7 +249,7 @@ class Converter {
 
     [[nodiscard]] bool Convert(wgpu::FilterMode& out, const interop::GPUFilterMode& in);
 
-    [[nodiscard]] bool Convert(wgpu::FilterMode& out, const interop::GPUMipmapFilterMode& in);
+    [[nodiscard]] bool Convert(wgpu::MipmapFilterMode& out, const interop::GPUMipmapFilterMode& in);
 
     [[nodiscard]] bool Convert(wgpu::ComputePipelineDescriptor& out,
                                const interop::GPUComputePipelineDescriptor& in);
@@ -269,6 +269,8 @@ class Converter {
     [[nodiscard]] bool Convert(interop::GPUBufferUsageFlags& out, wgpu::BufferUsage in);
 
     [[nodiscard]] bool Convert(interop::GPUQueryType& out, wgpu::QueryType in);
+
+    [[nodiscard]] bool Convert(interop::GPUBufferMapState& out, wgpu::BufferMapState in);
 
     // The two conversion methods don't generate an error when false is returned. That
     // responsibility is left to the caller if it is needed (it isn't always needed, see

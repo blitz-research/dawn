@@ -48,6 +48,7 @@ MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
 
     gl.BindBuffer(GL_ARRAY_BUFFER, ToBackend(buffer)->GetHandle());
     gl.BufferSubData(GL_ARRAY_BUFFER, bufferOffset, size, data);
+    buffer->MarkUsedInPendingCommands();
     return {};
 }
 
@@ -68,7 +69,7 @@ MaybeError Queue::WriteTextureImpl(const ImageCopyTexture& destination,
     if (IsCompleteSubresourceCopiedTo(destination.texture, writeSizePixel, destination.mipLevel)) {
         destination.texture->SetIsSubresourceContentInitialized(true, range);
     } else {
-        ToBackend(destination.texture)->EnsureSubresourceContentInitialized(range);
+        DAWN_TRY(ToBackend(destination.texture)->EnsureSubresourceContentInitialized(range));
     }
     DoTexSubImage(ToBackend(GetDevice())->GetGL(), textureCopy, data, dataLayout, writeSizePixel);
     ToBackend(destination.texture)->Touch();

@@ -21,16 +21,17 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 constexpr static unsigned int kRTSize = 16;
 
-namespace {
 // MipLevel colors, ordering from base level to high level
 // each mipmap of the texture is having a different color
 // so we can check if the sampler anisotropic filtering is fetching
 // from the correct miplevel
 const std::array<utils::RGBA8, 3> colors = {utils::RGBA8::kRed, utils::RGBA8::kGreen,
                                             utils::RGBA8::kBlue};
-}  // namespace
 
 class SamplerFilterAnisotropicTest : public DawnTest {
   protected:
@@ -44,15 +45,15 @@ class SamplerFilterAnisotropicTest : public DawnTest {
             }
 
             struct VertexIn {
-                @location(0) position : vec4<f32>,
-                @location(1) uv : vec2<f32>,
+                @location(0) position : vec4f,
+                @location(1) uv : vec2f,
             }
 
             @group(0) @binding(2) var<uniform> uniforms : Uniforms;
 
             struct VertexOut {
-                @location(0) uv : vec2<f32>,
-                @builtin(position) position : vec4<f32>,
+                @location(0) uv : vec2f,
+                @builtin(position) position : vec4f,
             }
 
             @vertex
@@ -68,12 +69,12 @@ class SamplerFilterAnisotropicTest : public DawnTest {
             @group(0) @binding(1) var texture0 : texture_2d<f32>;
 
             struct FragmentIn {
-                @location(0) uv: vec2<f32>,
-                @builtin(position) fragCoord : vec4<f32>,
+                @location(0) uv: vec2f,
+                @builtin(position) fragCoord : vec4f,
             }
 
             @fragment
-            fn main(input : FragmentIn) -> @location(0) vec4<f32> {
+            fn main(input : FragmentIn) -> @location(0) vec4f {
                 return textureSample(texture0, sampler0, input.uv);
             })");
 
@@ -147,7 +148,7 @@ class SamplerFilterAnisotropicTest : public DawnTest {
             wgpu::SamplerDescriptor descriptor = {};
             descriptor.minFilter = wgpu::FilterMode::Linear;
             descriptor.magFilter = wgpu::FilterMode::Linear;
-            descriptor.mipmapFilter = wgpu::FilterMode::Linear;
+            descriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
             descriptor.maxAnisotropy = maxAnisotropy;
             sampler = device.CreateSampler(&descriptor);
         }
@@ -293,3 +294,6 @@ DAWN_INSTANTIATE_TEST(SamplerFilterAnisotropicTest,
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

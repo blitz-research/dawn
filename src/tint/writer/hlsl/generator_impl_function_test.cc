@@ -37,7 +37,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Function) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(  void my_func() {
     return;
   }
@@ -54,7 +54,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Function_Name_Collision) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_THAT(gen.result(), HasSubstr(R"(  void tint_symbol() {
     return;
   })"));
@@ -75,7 +75,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Function_WithParams) {
 
     gen.increment_indent();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(  void my_func(float a, int b) {
     return;
   }
@@ -90,7 +90,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_NoReturn_Void) 
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(void main() {
   return;
 }
@@ -101,12 +101,12 @@ TEST_F(HlslGeneratorImplTest_Function, PtrParameter) {
     // fn f(foo : ptr<function, f32>) -> f32 {
     //   return *foo;
     // }
-    Func("f", utils::Vector{Param("foo", ty.pointer<f32>(ast::AddressSpace::kFunction))}, ty.f32(),
-         utils::Vector{Return(Deref("foo"))});
+    Func("f", utils::Vector{Param("foo", ty.pointer<f32>(builtin::AddressSpace::kFunction))},
+         ty.f32(), utils::Vector{Return(Deref("foo"))});
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_THAT(gen.result(), HasSubstr(R"(float f(inout float foo) {
   return foo;
 }
@@ -131,7 +131,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_WithInOutVars) 
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct tint_symbol_1 {
   float foo : TEXCOORD0;
 };
@@ -157,7 +157,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_WithInOut_Built
     //   return coord.x;
     // }
     auto* coord_in =
-        Param("coord", ty.vec4<f32>(), utils::Vector{Builtin(ast::BuiltinValue::kPosition)});
+        Param("coord", ty.vec4<f32>(), utils::Vector{Builtin(builtin::BuiltinValue::kPosition)});
     Func("frag_main", utils::Vector{coord_in}, ty.f32(),
          utils::Vector{
              Return(MemberAccessor("coord", "x")),
@@ -166,12 +166,12 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_WithInOut_Built
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Builtin(ast::BuiltinValue::kFragDepth),
+             Builtin(builtin::BuiltinValue::kFragDepth),
          });
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct tint_symbol_1 {
   float4 coord : SV_Position;
 };
@@ -209,15 +209,14 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_SharedStruct_Di
     auto* interface_struct = Structure(
         "Interface",
         utils::Vector{
-            Member("pos", ty.vec4<f32>(), utils::Vector{Builtin(ast::BuiltinValue::kPosition)}),
+            Member("pos", ty.vec4<f32>(), utils::Vector{Builtin(builtin::BuiltinValue::kPosition)}),
             Member("col1", ty.f32(), utils::Vector{Location(1_a)}),
             Member("col2", ty.f32(), utils::Vector{Location(2_a)}),
         });
 
     Func("vert_main", utils::Empty, ty.Of(interface_struct),
          utils::Vector{
-             Return(Construct(ty.Of(interface_struct), Construct(ty.vec4<f32>()), Expr(0.5_f),
-                              Expr(0.25_f))),
+             Return(Call(ty.Of(interface_struct), Call(ty.vec4<f32>()), Expr(0.5_f), Expr(0.25_f))),
          },
          utils::Vector{Stage(ast::PipelineStage::kVertex)});
 
@@ -231,7 +230,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_SharedStruct_Di
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct Interface {
   float4 pos;
   float col1;
@@ -293,12 +292,12 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_SharedStruct_He
     auto* vertex_output_struct =
         Structure("VertexOutput",
                   utils::Vector{Member("pos", ty.vec4<f32>(),
-                                       utils::Vector{Builtin(ast::BuiltinValue::kPosition)})});
+                                       utils::Vector{Builtin(builtin::BuiltinValue::kPosition)})});
 
     Func("foo", utils::Vector{Param("x", ty.f32())}, ty.Of(vertex_output_struct),
          utils::Vector{
-             Return(Construct(ty.Of(vertex_output_struct),
-                              Construct(ty.vec4<f32>(), "x", "x", "x", Expr(1_f)))),
+             Return(
+                 Call(ty.Of(vertex_output_struct), Call(ty.vec4<f32>(), "x", "x", "x", Expr(1_f)))),
          },
          utils::Empty);
 
@@ -316,7 +315,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_SharedStruct_He
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(struct VertexOutput {
   float4 pos;
 };
@@ -361,7 +360,7 @@ tint_symbol_1 vert_main2() {
 TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_Uniform) {
     auto* ubo_ty = Structure("UBO", utils::Vector{Member("coord", ty.vec4<f32>())});
     auto* ubo =
-        GlobalVar("ubo", ty.Of(ubo_ty), ast::AddressSpace::kUniform, Binding(0_a), Group(1_a));
+        GlobalVar("ubo", ty.Of(ubo_ty), builtin::AddressSpace::kUniform, Binding(0_a), Group(1_a));
 
     Func("sub_func",
          utils::Vector{
@@ -385,7 +384,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_Uniform) {
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(cbuffer cbuffer_ubo : register(b0, space1) {
   uint4 ubo[1];
 };
@@ -404,7 +403,7 @@ void frag_main() {
 TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_UniformStruct) {
     auto* s = Structure("Uniforms", utils::Vector{Member("coord", ty.vec4<f32>())});
 
-    GlobalVar("uniforms", ty.Of(s), ast::AddressSpace::kUniform, Binding(0_a), Group(1_a));
+    GlobalVar("uniforms", ty.Of(s), builtin::AddressSpace::kUniform, Binding(0_a), Group(1_a));
 
     auto* var = Var("v", ty.f32(), MemberAccessor(MemberAccessor("uniforms", "coord"), "x"));
 
@@ -419,7 +418,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_UniformStr
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(cbuffer cbuffer_uniforms : register(b0, space1) {
   uint4 uniforms[1];
 };
@@ -437,8 +436,8 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_RW_Storage
                                     Member("b", ty.f32()),
                                 });
 
-    GlobalVar("coord", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite, Binding(0_a),
-              Group(1_a));
+    GlobalVar("coord", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+              Binding(0_a), Group(1_a));
 
     auto* var = Var("v", ty.f32(), MemberAccessor("coord", "b"));
 
@@ -453,7 +452,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_RW_Storage
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(),
               R"(RWByteAddressBuffer coord : register(u0, space1);
 
@@ -470,8 +469,8 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_RO_Storage
                                     Member("b", ty.f32()),
                                 });
 
-    GlobalVar("coord", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
-              Group(1_a));
+    GlobalVar("coord", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead,
+              Binding(0_a), Group(1_a));
 
     auto* var = Var("v", ty.f32(), MemberAccessor("coord", "b"));
 
@@ -486,7 +485,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_RO_Storage
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(),
               R"(ByteAddressBuffer coord : register(t0, space1);
 
@@ -503,8 +502,8 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_WO_Storage
                                     Member("b", ty.f32()),
                                 });
 
-    GlobalVar("coord", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite, Binding(0_a),
-              Group(1_a));
+    GlobalVar("coord", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+              Binding(0_a), Group(1_a));
 
     Func("frag_main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -517,7 +516,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_WO_Storage
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(),
               R"(RWByteAddressBuffer coord : register(u0, space1);
 
@@ -534,8 +533,8 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_StorageBuf
                                     Member("b", ty.f32()),
                                 });
 
-    GlobalVar("coord", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite, Binding(0_a),
-              Group(1_a));
+    GlobalVar("coord", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+              Binding(0_a), Group(1_a));
 
     Func("frag_main", utils::Empty, ty.void_(),
          utils::Vector{
@@ -548,7 +547,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_With_StorageBuf
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(),
               R"(RWByteAddressBuffer coord : register(u0, space1);
 
@@ -561,7 +560,7 @@ void frag_main() {
 
 TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_Called_By_EntryPoint_With_Uniform) {
     auto* s = Structure("S", utils::Vector{Member("x", ty.f32())});
-    GlobalVar("coord", ty.Of(s), ast::AddressSpace::kUniform, Binding(0_a), Group(1_a));
+    GlobalVar("coord", ty.Of(s), builtin::AddressSpace::kUniform, Binding(0_a), Group(1_a));
 
     Func("sub_func",
          utils::Vector{
@@ -585,7 +584,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_Called_By_EntryPoint_With_
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(cbuffer cbuffer_coord : register(b0, space1) {
   uint4 coord[1];
 };
@@ -603,8 +602,8 @@ void frag_main() {
 
 TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_Called_By_EntryPoint_With_StorageBuffer) {
     auto* s = Structure("S", utils::Vector{Member("x", ty.f32())});
-    GlobalVar("coord", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite, Binding(0_a),
-              Group(1_a));
+    GlobalVar("coord", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+              Binding(0_a), Group(1_a));
 
     Func("sub_func",
          utils::Vector{
@@ -628,7 +627,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_Called_By_EntryPoint_With_
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(),
               R"(RWByteAddressBuffer coord : register(u0, space1);
 
@@ -651,7 +650,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_WithNameCollisi
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(void tint_symbol() {
   return;
 }
@@ -667,7 +666,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_Compute) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(1, 1, 1)]
 void main() {
   return;
@@ -684,7 +683,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_Compute_WithWor
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(2, 4, 6)]
 void main() {
   return;
@@ -693,9 +692,9 @@ void main() {
 }
 
 TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_Compute_WithWorkgroup_Const) {
-    GlobalConst("width", ty.i32(), Construct(ty.i32(), 2_i));
-    GlobalConst("height", ty.i32(), Construct(ty.i32(), 3_i));
-    GlobalConst("depth", ty.i32(), Construct(ty.i32(), 4_i));
+    GlobalConst("width", ty.i32(), Call<i32>(2_i));
+    GlobalConst("height", ty.i32(), Call<i32>(3_i));
+    GlobalConst("depth", ty.i32(), Call<i32>(4_i));
     Func("main", utils::Empty, ty.void_(), utils::Empty,
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -704,7 +703,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Attribute_EntryPoint_Compute_WithWor
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"([numthreads(2, 3, 4)]
 void main() {
   return;
@@ -714,9 +713,9 @@ void main() {
 
 TEST_F(HlslGeneratorImplTest_Function,
        Emit_Attribute_EntryPoint_Compute_WithWorkgroup_OverridableConst) {
-    Override("width", ty.i32(), Construct(ty.i32(), 2_i), Id(7_u));
-    Override("height", ty.i32(), Construct(ty.i32(), 3_i), Id(8_u));
-    Override("depth", ty.i32(), Construct(ty.i32(), 4_i), Id(9_u));
+    Override("width", ty.i32(), Call<i32>(2_i), Id(7_u));
+    Override("height", ty.i32(), Call<i32>(3_i), Id(8_u));
+    Override("depth", ty.i32(), Call<i32>(4_i), Id(9_u));
     Func("main", utils::Empty, ty.void_(), utils::Empty,
          utils::Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -725,9 +724,9 @@ TEST_F(HlslGeneratorImplTest_Function,
 
     GeneratorImpl& gen = Build();
 
-    EXPECT_FALSE(gen.Generate()) << gen.error();
+    EXPECT_FALSE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(
-        gen.error(),
+        gen.Diagnostics().str(),
         R"(error: override-expressions should have been removed with the SubstituteOverride transform)");
 }
 
@@ -743,7 +742,7 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Function_WithArrayParams) {
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(void my_func(float a[5]) {
   return;
 }
@@ -753,12 +752,12 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Function_WithArrayParams) {
 TEST_F(HlslGeneratorImplTest_Function, Emit_Function_WithArrayReturn) {
     Func("my_func", utils::Empty, ty.array<f32, 5>(),
          utils::Vector{
-             Return(Construct(ty.array<f32, 5>())),
+             Return(Call(ty.array<f32, 5>())),
          });
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(typedef float my_func_ret[5];
 my_func_ret my_func() {
   return (float[5])0;
@@ -770,13 +769,13 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Function_WithDiscardAndVoidReturn) {
     Func("my_func", utils::Vector{Param("a", ty.i32())}, ty.void_(),
          utils::Vector{
              If(Equal("a", 0_i),  //
-                Block(create<ast::DiscardStatement>())),
+                Block(Discard())),
              Return(),
          });
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(void my_func(int a) {
   if ((a == 0)) {
     discard;
@@ -790,13 +789,13 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Function_WithDiscardAndNonVoidReturn
     Func("my_func", utils::Vector{Param("a", ty.i32())}, ty.i32(),
          utils::Vector{
              If(Equal("a", 0_i),  //
-                Block(create<ast::DiscardStatement>())),
+                Block(Discard())),
              Return(42_i),
          });
 
     GeneratorImpl& gen = Build();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
     EXPECT_EQ(gen.result(), R"(int my_func(int a) {
   if (true) {
     if ((a == 0)) {
@@ -831,8 +830,8 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Multiple_EntryPoint_With_Same_Module
 
     auto* s = Structure("Data", utils::Vector{Member("d", ty.f32())});
 
-    GlobalVar("data", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite, Binding(0_a),
-              Group(0_a));
+    GlobalVar("data", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+              Binding(0_a), Group(0_a));
 
     {
         auto* var = Var("v", ty.f32(), MemberAccessor("data", "d"));
@@ -864,8 +863,8 @@ TEST_F(HlslGeneratorImplTest_Function, Emit_Multiple_EntryPoint_With_Same_Module
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
-    ASSERT_TRUE(gen.Generate()) << gen.error();
-    EXPECT_EQ(gen.result(), R"(RWByteAddressBuffer data : register(u0, space0);
+    ASSERT_TRUE(gen.Generate()) << gen.Diagnostics();
+    EXPECT_EQ(gen.result(), R"(RWByteAddressBuffer data : register(u0);
 
 [numthreads(1, 1, 1)]
 void a() {

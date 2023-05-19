@@ -14,18 +14,23 @@
 
 #include "src/tint/type/storage_texture.h"
 
-#include "src/tint/program_builder.h"
+#include "src/tint/type/f32.h"
+#include "src/tint/type/i32.h"
+#include "src/tint/type/manager.h"
+#include "src/tint/type/u32.h"
 #include "src/tint/utils/hash.h"
+#include "src/tint/utils/string_stream.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::type::StorageTexture);
 
 namespace tint::type {
 
-StorageTexture::StorageTexture(ast::TextureDimension dim,
-                               ast::TexelFormat format,
-                               ast::Access access,
+StorageTexture::StorageTexture(TextureDimension dim,
+                               builtin::TexelFormat format,
+                               builtin::Access access,
                                Type* subtype)
-    : Base(utils::Hash(TypeInfo::Of<StorageTexture>().full_hashcode, dim, format, access), dim),
+    : Base(utils::Hash(utils::TypeInfo::Of<StorageTexture>().full_hashcode, dim, format, access),
+           dim),
       texel_format_(format),
       access_(access),
       subtype_(subtype) {}
@@ -39,40 +44,41 @@ bool StorageTexture::Equals(const UniqueNode& other) const {
     return false;
 }
 
-std::string StorageTexture::FriendlyName(const SymbolTable&) const {
-    std::ostringstream out;
+std::string StorageTexture::FriendlyName() const {
+    utils::StringStream out;
     out << "texture_storage_" << dim() << "<" << texel_format_ << ", " << access_ << ">";
     return out.str();
 }
 
-Type* StorageTexture::SubtypeFor(ast::TexelFormat format, Manager& type_mgr) {
+Type* StorageTexture::SubtypeFor(builtin::TexelFormat format, Manager& type_mgr) {
     switch (format) {
-        case ast::TexelFormat::kR32Uint:
-        case ast::TexelFormat::kRgba8Uint:
-        case ast::TexelFormat::kRg32Uint:
-        case ast::TexelFormat::kRgba16Uint:
-        case ast::TexelFormat::kRgba32Uint: {
+        case builtin::TexelFormat::kR32Uint:
+        case builtin::TexelFormat::kRgba8Uint:
+        case builtin::TexelFormat::kRg32Uint:
+        case builtin::TexelFormat::kRgba16Uint:
+        case builtin::TexelFormat::kRgba32Uint: {
             return type_mgr.Get<U32>();
         }
 
-        case ast::TexelFormat::kR32Sint:
-        case ast::TexelFormat::kRgba8Sint:
-        case ast::TexelFormat::kRg32Sint:
-        case ast::TexelFormat::kRgba16Sint:
-        case ast::TexelFormat::kRgba32Sint: {
+        case builtin::TexelFormat::kR32Sint:
+        case builtin::TexelFormat::kRgba8Sint:
+        case builtin::TexelFormat::kRg32Sint:
+        case builtin::TexelFormat::kRgba16Sint:
+        case builtin::TexelFormat::kRgba32Sint: {
             return type_mgr.Get<I32>();
         }
 
-        case ast::TexelFormat::kRgba8Unorm:
-        case ast::TexelFormat::kRgba8Snorm:
-        case ast::TexelFormat::kR32Float:
-        case ast::TexelFormat::kRg32Float:
-        case ast::TexelFormat::kRgba16Float:
-        case ast::TexelFormat::kRgba32Float: {
+        case builtin::TexelFormat::kBgra8Unorm:
+        case builtin::TexelFormat::kRgba8Unorm:
+        case builtin::TexelFormat::kRgba8Snorm:
+        case builtin::TexelFormat::kR32Float:
+        case builtin::TexelFormat::kRg32Float:
+        case builtin::TexelFormat::kRgba16Float:
+        case builtin::TexelFormat::kRgba32Float: {
             return type_mgr.Get<F32>();
         }
 
-        case ast::TexelFormat::kUndefined:
+        case builtin::TexelFormat::kUndefined:
             break;
     }
 

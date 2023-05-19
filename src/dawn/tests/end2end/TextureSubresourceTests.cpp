@@ -17,6 +17,9 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
+namespace {
+
 class TextureSubresourceTest : public DawnTest {
   public:
     static constexpr uint32_t kSize = 4u;
@@ -51,18 +54,18 @@ class TextureSubresourceTest : public DawnTest {
     void DrawTriangle(const wgpu::TextureView& view) {
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 3>(
-                    vec2<f32>(-1.0,  1.0),
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 1.0, -1.0));
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f(-1.0,  1.0),
+                    vec2f(-1.0, -1.0),
+                    vec2f( 1.0, -1.0));
 
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             })");
 
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-            @fragment fn main() -> @location(0) vec4<f32> {
-                return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(1.0, 0.0, 0.0, 1.0);
             })");
 
         utils::ComboRenderPipelineDescriptor descriptor;
@@ -88,16 +91,16 @@ class TextureSubresourceTest : public DawnTest {
     void SampleAndDraw(const wgpu::TextureView& samplerView, const wgpu::TextureView& renderView) {
         wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
             @vertex
-            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
-                var pos = array<vec2<f32>, 6>(
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 1.0,  1.0),
-                    vec2<f32>(-1.0,  1.0),
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 1.0, -1.0),
-                    vec2<f32>( 1.0,  1.0));
+            fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4f {
+                var pos = array(
+                    vec2f(-1.0, -1.0),
+                    vec2f( 1.0,  1.0),
+                    vec2f(-1.0,  1.0),
+                    vec2f(-1.0, -1.0),
+                    vec2f( 1.0, -1.0),
+                    vec2f( 1.0,  1.0));
 
-                return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+                return vec4f(pos[VertexIndex], 0.0, 1.0);
             })");
 
         wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
@@ -105,8 +108,8 @@ class TextureSubresourceTest : public DawnTest {
             @group(0) @binding(1) var tex : texture_2d<f32>;
 
             @fragment
-            fn main(@builtin(position) FragCoord : vec4<f32>) -> @location(0) vec4<f32> {
-                return textureSample(tex, samp, FragCoord.xy / vec2<f32>(4.0, 4.0));
+            fn main(@builtin(position) FragCoord : vec4f) -> @location(0) vec4f {
+                return textureSample(tex, samp, FragCoord.xy / vec2f(4.0, 4.0));
             })");
 
         utils::ComboRenderPipelineDescriptor descriptor;
@@ -194,3 +197,6 @@ DAWN_INSTANTIATE_TEST(TextureSubresourceTest,
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

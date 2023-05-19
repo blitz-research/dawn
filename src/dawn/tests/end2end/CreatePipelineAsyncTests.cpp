@@ -18,14 +18,15 @@
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
 
+namespace dawn {
 namespace {
+
 struct CreatePipelineAsyncTask {
     wgpu::ComputePipeline computePipeline = nullptr;
     wgpu::RenderPipeline renderPipeline = nullptr;
     bool isCompleted = false;
     std::string message;
 };
-}  // anonymous namespace
 
 class CreatePipelineAsyncTest : public DawnTest {
   protected:
@@ -213,7 +214,8 @@ TEST_P(CreatePipelineAsyncTest, CreateComputePipelineFailed) {
         &csDesc,
         [](WGPUCreatePipelineAsyncStatus status, WGPUComputePipeline returnPipeline,
            const char* message, void* userdata) {
-            EXPECT_EQ(WGPUCreatePipelineAsyncStatus::WGPUCreatePipelineAsyncStatus_Error, status);
+            EXPECT_EQ(WGPUCreatePipelineAsyncStatus::WGPUCreatePipelineAsyncStatus_ValidationError,
+                      status);
 
             CreatePipelineAsyncTask* task = static_cast<CreatePipelineAsyncTask*>(userdata);
             task->computePipeline = wgpu::ComputePipeline::Acquire(returnPipeline);
@@ -236,12 +238,12 @@ TEST_P(CreatePipelineAsyncTest, BasicUseOfCreateRenderPipelineAsync) {
 
     utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
     renderPipelineDescriptor.vertex.module = vsModule;
     renderPipelineDescriptor.cFragment.module = fsModule;
@@ -260,12 +262,12 @@ TEST_P(CreatePipelineAsyncTest, ReleaseEntryPointsAfterCreateRenderPipelineAsync
 
     utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
     renderPipelineDescriptor.vertex.module = vsModule;
     renderPipelineDescriptor.cFragment.module = fsModule;
@@ -325,12 +327,12 @@ TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineFailed) {
 
     utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
     renderPipelineDescriptor.vertex.module = vsModule;
     renderPipelineDescriptor.cFragment.module = fsModule;
@@ -341,7 +343,8 @@ TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineFailed) {
         &renderPipelineDescriptor,
         [](WGPUCreatePipelineAsyncStatus status, WGPURenderPipeline returnPipeline,
            const char* message, void* userdata) {
-            EXPECT_EQ(WGPUCreatePipelineAsyncStatus::WGPUCreatePipelineAsyncStatus_Error, status);
+            EXPECT_EQ(WGPUCreatePipelineAsyncStatus::WGPUCreatePipelineAsyncStatus_ValidationError,
+                      status);
 
             CreatePipelineAsyncTask* task = static_cast<CreatePipelineAsyncTask*>(userdata);
             task->renderPipeline = wgpu::RenderPipeline::Acquire(returnPipeline);
@@ -387,12 +390,12 @@ TEST_P(CreatePipelineAsyncTest, ReleaseDeviceBeforeCallbackOfCreateComputePipeli
 TEST_P(CreatePipelineAsyncTest, ReleaseDeviceBeforeCallbackOfCreateRenderPipelineAsync) {
     utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
     renderPipelineDescriptor.vertex.module = vsModule;
     renderPipelineDescriptor.cFragment.module = fsModule;
@@ -444,12 +447,12 @@ TEST_P(CreatePipelineAsyncTest, DestroyDeviceBeforeCallbackOfCreateComputePipeli
 TEST_P(CreatePipelineAsyncTest, DestroyDeviceBeforeCallbackOfCreateRenderPipelineAsync) {
     utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
     renderPipelineDescriptor.vertex.module = vsModule;
     renderPipelineDescriptor.cFragment.module = fsModule;
@@ -578,12 +581,12 @@ TEST_P(CreatePipelineAsyncTest, CreateSameRenderPipelineTwiceAtSameTime) {
 
     utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
     wgpu::ShaderModule vsModule = utils::CreateShaderModule(device, R"(
-        @vertex fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        @vertex fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-        @fragment fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        @fragment fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
     renderPipelineDescriptor.vertex.module = vsModule;
     renderPipelineDescriptor.cFragment.module = fsModule;
@@ -635,24 +638,24 @@ TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineAsyncWithVertexBufferLayouts
         }
 
         struct VertexOutput {
-            @location(0) vertexColorOut: vec4<f32>,
-            @builtin(position) position: vec4<f32>,
+            @location(0) vertexColorOut: vec4f,
+            @builtin(position) position: vec4f,
         }
 
         @vertex
         fn main(vertexInput : VertexInput) -> VertexOutput {
             var vertexOutput : VertexOutput;
-            vertexOutput.position = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            vertexOutput.position = vec4f(0.0, 0.0, 0.0, 1.0);
             if (vertexInput.input0 == 1u && vertexInput.input1 == 2u) {
-                vertexOutput.vertexColorOut = vec4<f32>(0.0, 1.0, 0.0, 1.0);
+                vertexOutput.vertexColorOut = vec4f(0.0, 1.0, 0.0, 1.0);
             } else {
-                vertexOutput.vertexColorOut = vec4<f32>(1.0, 0.0, 0.0, 1.0);
+                vertexOutput.vertexColorOut = vec4f(1.0, 0.0, 0.0, 1.0);
             }
             return vertexOutput;
         })");
         renderPipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
         @fragment
-        fn main(@location(0) fragColorIn : vec4<f32>) -> @location(0) vec4<f32> {
+        fn main(@location(0) fragColorIn : vec4f) -> @location(0) vec4f {
             return fragColorIn;
         })");
 
@@ -732,13 +735,13 @@ TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineAsyncWithDepthStencilState) 
         utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
         renderPipelineDescriptor.vertex.module = utils::CreateShaderModule(device, R"(
         @vertex
-        fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
         renderPipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
         @fragment
-        fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+        fn main() -> @location(0) vec4f {
+            return vec4f(1.0, 0.0, 0.0, 1.0);
         })");
 
         renderPipelineDescriptor.primitive.topology = wgpu::PrimitiveTopology::PointList;
@@ -804,13 +807,13 @@ TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineWithMultisampleState) {
         utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
         renderPipelineDescriptor.vertex.module = utils::CreateShaderModule(device, R"(
         @vertex
-        fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
         renderPipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
         @fragment
-        fn main() -> @location(0) vec4<f32> {
-            return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+        fn main() -> @location(0) vec4f {
+            return vec4f(0.0, 1.0, 0.0, 1.0);
         })");
 
         renderPipelineDescriptor.primitive.topology = wgpu::PrimitiveTopology::PointList;
@@ -876,19 +879,19 @@ TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineAsyncWithBlendState) {
         utils::ComboRenderPipelineDescriptor renderPipelineDescriptor;
         renderPipelineDescriptor.vertex.module = utils::CreateShaderModule(device, R"(
         @vertex
-        fn main() -> @builtin(position) vec4<f32> {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        fn main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
         })");
         renderPipelineDescriptor.cFragment.module = utils::CreateShaderModule(device, R"(
          struct FragmentOut {
-            @location(0) fragColor0 : vec4<f32>,
-            @location(1) fragColor1 : vec4<f32>,
+            @location(0) fragColor0 : vec4f,
+            @location(1) fragColor1 : vec4f,
         }
 
         @fragment fn main() -> FragmentOut {
             var output : FragmentOut;
-            output.fragColor0 = vec4<f32>(0.4, 0.0, 0.0, 0.4);
-            output.fragColor1 = vec4<f32>(0.0, 1.0, 0.0, 1.0);
+            output.fragColor0 = vec4f(0.4, 0.0, 0.0, 0.4);
+            output.fragColor1 = vec4f(0.0, 1.0, 0.0, 1.0);
             return output;
         })");
 
@@ -953,8 +956,12 @@ TEST_P(CreatePipelineAsyncTest, CreateRenderPipelineAsyncWithBlendState) {
 }
 
 DAWN_INSTANTIATE_TEST(CreatePipelineAsyncTest,
+                      D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),
                       OpenGLBackend(),
                       OpenGLESBackend(),
                       VulkanBackend());
+
+}  // anonymous namespace
+}  // namespace dawn

@@ -22,14 +22,13 @@
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/VulkanBackend.h"
-#include "dawn/native/vulkan/AdapterVk.h"
 #include "dawn/native/vulkan/BufferVk.h"
 #include "dawn/native/vulkan/CommandRecordingContext.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
+#include "dawn/native/vulkan/PhysicalDeviceVk.h"
 #include "dawn/native/vulkan/ResourceHeapVk.h"
 #include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
-#include "dawn/native/vulkan/StagingBufferVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
 
@@ -496,9 +495,10 @@ VkImageUsageFlags VulkanImageUsage(wgpu::TextureUsage usage, const Format& forma
             flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         }
     }
-    if (usage & kReadOnlyRenderAttachment) {
-        flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    }
+
+    // Choosing Vulkan image usages should not know about kReadOnlyRenderAttachment because that's
+    // a property of when the image is used, not of the creation.
+    ASSERT(!(usage & kReadOnlyRenderAttachment));
 
     return flags;
 }
@@ -575,6 +575,13 @@ VkImageLayout VulkanImageLayout(const Texture* texture, wgpu::TextureUsage usage
         case kPresentTextureUsage:
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+        case wgpu::TextureUsage::TransientAttachment:
+            // Will be covered by RenderAttachment above, as specification of
+            // TransientAttachment requires that RenderAttachment also be
+            // specified.
+            UNREACHABLE();
+            break;
+
         case wgpu::TextureUsage::None:
             break;
     }
@@ -612,10 +619,11 @@ bool IsSampleCountSupported(const dawn::native::vulkan::Device* device,
                             const VkImageCreateInfo& imageCreateInfo) {
     ASSERT(device);
 
-    VkPhysicalDevice physicalDevice = ToBackend(device->GetAdapter())->GetPhysicalDevice();
+    VkPhysicalDevice vkPhysicalDevice =
+        ToBackend(device->GetPhysicalDevice())->GetVkPhysicalDevice();
     VkImageFormatProperties properties;
     if (device->fn.GetPhysicalDeviceImageFormatProperties(
-            physicalDevice, imageCreateInfo.format, imageCreateInfo.imageType,
+            vkPhysicalDevice, imageCreateInfo.format, imageCreateInfo.imageType,
             imageCreateInfo.tiling, imageCreateInfo.usage, imageCreateInfo.flags,
             &properties) != VK_SUCCESS) {
         UNREACHABLE();
@@ -685,7 +693,17 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
 
     VkImageFormatListCreateInfo imageFormatListInfo = {};
     std::vector<VkFormat> viewFormats;
-    if (GetViewFormats().any()) {
+    bool requiresCreateMutableFormatBit = GetViewFormats().any();
+    // As current SPIR-V SPEC doesn't support 'bgra8' as a valid image format, to support the
+    // STORAGE usage of BGRA8Unorm we have to create an RGBA8Unorm image view on the BGRA8Unorm
+    // storage texture and polyfill it as RGBA8Unorm in Tint. See http://crbug.com/dawn/1641 for
+    // more details.
+    if (createInfo.format == VK_FORMAT_B8G8R8A8_UNORM &&
+        createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT) {
+        viewFormats.push_back(VK_FORMAT_R8G8B8A8_UNORM);
+        requiresCreateMutableFormatBit = true;
+    }
+    if (requiresCreateMutableFormatBit) {
         createInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
         if (device->GetDeviceInfo().HasExt(DeviceExt::ImageFormatList)) {
             createInfoChain.Add(&imageFormatListInfo,
@@ -720,14 +738,42 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
     VkMemoryRequirements requirements;
     device->fn.GetImageMemoryRequirements(device->GetVkDevice(), mHandle, &requirements);
 
+    bool forceDisableSubAllocation =
+        (device->IsToggleEnabled(
+            Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment)) &&
+        GetDimension() == wgpu::TextureDimension::e2D &&
+        (GetInternalUsage() & (wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::RenderAttachment));
+    auto memoryKind = (GetInternalUsage() & wgpu::TextureUsage::TransientAttachment)
+                          ? MemoryKind::LazilyAllocated
+                          : MemoryKind::Opaque;
     DAWN_TRY_ASSIGN(mMemoryAllocation, device->GetResourceMemoryAllocator()->Allocate(
-                                           requirements, MemoryKind::Opaque));
+                                           requirements, memoryKind, forceDisableSubAllocation));
 
     DAWN_TRY(CheckVkSuccess(
         device->fn.BindImageMemory(device->GetVkDevice(), mHandle,
                                    ToBackend(mMemoryAllocation.GetResourceHeap())->GetMemory(),
                                    mMemoryAllocation.GetOffset()),
         "BindImageMemory"));
+
+    // crbug.com/1361662
+    // This works around an Intel Gen12 mesa bug due to CCS ambiguates stomping on each other.
+    // https://gitlab.freedesktop.org/mesa/mesa/-/issues/7301#note_1826367
+    if (device->IsToggleEnabled(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation)) {
+        auto format = GetFormat().format;
+        bool textureIsBuggy =
+            format == wgpu::TextureFormat::R8Unorm || format == wgpu::TextureFormat::R8Snorm ||
+            format == wgpu::TextureFormat::R8Uint || format == wgpu::TextureFormat::R8Sint ||
+            // These are flaky.
+            format == wgpu::TextureFormat::RG16Sint || format == wgpu::TextureFormat::RGBA16Sint ||
+            format == wgpu::TextureFormat::RGBA32Float;
+        textureIsBuggy &= GetNumMipLevels() > 1;
+        textureIsBuggy &= GetDimension() == wgpu::TextureDimension::e2D;
+        textureIsBuggy &= IsPowerOfTwo(GetWidth()) && IsPowerOfTwo(GetHeight());
+        if (textureIsBuggy) {
+            DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
+                                  GetAllSubresources(), TextureBase::ClearValue::Zero));
+        }
+    }
 
     if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
         DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
@@ -758,7 +804,7 @@ MaybeError Texture::InitializeFromExternal(const ExternalImageDescriptorVk* desc
     ASSERT(!GetFormat().IsMultiPlanar() || mCombinedAspect == Aspect::Color);
 
     mExternalState = ExternalState::PendingAcquire;
-    mExportQueueFamilyIndex = externalMemoryService->GetQueueFamilyIndex();
+    mExportQueueFamilyIndex = externalMemoryService->GetQueueFamilyIndex(descriptor->GetType());
 
     mPendingAcquireOldLayout = descriptor->releasedOldLayout;
     mPendingAcquireNewLayout = descriptor->releasedNewLayout;
@@ -931,7 +977,9 @@ MaybeError Texture::ExportExternalTexture(VkImageLayout desiredLayout,
 
 Texture::~Texture() {
     if (mExternalSemaphoreHandle != kNullExternalSemaphoreHandle) {
-        external_semaphore::Service::CloseHandle(mExternalSemaphoreHandle);
+        ToBackend(GetDevice())
+            ->GetExternalSemaphoreService()
+            ->CloseHandle(mExternalSemaphoreHandle);
     }
     mExternalSemaphoreHandle = kNullExternalSemaphoreHandle;
 }
@@ -1255,10 +1303,9 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                 regions.push_back(ComputeBufferImageCopyRegion(dataLayout, textureCopy, copySize));
             }
         }
-        device->fn.CmdCopyBufferToImage(recordingContext->commandBuffer,
-                                        ToBackend(uploadHandle.stagingBuffer)->GetBufferHandle(),
-                                        GetHandle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                        regions.size(), regions.data());
+        device->fn.CmdCopyBufferToImage(
+            recordingContext->commandBuffer, ToBackend(uploadHandle.stagingBuffer)->GetHandle(),
+            GetHandle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions.size(), regions.data());
     } else {
         for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
              ++level) {
@@ -1295,26 +1342,24 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                     ASSERT(aspects == Aspect::Color);
                     VkClearColorValue clearColorValue;
                     switch (GetFormat().GetAspectInfo(Aspect::Color).baseType) {
-                        case wgpu::TextureComponentType::Float:
+                        case TextureComponentType::Float:
                             clearColorValue.float32[0] = fClearColor;
                             clearColorValue.float32[1] = fClearColor;
                             clearColorValue.float32[2] = fClearColor;
                             clearColorValue.float32[3] = fClearColor;
                             break;
-                        case wgpu::TextureComponentType::Sint:
+                        case TextureComponentType::Sint:
                             clearColorValue.int32[0] = sClearColor;
                             clearColorValue.int32[1] = sClearColor;
                             clearColorValue.int32[2] = sClearColor;
                             clearColorValue.int32[3] = sClearColor;
                             break;
-                        case wgpu::TextureComponentType::Uint:
+                        case TextureComponentType::Uint:
                             clearColorValue.uint32[0] = uClearColor;
                             clearColorValue.uint32[1] = uClearColor;
                             clearColorValue.uint32[2] = uClearColor;
                             clearColorValue.uint32[3] = uClearColor;
                             break;
-                        case wgpu::TextureComponentType::DepthComparison:
-                            UNREACHABLE();
                     }
                     device->fn.CmdClearColorImage(recordingContext->commandBuffer, GetHandle(),
                                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -1331,22 +1376,24 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
     return {};
 }
 
-void Texture::EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
-                                                  const SubresourceRange& range) {
+MaybeError Texture::EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
+                                                        const SubresourceRange& range) {
     if (!GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
-        return;
+        return {};
     }
     if (!IsSubresourceContentInitialized(range)) {
         // If subresource has not been initialized, clear it to black as it could contain dirty
         // bits from recycled memory
-        GetDevice()->ConsumedError(
-            ClearTexture(recordingContext, range, TextureBase::ClearValue::Zero));
+        DAWN_TRY(ClearTexture(recordingContext, range, TextureBase::ClearValue::Zero));
     }
+    return {};
 }
 
 void Texture::UpdateExternalSemaphoreHandle(ExternalSemaphoreHandle handle) {
     if (mExternalSemaphoreHandle != kNullExternalSemaphoreHandle) {
-        external_semaphore::Service::CloseHandle(mExternalSemaphoreHandle);
+        ToBackend(GetDevice())
+            ->GetExternalSemaphoreService()
+            ->CloseHandle(mExternalSemaphoreHandle);
     }
     mExternalSemaphoreHandle = handle;
 }
@@ -1425,6 +1472,16 @@ MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
         device->fn.CreateImageView(device->GetVkDevice(), &createInfo, nullptr, &*mHandle),
         "CreateImageView"));
 
+    // We should create an image view with format RGBA8Unorm on the BGRA8Unorm texture when the
+    // texture is used as storage texture. See http://crbug.com/dawn/1641 for more details.
+    if (createInfo.format == VK_FORMAT_B8G8R8A8_UNORM &&
+        (GetTexture()->GetInternalUsage() & wgpu::TextureUsage::StorageBinding)) {
+        createInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        DAWN_TRY(CheckVkSuccess(device->fn.CreateImageView(device->GetVkDevice(), &createInfo,
+                                                           nullptr, &*mHandleForBGRA8UnormStorage),
+                                "CreateImageView for BGRA8Unorm storage"));
+    }
+
     SetLabelImpl();
 
     return {};
@@ -1439,10 +1496,19 @@ void TextureView::DestroyImpl() {
         device->GetFencedDeleter()->DeleteWhenUnused(mHandle);
         mHandle = VK_NULL_HANDLE;
     }
+
+    if (mHandleForBGRA8UnormStorage != VK_NULL_HANDLE) {
+        device->GetFencedDeleter()->DeleteWhenUnused(mHandleForBGRA8UnormStorage);
+        mHandleForBGRA8UnormStorage = VK_NULL_HANDLE;
+    }
 }
 
 VkImageView TextureView::GetHandle() const {
     return mHandle;
+}
+
+VkImageView TextureView::GetHandleForBGRA8UnormStorage() const {
+    return mHandleForBGRA8UnormStorage;
 }
 
 void TextureView::SetLabelImpl() {
