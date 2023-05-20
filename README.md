@@ -1,9 +1,11 @@
 ![Dawn's logo: a sun rising behind a stylized mountain inspired by the WebGPU logo. The text "Dawn" is written below it.](docs/imgs/dawn_logo.png "Dawn's logo")
 
-(Note: After cloning this repository you will need to copy the 'standlone/.gclient' file to the root dawn directory and run 'gclient sync' to
-install a bunch of missing stuff from the 'thirdparty' dir. gclient is part of google's 'depot tools' so you will also need to install that.
+# Some Dawn tweaks for OpenXR support.
 
-After that, you can build the 'bundling_target' target to create a stand alone static lib called dawn_static.lib in the root cmake build dir.)
+To build Dawn from source, after cloning the repository you will need to copy the 'standlone/.gclient' file to the root dawn directory and run 'gclient sync' to
+install a bunch of missing stuff from the 'thirdparty' dir. gclient is part of google's 'depot tools' so you will also need to install that. After that, you can build the 'bundling_target' cmake target to create a stand alone static lib called dawn_static.lib in the root cmake build dir. For a lightweight build, I use the following cmake options: -DDAWN_BUILD_SAMPLES=0 -DTINT_BUILD_SAMPLES=0 -DTINT_BUILD_TESTS=0 -DTINT_BUILD_DOCS=0 -DGLFW_INSTALL=0
+
+This version is really supposed to be used with the https://github.com/blitz-research/dawnxr lib, although it can still be used as a 'plain' standalone dawn static lib.
 
 # Dawn, a WebGPU implementation
 
