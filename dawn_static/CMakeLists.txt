@@ -123,7 +123,16 @@ add_library(dawn_static_deps STATIC ${DAWN_PLACEHOLDER_FILE})
 target_link_libraries(dawn_static_deps PUBLIC dawn_native dawn_proc dawncpp)
 
 bundle_static_library(dawn_static dawn_static_deps)
- 
+
 install(FILES "${CMAKE_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}dawn_static${CMAKE_STATIC_LIBRARY_SUFFIX}"
         CONFIGURATIONS Release
         RUNTIME DESTINATION lib)
+
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/include/"
+        CONFIGURATIONS Release
+        RUNTIME DESTINATION include)
+        
+install(DIRECTORY "${CMAKE_BINARY_DIR}/gen/include/"
+        CONFIGURATIONS Release
+        RUNTIME DESTINATION include)
+ 
