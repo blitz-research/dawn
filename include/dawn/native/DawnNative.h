@@ -297,6 +297,10 @@ DAWN_NATIVE_EXPORT uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer);
 DAWN_NATIVE_EXPORT bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a,
                                                                WGPUBindGroupLayout b);
 
+DAWN_NATIVE_EXPORT WGPUAdapter GetWGPUAdapter(WGPUDevice device);
+
+DAWN_NATIVE_EXPORT WGPUBackendType GetWGPUBackendType(WGPUAdapter adapter);
+
 }  // namespace dawn::native
 
 // Alias the DawnInstanceDescriptor up to wgpu.

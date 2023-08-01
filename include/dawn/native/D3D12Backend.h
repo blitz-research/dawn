@@ -27,6 +27,18 @@ struct ID3D12Resource;
 
 namespace dawn::native::d3d12 {
 
+// ***** Begin OpenXR *****
+
+DAWN_NATIVE_EXPORT Microsoft::WRL::ComPtr<ID3D12Device> GetD3D12Device(WGPUDevice device);
+
+DAWN_NATIVE_EXPORT Microsoft::WRL::ComPtr<ID3D12CommandQueue> GetD3D12CommandQueue(
+    WGPUDevice device);
+
+DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
+                                                          const WGPUTextureDescriptor* descriptor,
+                                                          ID3D12Resource* d3dTexture);
+// ***** End OpenXR *****
+
 class Device;
 
 enum MemorySegment {

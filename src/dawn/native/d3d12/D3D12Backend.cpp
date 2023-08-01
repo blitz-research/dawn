@@ -28,6 +28,29 @@
 
 namespace dawn::native::d3d12 {
 
+// ***** Begin OpenXR *****
+
+ComPtr<ID3D12Device> GetD3D12Device(WGPUDevice device) {
+    return ToBackend(FromAPI(device))->GetD3D12Device();
+}
+
+ComPtr<ID3D12CommandQueue> GetD3D12CommandQueue(WGPUDevice device) {
+    return ToBackend(FromAPI(device))->GetCommandQueue();
+}
+
+WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
+                                                          const WGPUTextureDescriptor* descriptor,
+                                                          ID3D12Resource* d3dTexture) {
+    auto texture = Texture::CreateExternalImage(ToBackend(FromAPI(device)), FromAPI(descriptor),
+                                                d3dTexture, {}, true, true);
+    if (texture.IsSuccess()) {
+        return ToAPI(texture.AcquireSuccess().Detach());
+    }
+    return nullptr;
+}
+
+// ***** End OpenXR *****
+
 uint64_t SetExternalMemoryReservation(WGPUDevice device,
                                       uint64_t requestedReservationSize,
                                       MemorySegment memorySegment) {

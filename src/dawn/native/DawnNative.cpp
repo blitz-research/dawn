@@ -314,4 +314,12 @@ bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a, WGPUBindGroup
     return FromAPI(a)->IsLayoutEqual(FromAPI(b), excludePipelineCompatibiltyToken);
 }
 
+WGPUAdapter GetWGPUAdapter(WGPUDevice device) {
+    return ToAPI(FromAPI(device)->GetAdapter());
+}
+
+WGPUBackendType GetWGPUBackendType(WGPUAdapter adapter) {
+    return ToAPI(FromAPI(adapter)->GetPhysicalDevice()->GetBackendType());
+}
+
 }  // namespace dawn::native

@@ -23,13 +23,16 @@
 
 namespace dawn::native::vulkan {
 
+struct OpenXRConfig;
+
 class VulkanInstance;
 
 class PhysicalDevice : public PhysicalDeviceBase {
   public:
     PhysicalDevice(InstanceBase* instance,
                    VulkanInstance* vulkanInstance,
-                   VkPhysicalDevice physicalDevice);
+                   VkPhysicalDevice physicalDevice,
+                   const OpenXRConfig* xrConfig);
     ~PhysicalDevice() override;
 
     // PhysicalDeviceBase Implementation
@@ -39,6 +42,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
     const VulkanDeviceInfo& GetDeviceInfo() const;
     VkPhysicalDevice GetVkPhysicalDevice() const;
     VulkanInstance* GetVulkanInstance() const;
+    const OpenXRConfig* GetOpenXRConfig() const;
 
     bool IsDepthStencilFormatSupported(VkFormat format) const;
 
@@ -66,6 +70,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
 
     VkPhysicalDevice mVkPhysicalDevice;
     Ref<VulkanInstance> mVulkanInstance;
+    const OpenXRConfig* mOpenXRConfig;
     VulkanDeviceInfo mDeviceInfo = {};
 
     uint32_t mDefaultComputeSubgroupSize = 0;

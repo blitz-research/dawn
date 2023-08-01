@@ -58,10 +58,12 @@ gpu_info::DriverVersion DecodeVulkanDriverVersion(uint32_t vendorID, uint32_t ve
 
 PhysicalDevice::PhysicalDevice(InstanceBase* instance,
                                VulkanInstance* vulkanInstance,
-                               VkPhysicalDevice physicalDevice)
+                               VkPhysicalDevice physicalDevice,
+                               const OpenXRConfig* xrConfig)
     : PhysicalDeviceBase(instance, wgpu::BackendType::Vulkan),
       mVkPhysicalDevice(physicalDevice),
-      mVulkanInstance(vulkanInstance) {}
+      mVulkanInstance(vulkanInstance),
+      mOpenXRConfig(xrConfig){}
 
 PhysicalDevice::~PhysicalDevice() = default;
 
@@ -75,6 +77,10 @@ VkPhysicalDevice PhysicalDevice::GetVkPhysicalDevice() const {
 
 VulkanInstance* PhysicalDevice::GetVulkanInstance() const {
     return mVulkanInstance.Get();
+}
+
+const OpenXRConfig* PhysicalDevice::GetOpenXRConfig() const {
+    return mOpenXRConfig;
 }
 
 bool PhysicalDevice::IsDepthStencilFormatSupported(VkFormat format) const {

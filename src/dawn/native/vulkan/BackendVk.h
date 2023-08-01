@@ -39,6 +39,8 @@ constexpr uint32_t kICDCount = 2u;
 
 class Device;
 
+struct OpenXRConfig;
+
 // VulkanInstance holds the reference to the Vulkan library, the VkInstance, VkPhysicalDevices
 // on that instance, Vulkan functions loaded from the library, and global information
 // gathered from the instance. VkPhysicalDevices bound to the VkInstance are bound to the GPU
@@ -49,7 +51,7 @@ class Device;
 // can delete the VkInstances that are not in use to avoid holding the discrete GPU active.
 class VulkanInstance : public RefCounted {
   public:
-    static ResultOrError<Ref<VulkanInstance>> Create(const InstanceBase* instance, ICD icd);
+    static ResultOrError<Ref<VulkanInstance>> Create(const InstanceBase* instance, const OpenXRConfig* xrConfig, ICD icd);
     ~VulkanInstance() override;
 
     const VulkanFunctions& GetFunctions() const;
@@ -66,8 +68,8 @@ class VulkanInstance : public RefCounted {
   private:
     VulkanInstance();
 
-    MaybeError Initialize(const InstanceBase* instance, ICD icd);
-    ResultOrError<VulkanGlobalKnobs> CreateVkInstance(const InstanceBase* instance);
+    MaybeError Initialize(const InstanceBase* instance, const OpenXRConfig* xrConfig, ICD icd);
+    ResultOrError<VulkanGlobalKnobs> CreateVkInstance(const InstanceBase* instance, const OpenXRConfig* xrConfig);
 
     MaybeError RegisterDebugUtils();
 
