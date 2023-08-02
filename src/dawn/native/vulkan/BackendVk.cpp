@@ -350,7 +350,15 @@ MaybeError VulkanInstance::Initialize(const InstanceBase* instance, const OpenXR
         DAWN_TRY(RegisterDebugUtils());
     }
 
-    DAWN_TRY_ASSIGN(mVkPhysicalDevices, GatherPhysicalDevices(mInstance, mFunctions));
+    if (xrConfig != nullptr) {
+        VkPhysicalDevice device;
+        if (xrConfig->GetVkPhysicalDevice(mInstance, &device) != VK_SUCCESS) {
+            return DAWN_INTERNAL_ERROR("Failed to get VkPhysicalDevice from OpenXR ");
+        }
+        mVkPhysicalDevices.push_back(device);
+    } else {
+        DAWN_TRY_ASSIGN(mVkPhysicalDevices, GatherPhysicalDevices(mInstance, mFunctions));
+    }
 
     return {};
 }
