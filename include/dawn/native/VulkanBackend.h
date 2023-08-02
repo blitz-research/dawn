@@ -38,10 +38,7 @@ DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
                                                           const WGPUTextureDescriptor* descriptor,
                                                           VkImage_T* image);
 
-// Can be chained in WGPURequestAdapterOptions
-struct DAWN_NATIVE_EXPORT OpenXRConfig : wgpu::ChainedStruct {
-    OpenXRConfig();
-
+struct OpenXRConfig {
     std::function<::VkResult(PFN_vkGetInstanceProcAddr,
                              const VkInstanceCreateInfo*,
                              const VkAllocationCallbacks*,
@@ -56,6 +53,12 @@ struct DAWN_NATIVE_EXPORT OpenXRConfig : wgpu::ChainedStruct {
                              const VkAllocationCallbacks*,
                              VkDevice*)>
         CreateVkDevice;
+};
+
+struct DAWN_NATIVE_EXPORT RequestAdapterOptionsOpenXRConfig : wgpu::ChainedStruct {
+    RequestAdapterOptionsOpenXRConfig();
+
+    const OpenXRConfig* openXRConfig;
 };
 
 // ***** End OpenXR *****

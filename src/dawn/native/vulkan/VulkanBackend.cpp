@@ -30,8 +30,8 @@ namespace dawn::native::vulkan {
 
 // ***** Begin OpenXR *****
 
-OpenXRConfig::OpenXRConfig(){
-    sType = wgpu::SType::RequestAdapterOptionsLUID;
+RequestAdapterOptionsOpenXRConfig::RequestAdapterOptionsOpenXRConfig() {
+    sType = wgpu::SType::RequestAdapterOptionsOpenXRConfig;
 }
 
 VkPhysicalDevice GetVkPhysicalDevice(WGPUDevice device) {

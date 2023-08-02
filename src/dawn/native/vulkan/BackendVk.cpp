@@ -523,8 +523,8 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
 
             const OpenXRConfig* xrConfig = nullptr;
             for (auto opt = options->nextInChain; opt; opt = opt->nextInChain) {
-                if (opt->sType == wgpu::SType::RequestAdapterOptionsLUID) {
-                    xrConfig = static_cast<const OpenXRConfig*>(opt);
+                if (opt->sType == wgpu::SType::RequestAdapterOptionsOpenXRConfig) {
+                    xrConfig = static_cast<const RequestAdapterOptionsOpenXRConfig*>(opt)->openXRConfig;
                     break;
                 }
             }

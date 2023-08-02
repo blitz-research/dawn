@@ -2642,7 +2642,8 @@
             {"value": 1010, "name": "request adapter options LUID", "tags": ["dawn", "native"]},
             {"value": 1011, "name": "request adapter options get GL proc", "tags": ["dawn", "native"]},
             {"value": 1012, "name": "dawn multisample state render to single sampled", "tags": ["dawn"]},
-            {"value": 1013, "name": "dawn render pass color attachment render to single sampled", "tags": ["dawn"]}
+            {"value": 1013, "name": "dawn render pass color attachment render to single sampled", "tags": ["dawn"]},
+            {"value": 1014, "name": "request adapter options OpenXR config", "tags":  ["dawn", "native"]}
         ]
     },
     "texture": {
