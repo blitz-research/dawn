@@ -120,7 +120,9 @@ function(bundle_static_library bundled_tgt_name tgt_name)
 endfunction()
 
 add_library(dawn_static_deps STATIC ${DAWN_PLACEHOLDER_FILE})
-target_link_libraries(dawn_static_deps PUBLIC dawn_native dawn_proc dawncpp)
+
+#   target_link_libraries(dawn_static_deps PUBLIC dawn_native dawn_proc dawncpp)
+target_link_libraries(dawn_static_deps PUBLIC dawn_native webgpu_dawn dawncpp)
 
 bundle_static_library(dawn_static dawn_static_deps)
 
@@ -135,4 +137,3 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/include/"
 install(DIRECTORY "${CMAKE_BINARY_DIR}/gen/include/"
         CONFIGURATIONS Release
         RUNTIME DESTINATION include)
- 
