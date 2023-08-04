@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "dawn/common/Mutex.h"
+#include <cstdlib>
 
 namespace dawn {
 Mutex::~Mutex() = default;
