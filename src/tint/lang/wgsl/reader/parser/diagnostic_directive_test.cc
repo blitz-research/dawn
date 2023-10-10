@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/reader/parser/test_helper.h"
+#include "src/tint/lang/wgsl/reader/parser/helper_test.h"
 
 #include "src/tint/lang/wgsl/ast/diagnostic_control.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::wgsl::reader {
 namespace {
@@ -27,7 +27,7 @@ TEST_F(WGSLParserTest, DiagnosticDirective_Name) {
     auto& ast = p->builder().AST();
     ASSERT_EQ(ast.DiagnosticDirectives().Length(), 1u);
     auto* directive = ast.DiagnosticDirectives()[0];
-    EXPECT_EQ(directive->control.severity, builtin::DiagnosticSeverity::kOff);
+    EXPECT_EQ(directive->control.severity, wgsl::DiagnosticSeverity::kOff);
     ASSERT_EQ(ast.GlobalDeclarations().Length(), 1u);
     EXPECT_EQ(ast.GlobalDeclarations()[0], directive);
 
@@ -44,7 +44,7 @@ TEST_F(WGSLParserTest, DiagnosticDirective_CategoryName) {
     auto& ast = p->builder().AST();
     ASSERT_EQ(ast.DiagnosticDirectives().Length(), 1u);
     auto* directive = ast.DiagnosticDirectives()[0];
-    EXPECT_EQ(directive->control.severity, builtin::DiagnosticSeverity::kOff);
+    EXPECT_EQ(directive->control.severity, wgsl::DiagnosticSeverity::kOff);
     ASSERT_EQ(ast.GlobalDeclarations().Length(), 1u);
     EXPECT_EQ(ast.GlobalDeclarations()[0], directive);
 

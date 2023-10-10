@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/glsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/glsl/writer/ast_printer/helper_test.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::glsl::writer {
 namespace {
@@ -92,8 +92,8 @@ TEST_F(GlslASTPrinterTest_Loop, Emit_LoopWithContinuing_BreakIf) {
 TEST_F(GlslASTPrinterTest_Loop, Emit_LoopNestedWithContinuing) {
     Func("a_statement", {}, ty.void_(), {});
 
-    GlobalVar("lhs", ty.f32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("rhs", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("lhs", ty.f32(), core::AddressSpace::kPrivate);
+    GlobalVar("rhs", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* body = Block(Break());
     auto* continuing = Block(CallStmt(Call("a_statement")));
@@ -140,7 +140,7 @@ TEST_F(GlslASTPrinterTest_Loop, Emit_LoopWithVarUsedInContinuing) {
     //   }
     // }
 
-    GlobalVar("rhs", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("rhs", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* body = Block(Decl(Var("lhs", ty.f32(), Expr(2.5_f))),  //
                        Decl(Var("other", ty.f32())),             //

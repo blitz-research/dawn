@@ -20,6 +20,7 @@
 #include <variant>
 #include <vector>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/block_param.h"
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/exit_if.h"
@@ -83,8 +84,9 @@
 #include "src/tint/lang/wgsl/ast/var.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/ast/while_statement.h"
+#include "src/tint/lang/wgsl/ir/builtin_call.h"
 #include "src/tint/lang/wgsl/program/program.h"
-#include "src/tint/lang/wgsl/sem/builtin.h"
+#include "src/tint/lang/wgsl/sem/builtin_fn.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/index_accessor_expression.h"
@@ -104,20 +106,20 @@
 #include "src/tint/utils/result/result.h"
 #include "src/tint/utils/rtti/switch.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::wgsl::reader {
-
 namespace {
 
-using ResultType = tint::Result<ir::Module, diag::List>;
+using ResultType = tint::Result<core::ir::Module>;
 
 /// Impl is the private-implementation of FromProgram().
 class Impl {
   public:
     /// Constructor
     /// @param program the program to convert to IR
-    explicit Impl(const Program* program) : program_(program) {}
+    explicit Impl(const Program& program) : program_(program) {}
 
     /// Builds an IR module from the program passed to the constructor.
     /// @return the IR module or an error.
@@ -127,41 +129,41 @@ class Impl {
     enum class ControlFlags { kNone, kExcludeSwitch };
 
     // The input Program
-    const Program* program_ = nullptr;
+    const Program& program_;
 
     /// The IR module being built
-    ir::Module mod;
+    core::ir::Module mod;
 
     /// The IR builder being used by the impl.
-    ir::Builder builder_{mod};
+    core::ir::Builder builder_{mod};
 
     // The clone context used to clone data from #program_
-    constant::CloneContext clone_ctx_{
-        /* type_ctx */ type::CloneContext{
-            /* src */ {&program_->Symbols()},
+    core::constant::CloneContext clone_ctx_{
+        /* type_ctx */ core::type::CloneContext{
+            /* src */ {&program_.Symbols()},
             /* dst */ {&builder_.ir.symbols, &builder_.ir.Types()},
         },
         /* dst */ {builder_.ir.constant_values},
     };
 
     /// The stack of flow control instructions.
-    Vector<ir::ControlInstruction*, 8> control_stack_;
+    Vector<core::ir::ControlInstruction*, 8> control_stack_;
 
     struct VectorRefElementAccess {
-        ir::Value* vector = nullptr;
-        ir::Value* index = nullptr;
+        core::ir::Value* vector = nullptr;
+        core::ir::Value* index = nullptr;
     };
 
-    using ValueOrVecElAccess = std::variant<ir::Value*, VectorRefElementAccess>;
+    using ValueOrVecElAccess = std::variant<core::ir::Value*, VectorRefElementAccess>;
 
     /// The current block for expressions.
-    ir::Block* current_block_ = nullptr;
+    core::ir::Block* current_block_ = nullptr;
 
     /// The current function being processed.
-    ir::Function* current_function_ = nullptr;
+    core::ir::Function* current_function_ = nullptr;
 
     /// The current stack of scopes being processed.
-    ScopeStack<Symbol, ir::Value*> scopes_;
+    ScopeStack<Symbol, core::ir::Value*> scopes_;
 
     /// The diagnostic that have been raised.
     diag::List diagnostics_;
@@ -178,7 +180,7 @@ class Impl {
 
     class ControlStackScope : public StackScope {
       public:
-        ControlStackScope(Impl* impl, ir::ControlInstruction* b) : StackScope(impl) {
+        ControlStackScope(Impl* impl, core::ir::ControlInstruction* b) : StackScope(impl) {
             impl_->control_stack_.Push(b);
         }
 
@@ -191,7 +193,7 @@ class Impl {
 
     bool NeedTerminator() { return current_block_ && !current_block_->HasTerminator(); }
 
-    void SetTerminator(ir::Terminator* terminator) {
+    void SetTerminator(core::ir::Terminator* terminator) {
         TINT_ASSERT(current_block_);
         TINT_ASSERT(!current_block_->HasTerminator());
 
@@ -199,15 +201,15 @@ class Impl {
         current_block_ = nullptr;
     }
 
-    ir::Instruction* FindEnclosingControl(ControlFlags flags) {
+    core::ir::Instruction* FindEnclosingControl(ControlFlags flags) {
         for (auto it = control_stack_.rbegin(); it != control_stack_.rend(); ++it) {
-            if ((*it)->Is<ir::Loop>()) {
+            if ((*it)->Is<core::ir::Loop>()) {
                 return *it;
             }
             if (flags == ControlFlags::kExcludeSwitch) {
                 continue;
             }
-            if ((*it)->Is<ir::Switch>()) {
+            if ((*it)->Is<core::ir::Switch>()) {
                 return *it;
             }
         }
@@ -215,7 +217,7 @@ class Impl {
     }
 
     ResultType EmitModule() {
-        auto* sem = program_->Sem().Module();
+        auto* sem = program_.Sem().Module();
 
         for (auto* decl : sem->DependencyOrderedDeclarations()) {
             tint::Switch(
@@ -230,7 +232,7 @@ class Impl {
                 [&](const ast::Variable* var) {
                     // Setup the current block to be the root block for the module. The builder
                     // will handle creating it if it doesn't exist already.
-                    TINT_SCOPED_ASSIGNMENT(current_block_, builder_.RootBlock());
+                    TINT_SCOPED_ASSIGNMENT(current_block_, mod.root_block);
                     EmitVariable(var);
                 },
                 [&](const ast::Function* func) { EmitFunction(func); },
@@ -250,35 +252,35 @@ class Impl {
         }
 
         if (diagnostics_.contains_errors()) {
-            return ResultType(std::move(diagnostics_));
+            return Failure{std::move(diagnostics_)};
         }
 
-        return ResultType{std::move(mod)};
+        return std::move(mod);
     }
 
-    builtin::Interpolation ExtractInterpolation(const ast::InterpolateAttribute* interp) {
-        auto type = program_->Sem()
+    core::Interpolation ExtractInterpolation(const ast::InterpolateAttribute* interp) {
+        auto type = program_.Sem()
                         .Get(interp->type)
-                        ->As<sem::BuiltinEnumExpression<builtin::InterpolationType>>();
-        builtin::InterpolationType interpolation_type = type->Value();
+                        ->As<sem::BuiltinEnumExpression<core::InterpolationType>>();
+        core::InterpolationType interpolation_type = type->Value();
 
-        builtin::InterpolationSampling interpolation_sampling =
-            builtin::InterpolationSampling::kUndefined;
+        core::InterpolationSampling interpolation_sampling =
+            core::InterpolationSampling::kUndefined;
         if (interp->sampling) {
-            auto sampling = program_->Sem()
+            auto sampling = program_.Sem()
                                 .Get(interp->sampling)
-                                ->As<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>();
+                                ->As<sem::BuiltinEnumExpression<core::InterpolationSampling>>();
             interpolation_sampling = sampling->Value();
         }
 
-        return builtin::Interpolation{interpolation_type, interpolation_sampling};
+        return core::Interpolation{interpolation_type, interpolation_sampling};
     }
 
     void EmitFunction(const ast::Function* ast_func) {
         // The flow stack should have been emptied when the previous function finished building.
         TINT_ASSERT(control_stack_.IsEmpty());
 
-        const auto* sem = program_->Sem().Get(ast_func);
+        const auto* sem = program_.Sem().Get(ast_func);
 
         auto* ir_func = builder_.Function(ast_func->name->symbol.NameView(),
                                           sem->ReturnType()->Clone(clone_ctx_.type_ctx));
@@ -289,13 +291,13 @@ class Impl {
         if (ast_func->IsEntryPoint()) {
             switch (ast_func->PipelineStage()) {
                 case ast::PipelineStage::kVertex:
-                    ir_func->SetStage(ir::Function::PipelineStage::kVertex);
+                    ir_func->SetStage(core::ir::Function::PipelineStage::kVertex);
                     break;
                 case ast::PipelineStage::kFragment:
-                    ir_func->SetStage(ir::Function::PipelineStage::kFragment);
+                    ir_func->SetStage(core::ir::Function::PipelineStage::kFragment);
                     break;
                 case ast::PipelineStage::kCompute: {
-                    ir_func->SetStage(ir::Function::PipelineStage::kCompute);
+                    ir_func->SetStage(core::ir::Function::PipelineStage::kCompute);
 
                     auto wg_size = sem->WorkgroupSize();
                     ir_func->SetWorkgroupSize(wg_size[0].value(), wg_size[1].value_or(1),
@@ -310,7 +312,7 @@ class Impl {
 
             // Note, interpolated is only valid when paired with Location, so it will only be set
             // when the location is set.
-            std::optional<builtin::Interpolation> interpolation;
+            std::optional<core::Interpolation> interpolation;
             for (auto* attr : ast_func->return_type_attributes) {
                 tint::Switch(
                     attr,  //
@@ -320,21 +322,21 @@ class Impl {
                     [&](const ast::InvariantAttribute*) { ir_func->SetReturnInvariant(true); },
                     [&](const ast::BuiltinAttribute* b) {
                         if (auto* ident_sem =
-                                program_->Sem()
+                                program_.Sem()
                                     .Get(b)
-                                    ->As<sem::BuiltinEnumExpression<builtin::BuiltinValue>>()) {
+                                    ->As<sem::BuiltinEnumExpression<core::BuiltinValue>>()) {
                             switch (ident_sem->Value()) {
-                                case builtin::BuiltinValue::kPosition:
+                                case core::BuiltinValue::kPosition:
                                     ir_func->SetReturnBuiltin(
-                                        ir::Function::ReturnBuiltin::kPosition);
+                                        core::ir::Function::ReturnBuiltin::kPosition);
                                     break;
-                                case builtin::BuiltinValue::kFragDepth:
+                                case core::BuiltinValue::kFragDepth:
                                     ir_func->SetReturnBuiltin(
-                                        ir::Function::ReturnBuiltin::kFragDepth);
+                                        core::ir::Function::ReturnBuiltin::kFragDepth);
                                     break;
-                                case builtin::BuiltinValue::kSampleMask:
+                                case core::BuiltinValue::kSampleMask:
                                     ir_func->SetReturnBuiltin(
-                                        ir::Function::ReturnBuiltin::kSampleMask);
+                                        core::ir::Function::ReturnBuiltin::kSampleMask);
                                     break;
                                 default:
                                     TINT_ICE() << "Unknown builtin value in return attributes "
@@ -355,15 +357,15 @@ class Impl {
         scopes_.Push();
         TINT_DEFER(scopes_.Pop());
 
-        Vector<ir::FunctionParam*, 1> params;
+        Vector<core::ir::FunctionParam*, 1> params;
         for (auto* p : ast_func->params) {
-            const auto* param_sem = program_->Sem().Get(p)->As<sem::Parameter>();
+            const auto* param_sem = program_.Sem().Get(p)->As<sem::Parameter>();
             auto* ty = param_sem->Type()->Clone(clone_ctx_.type_ctx);
             auto* param = builder_.FunctionParam(p->name->symbol.NameView(), ty);
 
             // Note, interpolated is only valid when paired with Location, so it will only be set
             // when the location is set.
-            std::optional<builtin::Interpolation> interpolation;
+            std::optional<core::Interpolation> interpolation;
             for (auto* attr : p->attributes) {
                 tint::Switch(
                     attr,  //
@@ -373,45 +375,60 @@ class Impl {
                     [&](const ast::InvariantAttribute*) { param->SetInvariant(true); },
                     [&](const ast::BuiltinAttribute* b) {
                         if (auto* ident_sem =
-                                program_->Sem()
+                                program_.Sem()
                                     .Get(b)
-                                    ->As<sem::BuiltinEnumExpression<builtin::BuiltinValue>>()) {
+                                    ->As<sem::BuiltinEnumExpression<core::BuiltinValue>>()) {
                             switch (ident_sem->Value()) {
-                                case builtin::BuiltinValue::kVertexIndex:
-                                    param->SetBuiltin(ir::FunctionParam::Builtin::kVertexIndex);
-                                    break;
-                                case builtin::BuiltinValue::kInstanceIndex:
-                                    param->SetBuiltin(ir::FunctionParam::Builtin::kInstanceIndex);
-                                    break;
-                                case builtin::BuiltinValue::kPosition:
-                                    param->SetBuiltin(ir::FunctionParam::Builtin::kPosition);
-                                    break;
-                                case builtin::BuiltinValue::kFrontFacing:
-                                    param->SetBuiltin(ir::FunctionParam::Builtin::kFrontFacing);
-                                    break;
-                                case builtin::BuiltinValue::kLocalInvocationId:
+                                case core::BuiltinValue::kVertexIndex:
                                     param->SetBuiltin(
-                                        ir::FunctionParam::Builtin::kLocalInvocationId);
+                                        core::ir::FunctionParam::Builtin::kVertexIndex);
                                     break;
-                                case builtin::BuiltinValue::kLocalInvocationIndex:
+                                case core::BuiltinValue::kInstanceIndex:
                                     param->SetBuiltin(
-                                        ir::FunctionParam::Builtin::kLocalInvocationIndex);
+                                        core::ir::FunctionParam::Builtin::kInstanceIndex);
                                     break;
-                                case builtin::BuiltinValue::kGlobalInvocationId:
+                                case core::BuiltinValue::kPosition:
+                                    param->SetBuiltin(core::ir::FunctionParam::Builtin::kPosition);
+                                    break;
+                                case core::BuiltinValue::kFrontFacing:
                                     param->SetBuiltin(
-                                        ir::FunctionParam::Builtin::kGlobalInvocationId);
+                                        core::ir::FunctionParam::Builtin::kFrontFacing);
                                     break;
-                                case builtin::BuiltinValue::kWorkgroupId:
-                                    param->SetBuiltin(ir::FunctionParam::Builtin::kWorkgroupId);
+                                case core::BuiltinValue::kLocalInvocationId:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kLocalInvocationId);
                                     break;
-                                case builtin::BuiltinValue::kNumWorkgroups:
-                                    param->SetBuiltin(ir::FunctionParam::Builtin::kNumWorkgroups);
+                                case core::BuiltinValue::kLocalInvocationIndex:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kLocalInvocationIndex);
                                     break;
-                                case builtin::BuiltinValue::kSampleIndex:
-                                    param->SetBuiltin(ir::FunctionParam::Builtin::kSampleIndex);
+                                case core::BuiltinValue::kGlobalInvocationId:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kGlobalInvocationId);
                                     break;
-                                case builtin::BuiltinValue::kSampleMask:
-                                    param->SetBuiltin(ir::FunctionParam::Builtin::kSampleMask);
+                                case core::BuiltinValue::kWorkgroupId:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kWorkgroupId);
+                                    break;
+                                case core::BuiltinValue::kNumWorkgroups:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kNumWorkgroups);
+                                    break;
+                                case core::BuiltinValue::kSampleIndex:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kSampleIndex);
+                                    break;
+                                case core::BuiltinValue::kSampleMask:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kSampleMask);
+                                    break;
+                                case core::BuiltinValue::kSubgroupInvocationId:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kSubgroupInvocationId);
+                                    break;
+                                case core::BuiltinValue::kSubgroupSize:
+                                    param->SetBuiltin(
+                                        core::ir::FunctionParam::Builtin::kSubgroupSize);
                                     break;
                                 default:
                                     TINT_ICE() << "Unknown builtin value in parameter attributes "
@@ -443,7 +460,7 @@ class Impl {
 
         // Add a terminator if one was not already created.
         if (NeedTerminator()) {
-            if (!program_->Sem().Get(ast_func->body)->Behaviors().Contains(sem::Behavior::kNext)) {
+            if (!program_.Sem().Get(ast_func->body)->Behaviors().Contains(sem::Behavior::kNext)) {
                 SetTerminator(builder_.Unreachable());
             } else {
                 SetTerminator(builder_.Return(current_function_));
@@ -459,7 +476,7 @@ class Impl {
         for (auto* s : stmts) {
             EmitStatement(s);
 
-            if (auto* sem = program_->Sem().Get(s);
+            if (auto* sem = program_.Sem().Get(s);
                 sem && !sem->Behaviors().Contains(sem::Behavior::kNext)) {
                 break;  // Unreachable statement.
             }
@@ -513,7 +530,7 @@ class Impl {
         }
 
         auto b = builder_.Append(current_block_);
-        if (auto* v = std::get_if<ir::Value*>(&lhs)) {
+        if (auto* v = std::get_if<core::ir::Value*>(&lhs)) {
             b.Store(*v, rhs);
         } else if (auto ref = std::get_if<VectorRefElementAccess>(&lhs)) {
             b.StoreVectorElement(ref->vector, ref->index, rhs);
@@ -523,12 +540,12 @@ class Impl {
     void EmitIncrementDecrement(const ast::IncrementDecrementStatement* stmt) {
         auto lhs = EmitExpression(stmt->lhs);
 
-        auto* one = program_->TypeOf(stmt->lhs)->UnwrapRef()->is_signed_integer_scalar()
+        auto* one = program_.TypeOf(stmt->lhs)->UnwrapRef()->is_signed_integer_scalar()
                         ? builder_.Constant(1_i)
                         : builder_.Constant(1_u);
 
         EmitCompoundAssignment(lhs, one,
-                               stmt->increment ? ast::BinaryOp::kAdd : ast::BinaryOp::kSubtract);
+                               stmt->increment ? core::BinaryOp::kAdd : core::BinaryOp::kSubtract);
     }
 
     void EmitCompoundAssignment(const ast::CompoundAssignmentStatement* stmt) {
@@ -542,9 +559,9 @@ class Impl {
         EmitCompoundAssignment(lhs, rhs, stmt->op);
     }
 
-    void EmitCompoundAssignment(ValueOrVecElAccess lhs, ir::Value* rhs, ast::BinaryOp op) {
+    void EmitCompoundAssignment(ValueOrVecElAccess lhs, core::ir::Value* rhs, core::BinaryOp op) {
         auto b = builder_.Append(current_block_);
-        if (auto* v = std::get_if<ir::Value*>(&lhs)) {
+        if (auto* v = std::get_if<core::ir::Value*>(&lhs)) {
             auto* load = b.Load(*v);
             auto* ty = load->Result()->Type();
             auto* inst = current_block_->Append(BinaryOp(ty, load->Result(), rhs, op));
@@ -741,9 +758,9 @@ class Impl {
 
         ControlStackScope scope(this, switch_inst);
 
-        const auto* sem = program_->Sem().Get(stmt);
+        const auto* sem = program_.Sem().Get(stmt);
         for (const auto* c : sem->Cases()) {
-            Vector<ir::Switch::CaseSelector, 4> selectors;
+            Vector<core::ir::Switch::CaseSelector, 4> selectors;
             for (const auto* selector : c->Selectors()) {
                 if (selector->IsDefault()) {
                     selectors.Push({nullptr});
@@ -762,7 +779,7 @@ class Impl {
     }
 
     void EmitReturn(const ast::ReturnStatement* stmt) {
-        ir::Value* ret_value = nullptr;
+        core::ir::Value* ret_value = nullptr;
         if (stmt->value) {
             auto ret = EmitValueExpression(stmt->value);
             if (!ret) {
@@ -781,9 +798,9 @@ class Impl {
         auto* current_control = FindEnclosingControl(ControlFlags::kNone);
         TINT_ASSERT(current_control);
 
-        if (auto* c = current_control->As<ir::Loop>()) {
+        if (auto* c = current_control->As<core::ir::Loop>()) {
             SetTerminator(builder_.ExitLoop(c));
-        } else if (auto* s = current_control->As<ir::Switch>()) {
+        } else if (auto* s = current_control->As<core::ir::Switch>()) {
             SetTerminator(builder_.ExitSwitch(s));
         } else {
             TINT_UNREACHABLE();
@@ -794,7 +811,7 @@ class Impl {
         auto* current_control = FindEnclosingControl(ControlFlags::kExcludeSwitch);
         TINT_ASSERT(current_control);
 
-        if (auto* c = current_control->As<ir::Loop>()) {
+        if (auto* c = current_control->As<core::ir::Loop>()) {
             SetTerminator(builder_.Continue(c));
         } else {
             TINT_UNREACHABLE();
@@ -818,7 +835,7 @@ class Impl {
         if (!cond) {
             return;
         }
-        SetTerminator(builder_.BreakIf(current_control->As<ir::Loop>(), cond));
+        SetTerminator(builder_.BreakIf(current_control->As<core::ir::Loop>(), cond));
     }
 
     ValueOrVecElAccess EmitExpression(const ast::Expression* root) {
@@ -841,13 +858,13 @@ class Impl {
 
           private:
             Impl& impl;
-            Vector<ir::Block*, 8> blocks;
+            Vector<core::ir::Block*, 8> blocks;
             Vector<std::function<void()>, 64> tasks;
             Hashmap<const ast::Expression*, ValueOrVecElAccess, 64> bindings_;
 
-            void Bind(const ast::Expression* expr, ir::Value* value) {
+            void Bind(const ast::Expression* expr, core::ir::Value* value) {
                 // If this expression maps to sem::Load, insert a load instruction to get the result
-                if (impl.program_->Sem().Get<sem::Load>(expr)) {
+                if (impl.program_.Sem().Get<sem::Load>(expr)) {
                     auto* load = impl.builder_.Load(value);
                     impl.current_block_->Append(load);
                     value = load->Result();
@@ -857,7 +874,7 @@ class Impl {
 
             void Bind(const ast::Expression* expr, const VectorRefElementAccess& access) {
                 // If this expression maps to sem::Load, insert a load instruction to get the result
-                if (impl.program_->Sem().Get<sem::Load>(expr)) {
+                if (impl.program_.Sem().Get<sem::Load>(expr)) {
                     auto* load = impl.builder_.LoadVectorElement(access.vector, access.index);
                     impl.current_block_->Append(load);
                     bindings_.Add(expr, load->Result());
@@ -874,24 +891,24 @@ class Impl {
                 return *val;
             }
 
-            ir::Value* GetValue(const ast::Expression* expr) {
+            core::ir::Value* GetValue(const ast::Expression* expr) {
                 auto res = Get(expr);
-                if (auto** val = std::get_if<ir::Value*>(&res)) {
+                if (auto** val = std::get_if<core::ir::Value*>(&res)) {
                     return *val;
                 }
                 TINT_ICE() << "expression did not resolve to a value";
                 return nullptr;
             }
 
-            void PushBlock(ir::Block* block) {
+            void PushBlock(core::ir::Block* block) {
                 blocks.Push(impl.current_block_);
                 impl.current_block_ = block;
             }
 
             void PopBlock() { impl.current_block_ = blocks.Pop(); }
 
-            ir::Value* EmitConstant(const ast::Expression* expr) {
-                if (auto* sem = impl.program_->Sem().GetVal(expr)) {
+            core::ir::Value* EmitConstant(const ast::Expression* expr) {
+                if (auto* sem = impl.program_.Sem().GetVal(expr)) {
                     if (auto* v = sem->ConstantValue()) {
                         if (auto* cv = v->Clone(impl.clone_ctx_)) {
                             auto* val = impl.builder_.Constant(cv);
@@ -915,18 +932,20 @@ class Impl {
                     return;
                 }
 
-                auto* sem = impl.program_->Sem().Get(expr)->Unwrap();
+                auto* sem = impl.program_.Sem().Get(expr)->Unwrap();
 
                 // The access result type should match the source result type. If the source is a
                 // pointer, we generate a pointer.
-                const type::Type* ty = sem->Type()->UnwrapRef()->Clone(impl.clone_ctx_.type_ctx);
-                if (auto* ptr = obj->Type()->As<type::Pointer>(); ptr && !ty->Is<type::Pointer>()) {
+                const core::type::Type* ty =
+                    sem->Type()->UnwrapRef()->Clone(impl.clone_ctx_.type_ctx);
+                if (auto* ptr = obj->Type()->As<core::type::Pointer>();
+                    ptr && !ty->Is<core::type::Pointer>()) {
                     ty = impl.builder_.ir.Types().ptr(ptr->AddressSpace(), ty, ptr->Access());
                 }
 
                 auto index = tint::Switch(
                     sem,
-                    [&](const sem::IndexAccessorExpression* idx) -> ir::Value* {
+                    [&](const sem::IndexAccessorExpression* idx) -> core::ir::Value* {
                         if (auto* v = idx->Index()->ConstantValue()) {
                             if (auto* cv = v->Clone(impl.clone_ctx_)) {
                                 return impl.builder_.Constant(cv);
@@ -936,10 +955,10 @@ class Impl {
                         }
                         return GetValue(idx->Index()->Declaration());
                     },
-                    [&](const sem::StructMemberAccess* access) -> ir::Value* {
+                    [&](const sem::StructMemberAccess* access) -> core::ir::Value* {
                         return impl.builder_.Constant(u32((access->Member()->Index())));
                     },
-                    [&](const sem::Swizzle* swizzle) -> ir::Value* {
+                    [&](const sem::Swizzle* swizzle) -> core::ir::Value* {
                         auto& indices = swizzle->Indices();
 
                         // A single element swizzle is just treated as an accessor.
@@ -963,8 +982,8 @@ class Impl {
                 // If the object is an unnamed value (a subexpression, not a let) and is the result
                 // of another access, then we can just append the index to that access.
                 if (!impl.mod.NameOf(obj).IsValid()) {
-                    if (auto* inst_res = obj->As<ir::InstructionResult>()) {
-                        if (auto* access = inst_res->Source()->As<ir::Access>()) {
+                    if (auto* inst_res = obj->As<core::ir::InstructionResult>()) {
+                        if (auto* access = inst_res->Source()->As<core::ir::Access>()) {
                             access->AddIndex(index);
                             access->Result()->SetType(ty);
                             bindings_.Remove(expr->object);
@@ -986,7 +1005,7 @@ class Impl {
             }
 
             void EmitBinary(const ast::BinaryExpression* b) {
-                auto* b_sem = impl.program_->Sem().Get(b);
+                auto* b_sem = impl.program_.Sem().Get(b);
                 auto* ty = b_sem->Type()->Clone(impl.clone_ctx_.type_ctx);
                 auto lhs = GetValue(b->lhs);
                 if (!lhs) {
@@ -996,7 +1015,7 @@ class Impl {
                 if (!rhs) {
                     return;
                 }
-                ir::Binary* inst = impl.BinaryOp(ty, lhs, rhs, b->op);
+                core::ir::Binary* inst = impl.BinaryOp(ty, lhs, rhs, b->op);
                 if (!inst) {
                     return;
                 }
@@ -1009,23 +1028,23 @@ class Impl {
                 if (!val) {
                     return;
                 }
-                auto* sem = impl.program_->Sem().Get(expr);
+                auto* sem = impl.program_.Sem().Get(expr);
                 auto* ty = sem->Type()->Clone(impl.clone_ctx_.type_ctx);
-                ir::Instruction* inst = nullptr;
+                core::ir::Instruction* inst = nullptr;
                 switch (expr->op) {
-                    case ast::UnaryOp::kAddressOf:
-                    case ast::UnaryOp::kIndirection:
+                    case core::UnaryOp::kAddressOf:
+                    case core::UnaryOp::kIndirection:
                         // 'address-of' and 'indirection' just fold away and we propagate the
                         // pointer.
                         Bind(expr, val);
                         return;
-                    case ast::UnaryOp::kComplement:
+                    case core::UnaryOp::kComplement:
                         inst = impl.builder_.Complement(ty, val);
                         break;
-                    case ast::UnaryOp::kNegation:
+                    case core::UnaryOp::kNegation:
                         inst = impl.builder_.Negation(ty, val);
                         break;
-                    case ast::UnaryOp::kNot:
+                    case core::UnaryOp::kNot:
                         inst = impl.builder_.Not(ty, val);
                         break;
                 }
@@ -1038,7 +1057,7 @@ class Impl {
                 if (!val) {
                     return;
                 }
-                auto* sem = impl.program_->Sem().Get(b);
+                auto* sem = impl.program_.Sem().Get(b);
                 auto* ty = sem->Type()->Clone(impl.clone_ctx_.type_ctx);
                 auto* inst = impl.builder_.Bitcast(ty, val);
                 impl.current_block_->Append(inst);
@@ -1047,7 +1066,7 @@ class Impl {
 
             void EmitCall(const ast::CallExpression* expr) {
                 // If this is a materialized semantic node, just use the constant value.
-                if (auto* mat = impl.program_->Sem().Get(expr)) {
+                if (auto* mat = impl.program_.Sem().Get(expr)) {
                     if (mat->ConstantValue()) {
                         auto* cv = mat->ConstantValue()->Clone(impl.clone_ctx_);
                         if (!cv) {
@@ -1059,7 +1078,7 @@ class Impl {
                         return;
                     }
                 }
-                Vector<ir::Value*, 8> args;
+                Vector<core::ir::Value*, 8> args;
                 args.Reserve(expr->args.Length());
                 // Emit the arguments
                 for (const auto* arg : expr->args) {
@@ -1070,17 +1089,19 @@ class Impl {
                     }
                     args.Push(value);
                 }
-                auto* sem = impl.program_->Sem().Get<sem::Call>(expr);
+                auto* sem = impl.program_.Sem().Get<sem::Call>(expr);
                 if (!sem) {
                     impl.add_error(expr->source, "failed to get semantic information for call " +
                                                      std::string(expr->TypeInfo().name));
                     return;
                 }
                 auto* ty = sem->Target()->ReturnType()->Clone(impl.clone_ctx_.type_ctx);
-                ir::Instruction* inst = nullptr;
+                core::ir::Instruction* inst = nullptr;
                 // If this is a builtin function, emit the specific builtin value
-                if (auto* b = sem->Target()->As<sem::Builtin>()) {
-                    inst = impl.builder_.Call(ty, b->Type(), args);
+                if (auto* b = sem->Target()->As<sem::BuiltinFn>()) {
+                    auto* res = impl.builder_.InstructionResult(ty);
+                    inst = impl.builder_.ir.instructions.Create<wgsl::ir::BuiltinCall>(
+                        res, b->Fn(), std::move(args));
                 } else if (sem->Target()->As<sem::ValueConstructor>()) {
                     inst = impl.builder_.Construct(ty, std::move(args));
                 } else if (sem->Target()->Is<sem::ValueConversion>()) {
@@ -1090,9 +1111,10 @@ class Impl {
                     return;
                 } else {
                     // Not a builtin and not a templated call, so this is a user function.
-                    inst = impl.builder_.Call(
-                        ty, impl.scopes_.Get(expr->target->identifier->symbol)->As<ir::Function>(),
-                        std::move(args));
+                    inst = impl.builder_.Call(ty,
+                                              impl.scopes_.Get(expr->target->identifier->symbol)
+                                                  ->As<core::ir::Function>(),
+                                              std::move(args));
                 }
                 if (inst == nullptr) {
                     return;
@@ -1112,7 +1134,7 @@ class Impl {
             }
 
             void EmitLiteral(const ast::LiteralExpression* lit) {
-                auto* sem = impl.program_->Sem().Get(lit);
+                auto* sem = impl.program_.Sem().Get(lit);
                 if (!sem) {
                     impl.add_error(lit->source, "failed to get semantic information for node " +
                                                     std::string(lit->TypeInfo().name));
@@ -1131,7 +1153,7 @@ class Impl {
             std::optional<VectorRefElementAccess> AsVectorRefElementAccess(
                 const ast::Expression* expr) {
                 return AsVectorRefElementAccess(
-                    impl.program_->Sem().Get<sem::ValueExpression>(expr)->UnwrapLoad());
+                    impl.program_.Sem().Get<sem::ValueExpression>(expr)->UnwrapLoad());
             }
 
             std::optional<VectorRefElementAccess> AsVectorRefElementAccess(
@@ -1141,12 +1163,12 @@ class Impl {
                     return std::nullopt;
                 }
 
-                auto* ref = access->Object()->Type()->As<type::Reference>();
+                auto* ref = access->Object()->Type()->As<core::type::Reference>();
                 if (!ref) {
                     return std::nullopt;
                 }
 
-                if (!ref->StoreType()->Is<type::Vector>()) {
+                if (!ref->StoreType()->Is<core::type::Vector>()) {
                     return std::nullopt;
                 }
                 return tint::Switch(
@@ -1182,7 +1204,7 @@ class Impl {
                 auto* result = b.InstructionResult(b.ir.Types().bool_());
                 if_inst->SetResults(result);
 
-                if (expr->op == ast::BinaryOp::kLogicalAnd) {
+                if (expr->op == core::BinaryOp::kLogicalAnd) {
                     if_inst->False()->Append(b.ExitIf(if_inst, b.Constant(false)));
                     PushBlock(if_inst->True());
                 } else {
@@ -1195,8 +1217,8 @@ class Impl {
 
             void EndShortCircuit(const ast::BinaryExpression* b) {
                 auto res = GetValue(b);
-                auto* src = res->As<ir::InstructionResult>()->Source();
-                auto* if_ = src->As<ir::If>();
+                auto* src = res->As<core::ir::InstructionResult>()->Source();
+                auto* if_ = src->As<core::ir::If>();
                 TINT_ASSERT_OR_RETURN(if_);
                 auto rhs = GetValue(b->rhs);
                 if (!rhs) {
@@ -1216,8 +1238,8 @@ class Impl {
                 tint::Switch(
                     expr,  //
                     [&](const ast::BinaryExpression* e) {
-                        if (e->op == ast::BinaryOp::kLogicalAnd ||
-                            e->op == ast::BinaryOp::kLogicalOr) {
+                        if (e->op == core::BinaryOp::kLogicalAnd ||
+                            e->op == core::BinaryOp::kLogicalOr) {
                             tasks.Push([=] { EndShortCircuit(e); });
                             tasks.Push([=] { Process(e->rhs); });
                             tasks.Push([=] { BeginShortCircuit(e); });
@@ -1263,9 +1285,9 @@ class Impl {
         return Emitter(*this).Emit(root);
     }
 
-    ir::Value* EmitValueExpression(const ast::Expression* root) {
+    core::ir::Value* EmitValueExpression(const ast::Expression* root) {
         auto res = EmitExpression(root);
-        if (auto** val = std::get_if<ir::Value*>(&res)) {
+        if (auto** val = std::get_if<core::ir::Value*>(&res)) {
             return *val;
         }
         TINT_ICE() << "expression did not resolve to a value";
@@ -1275,13 +1297,13 @@ class Impl {
     void EmitCall(const ast::CallStatement* stmt) { (void)EmitValueExpression(stmt->expr); }
 
     void EmitVariable(const ast::Variable* var) {
-        auto* sem = program_->Sem().Get(var);
+        auto* sem = program_.Sem().Get(var);
 
         return tint::Switch(  //
             var,
             [&](const ast::Var* v) {
-                auto* ref = sem->Type()->As<type::Reference>();
-                auto* ty = builder_.ir.Types().Get<type::Pointer>(
+                auto* ref = sem->Type()->As<core::type::Reference>();
+                auto* ty = builder_.ir.Types().Get<core::type::Pointer>(
                     ref->AddressSpace(), ref->StoreType()->Clone(clone_ctx_.type_ctx),
                     ref->Access());
 
@@ -1316,7 +1338,7 @@ class Impl {
                 auto* value = init;
                 if (current_block_->Back() == last_stmt) {
                     // Emitting the let's initializer didn't create an instruction.
-                    // Create an ir::Let to give the let an instruction. This gives the let a
+                    // Create an core::ir::Let to give the let an instruction. This gives the let a
                     // place of declaration and name, which preserves runtime semantics of the
                     // let, and can be used by consumers of the IR to produce a variable or
                     // debug info.
@@ -1337,7 +1359,7 @@ class Impl {
             },
             [&](const ast::Const*) {
                 // Skip. This should be handled by const-eval already, so the const will be a
-                // `constant::` value at the usage sites. Can just ignore the `const` variable
+                // `core::constant::` value at the usage sites. Can just ignore the `const` variable
                 // as it should never be used.
                 //
                 // TODO(dsinclair): Probably want to store the const variable somewhere and then
@@ -1349,46 +1371,46 @@ class Impl {
             });
     }
 
-    ir::Binary* BinaryOp(const type::Type* ty, ir::Value* lhs, ir::Value* rhs, ast::BinaryOp op) {
+    core::ir::Binary* BinaryOp(const core::type::Type* ty,
+                               core::ir::Value* lhs,
+                               core::ir::Value* rhs,
+                               core::BinaryOp op) {
         switch (op) {
-            case ast::BinaryOp::kAnd:
+            case core::BinaryOp::kAnd:
                 return builder_.And(ty, lhs, rhs);
-            case ast::BinaryOp::kOr:
+            case core::BinaryOp::kOr:
                 return builder_.Or(ty, lhs, rhs);
-            case ast::BinaryOp::kXor:
+            case core::BinaryOp::kXor:
                 return builder_.Xor(ty, lhs, rhs);
-            case ast::BinaryOp::kEqual:
+            case core::BinaryOp::kEqual:
                 return builder_.Equal(ty, lhs, rhs);
-            case ast::BinaryOp::kNotEqual:
+            case core::BinaryOp::kNotEqual:
                 return builder_.NotEqual(ty, lhs, rhs);
-            case ast::BinaryOp::kLessThan:
+            case core::BinaryOp::kLessThan:
                 return builder_.LessThan(ty, lhs, rhs);
-            case ast::BinaryOp::kGreaterThan:
+            case core::BinaryOp::kGreaterThan:
                 return builder_.GreaterThan(ty, lhs, rhs);
-            case ast::BinaryOp::kLessThanEqual:
+            case core::BinaryOp::kLessThanEqual:
                 return builder_.LessThanEqual(ty, lhs, rhs);
-            case ast::BinaryOp::kGreaterThanEqual:
+            case core::BinaryOp::kGreaterThanEqual:
                 return builder_.GreaterThanEqual(ty, lhs, rhs);
-            case ast::BinaryOp::kShiftLeft:
+            case core::BinaryOp::kShiftLeft:
                 return builder_.ShiftLeft(ty, lhs, rhs);
-            case ast::BinaryOp::kShiftRight:
+            case core::BinaryOp::kShiftRight:
                 return builder_.ShiftRight(ty, lhs, rhs);
-            case ast::BinaryOp::kAdd:
+            case core::BinaryOp::kAdd:
                 return builder_.Add(ty, lhs, rhs);
-            case ast::BinaryOp::kSubtract:
+            case core::BinaryOp::kSubtract:
                 return builder_.Subtract(ty, lhs, rhs);
-            case ast::BinaryOp::kMultiply:
+            case core::BinaryOp::kMultiply:
                 return builder_.Multiply(ty, lhs, rhs);
-            case ast::BinaryOp::kDivide:
+            case core::BinaryOp::kDivide:
                 return builder_.Divide(ty, lhs, rhs);
-            case ast::BinaryOp::kModulo:
+            case core::BinaryOp::kModulo:
                 return builder_.Modulo(ty, lhs, rhs);
-            case ast::BinaryOp::kLogicalAnd:
-            case ast::BinaryOp::kLogicalOr:
+            case core::BinaryOp::kLogicalAnd:
+            case core::BinaryOp::kLogicalOr:
                 TINT_ICE() << "short circuit op should have already been handled";
-                return nullptr;
-            case ast::BinaryOp::kNone:
-                TINT_ICE() << "missing binary operand type";
                 return nullptr;
         }
         TINT_UNREACHABLE();
@@ -1398,15 +1420,17 @@ class Impl {
 
 }  // namespace
 
-tint::Result<ir::Module, std::string> ProgramToIR(const Program* program) {
-    if (!program->IsValid()) {
-        return std::string("input program is not valid");
+tint::Result<core::ir::Module> ProgramToIR(const Program& program) {
+    if (!program.IsValid()) {
+        return Failure{program.Diagnostics()};
     }
 
     Impl b(program);
     auto r = b.Build();
     if (!r) {
-        return r.Failure().str();
+        diag::List err = std::move(r.Failure().reason);
+        err.add_note(diag::System::IR, "AST:\n" + Program::printer(program), Source{});
+        return Failure{err};
     }
 
     return r.Move();

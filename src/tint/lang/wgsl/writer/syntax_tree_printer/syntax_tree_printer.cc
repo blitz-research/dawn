@@ -16,7 +16,7 @@
 
 #include <algorithm>
 
-#include "src/tint/lang/core/builtin/texel_format.h"
+#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/wgsl/ast/accessor_expression.h"
 #include "src/tint/lang/wgsl/ast/alias.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
@@ -71,18 +71,18 @@
 #include "src/tint/utils/macros/scoped_assignment.h"
 #include "src/tint/utils/math/math.h"
 #include "src/tint/utils/rtti/switch.h"
-#include "src/tint/utils/text/float_to_string.h"
+#include "src/tint/utils/strconv/float_to_string.h"
 #include "src/tint/utils/text/string.h"
 
 namespace tint::wgsl::writer {
 
-SyntaxTreePrinter::SyntaxTreePrinter(const Program* program) : program_(program) {}
+SyntaxTreePrinter::SyntaxTreePrinter(const Program& program) : program_(program) {}
 
 SyntaxTreePrinter::~SyntaxTreePrinter() = default;
 
-void SyntaxTreePrinter::Generate() {
+bool SyntaxTreePrinter::Generate() {
     // Generate global declarations in the order they appear in the module.
-    for (auto* decl : program_->AST().GlobalDeclarations()) {
+    for (auto* decl : program_.AST().GlobalDeclarations()) {
         Switch(
             decl,  //
             [&](const ast::DiagnosticDirective* dd) { EmitDiagnosticControl(dd->control); },
@@ -93,10 +93,12 @@ void SyntaxTreePrinter::Generate() {
             [&](const ast::ConstAssert* ca) { EmitConstAssert(ca); },
             [&](Default) { TINT_UNREACHABLE(); });
 
-        if (decl != program_->AST().GlobalDeclarations().Back()) {
+        if (decl != program_.AST().GlobalDeclarations().Back()) {
             Line();
         }
     }
+
+    return true;
 }
 
 void SyntaxTreePrinter::EmitDiagnosticControl(const ast::DiagnosticControl& diagnostic) {
@@ -391,8 +393,8 @@ void SyntaxTreePrinter::EmitFunction(const ast::Function* func) {
     Line() << "]";
 }
 
-void SyntaxTreePrinter::EmitImageFormat(const builtin::TexelFormat fmt) {
-    Line() << "builtin::TexelFormat [" << fmt << "]";
+void SyntaxTreePrinter::EmitImageFormat(const core::TexelFormat fmt) {
+    Line() << "core::TexelFormat [" << fmt << "]";
 }
 
 void SyntaxTreePrinter::EmitStructType(const ast::Struct* str) {
@@ -667,64 +669,61 @@ void SyntaxTreePrinter::EmitBinary(const ast::BinaryExpression* expr) {
     Line() << "]";
 }
 
-void SyntaxTreePrinter::EmitBinaryOp(const ast::BinaryOp op) {
+void SyntaxTreePrinter::EmitBinaryOp(const core::BinaryOp op) {
     switch (op) {
-        case ast::BinaryOp::kAnd:
+        case core::BinaryOp::kAnd:
             Line() << "&";
             break;
-        case ast::BinaryOp::kOr:
+        case core::BinaryOp::kOr:
             Line() << "|";
             break;
-        case ast::BinaryOp::kXor:
+        case core::BinaryOp::kXor:
             Line() << "^";
             break;
-        case ast::BinaryOp::kLogicalAnd:
+        case core::BinaryOp::kLogicalAnd:
             Line() << "&&";
             break;
-        case ast::BinaryOp::kLogicalOr:
+        case core::BinaryOp::kLogicalOr:
             Line() << "||";
             break;
-        case ast::BinaryOp::kEqual:
+        case core::BinaryOp::kEqual:
             Line() << "==";
             break;
-        case ast::BinaryOp::kNotEqual:
+        case core::BinaryOp::kNotEqual:
             Line() << "!=";
             break;
-        case ast::BinaryOp::kLessThan:
+        case core::BinaryOp::kLessThan:
             Line() << "<";
             break;
-        case ast::BinaryOp::kGreaterThan:
+        case core::BinaryOp::kGreaterThan:
             Line() << ">";
             break;
-        case ast::BinaryOp::kLessThanEqual:
+        case core::BinaryOp::kLessThanEqual:
             Line() << "<=";
             break;
-        case ast::BinaryOp::kGreaterThanEqual:
+        case core::BinaryOp::kGreaterThanEqual:
             Line() << ">=";
             break;
-        case ast::BinaryOp::kShiftLeft:
+        case core::BinaryOp::kShiftLeft:
             Line() << "<<";
             break;
-        case ast::BinaryOp::kShiftRight:
+        case core::BinaryOp::kShiftRight:
             Line() << ">>";
             break;
-        case ast::BinaryOp::kAdd:
+        case core::BinaryOp::kAdd:
             Line() << "+";
             break;
-        case ast::BinaryOp::kSubtract:
+        case core::BinaryOp::kSubtract:
             Line() << "-";
             break;
-        case ast::BinaryOp::kMultiply:
+        case core::BinaryOp::kMultiply:
             Line() << "*";
             break;
-        case ast::BinaryOp::kDivide:
+        case core::BinaryOp::kDivide:
             Line() << "/";
             break;
-        case ast::BinaryOp::kModulo:
+        case core::BinaryOp::kModulo:
             Line() << "%";
-            break;
-        case ast::BinaryOp::kNone:
-            diagnostics_.add_error(diag::System::Writer, "missing binary operation type");
             break;
     }
 }
@@ -737,19 +736,19 @@ void SyntaxTreePrinter::EmitUnaryOp(const ast::UnaryOpExpression* expr) {
         {
             ScopedIndent op(this);
             switch (expr->op) {
-                case ast::UnaryOp::kAddressOf:
+                case core::UnaryOp::kAddressOf:
                     Line() << "&";
                     break;
-                case ast::UnaryOp::kComplement:
+                case core::UnaryOp::kComplement:
                     Line() << "~";
                     break;
-                case ast::UnaryOp::kIndirection:
+                case core::UnaryOp::kIndirection:
                     Line() << "*";
                     break;
-                case ast::UnaryOp::kNot:
+                case core::UnaryOp::kNot:
                     Line() << "!";
                     break;
-                case ast::UnaryOp::kNegation:
+                case core::UnaryOp::kNegation:
                     Line() << "-";
                     break;
             }

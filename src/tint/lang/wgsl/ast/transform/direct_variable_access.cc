@@ -18,8 +18,9 @@
 #include <string>
 #include <utility>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/abstract_int.h"
-#include "src/tint/lang/wgsl/ast/transform/utils/hoist_to_decl_before.h"
+#include "src/tint/lang/wgsl/ast/transform/hoist_to_decl_before.h"
 #include "src/tint/lang/wgsl/ast/traverse_expressions.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
@@ -39,7 +40,10 @@
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::DirectVariableAccess);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::DirectVariableAccess::Config);
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+
+namespace tint::ast::transform {
 
 namespace {
 
@@ -48,12 +52,15 @@ struct AccessRoot {
     /// The pointer-unwrapped type of the *transformed* variable.
     /// This may be different for pointers in 'private' and 'function' address space, as the pointer
     /// parameter type is to the *base object* instead of the input pointer type.
-    tint::type::Type const* type = nullptr;
+    tint::core::type::Type const* type = nullptr;
     /// The originating module-scope variable ('private', 'storage', 'uniform', 'workgroup'),
     /// function-scope variable ('function'), or pointer parameter in the source program.
     tint::sem::Variable const* variable = nullptr;
     /// The address space of the variable or pointer type.
-    tint::builtin::AddressSpace address_space = tint::builtin::AddressSpace::kUndefined;
+    tint::core::AddressSpace address_space = tint::core::AddressSpace::kUndefined;
+
+    /// @return a hash code for this object
+    size_t HashCode() const { return Hash(type, variable); }
 };
 
 /// Inequality operator for AccessRoot
@@ -66,6 +73,9 @@ bool operator!=(const AccessRoot& a, const AccessRoot& b) {
 struct DynamicIndex {
     /// The index of the expression in DirectVariableAccess::State::AccessChain::dynamic_indices
     size_t slot = 0;
+
+    /// @return a hash code for this object
+    size_t HashCode() const { return Hash(slot); }
 };
 
 /// Inequality operator for DynamicIndex
@@ -138,6 +148,9 @@ struct AccessShape {
         }
         return count;
     }
+
+    /// @return a hash code for this object
+    size_t HashCode() const { return Hash(root, ops); }
 };
 
 /// Equality operator for AccessShape
@@ -154,59 +167,26 @@ bool operator!=(const AccessShape& a, const AccessShape& b) {
 struct AccessChain : AccessShape {
     /// The array accessor index expressions. This vector is indexed by the `DynamicIndex`s in
     /// #indices.
-    tint::Vector<const tint::sem::ValueExpression*, 8> dynamic_indices;
+    Vector<const sem::ValueExpression*, 8> dynamic_indices;
     /// If true, then this access chain is used as an argument to call a variant.
     bool used_in_call = false;
 };
 
 }  // namespace
 
-namespace tint {
-
-/// Hasher specialization for AccessRoot
-template <>
-struct Hasher<AccessRoot> {
-    /// The hash function for the AccessRoot
-    /// @param d the AccessRoot to hash
-    /// @return the hash for the given AccessRoot
-    size_t operator()(const AccessRoot& d) const { return Hash(d.type, d.variable); }
-};
-
-/// Hasher specialization for DynamicIndex
-template <>
-struct Hasher<DynamicIndex> {
-    /// The hash function for the DynamicIndex
-    /// @param d the DynamicIndex to hash
-    /// @return the hash for the given DynamicIndex
-    size_t operator()(const DynamicIndex& d) const { return Hash(d.slot); }
-};
-
-/// Hasher specialization for AccessShape
-template <>
-struct Hasher<AccessShape> {
-    /// The hash function for the AccessShape
-    /// @param s the AccessShape to hash
-    /// @return the hash for the given AccessShape
-    size_t operator()(const AccessShape& s) const { return Hash(s.root, s.ops); }
-};
-
-}  // namespace tint
-
-namespace tint::ast::transform {
-
 /// The PIMPL state for the DirectVariableAccess transform
 struct DirectVariableAccess::State {
     /// Constructor
     /// @param src the source Program
     /// @param options the transform options
-    State(const Program* src, const Options& options)
-        : ctx{&b, src, /* auto_clone_symbols */ true}, opts(options) {}
+    State(const Program& src, const Options& options)
+        : ctx{&b, &src, /* auto_clone_symbols */ true}, opts(options) {}
 
     /// The main function for the transform.
     /// @returns the ApplyResult
     ApplyResult Run() {
         if (!ctx.src->Sem().Module()->Extensions().Contains(
-                builtin::Extension::kChromiumExperimentalFullPtrParameters)) {
+                wgsl::Extension::kChromiumExperimentalFullPtrParameters)) {
             // If the 'chromium_experimental_full_ptr_parameters' extension is not enabled, then
             // there's nothing for this transform to do.
             return SkipTransform;
@@ -444,7 +424,7 @@ struct DirectVariableAccess::State {
                     chain->root.variable = variable;
                     chain->root.type = variable->Type();
                     chain->root.address_space = variable->AddressSpace();
-                    if (auto* ptr = chain->root.type->As<type::Pointer>()) {
+                    if (auto* ptr = chain->root.type->As<core::type::Pointer>()) {
                         chain->root.address_space = ptr->AddressSpace();
                     }
                     access_chains.Add(expr, chain);
@@ -453,19 +433,19 @@ struct DirectVariableAccess::State {
                 Switch(
                     variable->Declaration(),
                     [&](const Var*) {
-                        if (variable->AddressSpace() != builtin::AddressSpace::kHandle) {
+                        if (variable->AddressSpace() != core::AddressSpace::kHandle) {
                             // Start a new access chain for the non-handle 'var' access
                             create_new_chain();
                         }
                     },
                     [&](const Parameter*) {
-                        if (variable->Type()->Is<type::Pointer>()) {
+                        if (variable->Type()->Is<core::type::Pointer>()) {
                             // Start a new access chain for the pointer parameter access
                             create_new_chain();
                         }
                     },
                     [&](const Let*) {
-                        if (variable->Type()->Is<type::Pointer>()) {
+                        if (variable->Type()->Is<core::type::Pointer>()) {
                             // variable is a pointer-let.
                             auto* init = sem.GetVal(variable->Declaration()->initializer);
                             // Note: We do not use take_chain() here, as we need to preserve the
@@ -499,7 +479,8 @@ struct DirectVariableAccess::State {
                 if (auto* unary = e->Declaration()->As<UnaryOpExpression>()) {
                     // Unary op.
                     // If this is a '&' or '*', simply move the chain to the unary op expression.
-                    if (unary->op == UnaryOp::kAddressOf || unary->op == UnaryOp::kIndirection) {
+                    if (unary->op == core::UnaryOp::kAddressOf ||
+                        unary->op == core::UnaryOp::kIndirection) {
                         take_chain(sem.GetVal(unary->expr));
                     }
                 }
@@ -575,7 +556,7 @@ struct DirectVariableAccess::State {
             if (!idx->UnwrapMaterialize()
                      ->Type()
                      ->UnwrapRef()
-                     ->IsAnyOf<type::U32, type::AbstractInt>()) {
+                     ->IsAnyOf<core::type::U32, core::type::AbstractInt>()) {
                 expr = b.Call<u32>(expr);
             }
         }
@@ -639,7 +620,7 @@ struct DirectVariableAccess::State {
             for (size_t i = 0; i < call->Arguments().Length(); i++) {
                 const auto* arg = call->Arguments()[i];
                 const auto* param = target->Parameters()[i];
-                const auto* param_ty = param->Type()->As<type::Pointer>();
+                const auto* param_ty = param->Type()->As<core::type::Pointer>();
                 if (!param_ty) {
                     continue;  // Parameter type is not a pointer.
                 }
@@ -751,15 +732,15 @@ struct DirectVariableAccess::State {
 
     /// @returns true if the address space @p address_space requires transforming given the
     /// transform's options.
-    bool AddressSpaceRequiresTransform(builtin::AddressSpace address_space) const {
+    bool AddressSpaceRequiresTransform(core::AddressSpace address_space) const {
         switch (address_space) {
-            case builtin::AddressSpace::kUniform:
-            case builtin::AddressSpace::kStorage:
-            case builtin::AddressSpace::kWorkgroup:
+            case core::AddressSpace::kUniform:
+            case core::AddressSpace::kStorage:
+            case core::AddressSpace::kWorkgroup:
                 return true;
-            case builtin::AddressSpace::kPrivate:
+            case core::AddressSpace::kPrivate:
                 return opts.transform_private;
-            case builtin::AddressSpace::kFunction:
+            case core::AddressSpace::kFunction:
                 return opts.transform_function;
             default:
                 return false;
@@ -882,7 +863,7 @@ struct DirectVariableAccess::State {
             for (size_t arg_idx = 0; arg_idx < call->Arguments().Length(); arg_idx++) {
                 auto* arg = call->Arguments()[arg_idx];
                 auto* param = call->Target()->Parameters()[arg_idx];
-                auto* param_ty = param->Type()->As<type::Pointer>();
+                auto* param_ty = param->Type()->As<core::type::Pointer>();
                 if (!param_ty) {
                     // Parameter is not a pointer.
                     // Just clone the unaltered argument.
@@ -1050,7 +1031,7 @@ struct DirectVariableAccess::State {
 
             // BuildAccessExpr() always returns a non-pointer.
             // If the expression we're replacing is a pointer, take the address.
-            if (expr->Type()->Is<type::Pointer>()) {
+            if (expr->Type()->Is<core::type::Pointer>()) {
                 chain_expr = b.AddressOf(chain_expr);
             }
 
@@ -1126,7 +1107,7 @@ struct DirectVariableAccess::State {
 
         const Expression* expr = b.Expr(ctx.Clone(root.variable->Declaration()->name->symbol));
         if (deref) {
-            if (root.variable->Type()->Is<type::Pointer>()) {
+            if (root.variable->Type()->Is<core::type::Pointer>()) {
                 expr = b.Deref(expr);
             }
         }
@@ -1167,7 +1148,7 @@ struct DirectVariableAccess::State {
     /// @returns true if the function @p fn has at least one pointer parameter.
     static bool HasPointerParameter(const sem::Function* fn) {
         for (auto* param : fn->Parameters()) {
-            if (param->Type()->Is<type::Pointer>()) {
+            if (param->Type()->Is<core::type::Pointer>()) {
                 return true;
             }
         }
@@ -1179,11 +1160,11 @@ struct DirectVariableAccess::State {
     /// generated, and must be stripped.
     static bool MustBeCalled(const sem::Function* fn) {
         for (auto* param : fn->Parameters()) {
-            if (auto* ptr = param->Type()->As<type::Pointer>()) {
+            if (auto* ptr = param->Type()->As<core::type::Pointer>()) {
                 switch (ptr->AddressSpace()) {
-                    case builtin::AddressSpace::kUniform:
-                    case builtin::AddressSpace::kStorage:
-                    case builtin::AddressSpace::kWorkgroup:
+                    case core::AddressSpace::kUniform:
+                    case core::AddressSpace::kStorage:
+                    case core::AddressSpace::kWorkgroup:
                         return true;
                     default:
                         return false;
@@ -1194,8 +1175,8 @@ struct DirectVariableAccess::State {
     }
 
     /// @returns true if the given address space is 'private' or 'function'.
-    static bool IsPrivateOrFunction(const builtin::AddressSpace sc) {
-        return sc == builtin::AddressSpace::kPrivate || sc == builtin::AddressSpace::kFunction;
+    static bool IsPrivateOrFunction(const core::AddressSpace sc) {
+        return sc == core::AddressSpace::kPrivate || sc == core::AddressSpace::kFunction;
     }
 };
 
@@ -1207,7 +1188,7 @@ DirectVariableAccess::DirectVariableAccess() = default;
 
 DirectVariableAccess::~DirectVariableAccess() = default;
 
-Transform::ApplyResult DirectVariableAccess::Apply(const Program* program,
+Transform::ApplyResult DirectVariableAccess::Apply(const Program& program,
                                                    const DataMap& inputs,
                                                    DataMap&) const {
     Options options;

@@ -21,39 +21,38 @@
 
 namespace tint::hlsl::writer {
 
-Result Generate(const Program* program, const Options& options) {
-    Result result;
-    if (!program->IsValid()) {
-        result.error = "input program is not valid";
-        return result;
+Result<Output> Generate(const Program& program, const Options& options) {
+    if (!program.IsValid()) {
+        return Failure{program.Diagnostics()};
     }
 
     // Sanitize the program.
     auto sanitized_result = Sanitize(program, options);
     if (!sanitized_result.program.IsValid()) {
-        result.success = false;
-        result.error = sanitized_result.program.Diagnostics().str();
-        return result;
+        return Failure{sanitized_result.program.Diagnostics()};
     }
 
     // Generate the HLSL code.
-    auto impl = std::make_unique<ASTPrinter>(&sanitized_result.program);
-    result.success = impl->Generate();
-    result.error = impl->Diagnostics().str();
-    result.hlsl = impl->Result();
+    auto impl = std::make_unique<ASTPrinter>(sanitized_result.program);
+    if (!impl->Generate()) {
+        return Failure{impl->Diagnostics()};
+    }
+
+    Output output;
+    output.hlsl = impl->Result();
 
     // Collect the list of entry points in the sanitized program.
     for (auto* func : sanitized_result.program.AST().Functions()) {
         if (func->IsEntryPoint()) {
             auto name = func->name->symbol.Name();
-            result.entry_points.push_back({name, func->PipelineStage()});
+            output.entry_points.push_back({name, func->PipelineStage()});
         }
     }
 
-    result.used_array_length_from_uniform_indices =
+    output.used_array_length_from_uniform_indices =
         std::move(sanitized_result.used_array_length_from_uniform_indices);
 
-    return result;
+    return output;
 }
 
 }  // namespace tint::hlsl::writer

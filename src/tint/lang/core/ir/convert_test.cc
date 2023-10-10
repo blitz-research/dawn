@@ -14,12 +14,12 @@
 
 #include "src/tint/lang/core/ir/convert.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using IR_ConvertTest = IRTestHelper;
 
 TEST_F(IR_ConvertTest, Fail_NullToType) {
@@ -41,5 +41,21 @@ TEST_F(IR_ConvertTest, Results) {
     EXPECT_EQ(c->Result()->Source(), c);
 }
 
+TEST_F(IR_ConvertTest, Clone) {
+    auto* c = b.Convert(mod.Types().f32(), 1_u);
+
+    auto* new_c = clone_ctx.Clone(c);
+
+    EXPECT_NE(c, new_c);
+    EXPECT_NE(c->Result(), new_c->Result());
+    EXPECT_EQ(mod.Types().f32(), new_c->Result()->Type());
+
+    auto args = new_c->Args();
+    EXPECT_EQ(1u, args.Length());
+
+    auto* val0 = args[0]->As<Constant>()->Value();
+    EXPECT_EQ(1_u, val0->As<core::constant::Scalar<u32>>()->ValueAs<u32>());
+}
+
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

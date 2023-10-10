@@ -50,12 +50,10 @@ MaybeError ValidateExternalTexturePlane(const TextureViewBase* textureView) {
 
 MaybeError ValidateExternalTextureDescriptor(const DeviceBase* device,
                                              const ExternalTextureDescriptor* descriptor) {
-    ASSERT(descriptor);
-    ASSERT(descriptor->plane0);
+    DAWN_ASSERT(descriptor);
+    DAWN_ASSERT(descriptor->plane0);
 
     DAWN_TRY(device->ValidateObject(descriptor->plane0));
-
-    wgpu::TextureFormat plane0Format = descriptor->plane0->GetFormat().format;
 
     DAWN_INVALID_IF(!descriptor->gamutConversionMatrix,
                     "The gamut conversion matrix must be non-null.");
@@ -66,43 +64,44 @@ MaybeError ValidateExternalTextureDescriptor(const DeviceBase* device,
     DAWN_INVALID_IF(!descriptor->dstTransferFunctionParameters,
                     "The destination transfer function parameters must be non-null.");
 
+    DAWN_TRY(ValidateExternalTexturePlane(descriptor->plane0));
+
+    auto CheckPlaneFormat = [](const DeviceBase* device, const Format& format,
+                               uint32_t requiredComponentCount) -> MaybeError {
+        DAWN_INVALID_IF(format.aspects != Aspect::Color, "The format (%s) is not a color format.",
+                        format.format);
+        DAWN_INVALID_IF(!IsSubset(SampleTypeBit::Float,
+                                  format.GetAspectInfo(Aspect::Color).supportedSampleTypes),
+                        "The format (%s) is not filterable float.", format.format);
+        DAWN_INVALID_IF(format.componentCount != requiredComponentCount,
+                        "The format (%s) component count (%u) is not %u.", format.format,
+                        requiredComponentCount, format.componentCount);
+        return {};
+    };
+
     if (descriptor->plane1) {
         DAWN_INVALID_IF(
             !descriptor->yuvToRgbConversionMatrix,
             "When more than one plane is set, the YUV-to-RGB conversion matrix must be non-null.");
 
         DAWN_TRY(device->ValidateObject(descriptor->plane1));
-        wgpu::TextureFormat plane1Format = descriptor->plane1->GetFormat().format;
-
-        DAWN_INVALID_IF(plane0Format != wgpu::TextureFormat::R8Unorm,
-                        "The bi-planar external texture plane (%s) format (%s) is not %s.",
-                        descriptor->plane0, plane0Format, wgpu::TextureFormat::R8Unorm);
-        DAWN_INVALID_IF(plane1Format != wgpu::TextureFormat::RG8Unorm,
-                        "The bi-planar external texture plane (%s) format (%s) is not %s.",
-                        descriptor->plane1, plane1Format, wgpu::TextureFormat::RG8Unorm);
-
-        DAWN_TRY(ValidateExternalTexturePlane(descriptor->plane0));
         DAWN_TRY(ValidateExternalTexturePlane(descriptor->plane1));
+
+        // Y + UV case.
+        DAWN_TRY_CONTEXT(CheckPlaneFormat(device, descriptor->plane0->GetFormat(), 1),
+                         "validating the format of plane 0 (%s)", descriptor->plane0);
+        DAWN_TRY_CONTEXT(CheckPlaneFormat(device, descriptor->plane1->GetFormat(), 2),
+                         "validating the format of plane 1 (%s)", descriptor->plane1);
     } else {
-        switch (plane0Format) {
-            case wgpu::TextureFormat::RGBA8Unorm:
-            case wgpu::TextureFormat::BGRA8Unorm:
-            case wgpu::TextureFormat::RGBA16Float:
-                DAWN_TRY(ValidateExternalTexturePlane(descriptor->plane0));
-                break;
-            default:
-                return DAWN_VALIDATION_ERROR(
-                    "The external texture plane (%s) format (%s) is not a supported format "
-                    "(%s, %s, %s).",
-                    descriptor->plane0, plane0Format, wgpu::TextureFormat::RGBA8Unorm,
-                    wgpu::TextureFormat::BGRA8Unorm, wgpu::TextureFormat::RGBA16Float);
-        }
+        // RGBA case.
+        DAWN_TRY_CONTEXT(CheckPlaneFormat(device, descriptor->plane0->GetFormat(), 4),
+                         "validating the format of plane 0 (%s)", descriptor->plane0);
     }
 
     DAWN_INVALID_IF(descriptor->visibleSize.width == 0 || descriptor->visibleSize.height == 0,
                     "VisibleSize %s have 0 on width or height.", &descriptor->visibleSize);
 
-    const Extent3D textureSize = descriptor->plane0->GetTexture()->GetSize();
+    const Extent3D textureSize = descriptor->plane0->GetSingleSubresourceVirtualSize();
     DAWN_INVALID_IF(descriptor->visibleSize.width > textureSize.width ||
                         descriptor->visibleSize.height > textureSize.height,
                     "VisibleSize %s is exceed the texture size, defined by Plane0 size (%u, %u).",
@@ -175,7 +174,7 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
     // passed from Chromium. The matrix was originally sourced from /skia/src/core/SkYUVMath.cpp.
     // This matrix is only used in multiplanar scenarios.
     if (params.numPlanes == 2) {
-        ASSERT(descriptor->yuvToRgbConversionMatrix);
+        DAWN_ASSERT(descriptor->yuvToRgbConversionMatrix);
         const float* yMat = descriptor->yuvToRgbConversionMatrix;
         std::copy(yMat, yMat + 12, params.yuvToRgbConversionMatrix.begin());
     }
@@ -288,10 +287,10 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
     coordTransformMatrix = Translate(coordTransformMatrix, 0.5, 0.5);
 
     // Calculate scale factors and offsets from the specified visibleSize.
-    ASSERT(descriptor->visibleSize.width > 0);
-    ASSERT(descriptor->visibleSize.height > 0);
-    uint32_t frameWidth = descriptor->plane0->GetTexture()->GetWidth();
-    uint32_t frameHeight = descriptor->plane0->GetTexture()->GetHeight();
+    DAWN_ASSERT(descriptor->visibleSize.width > 0);
+    DAWN_ASSERT(descriptor->visibleSize.height > 0);
+    uint32_t frameWidth = descriptor->plane0->GetSingleSubresourceVirtualSize().width;
+    uint32_t frameHeight = descriptor->plane0->GetSingleSubresourceVirtualSize().height;
     float xScale =
         static_cast<float>(descriptor->visibleSize.width) / static_cast<float>(frameWidth);
     float yScale =
@@ -325,7 +324,7 @@ const std::array<Ref<TextureViewBase>, kMaxPlanesPerFormat>& ExternalTextureBase
 }
 
 MaybeError ExternalTextureBase::ValidateCanUseInSubmitNow() const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     DAWN_INVALID_IF(mState != ExternalTextureState::Active,
                     "External texture %s used in a submit is not active.", this);
 
@@ -369,6 +368,13 @@ void ExternalTextureBase::APIDestroy() {
 }
 
 void ExternalTextureBase::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the texture is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the texture.
+    // - It may be called when the last ref to the texture is dropped and the texture
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the texture since there are no other live refs.
     mState = ExternalTextureState::Destroyed;
 }
 
@@ -386,12 +392,12 @@ ObjectType ExternalTextureBase::GetType() const {
 }
 
 const Extent2D& ExternalTextureBase::GetVisibleSize() const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     return mVisibleSize;
 }
 
 const Origin2D& ExternalTextureBase::GetVisibleOrigin() const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     return mVisibleOrigin;
 }
 

@@ -16,11 +16,11 @@
 
 #include "gmock/gmock.h"
 #include "src/tint/lang/spirv/reader/ast_parser/function.h"
+#include "src/tint/lang/spirv/reader/ast_parser/helper_test.h"
 #include "src/tint/lang/spirv/reader/ast_parser/spirv_tools_helpers_test.h"
-#include "src/tint/lang/spirv/reader/ast_parser/test_helper.h"
 #include "src/tint/utils/text/string_stream.h"
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 namespace {
 
 using ::testing::Eq;
@@ -4181,6 +4181,65 @@ return;
     ASSERT_EQ(expect, got);
 }
 
+TEST_F(SpvParserHandleTest, ReadWriteStorageTexture) {
+    const auto assembly = Preamble() + R"(
+               OpCapability Shader
+               OpCapability StorageImageExtendedFormats
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %100 "main"
+               OpExecutionMode %100 LocalSize 8 8 1
+               OpSource HLSL 600
+               OpName %type_2d_image "type.2d.image"
+               OpName %RWTexture2D "RWTexture2D"
+               OpName %100 "main"
+               OpDecorate %RWTexture2D DescriptorSet 0
+               OpDecorate %RWTexture2D Binding 0
+      %float = OpTypeFloat 32
+    %float_0 = OpConstant %float 0
+    %v4float = OpTypeVector %float 4
+       %uint = OpTypeInt 32 0
+     %uint_1 = OpConstant %uint 1
+     %v2uint = OpTypeVector %uint 2
+      %coord = OpConstantComposite %v2uint %uint_1 %uint_1
+%type_2d_image = OpTypeImage %float 2D 2 0 0 2 Rgba32f
+%_ptr_UniformConstant_type_2d_image = OpTypePointer UniformConstant %type_2d_image
+       %void = OpTypeVoid
+         %20 = OpTypeFunction %void
+%RWTexture2D = OpVariable %_ptr_UniformConstant_type_2d_image UniformConstant
+        %100 = OpFunction %void None %20
+         %22 = OpLabel
+         %30 = OpLoad %type_2d_image %RWTexture2D
+         %31 = OpImageRead %v4float %30 %coord None
+         %32 = OpFAdd %v4float %31 %31
+               OpImageWrite %30 %coord %32 None
+               OpReturn
+               OpFunctionEnd
+  )";
+    auto p = parser(test::Assemble(assembly));
+    EXPECT_TRUE(p->BuildAndParseInternalModule()) << p->error() << assembly;
+
+    EXPECT_TRUE(p->error().empty()) << p->error();
+    const auto got = test::ToString(p->program());
+    auto* expect = R"(enable chromium_experimental_read_write_storage_texture;
+
+@group(0) @binding(0) var RWTexture2D : texture_storage_2d<rgba32float, read_write>;
+
+const x_9 = vec2u(1u);
+
+fn main_1() {
+  let x_31 = textureLoad(RWTexture2D, vec2i(x_9));
+  textureStore(RWTexture2D, vec2i(x_9), (x_31 + x_31));
+  return;
+}
+
+@compute @workgroup_size(8i, 8i, 1i)
+fn main() {
+  main_1();
+}
+)";
+    ASSERT_EQ(expect, got);
+}
+
 TEST_F(SpvParserHandleTest, SimpleSelectCanSelectFromHoistedConstant) {
     // Demonstrates fix for crbug.com/tint/1642
     // The problem is an operand to a simple select can be a value
@@ -4281,5 +4340,110 @@ TEST_F(SpvParserHandleTest, OpUndef_FunctionParam) {
     EXPECT_EQ(p->error(), "invalid handle object passed as function parameter");
 }
 
+TEST_F(SpvParserHandleTest, Image_UnknownDepth_NonDepthUse) {
+    const auto assembly = R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %1 "main"
+               OpExecutionMode %1 OriginUpperLeft
+               OpDecorate %7 DescriptorSet 0
+               OpDecorate %7 Binding 0
+               OpDecorate %8 DescriptorSet 0
+               OpDecorate %8 Binding 1
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+          %4 = OpTypeImage %float 2D 2 0 0 1 Unknown
+          %5 = OpTypeSampler
+    %v2float = OpTypeVector %float 2
+       %void = OpTypeVoid
+         %15 = OpTypeFunction %void
+          %6 = OpTypeSampledImage %4
+%_ptr_UniformConstant_4 = OpTypePointer UniformConstant %4
+          %7 = OpVariable %_ptr_UniformConstant_4 UniformConstant
+%_ptr_UniformConstant_5 = OpTypePointer UniformConstant %5
+          %8 = OpVariable %_ptr_UniformConstant_5 UniformConstant
+      %const = OpConstantNull %v2float
+          %1 = OpFunction %void None %15
+         %18 = OpLabel
+         %20 = OpLoad %4 %7
+         %21 = OpLoad %5 %8
+         %22 = OpSampledImage %6 %20 %21
+         %23 = OpImageSampleImplicitLod %v4float %22 %const None
+               OpReturn
+               OpFunctionEnd
+    )";
+    auto p = parser(test::Assemble(assembly));
+    EXPECT_TRUE(p->BuildAndParseInternalModule());
+    const auto got = test::ToString(p->program());
+    auto* expect = R"(@group(0) @binding(0) var x_7 : texture_2d<f32>;
+
+@group(0) @binding(1) var x_8 : sampler;
+
+fn main_1() {
+  let x_23 = textureSample(x_7, x_8, vec2f());
+  return;
+}
+
+@fragment
+fn main() {
+  main_1();
+}
+)";
+    ASSERT_EQ(expect, got);
+}
+
+TEST_F(SpvParserHandleTest, Image_UnknownDepth_DepthUse) {
+    const auto assembly = R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %1 "main"
+               OpExecutionMode %1 OriginUpperLeft
+               OpDecorate %7 DescriptorSet 0
+               OpDecorate %7 Binding 0
+               OpDecorate %8 DescriptorSet 0
+               OpDecorate %8 Binding 1
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+          %4 = OpTypeImage %float 2D 2 0 0 1 Unknown
+          %5 = OpTypeSampler
+    %v2float = OpTypeVector %float 2
+       %void = OpTypeVoid
+         %15 = OpTypeFunction %void
+          %6 = OpTypeSampledImage %4
+%_ptr_UniformConstant_4 = OpTypePointer UniformConstant %4
+          %7 = OpVariable %_ptr_UniformConstant_4 UniformConstant
+%_ptr_UniformConstant_5 = OpTypePointer UniformConstant %5
+          %8 = OpVariable %_ptr_UniformConstant_5 UniformConstant
+      %const = OpConstantNull %v2float
+    %float_0 = OpConstantNull %float
+          %1 = OpFunction %void None %15
+         %18 = OpLabel
+         %20 = OpLoad %4 %7
+         %21 = OpLoad %5 %8
+         %22 = OpSampledImage %6 %20 %21
+         %23 = OpImageSampleDrefImplicitLod %v4float %22 %const %float_0 None
+               OpReturn
+               OpFunctionEnd
+    )";
+    auto p = parser(test::Assemble(assembly));
+    EXPECT_TRUE(p->BuildAndParseInternalModule());
+    const auto got = test::ToString(p->program());
+    auto* expect = R"(@group(0) @binding(0) var x_7 : texture_depth_2d;
+
+@group(0) @binding(1) var x_8 : sampler_comparison;
+
+fn main_1() {
+  let x_23 = textureSampleCompare(x_7, x_8, vec2f(), 0.0f);
+  return;
+}
+
+@fragment
+fn main() {
+  main_1();
+}
+)";
+    ASSERT_EQ(expect, got);
+}
+
 }  // namespace
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser

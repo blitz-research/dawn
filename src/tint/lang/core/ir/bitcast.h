@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_BITCAST_H_
 #define SRC_TINT_LANG_CORE_IR_BITCAST_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/call.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A bitcast instruction in the IR.
-class Bitcast : public Castable<Bitcast, Call> {
+class Bitcast final : public Castable<Bitcast, Call> {
   public:
     /// The offset in Operands() for the value
     static constexpr size_t kValueOperandOffset = 0;
@@ -32,13 +34,16 @@ class Bitcast : public Castable<Bitcast, Call> {
     Bitcast(InstructionResult* result, Value* val);
     ~Bitcast() override;
 
+    /// @copydoc Instruction::Clone()
+    Bitcast* Clone(CloneContext& ctx) override;
+
     /// @returns the operand value
     Value* Val() { return operands_[kValueOperandOffset]; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "bitcast"; }
+    std::string FriendlyName() override { return "bitcast"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_BITCAST_H_

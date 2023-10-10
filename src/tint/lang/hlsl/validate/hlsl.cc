@@ -71,9 +71,10 @@ Result UsingDXC(const std::string& dxc_path,
 
         // Match Dawn's compile flags
         // See dawn\src\dawn_native\d3d12\RenderPipelineD3D12.cpp
-        // and dawn_native\d3d12\ShaderModuleD3D12.cpp (GetDXCArguments)
+        // and dawn_native\d3d\ShaderUtils.cpp (GetDXCArguments)
         auto res = dxc(
             "-T " + std::string(stage_prefix) + "_" + std::string(shader_model_version),  // Profile
+            "-HV 2018",                                        // Use HLSL 2018
             "-E " + ep.first,                                  // Entry point
             "/Zpr",                                            // D3DCOMPILE_PACK_MATRIX_ROW_MAJOR
             "/Gis",                                            // D3DCOMPILE_IEEE_STRICTNESS

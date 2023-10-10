@@ -173,8 +173,8 @@ def _do_renders(renders, template_dir):
         trim_blocks=True,
         line_comment_prefix='//*')
 
-    def do_assert(expr):
-        assert expr
+    def do_assert(expr, message=''):
+        assert expr, message
         return ''
 
     def debug(text):
@@ -229,6 +229,16 @@ def _compute_python_dependencies(root_dir=None):
         paths.add(path)
 
     return paths
+
+
+# Computes the string representing a cmake list of paths.
+def _cmake_path_list(paths):
+    if os.name == "nt":
+        # On Windows CMake still expects paths to be separated by forward
+        # slashes
+        return (";".join(paths)).replace("\\", "/")
+    else:
+        return ";".join(paths)
 
 
 def run_generator(generator):
@@ -310,7 +320,7 @@ def run_generator(generator):
                         " ".join(dependencies))
 
         if args.print_cmake_dependencies:
-            sys.stdout.write(";".join(dependencies))
+            sys.stdout.write(_cmake_path_list(dependencies))
             return 0
 
     # The caller wants to assert that the outputs are what it expects.
@@ -329,9 +339,11 @@ def run_generator(generator):
 
     # Print the list of all the outputs for cmake.
     if args.print_cmake_outputs:
-        sys.stdout.write(";".join([
-            os.path.join(args.output_dir, render.output) for render in renders
-        ]))
+        sys.stdout.write(
+            _cmake_path_list([
+                os.path.join(args.output_dir, render.output)
+                for render in renders
+            ]))
         return 0
 
     outputs = _do_renders(renders, args.template_dir)

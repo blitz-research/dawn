@@ -18,49 +18,42 @@
 
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::transform::DemoteToHelper);
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+namespace tint::core::ir::transform {
 
-namespace tint::ir::transform {
-
-DemoteToHelper::DemoteToHelper() = default;
-
-DemoteToHelper::~DemoteToHelper() = default;
+namespace {
 
 /// PIMPL state for the transform.
-struct DemoteToHelper::State {
+struct State {
     /// The IR module.
-    Module* ir = nullptr;
+    Module& ir;
 
     /// The IR builder.
-    Builder b{*ir};
+    Builder b{ir};
 
     /// The type manager.
-    type::Manager& ty{ir->Types()};
+    core::type::Manager& ty{ir.Types()};
 
     /// The global "has not discarded" flag.
     Var* continue_execution = nullptr;
 
     /// Map from function to a flag that indicates whether it (transitively) contains a discard.
-    Hashmap<Function*, bool, 4> function_discard_status;
+    Hashmap<Function*, bool, 4> function_discard_status{};
 
     /// Set of functions that have been processed.
-    Hashset<Function*, 4> processed_functions;
-
-    /// Constructor
-    /// @param mod the module
-    explicit State(Module* mod) : ir(mod) {}
+    Hashset<Function*, 4> processed_functions{};
 
     /// Process the module.
     void Process() {
         // Check each fragment shader entry point for discard instruction, potentially inside
         // functions called (transitively) by the entry point.
         Vector<Function*, 4> to_process;
-        for (auto* func : ir->functions) {
+        for (auto* func : ir.functions) {
             // If the function is a fragment shader that contains a discard, we need to process it.
             if (func->Stage() == Function::PipelineStage::kFragment) {
                 if (HasDiscard(func)) {
@@ -75,7 +68,7 @@ struct DemoteToHelper::State {
         // Create a boolean variable that can be used to check whether the shader has discarded.
         continue_execution = b.Var("continue_execution", ty.ptr<private_, bool>());
         continue_execution->SetInitializer(b.Constant(true));
-        b.RootBlock()->Append(continue_execution);
+        ir.root_block->Append(continue_execution);
 
         // Process each entry point function that contains a discard.
         for (auto* ep : to_process) {
@@ -105,7 +98,7 @@ struct DemoteToHelper::State {
                 },
                 [&](UserCall* call) {
                     // Check if we are calling a function that contains a discard.
-                    discard = HasDiscard(call->Func());
+                    discard = HasDiscard(call->Target());
                 },
                 [&](ControlInstruction* ctrl) {
                     // Recurse into control instructions and check their blocks.
@@ -142,7 +135,7 @@ struct DemoteToHelper::State {
             auto* result = ifelse->True()->Append(inst);
 
             TINT_ASSERT(!inst->HasMultiResults());
-            if (inst->HasResults() && !inst->Result()->Type()->Is<type::Void>()) {
+            if (inst->HasResults() && !inst->Result()->Type()->Is<core::type::Void>()) {
                 // The original instruction had a result, so return it from the if instruction.
                 ifelse->SetResults(Vector{b.InstructionResult(inst->Result()->Type())});
                 inst->Result()->ReplaceAllUsesWith(ifelse->Result());
@@ -168,18 +161,18 @@ struct DemoteToHelper::State {
                 },
                 [&](UserCall* call) {
                     // Recurse into user functions.
-                    ProcessFunction(call->Func());
+                    ProcessFunction(call->Target());
                 },
                 [&](Store* store) {
                     // Conditionalize stores to host-visible address spaces.
-                    auto* ptr = store->To()->Type()->As<type::Pointer>();
-                    if (ptr && ptr->AddressSpace() == builtin::AddressSpace::kStorage) {
+                    auto* ptr = store->To()->Type()->As<core::type::Pointer>();
+                    if (ptr && ptr->AddressSpace() == core::AddressSpace::kStorage) {
                         conditionalize(store);
                     }
                 },
                 [&](CoreBuiltinCall* builtin) {
                     // Conditionalize calls to builtins that have side effects.
-                    if (builtin::HasSideEffects(builtin->Func())) {
+                    if (core::HasSideEffects(builtin->Func())) {
                         conditionalize(builtin);
                     }
                 },
@@ -187,11 +180,13 @@ struct DemoteToHelper::State {
                     // Insert a conditional terminate invocation instruction before each return
                     // instruction in the entry point function.
                     if (ret->Func()->Stage() == Function::PipelineStage::kFragment) {
-                        auto* cond = b.Load(continue_execution);
-                        auto* ifelse = b.If(cond);
-                        cond->InsertBefore(ret);
-                        ifelse->InsertBefore(ret);
-                        ifelse->True()->Append(b.TerminateInvocation());
+                        b.InsertBefore(ret, [&] {
+                            auto* cond = b.Load(continue_execution);
+                            auto* ifelse = b.If(b.Equal(ty.bool_(), cond, false));
+                            b.Append(ifelse->True(), [&] {  //
+                                b.TerminateInvocation();
+                            });
+                        });
                     }
                 },
                 [&](ControlInstruction* ctrl) {
@@ -202,8 +197,17 @@ struct DemoteToHelper::State {
     }
 };
 
-void DemoteToHelper::Run(Module* ir) const {
+}  // namespace
+
+Result<SuccessType> DemoteToHelper(Module& ir) {
+    auto result = ValidateAndDumpIfNeeded(ir, "DemoteToHelper transform");
+    if (!result) {
+        return result;
+    }
+
     State{ir}.Process();
+
+    return Success;
 }
 
-}  // namespace tint::ir::transform
+}  // namespace tint::core::ir::transform

@@ -47,7 +47,7 @@ class PlatformTextureGbm : public VideoViewsTestBackend::PlatformTexture {
 
     // TODO(chromium:1258986): Add DISJOINT vkImage support for multi-plannar formats.
     bool CanWrapAsWGPUTexture() override {
-        ASSERT(mGbmBo != nullptr);
+        DAWN_ASSERT(mGbmBo != nullptr);
         // Checks if all plane handles of a multi-planar gbm_bo are same.
         gbm_bo_handle plane0Handle = gbm_bo_get_handle_for_plane(mGbmBo, 0);
         for (int plane = 1; plane < gbm_bo_get_plane_count(mGbmBo); ++plane) {
@@ -95,10 +95,10 @@ class VideoViewsTestBackendGbm : public VideoViewsTestBackend {
                 break;
             }
         }
-        ASSERT(renderNodeFd > 0);
+        DAWN_ASSERT(renderNodeFd > 0);
 
         gbm_device* gbmDevice = gbm_create_device(renderNodeFd);
-        ASSERT(gbmDevice != nullptr);
+        DAWN_ASSERT(gbmDevice != nullptr);
         return gbmDevice;
     }
 
@@ -107,7 +107,7 @@ class VideoViewsTestBackendGbm : public VideoViewsTestBackend {
             case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
                 return GBM_FORMAT_NV12;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -116,7 +116,7 @@ class VideoViewsTestBackendGbm : public VideoViewsTestBackend {
             case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
                 return WGPUTextureFormat_R8BG8Biplanar420Unorm;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -125,7 +125,7 @@ class VideoViewsTestBackendGbm : public VideoViewsTestBackend {
             case wgpu::TextureUsage::TextureBinding:
                 return WGPUTextureUsage_TextureBinding;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -143,8 +143,8 @@ class VideoViewsTestBackendGbm : public VideoViewsTestBackend {
             // of I915_FORMAT_MOD_Y_TILED.
             flags |= GBM_BO_USE_SW_WRITE_RARELY;
         }
-        gbm_bo* gbmBo = gbm_bo_create(mGbmDevice, VideoViewsTests::kYUVImageDataWidthInTexels,
-                                      VideoViewsTests::kYUVImageDataHeightInTexels,
+        gbm_bo* gbmBo = gbm_bo_create(mGbmDevice, VideoViewsTestsBase::kYUVImageDataWidthInTexels,
+                                      VideoViewsTestsBase::kYUVImageDataHeightInTexels,
                                       GetGbmBoFormat(format), flags);
         if (gbmBo == nullptr) {
             return nullptr;
@@ -153,18 +153,18 @@ class VideoViewsTestBackendGbm : public VideoViewsTestBackend {
         if (initialized) {
             void* mapHandle = nullptr;
             uint32_t strideBytes = 0;
-            void* addr = gbm_bo_map(gbmBo, 0, 0, VideoViewsTests::kYUVImageDataWidthInTexels,
-                                    VideoViewsTests::kYUVImageDataHeightInTexels,
+            void* addr = gbm_bo_map(gbmBo, 0, 0, VideoViewsTestsBase::kYUVImageDataWidthInTexels,
+                                    VideoViewsTestsBase::kYUVImageDataHeightInTexels,
                                     GBM_BO_TRANSFER_WRITE, &strideBytes, &mapHandle);
             EXPECT_NE(addr, nullptr);
             std::vector<uint8_t> initialData =
-                VideoViewsTests::GetTestTextureData(format, isCheckerboard);
+                VideoViewsTestsBase::GetTestTextureData<uint8_t>(format, isCheckerboard);
             uint8_t* srcBegin = initialData.data();
             uint8_t* srcEnd = srcBegin + initialData.size();
             uint8_t* dstBegin = static_cast<uint8_t*>(addr);
-            for (; srcBegin < srcEnd;
-                 srcBegin += VideoViewsTests::kYUVImageDataWidthInTexels, dstBegin += strideBytes) {
-                std::memcpy(dstBegin, srcBegin, VideoViewsTests::kYUVImageDataWidthInTexels);
+            for (; srcBegin < srcEnd; srcBegin += VideoViewsTestsBase::kYUVImageDataWidthInTexels,
+                                      dstBegin += strideBytes) {
+                std::memcpy(dstBegin, srcBegin, VideoViewsTestsBase::kYUVImageDataWidthInTexels);
             }
 
             gbm_bo_unmap(gbmBo, mapHandle);
@@ -174,8 +174,8 @@ class VideoViewsTestBackendGbm : public VideoViewsTestBackend {
         textureDesc.format = format;
         textureDesc.dimension = wgpu::TextureDimension::e2D;
         textureDesc.usage = usage;
-        textureDesc.size = {VideoViewsTests::kYUVImageDataWidthInTexels,
-                            VideoViewsTests::kYUVImageDataHeightInTexels, 1};
+        textureDesc.size = {VideoViewsTestsBase::kYUVImageDataWidthInTexels,
+                            VideoViewsTestsBase::kYUVImageDataHeightInTexels, 1};
 
         wgpu::DawnTextureInternalUsageDescriptor internalDesc;
         internalDesc.internalUsage = wgpu::TextureUsage::CopySrc;
@@ -222,6 +222,12 @@ class VideoViewsTestBackendGbm : public VideoViewsTestBackend {
 // static
 std::vector<BackendTestConfig> VideoViewsTestBackend::Backends() {
     return {VulkanBackend()};
+}
+
+// static
+std::vector<Format> VideoViewsTestBackend::Formats() {
+    // TODO(dawn:551): Support sharing P010 video surfaces.
+    return {wgpu::TextureFormat::R8BG8Biplanar420Unorm};
 }
 
 // static

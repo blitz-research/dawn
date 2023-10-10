@@ -27,10 +27,12 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 target_sources(dawn_wire PRIVATE
+  INTERFACE
     "${DAWN_INCLUDE_DIR}/dawn/wire/Wire.h"
     "${DAWN_INCLUDE_DIR}/dawn/wire/WireClient.h"
     "${DAWN_INCLUDE_DIR}/dawn/wire/WireServer.h"
     "${DAWN_INCLUDE_DIR}/dawn/wire/dawn_wire_export.h"
+  PRIVATE
     ${DAWN_WIRE_GEN_SOURCES}
     "BufferConsumer.h"
     "BufferConsumer_impl.h"
@@ -59,6 +61,8 @@ target_sources(dawn_wire PRIVATE
     "client/ClientInlineMemoryTransferService.cpp"
     "client/Device.cpp"
     "client/Device.h"
+    "client/EventManager.cpp"
+    "client/EventManager.h"
     "client/Instance.cpp"
     "client/Instance.h"
     "client/LimitsAndFeatures.cpp"
@@ -93,3 +97,5 @@ target_link_libraries(dawn_wire
     PUBLIC dawn_headers
     PRIVATE dawn_common dawn_internal_config
 )
+
+install_if_enabled(dawn_wire)

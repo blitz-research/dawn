@@ -18,26 +18,29 @@
 #include "src/tint/lang/core/constant/value.h"
 #include "src/tint/lang/core/ir/value.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// Constant in the IR.
 class Constant : public Castable<Constant, Value> {
   public:
     /// Constructor
     /// @param val the value stored in the constant
-    explicit Constant(const constant::Value* val);
+    explicit Constant(const core::constant::Value* val);
     ~Constant() override;
 
     /// @returns the constants value
-    const constant::Value* Value() { return value_; }
+    const core::constant::Value* Value() { return value_; }
 
     /// @returns the type of the constant
-    const type::Type* Type() override { return value_->Type(); }
+    const core::type::Type* Type() override { return value_->Type(); }
+
+    /// @copydoc Value::Clone()
+    Constant* Clone(CloneContext& ctx) override;
 
   private:
-    const constant::Value* const value_ = nullptr;
+    const core::constant::Value* const value_ = nullptr;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_CONSTANT_H_

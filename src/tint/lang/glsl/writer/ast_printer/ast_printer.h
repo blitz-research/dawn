@@ -21,17 +21,18 @@
 #include <unordered_set>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
-#include "src/tint/lang/glsl/writer/version.h"
+#include "src/tint/api/options/texture_builtins_from_uniform.h"
+#include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/glsl/writer/common/version.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/utils/containers/scope_stack.h"
+#include "src/tint/utils/generator/text_generator.h"
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/text/string_stream.h"
-#include "src/tint/utils/text/text_generator.h"
 
 // Forward declarations
 namespace tint::sem {
-class Builtin;
+class BuiltinFn;
 class Call;
 class ValueConstructor;
 class ValueConversion;
@@ -53,6 +54,13 @@ struct SanitizedResult {
 
     /// The sanitized program.
     Program program;
+
+    /// True if the shader needs a UBO.
+    bool needs_internal_uniform_buffer = false;
+
+    /// Store a map of global texture variable binding point to the byte offset and data type to
+    /// push into the internal uniform buffer.
+    TextureBuiltinsFromUniformOptions::BindingPointToFieldAndOffset bindpoint_to_data;
 };
 
 /// Sanitize a program in preparation for generating GLSL.
@@ -60,7 +68,7 @@ struct SanitizedResult {
 /// @param options The HLSL generator options.
 /// @param entry_point the entry point to generate GLSL for
 /// @returns the sanitized program and any supplementary information
-SanitizedResult Sanitize(const Program* program,
+SanitizedResult Sanitize(const Program& program,
                          const Options& options,
                          const std::string& entry_point);
 
@@ -70,11 +78,12 @@ class ASTPrinter : public tint::TextGenerator {
     /// Constructor
     /// @param program the program to generate
     /// @param version the GLSL version to use
-    ASTPrinter(const Program* program, const Version& version);
+    ASTPrinter(const Program& program, const Version& version);
     ~ASTPrinter() override;
 
     /// Generates the GLSL shader
-    void Generate();
+    /// @returns true on successful generation, false otherwise
+    bool Generate();
 
     /// Record an extension directive within the generator
     /// @param ext the extension to record
@@ -134,7 +143,7 @@ class ASTPrinter : public tint::TextGenerator {
     /// @param out the output of the expression stream
     /// @param call the call expression
     /// @param builtin the builtin being called
-    void EmitBuiltinCall(StringStream& out, const sem::Call* call, const sem::Builtin* builtin);
+    void EmitBuiltinCall(StringStream& out, const sem::Call* call, const sem::BuiltinFn* builtin);
     /// Handles generating a value conversion expression
     /// @param out the output of the expression stream
     /// @param call the call expression
@@ -152,14 +161,14 @@ class ASTPrinter : public tint::TextGenerator {
     /// Handles generating a barrier builtin call
     /// @param out the output of the expression stream
     /// @param builtin the semantic information for the barrier builtin
-    void EmitBarrierCall(StringStream& out, const sem::Builtin* builtin);
+    void EmitBarrierCall(StringStream& out, const sem::BuiltinFn* builtin);
     /// Handles generating an atomic builtin call for a workgroup variable
     /// @param out the output of the expression stream
     /// @param expr the call expression
     /// @param builtin the semantic information for the atomic builtin
     void EmitWorkgroupAtomicCall(StringStream& out,
                                  const ast::CallExpression* expr,
-                                 const sem::Builtin* builtin);
+                                 const sem::BuiltinFn* builtin);
     /// Handles generating an array.length() call
     /// @param out the output of the expression stream
     /// @param expr the call expression
@@ -186,7 +195,7 @@ class ASTPrinter : public tint::TextGenerator {
     /// @param out the output of the expression stream
     /// @param call the call expression
     /// @param builtin the semantic information for the texture builtin
-    void EmitTextureCall(StringStream& out, const sem::Call* call, const sem::Builtin* builtin);
+    void EmitTextureCall(StringStream& out, const sem::Call* call, const sem::BuiltinFn* builtin);
     /// Handles generating a call to the `select()` builtin
     /// @param out the output of the expression stream
     /// @param expr the call expression
@@ -197,49 +206,49 @@ class ASTPrinter : public tint::TextGenerator {
     /// @param builtin the semantic information for the builtin
     void EmitSelectCall(StringStream& out,
                         const ast::CallExpression* expr,
-                        const sem::Builtin* builtin);
+                        const sem::BuiltinFn* builtin);
     /// Handles generating a call to the `dot()` builtin
     /// @param out the output of the expression stream
     /// @param expr the call expression
     /// @param builtin the semantic information for the builtin
     void EmitDotCall(StringStream& out,
                      const ast::CallExpression* expr,
-                     const sem::Builtin* builtin);
+                     const sem::BuiltinFn* builtin);
     /// Handles generating a call to the `modf()` builtin
     /// @param out the output of the expression stream
     /// @param expr the call expression
     /// @param builtin the semantic information for the builtin
     void EmitModfCall(StringStream& out,
                       const ast::CallExpression* expr,
-                      const sem::Builtin* builtin);
+                      const sem::BuiltinFn* builtin);
     /// Handles generating a call to the `frexp()` builtin
     /// @param out the output of the expression stream
     /// @param expr the call expression
     /// @param builtin the semantic information for the builtin
     void EmitFrexpCall(StringStream& out,
                        const ast::CallExpression* expr,
-                       const sem::Builtin* builtin);
+                       const sem::BuiltinFn* builtin);
     /// Handles generating a call to the `degrees()` builtin
     /// @param out the output of the expression stream
     /// @param expr the call expression
     /// @param builtin the semantic information for the builtin
     void EmitDegreesCall(StringStream& out,
                          const ast::CallExpression* expr,
-                         const sem::Builtin* builtin);
+                         const sem::BuiltinFn* builtin);
     /// Handles generating a call to the `radians()` builtin
     /// @param out the output of the expression stream
     /// @param expr the call expression
     /// @param builtin the semantic information for the builtin
     void EmitRadiansCall(StringStream& out,
                          const ast::CallExpression* expr,
-                         const sem::Builtin* builtin);
+                         const sem::BuiltinFn* builtin);
     /// Handles generating a call to the `quantizeToF16()` intrinsic
     /// @param out the output of the expression stream
     /// @param expr the call expression
     /// @param builtin the semantic information for the builtin
     void EmitQuantizeToF16Call(StringStream& out,
                                const ast::CallExpression* expr,
-                               const sem::Builtin* builtin);
+                               const sem::BuiltinFn* builtin);
     /// Handles a case statement
     /// @param stmt the statement
     void EmitCase(const ast::CaseStatement* stmt);
@@ -308,7 +317,7 @@ class ASTPrinter : public tint::TextGenerator {
     /// Handles a constant value
     /// @param out the output stream
     /// @param constant the constant value to emit
-    void EmitConstant(StringStream& out, const constant::Value* constant);
+    void EmitConstant(StringStream& out, const core::constant::Value* constant);
     /// Handles a literal
     /// @param out the output stream
     /// @param lit the literal to emit
@@ -348,9 +357,9 @@ class ASTPrinter : public tint::TextGenerator {
     /// @param name_printed (optional) if not nullptr and an array was printed
     /// then the boolean is set to true.
     void EmitType(StringStream& out,
-                  const type::Type* type,
-                  builtin::AddressSpace address_space,
-                  builtin::Access access,
+                  const core::type::Type* type,
+                  core::AddressSpace address_space,
+                  core::Access access,
                   const std::string& name,
                   bool* name_printed = nullptr);
     /// Handles generating type and name
@@ -360,19 +369,19 @@ class ASTPrinter : public tint::TextGenerator {
     /// @param access the access control type of the variable
     /// @param name the name to emit
     void EmitTypeAndName(StringStream& out,
-                         const type::Type* type,
-                         builtin::AddressSpace address_space,
-                         builtin::Access access,
+                         const core::type::Type* type,
+                         core::AddressSpace address_space,
+                         core::Access access,
                          const std::string& name);
     /// Handles generating a structure declaration. If the structure has already been emitted, then
     /// this function will simply return `true` without emitting anything.
     /// @param buffer the text buffer that the type declaration will be written to
     /// @param ty the struct to generate
-    void EmitStructType(TextBuffer* buffer, const type::Struct* ty);
+    void EmitStructType(TextBuffer* buffer, const core::type::Struct* ty);
     /// Handles generating the members of a structure
     /// @param buffer the text buffer that the struct members will be written to
     /// @param ty the struct to generate
-    void EmitStructMembers(TextBuffer* buffer, const type::Struct* ty);
+    void EmitStructMembers(TextBuffer* buffer, const core::type::Struct* ty);
     /// Handles a unary op expression
     /// @param out the output of the expression stream
     /// @param expr the expression to emit
@@ -380,7 +389,7 @@ class ASTPrinter : public tint::TextGenerator {
     /// Emits the zero value for the given type
     /// @param out the output stream
     /// @param type the type to emit the value for
-    void EmitZeroValue(StringStream& out, const type::Type* type);
+    void EmitZeroValue(StringStream& out, const core::type::Type* type);
     /// Handles generating a 'var' declaration
     /// @param var the variable to generate
     void EmitVar(const ast::Var* var);
@@ -393,16 +402,16 @@ class ASTPrinter : public tint::TextGenerator {
     /// Handles generating a builtin method name
     /// @param builtin the semantic info for the builtin
     /// @returns the name or "" if not valid
-    std::string generate_builtin_name(const sem::Builtin* builtin);
+    std::string generate_builtin_name(const sem::BuiltinFn* builtin);
     /// Converts a builtin to a gl_ string
     /// @param builtin the builtin to convert
     /// @param stage pipeline stage in which this builtin is used
     /// @returns the string name of the builtin or blank on error
-    const char* builtin_to_string(builtin::BuiltinValue builtin, ast::PipelineStage stage);
-    /// Converts a builtin to a type::Type appropriate for GLSL.
+    const char* builtin_to_string(core::BuiltinValue builtin, ast::PipelineStage stage);
+    /// Converts a builtin to a core::type::Type appropriate for GLSL.
     /// @param builtin the builtin to convert
     /// @returns the appropriate semantic type or null on error.
-    type::Type* builtin_type(builtin::BuiltinValue builtin);
+    core::type::Type* builtin_type(core::BuiltinValue builtin);
 
   private:
     enum class VarType { kIn, kOut };
@@ -414,7 +423,7 @@ class ASTPrinter : public tint::TextGenerator {
 
     /// The map key for two semantic types.
     using BinaryOperandType =
-        tint::UnorderedKeyWrapper<std::tuple<const type::Type*, const type::Type*>>;
+        tint::UnorderedKeyWrapper<std::tuple<const core::type::Type*, const core::type::Type*>>;
 
     /// CallBuiltinHelper will call the builtin helper function, creating it
     /// if it hasn't been built already. If the builtin needs to be built then
@@ -431,16 +440,24 @@ class ASTPrinter : public tint::TextGenerator {
     template <typename F>
     void CallBuiltinHelper(StringStream& out,
                            const ast::CallExpression* call,
-                           const sem::Builtin* builtin,
+                           const sem::BuiltinFn* builtin,
                            F&& build);
 
     /// Create a uint type corresponding to the given bool or bool vector type.
     /// @param type the bool or bool vector type to convert
     /// @returns the corresponding uint type
-    type::Type* BoolTypeToUint(const type::Type* type);
+    core::type::Type* BoolTypeToUint(const core::type::Type* type);
 
-    /// @copydoc tint::TextWrtiter::UniqueIdentifier
-    std::string UniqueIdentifier(const std::string& prefix = "") override;
+    /// @param s the structure
+    /// @returns the name of the structure, taking special care of builtin structures that start
+    /// with double underscores. If the structure is a builtin, then the returned name will be a
+    /// unique name without the leading underscores.
+    std::string StructName(const core::type::Struct* s);
+
+    /// @return a new, unique identifier with the given prefix.
+    /// @param prefix optional prefix to apply to the generated identifier. If empty "tint_symbol"
+    /// will be used.
+    std::string UniqueIdentifier(const std::string& prefix = "");
 
     /// Alias for builder_.TypeOf(ptr)
     template <typename T>
@@ -449,19 +466,25 @@ class ASTPrinter : public tint::TextGenerator {
     }
 
     ProgramBuilder builder_;
-    TextBuffer helpers_;  // Helper functions emitted at the top of the output
+
+    /// Helper functions emitted at the top of the output
+    TextBuffer helpers_;
+
+    /// Map of builtin structure to unique generated name
+    std::unordered_map<const core::type::Struct*, std::string> builtin_struct_names_;
     std::function<void()> emit_continuing_;
-    std::unordered_map<const sem::Builtin*, std::string> builtins_;
-    std::unordered_map<const type::Vector*, std::string> dynamic_vector_write_;
-    std::unordered_map<const type::Vector*, std::string> int_dot_funcs_;
+    std::unordered_map<const sem::BuiltinFn*, std::string> builtins_;
+    std::unordered_map<const core::type::Vector*, std::string> dynamic_vector_write_;
+    std::unordered_map<const core::type::Vector*, std::string> int_dot_funcs_;
     std::unordered_map<BinaryOperandType, std::string> float_modulo_funcs_;
     // Polyfill functions for bitcast expression, BinaryOperandType indicates the source type and
     // the destination type
     std::unordered_map<BinaryOperandType, std::string> bitcast_funcs_;
-    std::unordered_set<const type::Struct*> emitted_structs_;
+    std::unordered_set<const core::type::Struct*> emitted_structs_;
     bool requires_oes_sample_variables_ = false;
     bool requires_default_precision_qualifier_ = false;
     bool requires_f16_extension_ = false;
+    bool requires_dual_source_blending_extension_ = false;
     Version version_;
 };
 

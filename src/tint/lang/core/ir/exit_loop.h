@@ -15,18 +15,20 @@
 #ifndef SRC_TINT_LANG_CORE_IR_EXIT_LOOP_H_
 #define SRC_TINT_LANG_CORE_IR_EXIT_LOOP_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/exit.h"
 #include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class Loop;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A exit loop instruction.
-class ExitLoop : public Castable<ExitLoop, Exit> {
+class ExitLoop final : public Castable<ExitLoop, Exit> {
   public:
     /// The base offset in Operands() for the args
     static constexpr size_t kArgsOperandOffset = 0;
@@ -37,6 +39,9 @@ class ExitLoop : public Castable<ExitLoop, Exit> {
     explicit ExitLoop(ir::Loop* loop, VectorRef<Value*> args = tint::Empty);
     ~ExitLoop() override;
 
+    /// @copydoc Instruction::Clone()
+    ExitLoop* Clone(CloneContext& ctx) override;
+
     /// Re-associates the exit with the given loop instruction
     /// @param l the new loop to exit from
     void SetLoop(ir::Loop* l);
@@ -45,9 +50,9 @@ class ExitLoop : public Castable<ExitLoop, Exit> {
     ir::Loop* Loop();
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "exit-loop"; }
+    std::string FriendlyName() override { return "exit_loop"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_EXIT_LOOP_H_

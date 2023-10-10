@@ -17,14 +17,14 @@
 
 #include <utility>
 
-#include "src/tint/lang/core/ir/binding_point.h"
+#include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/core/ir/location.h"
 #include "src/tint/lang/core/ir/value.h"
 #include "src/tint/utils/containers/vector.h"
 #include "src/tint/utils/ice/ice.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A function parameter in the IR.
 class FunctionParam : public Castable<FunctionParam, Value> {
@@ -53,15 +53,22 @@ class FunctionParam : public Castable<FunctionParam, Value> {
         kSampleIndex,
         /// Builtin Sample mask
         kSampleMask,
+        /// Builtin Subgroup invocation id
+        kSubgroupInvocationId,
+        /// Builtin Subgroup size
+        kSubgroupSize,
     };
 
     /// Constructor
     /// @param type the type of the var
-    explicit FunctionParam(const type::Type* type);
+    explicit FunctionParam(const core::type::Type* type);
     ~FunctionParam() override;
 
     /// @returns the type of the var
-    const type::Type* Type() override { return type_; }
+    const core::type::Type* Type() override { return type_; }
+
+    /// @copydoc Value::Clone()
+    FunctionParam* Clone(CloneContext& ctx) override;
 
     /// Sets the builtin information. Note, it is currently an error if the builtin is already set.
     /// @param val the builtin to set
@@ -83,7 +90,7 @@ class FunctionParam : public Castable<FunctionParam, Value> {
     /// Sets the location
     /// @param loc the location value
     /// @param interpolation if the location interpolation settings
-    void SetLocation(uint32_t loc, std::optional<builtin::Interpolation> interpolation) {
+    void SetLocation(uint32_t loc, std::optional<core::Interpolation> interpolation) {
         location_ = {loc, interpolation};
     }
     /// @returns the location if `Attributes` contains `kLocation`
@@ -99,7 +106,7 @@ class FunctionParam : public Castable<FunctionParam, Value> {
     std::optional<struct BindingPoint>& BindingPoint() { return binding_point_; }
 
   private:
-    const type::Type* type_ = nullptr;
+    const core::type::Type* type_ = nullptr;
     std::optional<enum FunctionParam::Builtin> builtin_;
     std::optional<struct Location> location_;
     std::optional<struct BindingPoint> binding_point_;
@@ -118,6 +125,6 @@ auto& operator<<(STREAM& out, enum FunctionParam::Builtin value) {
     return out << ToString(value);
 }
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_FUNCTION_PARAM_H_

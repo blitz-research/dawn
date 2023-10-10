@@ -18,60 +18,67 @@
 #include <utility>
 
 #include "src/tint/lang/msl/writer/ast_printer/ast_printer.h"
-
-#if TINT_BUILD_IR
-#include "src/tint/lang/msl/writer/printer/printer.h"               // nogncheck
-#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"  // nogncheck
-#endif                                                              // TINT_BUILD_IR
+#include "src/tint/lang/msl/writer/printer/printer.h"
+#include "src/tint/lang/msl/writer/raise/raise.h"
+#include "src/tint/lang/wgsl/reader/lower/lower.h"
+#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 
 namespace tint::msl::writer {
 
-Result Generate(const Program* program, const Options& options) {
-    Result result;
-    if (!program->IsValid()) {
-        result.error = "input program is not valid";
-        return result;
+Result<Output> Generate(const Program& program, const Options& options) {
+    if (!program.IsValid()) {
+        return Failure{program.Diagnostics()};
     }
 
-#if TINT_BUILD_IR
+    Output output;
+
     if (options.use_tint_ir) {
         // Convert the AST program to an IR module.
         auto converted = wgsl::reader::ProgramToIR(program);
         if (!converted) {
-            result.error = "IR converter: " + converted.Failure();
-            return result;
+            return converted.Failure();
+        }
+
+        auto ir = converted.Move();
+
+        // Lower from WGSL-dialect to core-dialect
+        if (auto res = wgsl::reader::Lower(ir); !res) {
+            return res.Failure();
+        }
+
+        // Raise from core-dialect to MSL-dialect.
+        if (auto res = raise::Raise(ir); !res) {
+            return res.Failure();
         }
 
         // Generate the MSL code.
-        auto ir = converted.Move();
-        auto impl = std::make_unique<Printer>(&ir);
-        result.success = impl->Generate();
-        result.error = impl->Diagnostics().str();
-        result.msl = impl->Result();
-    } else  // NOLINT(readability/braces)
-#endif
-    {
+        auto impl = std::make_unique<Printer>(ir);
+        auto result = impl->Generate();
+        if (!result) {
+            return result.Failure();
+        }
+        output.msl = impl->Result();
+    } else {
         // Sanitize the program.
         auto sanitized_result = Sanitize(program, options);
         if (!sanitized_result.program.IsValid()) {
-            result.success = false;
-            result.error = sanitized_result.program.Diagnostics().str();
-            return result;
+            return Failure{sanitized_result.program.Diagnostics()};
         }
-        result.needs_storage_buffer_sizes = sanitized_result.needs_storage_buffer_sizes;
-        result.used_array_length_from_uniform_indices =
+        output.needs_storage_buffer_sizes = sanitized_result.needs_storage_buffer_sizes;
+        output.used_array_length_from_uniform_indices =
             std::move(sanitized_result.used_array_length_from_uniform_indices);
 
         // Generate the MSL code.
-        auto impl = std::make_unique<ASTPrinter>(&sanitized_result.program);
-        result.success = impl->Generate();
-        result.error = impl->Diagnostics().str();
-        result.msl = impl->Result();
-        result.has_invariant_attribute = impl->HasInvariant();
-        result.workgroup_allocations = impl->DynamicWorkgroupAllocations();
+        auto impl = std::make_unique<ASTPrinter>(sanitized_result.program);
+        if (!impl->Generate()) {
+            return Failure{impl->Diagnostics()};
+        }
+        output.msl = impl->Result();
+        output.has_invariant_attribute = impl->HasInvariant();
+        output.workgroup_allocations = impl->DynamicWorkgroupAllocations();
     }
 
-    return result;
+    return output;
 }
 
 }  // namespace tint::msl::writer

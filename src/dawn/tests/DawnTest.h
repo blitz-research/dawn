@@ -280,7 +280,7 @@ class DawnTestBase {
     bool HasBackendTypeFilter() const;
     wgpu::BackendType GetBackendTypeFilter() const;
 
-    wgpu::Instance GetInstance() const;
+    const wgpu::Instance& GetInstance() const;
     native::Adapter GetAdapter() const;
 
     virtual std::unique_ptr<platform::Platform> CreateTestPlatform();
@@ -288,7 +288,7 @@ class DawnTestBase {
     struct PrintToStringParamName {
         explicit PrintToStringParamName(const char* test);
         std::string SanitizeParamName(std::string paramName,
-                                      const wgpu::AdapterProperties& properties,
+                                      const TestAdapterProperties& properties,
                                       size_t index) const;
 
         template <class ParamType>
@@ -582,7 +582,7 @@ class DawnTestBase {
 
     virtual wgpu::RequiredLimits GetRequiredLimits(const wgpu::SupportedLimits&);
 
-    const wgpu::AdapterProperties& GetAdapterProperties() const;
+    const TestAdapterProperties& GetAdapterProperties() const;
 
     wgpu::SupportedLimits GetAdapterLimits();
     wgpu::SupportedLimits GetSupportedLimits();
@@ -726,17 +726,6 @@ DawnTestWithParams<Params>::DawnTestWithParams() : DawnTestBase(this->GetParam()
 
 using DawnTest = DawnTestWithParams<>;
 
-// Instantiate the test once for all backends in the second param. Use it like this:
-//     DAWN_INSTANTIATE_TEST_V(MyTestFixture, std::vector<BackendTestConfig>({{MetalBackend},
-//     {OpenGLBackend}})
-#define DAWN_INSTANTIATE_TEST_V(testName, testParams)                               \
-    INSTANTIATE_TEST_SUITE_P(                                                       \
-        , testName,                                                                 \
-        testing::ValuesIn(::dawn::detail::GetAvailableAdapterTestParamsForBackends( \
-            testParams.data(), testParams.size())),                                 \
-        DawnTestBase::PrintToStringParamName(#testName));                           \
-    GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(testName)
-
 // Instantiate the test once for each backend provided after the first argument. Use it like this:
 //     DAWN_INSTANTIATE_TEST(MyTestFixture, MetalBackend, OpenGLBackend)
 #define DAWN_INSTANTIATE_TEST(testName, ...)                                            \
@@ -747,6 +736,12 @@ using DawnTest = DawnTestWithParams<>;
             testName##params, sizeof(testName##params) / sizeof(testName##params[0]))), \
         DawnTestBase::PrintToStringParamName(#testName));                               \
     GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(testName)
+
+#define DAWN_INSTANTIATE_PREFIXED_TEST_P(prefix, testName, ...)                    \
+    INSTANTIATE_TEST_SUITE_P(                                                      \
+        prefix, testName,                                                          \
+        ::testing::ValuesIn(MakeParamGenerator<testName::ParamType>(__VA_ARGS__)), \
+        DawnTestBase::PrintToStringParamName(#testName))
 
 // Instantiate the test once for each backend provided in the first param list.
 // The test will be parameterized over the following param lists.
@@ -762,6 +757,15 @@ using DawnTest = DawnTestWithParams<>;
     INSTANTIATE_TEST_SUITE_P(                                                                  \
         , testName, ::testing::ValuesIn(MakeParamGenerator<testName::ParamType>(__VA_ARGS__)), \
         DawnTestBase::PrintToStringParamName(#testName));                                      \
+    GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(testName)
+
+// Basically same as DAWN_INSTANTIATE_TEST_P, except that each backend is provided in the
+// 'backends' param list.
+#define DAWN_INSTANTIATE_TEST_B(testName, backends, ...)                                     \
+    INSTANTIATE_TEST_SUITE_P(                                                                \
+        , testName,                                                                          \
+        ::testing::ValuesIn(MakeParamGenerator<testName::ParamType>(backends, __VA_ARGS__)), \
+        DawnTestBase::PrintToStringParamName(#testName));                                    \
     GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(testName)
 
 // Implementation for DAWN_TEST_PARAM_STRUCT to declare/print struct fields.
@@ -784,8 +788,8 @@ using DawnTest = DawnTestWithParams<>;
         DAWN_PP_EXPAND(DAWN_PP_EXPAND(DAWN_PP_FOR_EACH)(DAWN_TEST_PARAM_STRUCT_DECL_STRUCT_FIELD,  \
                                                         __VA_ARGS__))                              \
     };                                                                                             \
-    std::ostream& operator<<(std::ostream& o,                                                      \
-                             const DAWN_PP_CONCATENATE(_Dawn_, StructName) & param) {              \
+    inline std::ostream& operator<<(std::ostream& o,                                               \
+                                    const DAWN_PP_CONCATENATE(_Dawn_, StructName) & param) {       \
         DAWN_PP_EXPAND(DAWN_PP_EXPAND(DAWN_PP_FOR_EACH)(DAWN_TEST_PARAM_STRUCT_PRINT_STRUCT_FIELD, \
                                                         __VA_ARGS__))                              \
         return o;                                                                                  \
@@ -796,7 +800,7 @@ using DawnTest = DawnTestWithParams<>;
             : AdapterTestParam(param),                                                             \
               DAWN_PP_CONCATENATE(_Dawn_, StructName){std::forward<Args>(args)...} {}              \
     };                                                                                             \
-    std::ostream& operator<<(std::ostream& o, const StructName& param) {                           \
+    inline std::ostream& operator<<(std::ostream& o, const StructName& param) {                    \
         o << static_cast<const AdapterTestParam&>(param);                                          \
         o << "; " << static_cast<const DAWN_PP_CONCATENATE(_Dawn_, StructName)&>(param);           \
         return o;                                                                                  \

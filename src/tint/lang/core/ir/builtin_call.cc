@@ -16,15 +16,16 @@
 
 #include <utility>
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::BuiltinCall);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::BuiltinCall);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 BuiltinCall::BuiltinCall(InstructionResult* result, VectorRef<Value*> arguments) {
+    flags_.Add(Flag::kSequenced);
     AddOperands(BuiltinCall::kArgsOperandOffset, std::move(arguments));
     AddResult(result);
 }
 
 BuiltinCall::~BuiltinCall() = default;
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir

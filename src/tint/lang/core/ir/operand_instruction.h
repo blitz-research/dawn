@@ -21,7 +21,7 @@
 #include "src/tint/lang/core/ir/instruction_result.h"
 #include "src/tint/utils/ice/ice.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// An instruction in the IR that expects one or more operands.
 /// @tparam N the number of operands before spilling to the heap
@@ -32,7 +32,7 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
     /// Destructor
     ~OperandInstruction() override = default;
 
-    /// @copydoc tint::ir::Value::Destroy
+    /// @copydoc tint::core::ir::Value::Destroy
     void Destroy() override {
         ClearOperands();
         Instruction::Destroy();
@@ -74,6 +74,9 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
         }
         operands_.Clear();
     }
+
+    /// Removes all results from the instruction.
+    void ClearResults() { results_.Clear(); }
 
     /// @returns the operands of the instruction
     VectorRef<ir::Value*> Operands() override { return operands_; }
@@ -134,8 +137,11 @@ class OperandInstruction : public Castable<OperandInstruction<N, R>, Instruction
     Vector<ir::Value*, N> operands_;
     /// The results of this instruction.
     Vector<ir::InstructionResult*, R> results_;
+
+    /// The default number of operands
+    static constexpr size_t kDefaultNumOperands = N;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_OPERAND_INSTRUCTION_H_

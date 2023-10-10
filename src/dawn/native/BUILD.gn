@@ -76,9 +76,9 @@ config("vulkan_rpath") {
   }
 }
 
-# Config that adds include directory for vulkan-tools.
-config("vulkan_tools_include") {
-  include_dirs = [ "${dawn_vulkan_tools_dir}" ]
+# Config that adds include directory for vulkan-utility-libraries.
+config("vulkan_utility_libraries_include") {
+  include_dirs = [ "${dawn_vulkan_utility_libraries_dir}/include" ]
 }
 
 dawn_json_generator("utils_gen") {
@@ -86,6 +86,8 @@ dawn_json_generator("utils_gen") {
   outputs = [
     "src/dawn/native/ChainUtils_autogen.h",
     "src/dawn/native/ChainUtils_autogen.cpp",
+    "src/dawn/native/Features_autogen.h",
+    "src/dawn/native/Features_autogen.inl",
     "src/dawn/native/ProcTable.cpp",
     "src/dawn/native/dawn_platform_autogen.h",
     "src/dawn/native/wgpu_structs_autogen.h",
@@ -105,7 +107,7 @@ if (dawn_enable_opengl) {
     script = "${dawn_root}/generator/opengl_loader_generator.py"
     args = [
       "--gl-xml",
-      rebase_path("${dawn_root}/third_party/khronos/gl.xml", root_build_dir),
+      rebase_path("${dawn_opengl_registry_dir}/xml/gl.xml", root_build_dir),
       "--supported-extensions",
       rebase_path("opengl/supported_extensions.json", root_build_dir),
     ]
@@ -146,7 +148,7 @@ source_set("sources") {
     ":headers",
     ":utils_gen",
     "${dawn_root}/src/dawn/common",
-    "${dawn_root}/src/tint:libtint",
+    "${dawn_root}/src/tint/api",
 
     # TODO(dawn:286): These should only be necessary if SPIR-V validation is
     # enabled with dawn_enable_spirv_validation
@@ -192,6 +194,8 @@ source_set("sources") {
     "BindGroup.h",
     "BindGroupLayout.cpp",
     "BindGroupLayout.h",
+    "BindGroupLayoutInternal.cpp",
+    "BindGroupLayoutInternal.h",
     "BindGroupTracker.h",
     "BindingInfo.cpp",
     "BindingInfo.h",
@@ -223,6 +227,7 @@ source_set("sources") {
     "CallbackTaskManager.cpp",
     "CallbackTaskManager.h",
     "ChainUtils.h",
+    "ChainUtilsImpl.inl",
     "CommandAllocator.cpp",
     "CommandAllocator.h",
     "CommandBuffer.cpp",
@@ -261,6 +266,8 @@ source_set("sources") {
     "ErrorInjector.h",
     "ErrorScope.cpp",
     "ErrorScope.h",
+    "EventManager.cpp",
+    "EventManager.h",
     "ExecutionQueue.cpp",
     "ExecutionQueue.h",
     "ExternalTexture.cpp",
@@ -334,6 +341,10 @@ source_set("sources") {
     "Serializable.h",
     "ShaderModule.cpp",
     "ShaderModule.h",
+    "SharedFence.cpp",
+    "SharedFence.h",
+    "SharedTextureMemory.cpp",
+    "SharedTextureMemory.h",
     "StreamImplTint.cpp",
     "Subresource.cpp",
     "Subresource.h",
@@ -342,6 +353,8 @@ source_set("sources") {
     "Surface.h",
     "SwapChain.cpp",
     "SwapChain.h",
+    "SystemEvent.cpp",
+    "SystemEvent.h",
     "Texture.cpp",
     "Texture.h",
     "TintUtils.cpp",
@@ -350,8 +363,6 @@ source_set("sources") {
     "Toggles.cpp",
     "Toggles.h",
     "UsageValidationMode.h",
-    "VertexFormat.cpp",
-    "VertexFormat.h",
     "VisitableMembers.h",
     "dawn_platform.h",
     "stream/BlobSource.cpp",
@@ -369,10 +380,9 @@ source_set("sources") {
   ]
 
   if (dawn_use_x11) {
-    libs += [ "X11" ]
     sources += [
-      "XlibXcbFunctions.cpp",
-      "XlibXcbFunctions.h",
+      "X11Functions.cpp",
+      "X11Functions.h",
     ]
   }
 
@@ -420,6 +430,10 @@ source_set("sources") {
       "d3d/PlatformFunctions.h",
       "d3d/ShaderUtils.cpp",
       "d3d/ShaderUtils.h",
+      "d3d/SharedFenceD3D.cpp",
+      "d3d/SharedFenceD3D.h",
+      "d3d/SharedTextureMemoryD3D.cpp",
+      "d3d/SharedTextureMemoryD3D.h",
       "d3d/SwapChainD3D.cpp",
       "d3d/SwapChainD3D.h",
       "d3d/TextureD3D.cpp",
@@ -472,6 +486,10 @@ source_set("sources") {
       "d3d11/SamplerD3D11.h",
       "d3d11/ShaderModuleD3D11.cpp",
       "d3d11/ShaderModuleD3D11.h",
+      "d3d11/SharedFenceD3D11.cpp",
+      "d3d11/SharedFenceD3D11.h",
+      "d3d11/SharedTextureMemoryD3D11.cpp",
+      "d3d11/SharedTextureMemoryD3D11.h",
       "d3d11/SwapChainD3D11.cpp",
       "d3d11/SwapChainD3D11.h",
       "d3d11/TextureD3D11.cpp",
@@ -551,6 +569,10 @@ source_set("sources") {
       "d3d12/ShaderModuleD3D12.h",
       "d3d12/ShaderVisibleDescriptorAllocatorD3D12.cpp",
       "d3d12/ShaderVisibleDescriptorAllocatorD3D12.h",
+      "d3d12/SharedFenceD3D12.cpp",
+      "d3d12/SharedFenceD3D12.h",
+      "d3d12/SharedTextureMemoryD3D12.cpp",
+      "d3d12/SharedTextureMemoryD3D12.h",
       "d3d12/StagingDescriptorAllocatorD3D12.cpp",
       "d3d12/StagingDescriptorAllocatorD3D12.h",
       "d3d12/StreamImplD3D12.cpp",
@@ -607,6 +629,10 @@ source_set("sources") {
       "metal/SamplerMTL.mm",
       "metal/ShaderModuleMTL.h",
       "metal/ShaderModuleMTL.mm",
+      "metal/SharedFenceMTL.h",
+      "metal/SharedFenceMTL.mm",
+      "metal/SharedTextureMemoryMTL.h",
+      "metal/SharedTextureMemoryMTL.mm",
       "metal/SwapChainMTL.h",
       "metal/SwapChainMTL.mm",
       "metal/TextureMTL.h",
@@ -616,15 +642,9 @@ source_set("sources") {
     ]
 
     # If a "build with ARC" config is present, remove it.
-    # TODO(https://crbug.com/1280317): Remove the "enable_arc2" variant
-    # when ARC migration in the Chromium repo is complete.
     if (filter_include(configs, [ "//build/config/compiler:enable_arc" ]) !=
         []) {
       configs -= [ "//build/config/compiler:enable_arc" ]
-    }
-    if (filter_include(configs, [ "//build/config/compiler:enable_arc2" ]) !=
-        []) {
-      configs -= [ "//build/config/compiler:enable_arc2" ]
     }
   }
 
@@ -705,8 +725,7 @@ source_set("sources") {
   }
 
   if (dawn_enable_vulkan) {
-    configs += [ ":vulkan_tools_include" ]
-    deps += [ "${dawn_vulkan_tools_dir}:vulkan_tools_headers" ]
+    configs += [ ":vulkan_utility_libraries_include" ]
     public_deps += [ "${dawn_vulkan_headers_dir}:vulkan_headers" ]
     sources += [
       "vulkan/BackendVk.cpp",

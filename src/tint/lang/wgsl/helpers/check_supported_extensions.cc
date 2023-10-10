@@ -26,8 +26,8 @@ namespace tint::writer {
 bool CheckSupportedExtensions(std::string_view writer_name,
                               const ast::Module& module,
                               diag::List& diags,
-                              VectorRef<builtin::Extension> supported) {
-    Hashset<builtin::Extension, 32> set;
+                              VectorRef<wgsl::Extension> supported) {
+    Hashset<wgsl::Extension, 32> set;
     for (auto ext : supported) {
         set.Add(ext);
     }

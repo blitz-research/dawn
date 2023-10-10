@@ -64,6 +64,18 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
     const absl::FormatConversionSpec& spec,
     absl::FormatSink* s);
 
+struct ImageCopyTexture;
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const ImageCopyTexture* value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s);
+
+struct TextureDataLayout;
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    const TextureDataLayout* value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s);
+
 //
 // Objects
 //
@@ -137,6 +149,12 @@ absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConv
 enum class TextureComponentType;
 absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
     TextureComponentType value,
+    const absl::FormatConversionSpec& spec,
+    absl::FormatSink* s);
+
+enum class PixelLocalMemberType;
+absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
+    PixelLocalMemberType value,
     const absl::FormatConversionSpec& spec,
     absl::FormatSink* s);
 

@@ -15,9 +15,9 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/wgsl/ast/binary_expression.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::ast {
 namespace {
@@ -26,7 +26,7 @@ using ForLoopStatementTest = TestHelper;
 
 TEST_F(ForLoopStatementTest, Creation) {
     auto* init = Decl(Var("i", ty.u32()));
-    auto* cond = create<BinaryExpression>(BinaryOp::kLessThan, Expr("i"), Expr(5_u));
+    auto* cond = create<BinaryExpression>(core::BinaryOp::kLessThan, Expr("i"), Expr(5_u));
     auto* cont = Assign("i", Add("i", 1_u));
     auto* body = Block(Return());
     auto* l = For(init, cond, cont, body);
@@ -52,8 +52,8 @@ TEST_F(ForLoopStatementTest, Creation_Null_InitCondCont) {
 }
 
 TEST_F(ForLoopStatementTest, Creation_WithAttributes) {
-    auto* attr1 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "foo");
+    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "bar");
     auto* body = Block(Return());
     auto* l = For(nullptr, nullptr, nullptr, body, tint::Vector{attr1, attr2});
 

@@ -37,6 +37,7 @@ namespace dawn::native::d3d11 {
 class CommandRecordingContext;
 class Device;
 class TextureView;
+class SharedTextureMemory;
 
 MaybeError ValidateTextureCanBeWrapped(ID3D11Resource* d3d11Resource,
                                        const TextureDescriptor* descriptor);
@@ -54,13 +55,18 @@ class Texture final : public d3d::Texture {
                                                            std::vector<Ref<d3d::Fence>> waitFences,
                                                            bool isSwapChainTexture,
                                                            bool isInitialized);
+    static ResultOrError<Ref<Texture>> CreateFromSharedTextureMemory(
+        SharedTextureMemory* memory,
+        const TextureDescriptor* descriptor);
     ID3D11Resource* GetD3D11Resource() const;
 
-    D3D11_RENDER_TARGET_VIEW_DESC GetRTVDescriptor(const Format& format,
-                                                   const SubresourceRange& singleLevelRange) const;
-    D3D11_DEPTH_STENCIL_VIEW_DESC GetDSVDescriptor(const SubresourceRange& singleLevelRange,
-                                                   bool depthReadOnly,
-                                                   bool stencilReadOnly) const;
+    ResultOrError<ComPtr<ID3D11RenderTargetView>> CreateD3D11RenderTargetView(
+        const Format& format,
+        const SubresourceRange& singleLevelRange) const;
+    ResultOrError<ComPtr<ID3D11DepthStencilView>> CreateD3D11DepthStencilView(
+        const SubresourceRange& singleLevelRange,
+        bool depthReadOnly,
+        bool stencilReadOnly) const;
     MaybeError EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
                                                    const SubresourceRange& range);
 
@@ -105,7 +111,7 @@ class Texture final : public d3d::Texture {
                                                       const TextureDescriptor* descriptor,
                                                       Kind kind);
 
-    Texture(Device* device, const TextureDescriptor* descriptor, TextureState state, Kind kind);
+    Texture(Device* device, const TextureDescriptor* descriptor, Kind kind);
     ~Texture() override;
 
     template <typename T>
@@ -176,19 +182,26 @@ class TextureView final : public TextureViewBase {
   public:
     static Ref<TextureView> Create(TextureBase* texture, const TextureViewDescriptor* descriptor);
 
-    ResultOrError<ComPtr<ID3D11ShaderResourceView>> CreateD3D11ShaderResourceView() const;
-    ResultOrError<ComPtr<ID3D11RenderTargetView>> CreateD3D11RenderTargetView(
-        uint32_t mipLevel = 0u) const;
-    ResultOrError<ComPtr<ID3D11DepthStencilView>> CreateD3D11DepthStencilView(
-        bool depthReadOnly,
-        bool stencilReadOnly,
-        uint32_t mipLevel = 0u) const;
-    ResultOrError<ComPtr<ID3D11UnorderedAccessView>> CreateD3D11UnorderedAccessView() const;
+    ResultOrError<ID3D11ShaderResourceView*> GetOrCreateD3D11ShaderResourceView();
+    ResultOrError<ID3D11RenderTargetView*> GetOrCreateD3D11RenderTargetView();
+    ResultOrError<ID3D11DepthStencilView*> GetOrCreateD3D11DepthStencilView(bool depthReadOnly,
+                                                                            bool stencilReadOnly);
+    ResultOrError<ID3D11UnorderedAccessView*> GetOrCreateD3D11UnorderedAccessView();
 
   private:
     using TextureViewBase::TextureViewBase;
 
     ~TextureView() override;
+
+    ComPtr<ID3D11ShaderResourceView> mD3d11SharedResourceView;
+
+    ComPtr<ID3D11RenderTargetView> mD3d11RenderTargetView;
+
+    bool mD3d11DepthStencilViewDepthReadOnly = false;
+    bool mD3d11DepthStencilViewStencilReadOnly = false;
+    ComPtr<ID3D11DepthStencilView> mD3d11DepthStencilView;
+
+    ComPtr<ID3D11UnorderedAccessView> mD3d11UnorderedAccessView;
 };
 
 }  // namespace dawn::native::d3d11

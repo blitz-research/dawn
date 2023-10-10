@@ -13,16 +13,29 @@
 // limitations under the License.
 
 #include "src/tint/lang/core/ir/block_param.h"
+
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::BlockParam);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::BlockParam);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
-BlockParam::BlockParam(const type::Type* ty) : type_(ty) {
+BlockParam::BlockParam(const core::type::Type* ty) : type_(ty) {
     TINT_ASSERT(type_ != nullptr);
 }
 
 BlockParam::~BlockParam() = default;
 
-}  // namespace tint::ir
+BlockParam* BlockParam::Clone(CloneContext& ctx) {
+    auto* new_bp = ctx.ir.values.Create<BlockParam>(type_);
+
+    auto name = ctx.ir.NameOf(this);
+    if (name.IsValid()) {
+        ctx.ir.SetName(new_bp, ctx.ir.NameOf(this).Name());
+    }
+    return new_bp;
+}
+
+}  // namespace tint::core::ir

@@ -13,10 +13,10 @@
 // limitations under the License.
 
 #include "gmock/gmock.h"
+#include "src/tint/lang/spirv/reader/ast_parser/helper_test.h"
 #include "src/tint/lang/spirv/reader/ast_parser/spirv_tools_helpers_test.h"
-#include "src/tint/lang/spirv/reader/ast_parser/test_helper.h"
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 namespace {
 
 using ::testing::Eq;
@@ -731,7 +731,7 @@ TEST_F(SpirvASTParserTest, ConvertType_PointerInput) {
     auto* ptr_ty = type->As<Pointer>();
     EXPECT_NE(ptr_ty, nullptr);
     EXPECT_TRUE(ptr_ty->type->Is<F32>());
-    EXPECT_EQ(ptr_ty->address_space, builtin::AddressSpace::kPrivate);
+    EXPECT_EQ(ptr_ty->address_space, core::AddressSpace::kPrivate);
     EXPECT_TRUE(p->error().empty());
 }
 
@@ -747,7 +747,7 @@ TEST_F(SpirvASTParserTest, ConvertType_PointerOutput) {
     auto* ptr_ty = type->As<Pointer>();
     EXPECT_NE(ptr_ty, nullptr);
     EXPECT_TRUE(ptr_ty->type->Is<F32>());
-    EXPECT_EQ(ptr_ty->address_space, builtin::AddressSpace::kPrivate);
+    EXPECT_EQ(ptr_ty->address_space, core::AddressSpace::kPrivate);
     EXPECT_TRUE(p->error().empty());
 }
 
@@ -763,7 +763,7 @@ TEST_F(SpirvASTParserTest, ConvertType_PointerUniform) {
     auto* ptr_ty = type->As<Pointer>();
     EXPECT_NE(ptr_ty, nullptr);
     EXPECT_TRUE(ptr_ty->type->Is<F32>());
-    EXPECT_EQ(ptr_ty->address_space, builtin::AddressSpace::kUniform);
+    EXPECT_EQ(ptr_ty->address_space, core::AddressSpace::kUniform);
     EXPECT_TRUE(p->error().empty());
 }
 
@@ -779,7 +779,7 @@ TEST_F(SpirvASTParserTest, ConvertType_PointerWorkgroup) {
     auto* ptr_ty = type->As<Pointer>();
     EXPECT_NE(ptr_ty, nullptr);
     EXPECT_TRUE(ptr_ty->type->Is<F32>());
-    EXPECT_EQ(ptr_ty->address_space, builtin::AddressSpace::kWorkgroup);
+    EXPECT_EQ(ptr_ty->address_space, core::AddressSpace::kWorkgroup);
     EXPECT_TRUE(p->error().empty());
 }
 
@@ -795,7 +795,7 @@ TEST_F(SpirvASTParserTest, ConvertType_PointerStorageBuffer) {
     auto* ptr_ty = type->As<Pointer>();
     EXPECT_NE(ptr_ty, nullptr);
     EXPECT_TRUE(ptr_ty->type->Is<F32>());
-    EXPECT_EQ(ptr_ty->address_space, builtin::AddressSpace::kStorage);
+    EXPECT_EQ(ptr_ty->address_space, core::AddressSpace::kStorage);
     EXPECT_TRUE(p->error().empty());
 }
 
@@ -811,7 +811,7 @@ TEST_F(SpirvASTParserTest, ConvertType_PointerPrivate) {
     auto* ptr_ty = type->As<Pointer>();
     EXPECT_NE(ptr_ty, nullptr);
     EXPECT_TRUE(ptr_ty->type->Is<F32>());
-    EXPECT_EQ(ptr_ty->address_space, builtin::AddressSpace::kPrivate);
+    EXPECT_EQ(ptr_ty->address_space, core::AddressSpace::kPrivate);
     EXPECT_TRUE(p->error().empty());
 }
 
@@ -827,7 +827,7 @@ TEST_F(SpirvASTParserTest, ConvertType_PointerFunction) {
     auto* ptr_ty = type->As<Pointer>();
     EXPECT_NE(ptr_ty, nullptr);
     EXPECT_TRUE(ptr_ty->type->Is<F32>());
-    EXPECT_EQ(ptr_ty->address_space, builtin::AddressSpace::kFunction);
+    EXPECT_EQ(ptr_ty->address_space, core::AddressSpace::kFunction);
     EXPECT_TRUE(p->error().empty());
 }
 
@@ -846,12 +846,12 @@ TEST_F(SpirvASTParserTest, ConvertType_PointerToPointer) {
 
     auto* ptr_ty = type->As<Pointer>();
     EXPECT_NE(ptr_ty, nullptr);
-    EXPECT_EQ(ptr_ty->address_space, builtin::AddressSpace::kPrivate);
+    EXPECT_EQ(ptr_ty->address_space, core::AddressSpace::kPrivate);
     EXPECT_TRUE(ptr_ty->type->Is<Pointer>());
 
     auto* ptr_ptr_ty = ptr_ty->type->As<Pointer>();
     EXPECT_NE(ptr_ptr_ty, nullptr);
-    EXPECT_EQ(ptr_ptr_ty->address_space, builtin::AddressSpace::kPrivate);
+    EXPECT_EQ(ptr_ptr_ty->address_space, core::AddressSpace::kPrivate);
     EXPECT_TRUE(ptr_ptr_ty->type->Is<F32>());
 
     EXPECT_TRUE(p->error().empty());
@@ -896,4 +896,4 @@ TEST_F(SpirvASTParserTest, ConvertType_SampledImage_PretendVoid) {
 }
 
 }  // namespace
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser

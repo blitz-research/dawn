@@ -16,13 +16,15 @@
 
 #include <utility>
 
+#include "src/tint/lang/core/ir/clone_context.h"
 #include "src/tint/lang/core/ir/loop.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/multi_in_block.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::NextIteration);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::NextIteration);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 NextIteration::NextIteration(ir::Loop* loop, VectorRef<Value*> args /* = tint::Empty */)
     : loop_(loop) {
@@ -37,4 +39,10 @@ NextIteration::NextIteration(ir::Loop* loop, VectorRef<Value*> args /* = tint::E
 
 NextIteration::~NextIteration() = default;
 
-}  // namespace tint::ir
+NextIteration* NextIteration::Clone(CloneContext& ctx) {
+    auto* new_loop = ctx.Clone(loop_);
+    auto args = ctx.Remap<NextIteration::kDefaultNumOperands>(Args());
+    return ctx.ir.instructions.Create<NextIteration>(new_loop, args);
+}
+
+}  // namespace tint::core::ir

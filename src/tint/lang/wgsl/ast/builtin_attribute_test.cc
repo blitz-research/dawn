@@ -14,8 +14,8 @@
 
 #include "gtest/gtest-spi.h"
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
@@ -23,7 +23,7 @@ namespace {
 using BuiltinAttributeTest = TestHelper;
 
 TEST_F(BuiltinAttributeTest, Creation) {
-    auto* d = Builtin(builtin::BuiltinValue::kFragDepth);
+    auto* d = Builtin(core::BuiltinValue::kFragDepth);
     CheckIdentifier(d->builtin, "frag_depth");
 }
 

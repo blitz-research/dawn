@@ -132,9 +132,15 @@ ResultOrError<std::vector<VkPhysicalDevice>> GatherPhysicalDevices(
     }
 
     std::vector<VkPhysicalDevice> vkPhysicalDevices(count);
-    DAWN_TRY(CheckVkSuccess(
-        vkFunctions.EnumeratePhysicalDevices(instance, &count, vkPhysicalDevices.data()),
-        "vkEnumeratePhysicalDevices"));
+
+    // crbug.com/1475146: Some PowerVR devices return a device count of 0, which may be causing a
+    // crash on the subsequent vkEnumeratePhysicalDevices call, so only call it if at least one
+    // physical device is reported.
+    if (count > 0) {
+        DAWN_TRY(CheckVkSuccess(
+            vkFunctions.EnumeratePhysicalDevices(instance, &count, vkPhysicalDevices.data()),
+            "vkEnumeratePhysicalDevices"));
+    }
 
     return std::move(vkPhysicalDevices);
 }
@@ -207,8 +213,7 @@ ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const PhysicalDevice& device) {
         }
 
         MarkPromotedExtensions(&info.extensions, info.properties.apiVersion);
-        info.extensions =
-            EnsureDependencies(info.extensions, globalInfo.extensions, info.properties.apiVersion);
+        info.extensions = EnsureDependencies(info.extensions, globalInfo.extensions);
     }
 
     // Gather general and extension features and properties
@@ -218,7 +223,7 @@ ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const PhysicalDevice& device) {
     //
     // Note that info.properties has already been filled at the start of this function to get
     // `apiVersion`.
-    ASSERT(info.properties.apiVersion != 0);
+    DAWN_ASSERT(info.properties.apiVersion != 0);
     if (info.extensions[DeviceExt::GetPhysicalDeviceProperties2]) {
         VkPhysicalDeviceFeatures2 features2 = {};
         features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -285,6 +290,21 @@ ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const PhysicalDevice& device) {
         if (info.extensions[DeviceExt::Robustness2]) {
             featuresChain.Add(&info.robustness2Features,
                               VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT);
+        }
+
+        // Check subgroup features and properties
+        propertiesChain.Add(&info.subgroupProperties,
+                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES);
+        if (info.extensions[DeviceExt::ShaderSubgroupUniformControlFlow]) {
+            featuresChain.Add(
+                &info.shaderSubgroupUniformControlFlowFeatures,
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_UNIFORM_CONTROL_FLOW_FEATURES_KHR);
+        }
+
+        if (info.extensions[DeviceExt::ExternalMemoryHost]) {
+            propertiesChain.Add(
+                &info.externalMemoryHostProperties,
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT);
         }
 
         // Use vkGetPhysicalDevice{Features,Properties}2 if required to gather information about

@@ -14,12 +14,14 @@
 
 #include "src/tint/lang/core/ir/if.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::If);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::If);
 
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/multi_in_block.h"
 #include "src/tint/utils/ice/ice.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 If::If(Value* cond, ir::Block* t, ir::Block* f) : true_(t), false_(f) {
     TINT_ASSERT(true_);
@@ -46,4 +48,17 @@ void If::ForeachBlock(const std::function<void(ir::Block*)>& cb) {
     }
 }
 
-}  // namespace tint::ir
+If* If::Clone(CloneContext& ctx) {
+    auto* cond = ctx.Remap(Condition());
+    auto* new_true = ctx.ir.blocks.Create<ir::Block>();
+    auto* new_false = ctx.ir.blocks.Create<ir::Block>();
+
+    auto* new_if = ctx.ir.instructions.Create<If>(cond, new_true, new_false);
+    ctx.Replace(this, new_if);
+
+    true_->CloneInto(ctx, new_true);
+    false_->CloneInto(ctx, new_false);
+    return new_if;
+}
+
+}  // namespace tint::core::ir

@@ -74,7 +74,7 @@ class VulkanImageWrappingTestBase : public DawnTestWithParams<ImageWrappingParam
                 mBackend = CreateDMABufBackend(device);
                 break;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         VulkanImageWrappingTestBackend::TestParams params;
@@ -165,7 +165,7 @@ class VulkanImageWrappingTestBase : public DawnTestWithParams<ImageWrappingParam
     void IgnoreSignalSemaphore(wgpu::Texture wrappedTexture) {
         ExternalImageExportInfoVkForTesting exportInfo = GetExternalImageExportInfo();
         bool result = mBackend->ExportImage(wrappedTexture, &exportInfo);
-        ASSERT(result);
+        DAWN_ASSERT(result);
     }
 
   protected:
@@ -297,9 +297,9 @@ class VulkanImageWrappingUsageTests : public VulkanImageWrappingTestBase {
         adapterBase = native::FromAPI(device.Get())->GetAdapter();
         deviceDescriptor.nextInChain = &deviceTogglesDesc;
         deviceTogglesDesc.enabledToggles = GetParam().forceEnabledWorkarounds.data();
-        deviceTogglesDesc.enabledTogglesCount = GetParam().forceEnabledWorkarounds.size();
+        deviceTogglesDesc.enabledToggleCount = GetParam().forceEnabledWorkarounds.size();
         deviceTogglesDesc.disabledToggles = GetParam().forceDisabledWorkarounds.data();
-        deviceTogglesDesc.disabledTogglesCount = GetParam().forceDisabledWorkarounds.size();
+        deviceTogglesDesc.disabledToggleCount = GetParam().forceDisabledWorkarounds.size();
 
         secondDeviceVk = native::vulkan::ToBackend(adapterBase->APICreateDevice(&deviceDescriptor));
         secondDevice = wgpu::Device::Acquire(native::ToAPI(secondDeviceVk));

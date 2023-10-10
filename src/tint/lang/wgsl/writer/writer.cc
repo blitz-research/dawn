@@ -19,6 +19,8 @@
 
 #include "src/tint/lang/wgsl/program/program.h"
 #include "src/tint/lang/wgsl/writer/ast_printer/ast_printer.h"
+#include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
+#include "src/tint/lang/wgsl/writer/raise/raise.h"
 
 #if TINT_BUILD_SYNTAX_TREE_WRITER
 #include "src/tint/lang/wgsl/writer/syntax_tree_printer/syntax_tree_printer.h"
@@ -26,35 +28,44 @@
 
 namespace tint::wgsl::writer {
 
-Result Generate(const Program* program, const Options& options) {
+Result<Output> Generate(const Program& program, const Options& options) {
     (void)options;
 
-    Result result;
-    if (!program->IsValid()) {
-        result.error = "input program is not valid";
-        return result;
-    }
-
+    Output output;
 #if TINT_BUILD_SYNTAX_TREE_WRITER
     if (options.use_syntax_tree_writer) {
         // Generate the WGSL code.
         auto impl = std::make_unique<SyntaxTreePrinter>(program);
-        impl->Generate();
-        result.success = impl->Diagnostics().empty();
-        result.error = impl->Diagnostics().str();
-        result.wgsl = impl->Result();
+        if (!impl->Generate()) {
+            return Failure{impl->Diagnostics()};
+        }
+        output.wgsl = impl->Result();
     } else  // NOLINT(readability/braces)
 #endif
     {
         // Generate the WGSL code.
         auto impl = std::make_unique<ASTPrinter>(program);
-        impl->Generate();
-        result.success = impl->Diagnostics().empty();
-        result.error = impl->Diagnostics().str();
-        result.wgsl = impl->Result();
+        if (!impl->Generate()) {
+            return Failure{impl->Diagnostics()};
+        }
+        output.wgsl = impl->Result();
     }
 
-    return result;
+    return output;
+}
+
+Result<Output> WgslFromIR(core::ir::Module& module) {
+    // core-dialect -> WGSL-dialect
+    if (auto res = Raise(module); !res) {
+        return res.Failure();
+    }
+
+    auto program = IRToProgram(module);
+    if (!program.IsValid()) {
+        return Failure{program.Diagnostics()};
+    }
+
+    return Generate(program, Options{});
 }
 
 }  // namespace tint::wgsl::writer

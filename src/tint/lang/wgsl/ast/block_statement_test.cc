@@ -15,8 +15,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/wgsl/ast/discard_statement.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 #include "src/tint/lang/wgsl/ast/if_statement.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
 
 namespace tint::ast {
 namespace {
@@ -45,8 +45,8 @@ TEST_F(BlockStatementTest, Creation_WithAttributes) {
     auto* d = create<DiscardStatement>();
     auto* ptr = d;
 
-    auto* attr1 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "foo");
+    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "bar");
     auto* b = create<BlockStatement>(tint::Vector{d}, tint::Vector{attr1, attr2});
 
     ASSERT_EQ(b->statements.Length(), 1u);

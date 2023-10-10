@@ -9,11 +9,13 @@ See:
 --------------------------------------------------------------------------------
 */ -}}
 
+{{- $I := LoadIntrinsics "src/tint/lang/core/core.def" -}}
+
 {{- /* For each permutation of each overload of each function... */ -}}
-{{- range Sem.Builtins -}}
+{{- range $I.Sem.Builtins -}}
 {{    if not (HasPrefix .Name "_") }}
 {{-     range .Overloads  -}}
-{{-       range Permute . -}}
+{{-       range $I.Permute . -}}
 {{- /*      Generate a ./literal/<function>/<permuataion-hash>.wgsl file using
             the Permutation macro defined below                             */ -}}
 {{-         $file := printf "./literal/%v/%v.wgsl" .Intrinsic.Name .Hash -}}
@@ -198,6 +200,16 @@ fn compute_main() {
 {{- /* Check and emit chromium_experimental_dp4a */ -}}
 {{-   if or (eq "dot4I8Packed" $builtin_name) (eq "dot4U8Packed" $builtin_name)}}
 enable chromium_experimental_dp4a;
+{{    end -}}
+
+{{- /* Check and emit chromium_experimental_subgroups */ -}}
+{{-   if or (eq "subgroupBallot" $builtin_name) (eq "subgroupBroadcast" $builtin_name)}}
+enable chromium_experimental_subgroups;
+{{    end -}}
+
+{{- /* Check and emit chromium_experimental_read_write_storage_texture */ -}}
+{{-   if or (OverloadUsesReadWriteStorageTexture $overload) (eq "textureBarrier" $builtin_name)}}
+enable chromium_experimental_read_write_storage_texture;
 {{    end -}}
 
 {{- /* Check and emit f16 */ -}}

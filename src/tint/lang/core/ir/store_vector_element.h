@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_STORE_VECTOR_ELEMENT_H_
 #define SRC_TINT_LANG_CORE_IR_STORE_VECTOR_ELEMENT_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/operand_instruction.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A store instruction for a single vector element in the IR.
-class StoreVectorElement : public Castable<StoreVectorElement, OperandInstruction<3, 0>> {
+class StoreVectorElement final : public Castable<StoreVectorElement, OperandInstruction<3, 0>> {
   public:
     /// The offset in Operands() for the `to` value
     static constexpr size_t kToOperandOffset = 0;
@@ -39,6 +41,9 @@ class StoreVectorElement : public Castable<StoreVectorElement, OperandInstructio
     StoreVectorElement(ir::Value* to, ir::Value* index, ir::Value* value);
     ~StoreVectorElement() override;
 
+    /// @copydoc Instruction::Clone()
+    StoreVectorElement* Clone(CloneContext& ctx) override;
+
     /// @returns the vector pointer value
     ir::Value* To() { return operands_[kToOperandOffset]; }
 
@@ -49,9 +54,9 @@ class StoreVectorElement : public Castable<StoreVectorElement, OperandInstructio
     ir::Value* Value() { return operands_[kValueOperandOffset]; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "store-vector-element"; }
+    std::string FriendlyName() override { return "store_vector_element"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_STORE_VECTOR_ELEMENT_H_

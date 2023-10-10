@@ -16,13 +16,13 @@
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
 namespace tint::resolver {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 struct ResolverVariableTest : public resolver::TestHelper, public testing::Test {};
 
@@ -42,7 +42,7 @@ TEST_F(ResolverVariableTest, LocalVar_NoInitializer) {
     //   var a : A;
     // }
 
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* S = Structure("S", Vector{Member("i", ty.i32())});
     auto* A = Alias("A", ty.Of(S));
@@ -69,21 +69,21 @@ TEST_F(ResolverVariableTest, LocalVar_NoInitializer) {
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     // `var` declarations are always of reference type
-    ASSERT_TRUE(TypeOf(i)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(u)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(f)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(h)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(b)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(s)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(a)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(i)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(u)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(f)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(h)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(b)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(s)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(a)->Is<core::type::Reference>());
 
-    EXPECT_TRUE(TypeOf(i)->As<type::Reference>()->StoreType()->Is<type::I32>());
-    EXPECT_TRUE(TypeOf(u)->As<type::Reference>()->StoreType()->Is<type::U32>());
-    EXPECT_TRUE(TypeOf(f)->As<type::Reference>()->StoreType()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(h)->As<type::Reference>()->StoreType()->Is<type::F16>());
-    EXPECT_TRUE(TypeOf(b)->As<type::Reference>()->StoreType()->Is<type::Bool>());
-    EXPECT_TRUE(TypeOf(s)->As<type::Reference>()->StoreType()->Is<type::Struct>());
-    EXPECT_TRUE(TypeOf(a)->As<type::Reference>()->StoreType()->Is<type::Struct>());
+    EXPECT_TRUE(TypeOf(i)->As<core::type::Reference>()->StoreType()->Is<core::type::I32>());
+    EXPECT_TRUE(TypeOf(u)->As<core::type::Reference>()->StoreType()->Is<core::type::U32>());
+    EXPECT_TRUE(TypeOf(f)->As<core::type::Reference>()->StoreType()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(h)->As<core::type::Reference>()->StoreType()->Is<core::type::F16>());
+    EXPECT_TRUE(TypeOf(b)->As<core::type::Reference>()->StoreType()->Is<core::type::Bool>());
+    EXPECT_TRUE(TypeOf(s)->As<core::type::Reference>()->StoreType()->Is<core::type::Struct>());
+    EXPECT_TRUE(TypeOf(a)->As<core::type::Reference>()->StoreType()->Is<core::type::Struct>());
 
     EXPECT_EQ(Sem().Get(i)->Initializer(), nullptr);
     EXPECT_EQ(Sem().Get(u)->Initializer(), nullptr);
@@ -107,7 +107,7 @@ TEST_F(ResolverVariableTest, LocalVar_WithInitializer) {
     //   var a : A = A(1);
     // }
 
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* S = Structure("S", Vector{Member("i", ty.i32())});
     auto* A = Alias("A", ty.Of(S));
@@ -142,28 +142,28 @@ TEST_F(ResolverVariableTest, LocalVar_WithInitializer) {
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     // `var` declarations are always of reference type
-    ASSERT_TRUE(TypeOf(i)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(u)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(f)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(h)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(b)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(s)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(a)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(i)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(u)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(f)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(h)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(b)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(s)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(a)->Is<core::type::Reference>());
 
-    EXPECT_EQ(TypeOf(i)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(u)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(f)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(b)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(s)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(a)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(i)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(u)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(f)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(b)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(s)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(a)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
 
-    EXPECT_TRUE(TypeOf(i)->As<type::Reference>()->StoreType()->Is<type::I32>());
-    EXPECT_TRUE(TypeOf(u)->As<type::Reference>()->StoreType()->Is<type::U32>());
-    EXPECT_TRUE(TypeOf(f)->As<type::Reference>()->StoreType()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(h)->As<type::Reference>()->StoreType()->Is<type::F16>());
-    EXPECT_TRUE(TypeOf(b)->As<type::Reference>()->StoreType()->Is<type::Bool>());
-    EXPECT_TRUE(TypeOf(s)->As<type::Reference>()->StoreType()->Is<type::Struct>());
-    EXPECT_TRUE(TypeOf(a)->As<type::Reference>()->StoreType()->Is<type::Struct>());
+    EXPECT_TRUE(TypeOf(i)->As<core::type::Reference>()->StoreType()->Is<core::type::I32>());
+    EXPECT_TRUE(TypeOf(u)->As<core::type::Reference>()->StoreType()->Is<core::type::U32>());
+    EXPECT_TRUE(TypeOf(f)->As<core::type::Reference>()->StoreType()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(h)->As<core::type::Reference>()->StoreType()->Is<core::type::F16>());
+    EXPECT_TRUE(TypeOf(b)->As<core::type::Reference>()->StoreType()->Is<core::type::Bool>());
+    EXPECT_TRUE(TypeOf(s)->As<core::type::Reference>()->StoreType()->Is<core::type::Struct>());
+    EXPECT_TRUE(TypeOf(a)->As<core::type::Reference>()->StoreType()->Is<core::type::Struct>());
 
     EXPECT_EQ(Sem().Get(i)->Initializer()->Declaration(), i_c);
     EXPECT_EQ(Sem().Get(u)->Initializer()->Declaration(), u_c);
@@ -239,7 +239,7 @@ TEST_F(ResolverVariableTest, LocalVar_ShadowsGlobalVar) {
     //   var a = a;
     // }
 
-    auto* g = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* g = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
     auto* v = Var("a", Expr("a"));
     Func("F", tint::Empty, ty.void_(), Vector{Decl(v)});
 
@@ -400,7 +400,7 @@ TEST_F(ResolverVariableTest, LocalLet) {
     //   let p : pointer<function, i32> = &v;
     // }
 
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* S = Structure("S", Vector{Member("i", ty.i32())});
     auto* A = Alias("A", ty.Of(S));
@@ -440,15 +440,15 @@ TEST_F(ResolverVariableTest, LocalLet) {
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
     // `let` declarations are always of the storage type
-    ASSERT_TRUE(TypeOf(i)->Is<type::I32>());
-    ASSERT_TRUE(TypeOf(u)->Is<type::U32>());
-    ASSERT_TRUE(TypeOf(f)->Is<type::F32>());
-    ASSERT_TRUE(TypeOf(h)->Is<type::F16>());
-    ASSERT_TRUE(TypeOf(b)->Is<type::Bool>());
-    ASSERT_TRUE(TypeOf(s)->Is<type::Struct>());
-    ASSERT_TRUE(TypeOf(a)->Is<type::Struct>());
-    ASSERT_TRUE(TypeOf(p)->Is<type::Pointer>());
-    ASSERT_TRUE(TypeOf(p)->As<type::Pointer>()->StoreType()->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(i)->Is<core::type::I32>());
+    ASSERT_TRUE(TypeOf(u)->Is<core::type::U32>());
+    ASSERT_TRUE(TypeOf(f)->Is<core::type::F32>());
+    ASSERT_TRUE(TypeOf(h)->Is<core::type::F16>());
+    ASSERT_TRUE(TypeOf(b)->Is<core::type::Bool>());
+    ASSERT_TRUE(TypeOf(s)->Is<core::type::Struct>());
+    ASSERT_TRUE(TypeOf(a)->Is<core::type::Struct>());
+    ASSERT_TRUE(TypeOf(p)->Is<core::type::Pointer>());
+    ASSERT_TRUE(TypeOf(p)->As<core::type::Pointer>()->StoreType()->Is<core::type::I32>());
 
     EXPECT_EQ(Sem().Get(i)->Initializer()->Declaration(), i_c);
     EXPECT_EQ(Sem().Get(u)->Initializer()->Declaration(), u_c);
@@ -473,8 +473,8 @@ TEST_F(ResolverVariableTest, LocalLet_InheritsAccessFromOriginatingVariable) {
     // }
     auto* inner = Structure("Inner", Vector{Member("arr", ty.array<i32, 4>())});
     auto* buf = Structure("S", Vector{Member("inner", ty.Of(inner))});
-    auto* storage = GlobalVar("s", ty.Of(buf), builtin::AddressSpace::kStorage,
-                              builtin::Access::kReadWrite, Binding(0_a), Group(0_a));
+    auto* storage = GlobalVar("s", ty.Of(buf), core::AddressSpace::kStorage,
+                              core::Access::kReadWrite, Binding(0_a), Group(0_a));
 
     auto* expr = IndexAccessor(MemberAccessor(MemberAccessor(storage, "inner"), "arr"), 3_i);
     auto* ptr = Let("p", AddressOf(expr));
@@ -483,11 +483,11 @@ TEST_F(ResolverVariableTest, LocalLet_InheritsAccessFromOriginatingVariable) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(expr)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(ptr)->Is<type::Pointer>());
+    ASSERT_TRUE(TypeOf(expr)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(ptr)->Is<core::type::Pointer>());
 
-    EXPECT_EQ(TypeOf(expr)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(ptr)->As<type::Pointer>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(expr)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(ptr)->As<core::type::Pointer>()->Access(), core::Access::kReadWrite);
 }
 
 TEST_F(ResolverVariableTest, LocalLet_ShadowsAlias) {
@@ -555,7 +555,7 @@ TEST_F(ResolverVariableTest, LocalLet_ShadowsGlobalVar) {
     //   let a = a;
     // }
 
-    auto* g = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* g = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
     auto* l = Let("a", Expr("a"));
     Func("F", tint::Empty, ty.void_(), Vector{Decl(l)});
 
@@ -767,7 +767,7 @@ TEST_F(ResolverVariableTest, LocalConst_ShadowsGlobalVar) {
     //   const a = 1i;
     // }
 
-    auto* g = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* g = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
     auto* c = Const("a", Expr(1_i));
     Func("F", tint::Empty, ty.void_(), Vector{Decl(c)});
 
@@ -918,14 +918,14 @@ TEST_F(ResolverVariableTest, LocalConst_ExplicitType_Decls) {
     EXPECT_EQ(Sem().Get(c_mf32)->Declaration(), c_mf32);
     EXPECT_EQ(Sem().Get(c_s)->Declaration(), c_s);
 
-    ASSERT_TRUE(TypeOf(c_i32)->Is<type::I32>());
-    ASSERT_TRUE(TypeOf(c_u32)->Is<type::U32>());
-    ASSERT_TRUE(TypeOf(c_f32)->Is<type::F32>());
-    ASSERT_TRUE(TypeOf(c_vi32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vu32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vf32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_mf32)->Is<type::Matrix>());
-    ASSERT_TRUE(TypeOf(c_s)->Is<type::Struct>());
+    ASSERT_TRUE(TypeOf(c_i32)->Is<core::type::I32>());
+    ASSERT_TRUE(TypeOf(c_u32)->Is<core::type::U32>());
+    ASSERT_TRUE(TypeOf(c_f32)->Is<core::type::F32>());
+    ASSERT_TRUE(TypeOf(c_vi32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vu32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vf32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_mf32)->Is<core::type::Matrix>());
+    ASSERT_TRUE(TypeOf(c_s)->Is<core::type::Struct>());
 
     EXPECT_TRUE(Sem().Get(c_i32)->ConstantValue()->AllZero());
     EXPECT_TRUE(Sem().Get(c_u32)->ConstantValue()->AllZero());
@@ -976,19 +976,19 @@ TEST_F(ResolverVariableTest, LocalConst_ImplicitType_Decls) {
     EXPECT_EQ(Sem().Get(c_maf32)->Declaration(), c_maf32);
     EXPECT_EQ(Sem().Get(c_s)->Declaration(), c_s);
 
-    ASSERT_TRUE(TypeOf(c_i32)->Is<type::I32>());
-    ASSERT_TRUE(TypeOf(c_u32)->Is<type::U32>());
-    ASSERT_TRUE(TypeOf(c_f32)->Is<type::F32>());
-    ASSERT_TRUE(TypeOf(c_ai)->Is<type::AbstractInt>());
-    ASSERT_TRUE(TypeOf(c_af)->Is<type::AbstractFloat>());
-    ASSERT_TRUE(TypeOf(c_vi32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vu32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vf32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vai)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vaf)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_mf32)->Is<type::Matrix>());
-    ASSERT_TRUE(TypeOf(c_maf32)->Is<type::Matrix>());
-    ASSERT_TRUE(TypeOf(c_s)->Is<type::Struct>());
+    ASSERT_TRUE(TypeOf(c_i32)->Is<core::type::I32>());
+    ASSERT_TRUE(TypeOf(c_u32)->Is<core::type::U32>());
+    ASSERT_TRUE(TypeOf(c_f32)->Is<core::type::F32>());
+    ASSERT_TRUE(TypeOf(c_ai)->Is<core::type::AbstractInt>());
+    ASSERT_TRUE(TypeOf(c_af)->Is<core::type::AbstractFloat>());
+    ASSERT_TRUE(TypeOf(c_vi32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vu32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vf32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vai)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vaf)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_mf32)->Is<core::type::Matrix>());
+    ASSERT_TRUE(TypeOf(c_maf32)->Is<core::type::Matrix>());
+    ASSERT_TRUE(TypeOf(c_s)->Is<core::type::Struct>());
 
     EXPECT_TRUE(Sem().Get(c_i32)->ConstantValue()->AllZero());
     EXPECT_TRUE(Sem().Get(c_u32)->ConstantValue()->AllZero());
@@ -1014,7 +1014,7 @@ TEST_F(ResolverVariableTest, LocalConst_PropagateConstValue) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(c)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(c)->Is<core::type::I32>());
 
     EXPECT_EQ(Sem().Get(c)->ConstantValue()->ValueAs<i32>(), 42_i);
 }
@@ -1026,7 +1026,7 @@ TEST_F(ResolverVariableTest, LocalConst_ConstEval) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(c)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(c)->Is<core::type::I32>());
 
     EXPECT_EQ(Sem().Get(c)->ConstantValue()->ValueAs<i32>(), 3_i);
 }
@@ -1038,42 +1038,42 @@ TEST_F(ResolverVariableTest, GlobalVar_AddressSpace) {
     // https://gpuweb.github.io/gpuweb/wgsl/#storage-class
 
     auto* buf = Structure("S", Vector{Member("m", ty.i32())});
-    auto* private_ = GlobalVar("p", ty.i32(), builtin::AddressSpace::kPrivate);
-    auto* workgroup = GlobalVar("w", ty.i32(), builtin::AddressSpace::kWorkgroup);
+    auto* private_ = GlobalVar("p", ty.i32(), core::AddressSpace::kPrivate);
+    auto* workgroup = GlobalVar("w", ty.i32(), core::AddressSpace::kWorkgroup);
     auto* uniform =
-        GlobalVar("ub", ty.Of(buf), builtin::AddressSpace::kUniform, Binding(0_a), Group(0_a));
+        GlobalVar("ub", ty.Of(buf), core::AddressSpace::kUniform, Binding(0_a), Group(0_a));
     auto* storage =
-        GlobalVar("sb", ty.Of(buf), builtin::AddressSpace::kStorage, Binding(1_a), Group(0_a));
-    auto* handle =
-        GlobalVar("h", ty.depth_texture(type::TextureDimension::k2d), Binding(2_a), Group(0_a));
+        GlobalVar("sb", ty.Of(buf), core::AddressSpace::kStorage, Binding(1_a), Group(0_a));
+    auto* handle = GlobalVar("h", ty.depth_texture(core::type::TextureDimension::k2d), Binding(2_a),
+                             Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(private_)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(workgroup)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(uniform)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(storage)->Is<type::Reference>());
-    ASSERT_TRUE(TypeOf(handle)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(private_)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(workgroup)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(uniform)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(storage)->Is<core::type::Reference>());
+    ASSERT_TRUE(TypeOf(handle)->Is<core::type::Reference>());
 
-    EXPECT_EQ(TypeOf(private_)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(workgroup)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
-    EXPECT_EQ(TypeOf(uniform)->As<type::Reference>()->Access(), builtin::Access::kRead);
-    EXPECT_EQ(TypeOf(storage)->As<type::Reference>()->Access(), builtin::Access::kRead);
-    EXPECT_EQ(TypeOf(handle)->As<type::Reference>()->Access(), builtin::Access::kRead);
+    EXPECT_EQ(TypeOf(private_)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(workgroup)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(uniform)->As<core::type::Reference>()->Access(), core::Access::kRead);
+    EXPECT_EQ(TypeOf(storage)->As<core::type::Reference>()->Access(), core::Access::kRead);
+    EXPECT_EQ(TypeOf(handle)->As<core::type::Reference>()->Access(), core::Access::kRead);
 }
 
 TEST_F(ResolverVariableTest, GlobalVar_ExplicitAddressSpace) {
     // https://gpuweb.github.io/gpuweb/wgsl/#storage-class
 
     auto* buf = Structure("S", Vector{Member("m", ty.i32())});
-    auto* storage = GlobalVar("sb", ty.Of(buf), builtin::AddressSpace::kStorage,
-                              builtin::Access::kReadWrite, Binding(1_a), Group(0_a));
+    auto* storage = GlobalVar("sb", ty.Of(buf), core::AddressSpace::kStorage,
+                              core::Access::kReadWrite, Binding(1_a), Group(0_a));
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(storage)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(storage)->Is<core::type::Reference>());
 
-    EXPECT_EQ(TypeOf(storage)->As<type::Reference>()->Access(), builtin::Access::kReadWrite);
+    EXPECT_EQ(TypeOf(storage)->As<core::type::Reference>()->Access(), core::Access::kReadWrite);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1098,13 +1098,13 @@ TEST_F(ResolverVariableTest, GlobalConst_ExplicitType_Decls) {
     EXPECT_EQ(Sem().Get(c_vf32)->Declaration(), c_vf32);
     EXPECT_EQ(Sem().Get(c_mf32)->Declaration(), c_mf32);
 
-    ASSERT_TRUE(TypeOf(c_i32)->Is<type::I32>());
-    ASSERT_TRUE(TypeOf(c_u32)->Is<type::U32>());
-    ASSERT_TRUE(TypeOf(c_f32)->Is<type::F32>());
-    ASSERT_TRUE(TypeOf(c_vi32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vu32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vf32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_mf32)->Is<type::Matrix>());
+    ASSERT_TRUE(TypeOf(c_i32)->Is<core::type::I32>());
+    ASSERT_TRUE(TypeOf(c_u32)->Is<core::type::U32>());
+    ASSERT_TRUE(TypeOf(c_f32)->Is<core::type::F32>());
+    ASSERT_TRUE(TypeOf(c_vi32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vu32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vf32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_mf32)->Is<core::type::Matrix>());
 
     EXPECT_TRUE(Sem().Get(c_i32)->ConstantValue()->AllZero());
     EXPECT_TRUE(Sem().Get(c_u32)->ConstantValue()->AllZero());
@@ -1147,18 +1147,18 @@ TEST_F(ResolverVariableTest, GlobalConst_ImplicitType_Decls) {
     EXPECT_EQ(Sem().Get(c_mf32)->Declaration(), c_mf32);
     EXPECT_EQ(Sem().Get(c_maf32)->Declaration(), c_maf32);
 
-    ASSERT_TRUE(TypeOf(c_i32)->Is<type::I32>());
-    ASSERT_TRUE(TypeOf(c_u32)->Is<type::U32>());
-    ASSERT_TRUE(TypeOf(c_f32)->Is<type::F32>());
-    ASSERT_TRUE(TypeOf(c_ai)->Is<type::AbstractInt>());
-    ASSERT_TRUE(TypeOf(c_af)->Is<type::AbstractFloat>());
-    ASSERT_TRUE(TypeOf(c_vi32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vu32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vf32)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vai)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_vaf)->Is<type::Vector>());
-    ASSERT_TRUE(TypeOf(c_mf32)->Is<type::Matrix>());
-    ASSERT_TRUE(TypeOf(c_maf32)->Is<type::Matrix>());
+    ASSERT_TRUE(TypeOf(c_i32)->Is<core::type::I32>());
+    ASSERT_TRUE(TypeOf(c_u32)->Is<core::type::U32>());
+    ASSERT_TRUE(TypeOf(c_f32)->Is<core::type::F32>());
+    ASSERT_TRUE(TypeOf(c_ai)->Is<core::type::AbstractInt>());
+    ASSERT_TRUE(TypeOf(c_af)->Is<core::type::AbstractFloat>());
+    ASSERT_TRUE(TypeOf(c_vi32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vu32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vf32)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vai)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_vaf)->Is<core::type::Vector>());
+    ASSERT_TRUE(TypeOf(c_mf32)->Is<core::type::Matrix>());
+    ASSERT_TRUE(TypeOf(c_maf32)->Is<core::type::Matrix>());
 
     EXPECT_TRUE(Sem().Get(c_i32)->ConstantValue()->AllZero());
     EXPECT_TRUE(Sem().Get(c_u32)->ConstantValue()->AllZero());
@@ -1181,7 +1181,7 @@ TEST_F(ResolverVariableTest, GlobalConst_PropagateConstValue) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(c)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(c)->Is<core::type::I32>());
 
     EXPECT_EQ(Sem().Get(c)->ConstantValue()->ValueAs<i32>(), 42_i);
 }
@@ -1191,7 +1191,7 @@ TEST_F(ResolverVariableTest, GlobalConst_ConstEval) {
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 
-    ASSERT_TRUE(TypeOf(c)->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(c)->Is<core::type::I32>());
 
     EXPECT_EQ(Sem().Get(c)->ConstantValue()->ValueAs<i32>(), 3_i);
 }
@@ -1223,7 +1223,7 @@ TEST_F(ResolverVariableTest, Param_ShadowsGlobalVar) {
     // fn F(a : bool) {
     // }
 
-    auto* g = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* g = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
     auto* p = Param("a", ty.bool_());
     Func("F", Vector{p}, ty.void_(), tint::Empty);
 
@@ -1291,7 +1291,7 @@ TEST_F(ResolverVariableTest, GlobalVar_UseTemplatedIdent) {
     //   let l = a<i32>;
     // }
 
-    GlobalVar(Source{{56, 78}}, "a", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar(Source{{56, 78}}, "a", ty.i32(), core::AddressSpace::kPrivate);
     Func("F", tint::Empty, ty.void_(),
          Vector{
              Decl(Let("l", Expr(Ident(Source{{12, 34}}, "a", "i32")))),

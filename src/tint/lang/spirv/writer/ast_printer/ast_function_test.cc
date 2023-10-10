@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/ast_printer/test_helper.h"
-#include "src/tint/lang/spirv/writer/spv_dump.h"
+#include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::spirv::writer {
 namespace {
@@ -61,7 +61,7 @@ OpFunctionEnd
 }
 
 TEST_F(SpirvASTPrinterTest, Function_Terminator_ReturnValue) {
-    GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", ty.f32(), core::AddressSpace::kPrivate);
 
     Func("a_func", tint::Empty, ty.f32(), Vector{Return("a")}, tint::Empty);
 
@@ -198,7 +198,7 @@ TEST_F(SpirvASTPrinterTest, Emit_Multiple_EntryPoint_With_Same_ModuleVar) {
 
     auto* s = Structure("Data", Vector{Member("d", ty.f32())});
 
-    GlobalVar("data", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+    GlobalVar("data", ty.Of(s), core::AddressSpace::kStorage, core::Access::kReadWrite,
               Binding(0_a), Group(0_a));
 
     {

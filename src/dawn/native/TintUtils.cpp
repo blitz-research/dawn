@@ -14,7 +14,7 @@
 
 #include "dawn/native/TintUtils.h"
 
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/Pipeline.h"
 #include "dawn/native/PipelineLayout.h"
@@ -104,11 +104,13 @@ tint::ast::transform::VertexFormat ToTintVertexFormat(wgpu::VertexFormat format)
             return tint::ast::transform::VertexFormat::kSint32x3;
         case wgpu::VertexFormat::Sint32x4:
             return tint::ast::transform::VertexFormat::kSint32x4;
+        case wgpu::VertexFormat::Unorm10_10_10_2:
+            return tint::ast::transform::VertexFormat::kUnorm10_10_10_2;
 
         case wgpu::VertexFormat::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 tint::ast::transform::VertexStepMode ToTintVertexStepMode(wgpu::VertexStepMode mode) {
@@ -120,7 +122,7 @@ tint::ast::transform::VertexStepMode ToTintVertexStepMode(wgpu::VertexStepMode m
         case wgpu::VertexStepMode::VertexBufferNotUsed:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 }  // namespace
@@ -133,7 +135,7 @@ ScopedTintICEHandler::ScopedTintICEHandler(DeviceBase* device) {
     (void)init_once_tint_error_reporter;
 
     // Shouldn't have overlapping instances of this handler.
-    ASSERT(tlDevice == nullptr);
+    DAWN_ASSERT(tlDevice == nullptr);
     tlDevice = device;
 }
 
@@ -145,7 +147,7 @@ tint::ExternalTextureOptions BuildExternalTextureTransformBindings(
     const PipelineLayoutBase* layout) {
     tint::ExternalTextureOptions options;
     for (BindGroupIndex i : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
-        const BindGroupLayoutBase* bgl = layout->GetBindGroupLayout(i);
+        const BindGroupLayoutInternalBase* bgl = layout->GetBindGroupLayout(i);
         for (const auto& [_, expansion] : bgl->GetExternalTextureBindingExpansionMap()) {
             options.bindings_map[{static_cast<uint32_t>(i),
                                   static_cast<uint32_t>(expansion.plane0)}] = {

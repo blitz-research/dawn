@@ -71,7 +71,7 @@ void CommandBufferBase::SetEncoderLabel(std::string encoderLabel) {
 }
 
 MaybeError CommandBufferBase::ValidateCanUseInSubmitNow() const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
 
     DAWN_INVALID_IF(!IsAlive(), "%s cannot be submitted more than once.", this);
     return {};
@@ -91,9 +91,12 @@ CommandIterator* CommandBufferBase::GetCommandIteratorForTesting() {
 }
 
 bool IsCompleteSubresourceCopiedTo(const TextureBase* texture,
-                                   const Extent3D copySize,
-                                   const uint32_t mipLevel) {
-    Extent3D extent = texture->GetMipLevelSingleSubresourcePhysicalSize(mipLevel);
+                                   const Extent3D& copySize,
+                                   const uint32_t mipLevel,
+                                   Aspect aspect) {
+    DAWN_ASSERT(HasOneBit(aspect) || aspect == (Aspect::Depth | Aspect::Stencil));
+
+    Extent3D extent = texture->GetMipLevelSingleSubresourcePhysicalSize(mipLevel, aspect);
 
     switch (texture->GetDimension()) {
         case wgpu::TextureDimension::e1D:
@@ -105,14 +108,22 @@ bool IsCompleteSubresourceCopiedTo(const TextureBase* texture,
                    extent.depthOrArrayLayers == copySize.depthOrArrayLayers;
     }
 
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
+}
+
+bool IsCompleteSubresourceCopiedTo(const TextureBase* texture,
+                                   const Extent3D& copySize,
+                                   const uint32_t mipLevel,
+                                   wgpu::TextureAspect textureAspect) {
+    auto aspect = SelectFormatAspects(texture->GetFormat(), textureAspect);
+    return IsCompleteSubresourceCopiedTo(texture, copySize, mipLevel, aspect);
 }
 
 SubresourceRange GetSubresourcesAffectedByCopy(const TextureCopy& copy, const Extent3D& copySize) {
     switch (copy.texture->GetDimension()) {
         case wgpu::TextureDimension::e1D:
-            ASSERT(copy.origin.z == 0 && copySize.depthOrArrayLayers == 1);
-            ASSERT(copy.mipLevel == 0);
+            DAWN_ASSERT(copy.origin.z == 0 && copySize.depthOrArrayLayers == 1);
+            DAWN_ASSERT(copy.mipLevel == 0);
             return {copy.aspect, {0, 1}, {0, 1}};
         case wgpu::TextureDimension::e2D:
             return {copy.aspect, {copy.origin.z, copySize.depthOrArrayLayers}, {copy.mipLevel, 1}};
@@ -120,7 +131,7 @@ SubresourceRange GetSubresourcesAffectedByCopy(const TextureCopy& copy, const Ex
             return {copy.aspect, {0, 1}, {copy.mipLevel, 1}};
     }
 
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
@@ -130,8 +141,8 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
         TextureViewBase* view = attachmentInfo.view.Get();
         bool hasResolveTarget = attachmentInfo.resolveTarget != nullptr;
 
-        ASSERT(view->GetLayerCount() == 1);
-        ASSERT(view->GetLevelCount() == 1);
+        DAWN_ASSERT(view->GetLayerCount() == 1);
+        DAWN_ASSERT(view->GetLevelCount() == 1);
         SubresourceRange range = view->GetSubresourceRange();
 
         // If the loadOp is Load, but the subresource is not initialized, use Clear instead.
@@ -146,8 +157,8 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
             // cleared later in the pipeline. The texture will be resolved from the
             // source color attachment, which will be correctly initialized.
             TextureViewBase* resolveView = attachmentInfo.resolveTarget.Get();
-            ASSERT(resolveView->GetLayerCount() == 1);
-            ASSERT(resolveView->GetLevelCount() == 1);
+            DAWN_ASSERT(resolveView->GetLayerCount() == 1);
+            DAWN_ASSERT(resolveView->GetLevelCount() == 1);
             resolveView->GetTexture()->SetIsSubresourceContentInitialized(
                 true, resolveView->GetSubresourceRange());
         }
@@ -162,7 +173,7 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
                 break;
 
             case wgpu::StoreOp::Undefined:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
     }
@@ -170,8 +181,8 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
     if (renderPass->attachmentState->HasDepthStencilAttachment()) {
         auto& attachmentInfo = renderPass->depthStencilAttachment;
         TextureViewBase* view = attachmentInfo.view.Get();
-        ASSERT(view->GetLayerCount() == 1);
-        ASSERT(view->GetLevelCount() == 1);
+        DAWN_ASSERT(view->GetLayerCount() == 1);
+        DAWN_ASSERT(view->GetLevelCount() == 1);
         SubresourceRange range = view->GetSubresourceRange();
 
         SubresourceRange depthRange = range;
@@ -203,7 +214,7 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
 }
 
 bool IsFullBufferOverwrittenInTextureToBufferCopy(const CopyTextureToBufferCmd* copy) {
-    ASSERT(copy != nullptr);
+    DAWN_ASSERT(copy != nullptr);
 
     if (copy->destination.offset > 0) {
         // The copy doesn't touch the start of the buffer.

@@ -14,12 +14,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
 
-using namespace tint::number_suffixes;        // NOLINT
-using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
 using IR_ValueTest = IRTestHelper;
@@ -53,18 +53,6 @@ TEST_F(IR_ValueTest, Destroy) {
     EXPECT_FALSE(val->Alive());
 }
 
-TEST_F(IR_ValueTest, Destroy_HasUsage) {
-    EXPECT_FATAL_FAILURE(
-        {
-            Module mod;
-            Builder b{mod};
-            auto* val = b.InstructionResult(mod.Types().i32());
-            b.Add(mod.Types().i32(), val, 1_i);
-            val->Destroy();
-        },
-        "");
-}
-
 TEST_F(IR_ValueTest, Destroy_HasSource) {
     EXPECT_FATAL_FAILURE(
         {
@@ -77,4 +65,4 @@ TEST_F(IR_ValueTest, Destroy_HasSource) {
 }
 
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

@@ -16,13 +16,13 @@
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/instruction.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using IR_StoreTest = IRTestHelper;
 
@@ -35,8 +35,8 @@ TEST_F(IR_StoreTest, CreateStore) {
 
     ASSERT_TRUE(inst->From()->Is<Constant>());
     auto lhs = inst->From()->As<Constant>()->Value();
-    ASSERT_TRUE(lhs->Is<constant::Scalar<i32>>());
-    EXPECT_EQ(4_i, lhs->As<constant::Scalar<i32>>()->ValueAs<i32>());
+    ASSERT_TRUE(lhs->Is<core::constant::Scalar<i32>>());
+    EXPECT_EQ(4_i, lhs->As<core::constant::Scalar<i32>>()->ValueAs<i32>());
 }
 
 TEST_F(IR_StoreTest, Usage) {
@@ -58,5 +58,20 @@ TEST_F(IR_StoreTest, Result) {
     EXPECT_FALSE(inst->HasMultiResults());
 }
 
+TEST_F(IR_StoreTest, Clone) {
+    auto* v = b.Var("a", mod.Types().ptr<private_, i32>());
+    auto* s = b.Store(v, b.Constant(1_i));
+
+    auto* new_v = clone_ctx.Clone(v);
+    auto* new_s = clone_ctx.Clone(s);
+
+    EXPECT_NE(s, new_s);
+    EXPECT_EQ(new_v->Result(), new_s->To());
+
+    auto new_from = new_s->From()->As<Constant>()->Value();
+    ASSERT_TRUE(new_from->Is<core::constant::Scalar<i32>>());
+    EXPECT_EQ(1_i, new_from->As<core::constant::Scalar<i32>>()->ValueAs<i32>());
+}
+
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

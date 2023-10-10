@@ -1142,8 +1142,7 @@ TEST_P(ShaderTests, ConflictingBindingsDueToTransformOrder) {
 
 // Check that chromium_disable_uniformity_analysis can be used. It is normally disallowed as unsafe
 // but DawnTests allow all unsafe APIs by default.
-// TODO(crbug.com/tint/1728): Enable again when uniformity failures are errors again
-TEST_P(ShaderTests, DISABLED_CheckUsageOf_chromium_disable_uniformity_analysis) {
+TEST_P(ShaderTests, CheckUsageOf_chromium_disable_uniformity_analysis) {
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         enable chromium_disable_uniformity_analysis;
 
@@ -1502,6 +1501,102 @@ fn main() -> @location(0) vec4f {
     queue.Submit(1, &commands);
 
     EXPECT_PIXEL_RGBA8_EQ(utils::RGBA8(255, 255, 255, 255), renderPass.color, 0, 0);
+}
+
+// Test that matrices can be passed by value, which can cause issues on Qualcomm devices.
+// See crbug.com/tint/2045#c5
+TEST_P(ShaderTests, PassMatrixByValue) {
+    std::vector<float> inputs{0.1, 0.2, 0.3, 0.0, 0.4, 0.5, 0.6, 0.0, 0.7, 0.8, 0.9, 0.0};
+    std::vector<float> expected{1.1, 1.2, 1.3, 0.0, 1.4, 1.5, 1.6, 0.0, 1.7, 1.8, 1.9, 0.0};
+    uint64_t bufferSize = static_cast<uint64_t>(inputs.size() * sizeof(float));
+    wgpu::Buffer buffer = utils::CreateBufferFromData(
+        device, inputs.data(), bufferSize, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc);
+
+    std::string shader = R"(
+@group(0) @binding(0)
+var<storage, read_write> buffer : mat3x3f;
+
+fn foo(rhs : mat3x3f) {
+  buffer = buffer + rhs;
+}
+
+@compute @workgroup_size(1)
+fn main() {
+  let rhs = mat3x3f(1, 1, 1, 1, 1, 1, 1, 1, 1);
+  foo(rhs);
+}
+)";
+
+    wgpu::ComputePipeline pipeline = CreateComputePipeline(shader, "main");
+
+    wgpu::BindGroup bindGroup =
+        utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0), {{0, buffer}});
+
+    wgpu::CommandBuffer commands;
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+        pass.SetPipeline(pipeline);
+        pass.SetBindGroup(0, bindGroup);
+        pass.DispatchWorkgroups(1);
+        pass.End();
+
+        commands = encoder.Finish();
+    }
+
+    queue.Submit(1, &commands);
+
+    EXPECT_BUFFER_FLOAT_RANGE_EQ(expected.data(), buffer, 0, expected.size());
+}
+
+// Test that matrices in structs can be passed by value, which can cause issues on Qualcomm devices.
+// See crbug.com/tint/2045#c5
+TEST_P(ShaderTests, PassMatrixInStructByValue) {
+    std::vector<float> inputs{0.1, 0.2, 0.3, 0.0, 0.4, 0.5, 0.6, 0.0, 0.7, 0.8, 0.9, 0.0};
+    std::vector<float> expected{1.1, 1.2, 1.3, 0.0, 1.4, 1.5, 1.6, 0.0, 1.7, 1.8, 1.9, 0.0};
+    uint64_t bufferSize = static_cast<uint64_t>(inputs.size() * sizeof(float));
+    wgpu::Buffer buffer = utils::CreateBufferFromData(
+        device, inputs.data(), bufferSize, wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc);
+
+    std::string shader = R"(
+struct S {
+    m : mat3x3f,
+}
+
+@group(0) @binding(0)
+var<storage, read_write> buffer : S;
+
+fn foo(rhs : S) {
+  buffer = S(buffer.m + rhs.m);
+}
+
+@compute @workgroup_size(1)
+fn main() {
+  let rhs = S(mat3x3(1, 1, 1, 1, 1, 1, 1, 1, 1));
+  foo(rhs);
+}
+)";
+
+    wgpu::ComputePipeline pipeline = CreateComputePipeline(shader, "main");
+
+    wgpu::BindGroup bindGroup =
+        utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0), {{0, buffer}});
+
+    wgpu::CommandBuffer commands;
+    {
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+        pass.SetPipeline(pipeline);
+        pass.SetBindGroup(0, bindGroup);
+        pass.DispatchWorkgroups(1);
+        pass.End();
+
+        commands = encoder.Finish();
+    }
+
+    queue.Submit(1, &commands);
+
+    EXPECT_BUFFER_FLOAT_RANGE_EQ(expected.data(), buffer, 0, expected.size());
 }
 
 DAWN_INSTANTIATE_TEST(ShaderTests,

@@ -52,7 +52,7 @@ VkIndexType VulkanIndexType(wgpu::IndexFormat format) {
         case wgpu::IndexFormat::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 bool HasSameTextureCopyExtent(const TextureCopy& srcCopy,
@@ -122,7 +122,7 @@ VkImageCopy ComputeImageCopyRegion(const TextureCopy& srcCopy,
             break;
     }
 
-    ASSERT(HasSameTextureCopyExtent(srcCopy, dstCopy, copySize));
+    DAWN_ASSERT(HasSameTextureCopyExtent(srcCopy, dstCopy, copySize));
     Extent3D imageExtent = ComputeTextureCopyExtent(dstCopy, copySize);
     region.extent.width = imageExtent.width;
     region.extent.height = imageExtent.height;
@@ -346,7 +346,7 @@ void ResetUsedQuerySetsOnRenderPass(Device* device,
                                     VkCommandBuffer commands,
                                     QuerySetBase* querySet,
                                     const std::vector<bool>& availability) {
-    ASSERT(availability.size() == querySet->GetQueryAvailability().size());
+    DAWN_ASSERT(availability.size() == querySet->GetQueryAvailability().size());
 
     auto currentIt = availability.begin();
     auto lastIt = availability.end();
@@ -447,13 +447,13 @@ MaybeError CommandBuffer::RecordCopyImageWithTemporaryBuffer(
     const TextureCopy& srcCopy,
     const TextureCopy& dstCopy,
     const Extent3D& copySize) {
-    ASSERT(srcCopy.texture->GetFormat().CopyCompatibleWith(dstCopy.texture->GetFormat()));
-    ASSERT(srcCopy.aspect == dstCopy.aspect);
+    DAWN_ASSERT(srcCopy.texture->GetFormat().CopyCompatibleWith(dstCopy.texture->GetFormat()));
+    DAWN_ASSERT(srcCopy.aspect == dstCopy.aspect);
     dawn::native::Format format = srcCopy.texture->GetFormat();
     const TexelBlockInfo& blockInfo = format.GetAspectInfo(srcCopy.aspect).block;
-    ASSERT(copySize.width % blockInfo.width == 0);
+    DAWN_ASSERT(copySize.width % blockInfo.width == 0);
     uint32_t widthInBlocks = copySize.width / blockInfo.width;
-    ASSERT(copySize.height % blockInfo.height == 0);
+    DAWN_ASSERT(copySize.height % blockInfo.height == 0);
     uint32_t heightInBlocks = copySize.height / blockInfo.height;
 
     // Create the temporary buffer. Note that We don't need to respect WebGPU's 256 alignment
@@ -525,6 +525,10 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
     size_t nextComputePassNumber = 0;
     size_t nextRenderPassNumber = 0;
 
+    // Need to track if a render pass has already been recorded for the
+    // VulkanSplitCommandBufferOnComputePassAfterRenderPass workaround.
+    bool hasRecordedRenderPassInCurrentCommandBuffer = false;
+
     Command type;
     while (mCommands.NextCommandId(&type)) {
         switch (type) {
@@ -575,7 +579,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
                     GetSubresourcesAffectedByCopy(copy->destination, copy->copySize);
 
                 if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize,
-                                                  subresource.mipLevel)) {
+                                                  subresource.mipLevel, dst.aspect)) {
                     // Since texture has been overwritten, it has been "initialized"
                     dst.texture->SetIsSubresourceContentInitialized(true, range);
                 } else {
@@ -643,8 +647,8 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
 
                 DAWN_TRY(ToBackend(src.texture)
                              ->EnsureSubresourceContentInitialized(recordingContext, srcRange));
-                if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize,
-                                                  dst.mipLevel)) {
+                if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize, dst.mipLevel,
+                                                  dst.aspect)) {
                     // Since destination texture has been overwritten, it has been "initialized"
                     dst.texture->SetIsSubresourceContentInitialized(true, dstRange);
                 } else {
@@ -656,9 +660,9 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
                     // When there are overlapped subresources, the layout of the overlapped
                     // subresources should all be GENERAL instead of what we set now. Currently
                     // it is not allowed to copy with overlapped subresources, but we still
-                    // add the ASSERT here as a reminder for this possible misuse.
-                    ASSERT(!IsRangeOverlapped(src.origin.z, dst.origin.z,
-                                              copy->copySize.depthOrArrayLayers));
+                    // add the DAWN_ASSERT here as a reminder for this possible misuse.
+                    DAWN_ASSERT(!IsRangeOverlapped(src.origin.z, dst.origin.z,
+                                                   copy->copySize.depthOrArrayLayers));
                 }
 
                 ToBackend(src.texture)
@@ -736,12 +740,24 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
                 LazyClearRenderPassAttachments(cmd);
                 DAWN_TRY(RecordRenderPass(recordingContext, cmd));
 
+                hasRecordedRenderPassInCurrentCommandBuffer = true;
                 nextRenderPassNumber++;
                 break;
             }
 
             case Command::BeginComputePass: {
                 BeginComputePassCmd* cmd = mCommands.NextCommand<BeginComputePassCmd>();
+
+                // If required, split the command buffer any time a compute pass follows a render
+                // pass to work around a Qualcomm bug.
+                if (hasRecordedRenderPassInCurrentCommandBuffer &&
+                    device->IsToggleEnabled(
+                        Toggle::VulkanSplitCommandBufferOnComputePassAfterRenderPass)) {
+                    // Identified a potential crash case, split the command buffer.
+                    DAWN_TRY(device->SplitRecordingContext(recordingContext));
+                    hasRecordedRenderPassInCurrentCommandBuffer = false;
+                    commands = recordingContext->commandBuffer;
+                }
 
                 DAWN_TRY(
                     RecordComputePass(recordingContext, cmd,
@@ -858,7 +874,7 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
                 DAWN_TRY_ASSIGN(uploadHandle, device->GetDynamicUploader()->Allocate(
                                                   size, device->GetPendingCommandSerial(),
                                                   kCopyBufferToBufferOffsetAlignment));
-                ASSERT(uploadHandle.mappedBuffer != nullptr);
+                DAWN_ASSERT(uploadHandle.mappedBuffer != nullptr);
                 memcpy(uploadHandle.mappedBuffer, data, size);
 
                 dstBuffer->EnsureDataInitializedAsDestination(recordingContext, offset, size);
@@ -889,29 +905,12 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
                                             const ComputePassResourceUsage& resourceUsages) {
     Device* device = ToBackend(GetDevice());
 
-    // If required, split the command buffer any time we detect a dpeth/stencil attachment is
-    // used in a compute pass after being used as a render pass attachment in the same command
-    // buffer.
-    if (device->IsToggleEnabled(
-            Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass) &&
-        !mRenderPassDepthStencilAttachments.empty()) {
-        for (auto texture : resourceUsages.referencedTextures) {
-            if (texture->GetFormat().HasDepthOrStencil() &&
-                mRenderPassDepthStencilAttachments.find(texture) !=
-                    mRenderPassDepthStencilAttachments.end()) {
-                // Identified a potential crash case, split the command buffer.
-                DAWN_TRY(device->SplitRecordingContext(recordingContext));
-                mRenderPassDepthStencilAttachments.clear();
-                break;
-            }
-        }
-    }
-
     // Write timestamp at the beginning of compute pass if it's set
-    if (computePassCmd->beginTimestamp.querySet.Get() != nullptr) {
+    if (computePassCmd->timestampWrites.beginningOfPassWriteIndex !=
+        wgpu::kQuerySetIndexUndefined) {
         RecordWriteTimestampCmd(recordingContext, device,
-                                computePassCmd->beginTimestamp.querySet.Get(),
-                                computePassCmd->beginTimestamp.queryIndex, false);
+                                computePassCmd->timestampWrites.querySet.Get(),
+                                computePassCmd->timestampWrites.beginningOfPassWriteIndex, false);
     }
 
     VkCommandBuffer commands = recordingContext->commandBuffer;
@@ -926,10 +925,11 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
                 mCommands.NextCommand<EndComputePassCmd>();
 
                 // Write timestamp at the end of compute pass if it's set.
-                if (computePassCmd->endTimestamp.querySet.Get() != nullptr) {
-                    RecordWriteTimestampCmd(recordingContext, device,
-                                            computePassCmd->endTimestamp.querySet.Get(),
-                                            computePassCmd->endTimestamp.queryIndex, false);
+                if (computePassCmd->timestampWrites.endOfPassWriteIndex !=
+                    wgpu::kQuerySetIndexUndefined) {
+                    RecordWriteTimestampCmd(
+                        recordingContext, device, computePassCmd->timestampWrites.querySet.Get(),
+                        computePassCmd->timestampWrites.endOfPassWriteIndex, false);
                 }
                 return {};
             }
@@ -1043,12 +1043,12 @@ MaybeError CommandBuffer::RecordComputePass(CommandRecordingContext* recordingCo
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
     // EndComputePass should have been called
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingContext,
@@ -1058,19 +1058,11 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
 
     DAWN_TRY(RecordBeginRenderPass(recordingContext, device, renderPassCmd));
 
-    // If required, track depth/stencil textures used as render pass attachments.
-    if (device->IsToggleEnabled(
-            Toggle::VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass) &&
-        renderPassCmd->attachmentState->HasDepthStencilAttachment()) {
-        mRenderPassDepthStencilAttachments.insert(
-            renderPassCmd->depthStencilAttachment.view->GetTexture());
-    }
-
     // Write timestamp at the beginning of render pass if it's set.
-    if (renderPassCmd->beginTimestamp.querySet.Get() != nullptr) {
+    if (renderPassCmd->timestampWrites.beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
         RecordWriteTimestampCmd(recordingContext, device,
-                                renderPassCmd->beginTimestamp.querySet.Get(),
-                                renderPassCmd->beginTimestamp.queryIndex, true);
+                                renderPassCmd->timestampWrites.querySet.Get(),
+                                renderPassCmd->timestampWrites.beginningOfPassWriteIndex, true);
     }
 
     // Set the default value for the dynamic state
@@ -1159,7 +1151,7 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
             case Command::DrawIndexedIndirect: {
                 DrawIndexedIndirectCmd* draw = iter->NextCommand<DrawIndexedIndirectCmd>();
                 Buffer* buffer = ToBackend(draw->indirectBuffer.Get());
-                ASSERT(buffer != nullptr);
+                DAWN_ASSERT(buffer != nullptr);
 
                 descriptorSets.Apply(device, recordingContext, VK_PIPELINE_BIND_POINT_GRAPHICS);
                 device->fn.CmdDrawIndexedIndirect(commands, buffer->GetHandle(),
@@ -1266,7 +1258,7 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
     };
@@ -1278,10 +1270,11 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
                 mCommands.NextCommand<EndRenderPassCmd>();
 
                 // Write timestamp at the end of render pass if it's set.
-                if (renderPassCmd->endTimestamp.querySet.Get() != nullptr) {
-                    RecordWriteTimestampCmd(recordingContext, device,
-                                            renderPassCmd->endTimestamp.querySet.Get(),
-                                            renderPassCmd->endTimestamp.queryIndex, true);
+                if (renderPassCmd->timestampWrites.endOfPassWriteIndex !=
+                    wgpu::kQuerySetIndexUndefined) {
+                    RecordWriteTimestampCmd(
+                        recordingContext, device, renderPassCmd->timestampWrites.querySet.Get(),
+                        renderPassCmd->timestampWrites.endOfPassWriteIndex, true);
                 }
 
                 device->fn.CmdEndRenderPass(commands);
@@ -1390,7 +1383,7 @@ MaybeError CommandBuffer::RecordRenderPass(CommandRecordingContext* recordingCon
     }
 
     // EndRenderPass should have been called
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 }  // namespace dawn::native::vulkan

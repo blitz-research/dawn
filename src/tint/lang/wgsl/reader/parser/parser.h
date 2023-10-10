@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-#include "src/tint/lang/core/builtin/access.h"
+#include "src/tint/lang/core/access.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/reader/parser/detail.h"
 #include "src/tint/lang/wgsl/reader/parser/token.h"
@@ -578,7 +578,7 @@ class Parser {
         const ast::Expression* lhs);
     /// Parse the `multiplicative_operator` grammar element
     /// @returns the parsed operator if successful
-    Maybe<ast::BinaryOp> multiplicative_operator();
+    Maybe<core::BinaryOp> multiplicative_operator();
     /// Parses multiplicative elements
     /// @param lhs the left side of the expression
     /// @returns the parsed expression or `lhs` if no match
@@ -612,10 +612,10 @@ class Parser {
         const ast::Expression* lhs);
     /// Parse the `additive_operator` grammar element
     /// @returns the parsed operator if successful
-    Maybe<ast::BinaryOp> additive_operator();
+    Maybe<core::BinaryOp> additive_operator();
     /// Parses a `compound_assignment_operator` grammar element
     /// @returns the parsed compound assignment operator
-    Maybe<ast::BinaryOp> compound_assignment_operator();
+    Maybe<core::BinaryOp> compound_assignment_operator();
     /// Parses a `core_lhs_expression` grammar element
     /// @returns the parsed expression or a non-kMatched failure
     Maybe<const ast::Expression*> core_lhs_expression();
@@ -644,7 +644,7 @@ class Parser {
     Expect<const ast::Attribute*> expect_attribute();
     /// Parses a severity_control_name grammar element.
     /// @return the parsed severity control name.
-    Expect<builtin::DiagnosticSeverity> expect_severity_control_name();
+    Expect<wgsl::DiagnosticSeverity> expect_severity_control_name();
     /// Parses a diagnostic_control grammar element.
     /// @return the parsed diagnostic control.
     Expect<ast::DiagnosticControl> expect_diagnostic_control();

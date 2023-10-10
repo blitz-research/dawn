@@ -112,7 +112,7 @@ MaybeError ValidateProgrammableStage(DeviceBase* device,
                 // https://webidl.spec.whatwg.org/#es-boolean
                 break;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         if (stageInitializedConstantIdentifiers.count(constants[i].key) == 0) {
@@ -165,7 +165,7 @@ WGPUCreatePipelineAsyncStatus CreatePipelineAsyncStatusFromErrorType(InternalErr
         case InternalErrorType::OutOfMemory:
             return WGPUCreatePipelineAsyncStatus_InternalError;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             return WGPUCreatePipelineAsyncStatus_Unknown;
     }
 }
@@ -177,7 +177,7 @@ PipelineBase::PipelineBase(DeviceBase* device,
                            const char* label,
                            std::vector<StageAndDescriptor> stages)
     : ApiObjectBase(device, label), mLayout(layout) {
-    ASSERT(!stages.empty());
+    DAWN_ASSERT(!stages.empty());
 
     for (const StageAndDescriptor& stage : stages) {
         // Extract argument for this stage.
@@ -186,7 +186,7 @@ PipelineBase::PipelineBase(DeviceBase* device,
         const char* entryPointName = stage.entryPoint.c_str();
 
         const EntryPointMetadata& metadata = module->GetEntryPoint(entryPointName);
-        ASSERT(metadata.stage == shaderStage);
+        DAWN_ASSERT(metadata.stage == shaderStage);
 
         // Record them internally.
         bool isFirstStage = mStageMask == wgpu::ShaderStage::None;
@@ -205,7 +205,7 @@ PipelineBase::PipelineBase(DeviceBase* device,
             mMinBufferSizes = std::move(stageMinBufferSizes);
         } else {
             for (BindGroupIndex group(0); group < mMinBufferSizes.size(); ++group) {
-                ASSERT(stageMinBufferSizes[group].size() == mMinBufferSizes[group].size());
+                DAWN_ASSERT(stageMinBufferSizes[group].size() == mMinBufferSizes[group].size());
 
                 for (size_t i = 0; i < stageMinBufferSizes[group].size(); ++i) {
                     mMinBufferSizes[group][i] =
@@ -222,22 +222,22 @@ PipelineBase::PipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag, const c
 PipelineBase::~PipelineBase() = default;
 
 PipelineLayoutBase* PipelineBase::GetLayout() {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     return mLayout.Get();
 }
 
 const PipelineLayoutBase* PipelineBase::GetLayout() const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     return mLayout.Get();
 }
 
 const RequiredBufferSizes& PipelineBase::GetMinBufferSizes() const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     return mMinBufferSizes;
 }
 
 const ProgrammableStage& PipelineBase::GetStage(SingleShaderStage stage) const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     return mStages[stage];
 }
 
@@ -271,7 +271,7 @@ ResultOrError<Ref<BindGroupLayoutBase>> PipelineBase::GetBindGroupLayout(uint32_
     BindGroupIndex groupIndex(groupIndexIn);
 
     DAWN_TRY(ValidateGetBindGroupLayout(groupIndex));
-    return Ref<BindGroupLayoutBase>(mLayout->GetBindGroupLayout(groupIndex));
+    return Ref<BindGroupLayoutBase>(mLayout->GetFrontendBindGroupLayout(groupIndex));
 }
 
 BindGroupLayoutBase* PipelineBase::APIGetBindGroupLayout(uint32_t groupIndexIn) {

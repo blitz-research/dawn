@@ -18,8 +18,9 @@
 #include <tuple>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/builtin.h"
+#include "src/tint/lang/core/builtin_type.h"
 #include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/access.h"
 #include "src/tint/lang/core/ir/binary.h"
 #include "src/tint/lang/core/ir/bitcast.h"
@@ -62,6 +63,7 @@
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/sampler.h"
 #include "src/tint/lang/core/type/texture.h"
+#include "src/tint/lang/wgsl/ir/builtin_call.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/writer/ir_to_program/rename_conflicts.h"
@@ -85,26 +87,33 @@
     nesting_depth_++;    \
     TINT_DEFER(nesting_depth_--)
 
-namespace tint::wgsl::writer {
+using namespace tint::core::fluent_types;  // NOLINT
 
+namespace tint::wgsl::writer {
 namespace {
 
 class State {
   public:
-    explicit State(ir::Module& m) : mod(m) {}
+    explicit State(core::ir::Module& m) : mod(m) {}
 
     Program Run() {
-        if (auto res = ir::Validate(mod); !res) {
+        // Run transforms need to sanitize for WGSL.
+        {
+            auto result = RenameConflicts(&mod);
+            if (!result) {
+                b.Diagnostics().add(result.Failure().reason);
+                return Program(std::move(b));
+            }
+        }
+
+        if (auto res = core::ir::Validate(mod); !res) {
             // IR module failed validation.
-            b.Diagnostics() = res.Failure();
+            b.Diagnostics() = res.Failure().reason;
             return Program{resolver::Resolve(b)};
         }
 
-        RenameConflicts{}.Run(&mod);
+        RootBlock(mod.root_block);
 
-        if (mod.root_block) {
-            RootBlock(mod.root_block);
-        }
         // TODO(crbug.com/tint/1902): Emit user-declared types
         for (auto* fn : mod.functions) {
             Fn(fn);
@@ -120,7 +129,7 @@ class State {
     };
 
     /// The source IR module
-    ir::Module& mod;
+    core::ir::Module& mod;
 
     /// The target ProgramBuilder
     ProgramBuilder b;
@@ -145,10 +154,10 @@ class State {
     using ValueBinding = std::variant<VariableValue, InlinedValue, ConsumedValue>;
 
     /// IR values to their representation
-    Hashmap<ir::Value*, ValueBinding, 32> bindings_;
+    Hashmap<core::ir::Value*, ValueBinding, 32> bindings_;
 
     /// Names for values
-    Hashmap<ir::Value*, Symbol, 32> names_;
+    Hashmap<core::ir::Value*, Symbol, 32> names_;
 
     /// The nesting depth of the currently generated AST
     /// 0  is module scope
@@ -161,37 +170,41 @@ class State {
     StatementList* statements_ = nullptr;
 
     /// The current switch case block
-    ir::Block* current_switch_case_ = nullptr;
+    core::ir::Block* current_switch_case_ = nullptr;
 
     /// Values that can be inlined.
-    Hashset<ir::Value*, 64> can_inline_;
+    Hashset<core::ir::Value*, 64> can_inline_;
 
     /// Set of enable directives emitted.
-    Hashset<builtin::Extension, 4> enables_;
+    Hashset<wgsl::Extension, 4> enables_;
 
     /// Map of struct to output program name.
-    Hashmap<const type::Struct*, Symbol, 8> structs_;
+    Hashmap<const core::type::Struct*, Symbol, 8> structs_;
 
     /// True if 'diagnostic(off, derivative_uniformity)' has been emitted
     bool disabled_derivative_uniformity_ = false;
 
-    void RootBlock(ir::Block* root) {
+    void RootBlock(core::ir::Block* root) {
         for (auto* inst : *root) {
             tint::Switch(
-                inst,                             //
-                [&](ir::Var* var) { Var(var); },  //
+                inst,                                   //
+                [&](core::ir::Var* var) { Var(var); },  //
                 [&](Default) { UNHANDLED_CASE(inst); });
         }
     }
-    const ast::Function* Fn(ir::Function* fn) {
+    const ast::Function* Fn(core::ir::Function* fn) {
         SCOPED_NESTING();
 
         // TODO(crbug.com/tint/1915): Properly implement this when we've fleshed out Function
         static constexpr size_t N = decltype(ast::Function::params)::static_length;
-        auto params = tint::Transform<N>(fn->Params(), [&](ir::FunctionParam* param) {
+        auto params = tint::Transform<N>(fn->Params(), [&](core::ir::FunctionParam* param) {
             auto ty = Type(param->Type());
             auto name = NameFor(param);
             Bind(param, name, PtrKind::kPtr);
+
+            if (ParamRequiresFullPtrParameters(param->Type())) {
+                Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
+            }
             return b.Param(name, ty);
         });
 
@@ -204,12 +217,12 @@ class State {
                       std::move(ret_attrs));
     }
 
-    const ast::BlockStatement* Block(ir::Block* block) {
+    const ast::BlockStatement* Block(core::ir::Block* block) {
         // TODO(crbug.com/tint/1902): Handle block arguments.
         return b.Block(Statements(block));
     }
 
-    StatementList Statements(ir::Block* block) {
+    StatementList Statements(core::ir::Block* block) {
         StatementList stmts;
         if (block) {
             MarkInlinable(block);
@@ -221,10 +234,10 @@ class State {
         return stmts;
     }
 
-    void MarkInlinable(ir::Block* block) {
+    void MarkInlinable(core::ir::Block* block) {
         // An ordered list of possibly-inlinable values returned by sequenced instructions that have
         // not yet been marked-for or ruled-out-for inlining.
-        UniqueVector<ir::Value*, 32> pending_resolution;
+        UniqueVector<core::ir::Value*, 32> pending_resolution;
 
         // Walk the instructions of the block starting with the first.
         for (auto* inst : *block) {
@@ -290,35 +303,35 @@ class State {
 
     void Append(const ast::Statement* inst) { statements_->Push(inst); }
 
-    void Instruction(ir::Instruction* inst) {
+    void Instruction(core::ir::Instruction* inst) {
         tint::Switch(
-            inst,                                                       //
-            [&](ir::Access* i) { Access(i); },                          //
-            [&](ir::Binary* i) { Binary(i); },                          //
-            [&](ir::BreakIf* i) { BreakIf(i); },                        //
-            [&](ir::Call* i) { Call(i); },                              //
-            [&](ir::Continue*) {},                                      //
-            [&](ir::ExitIf*) {},                                        //
-            [&](ir::ExitLoop* i) { ExitLoop(i); },                      //
-            [&](ir::ExitSwitch* i) { ExitSwitch(i); },                  //
-            [&](ir::If* i) { If(i); },                                  //
-            [&](ir::Let* i) { Let(i); },                                //
-            [&](ir::Load* l) { Load(l); },                              //
-            [&](ir::LoadVectorElement* i) { LoadVectorElement(i); },    //
-            [&](ir::Loop* l) { Loop(l); },                              //
-            [&](ir::NextIteration*) {},                                 //
-            [&](ir::Return* i) { Return(i); },                          //
-            [&](ir::Store* i) { Store(i); },                            //
-            [&](ir::StoreVectorElement* i) { StoreVectorElement(i); },  //
-            [&](ir::Switch* i) { Switch(i); },                          //
-            [&](ir::Swizzle* i) { Swizzle(i); },                        //
-            [&](ir::Unary* i) { Unary(i); },                            //
-            [&](ir::Unreachable*) {},                                   //
-            [&](ir::Var* i) { Var(i); },                                //
+            inst,                                                             //
+            [&](core::ir::Access* i) { Access(i); },                          //
+            [&](core::ir::Binary* i) { Binary(i); },                          //
+            [&](core::ir::BreakIf* i) { BreakIf(i); },                        //
+            [&](core::ir::Call* i) { Call(i); },                              //
+            [&](core::ir::Continue*) {},                                      //
+            [&](core::ir::ExitIf*) {},                                        //
+            [&](core::ir::ExitLoop* i) { ExitLoop(i); },                      //
+            [&](core::ir::ExitSwitch* i) { ExitSwitch(i); },                  //
+            [&](core::ir::If* i) { If(i); },                                  //
+            [&](core::ir::Let* i) { Let(i); },                                //
+            [&](core::ir::Load* l) { Load(l); },                              //
+            [&](core::ir::LoadVectorElement* i) { LoadVectorElement(i); },    //
+            [&](core::ir::Loop* l) { Loop(l); },                              //
+            [&](core::ir::NextIteration*) {},                                 //
+            [&](core::ir::Return* i) { Return(i); },                          //
+            [&](core::ir::Store* i) { Store(i); },                            //
+            [&](core::ir::StoreVectorElement* i) { StoreVectorElement(i); },  //
+            [&](core::ir::Switch* i) { Switch(i); },                          //
+            [&](core::ir::Swizzle* i) { Swizzle(i); },                        //
+            [&](core::ir::Unary* i) { Unary(i); },                            //
+            [&](core::ir::Unreachable*) {},                                   //
+            [&](core::ir::Var* i) { Var(i); },                                //
             [&](Default) { UNHANDLED_CASE(inst); });
     }
 
-    void If(ir::If* if_) {
+    void If(core::ir::If* if_) {
         SCOPED_NESTING();
 
         auto true_stmts = Statements(if_->True());
@@ -346,7 +359,7 @@ class State {
         Append(b.If(cond, true_block, b.Else(false_block)));
     }
 
-    void Loop(ir::Loop* l) {
+    void Loop(core::ir::Loop* l) {
         SCOPED_NESTING();
 
         // Build all the initializer statements
@@ -376,12 +389,12 @@ class State {
             TINT_SCOPED_ASSIGNMENT(statements_, &body_stmts);
             for (auto* inst : *l->Body()) {
                 if (body_stmts.IsEmpty()) {
-                    if (auto* if_ = inst->As<ir::If>()) {
-                        if (!if_->HasResults() &&                          //
-                            if_->True()->Length() == 1 &&                  //
-                            if_->False()->Length() == 1 &&                 //
-                            tint::Is<ir::ExitIf>(if_->True()->Front()) &&  //
-                            tint::Is<ir::ExitLoop>(if_->False()->Front())) {
+                    if (auto* if_ = inst->As<core::ir::If>()) {
+                        if (!if_->HasResults() &&                                //
+                            if_->True()->Length() == 1 &&                        //
+                            if_->False()->Length() == 1 &&                       //
+                            tint::Is<core::ir::ExitIf>(if_->True()->Front()) &&  //
+                            tint::Is<core::ir::ExitLoop>(if_->False()->Front())) {
                             // Matched the loop condition.
                             cond = Expr(if_->Condition());
                             continue;  // Don't emit this as an instruction in the body.
@@ -443,14 +456,14 @@ class State {
         statements_->Push(loop);
     }
 
-    void Switch(ir::Switch* s) {
+    void Switch(core::ir::Switch* s) {
         SCOPED_NESTING();
 
         auto* cond = Expr(s->Condition());
 
         auto cases = tint::Transform(
             s->Cases(),  //
-            [&](ir::Switch::Case c) -> const tint::ast::CaseStatement* {
+            [&](core::ir::Switch::Case c) -> const tint::ast::CaseStatement* {
                 SCOPED_NESTING();
 
                 const ast::BlockStatement* body = nullptr;
@@ -460,7 +473,7 @@ class State {
                 }
 
                 auto selectors = tint::Transform(c.selectors,  //
-                                                 [&](ir::Switch::CaseSelector cs) {
+                                                 [&](core::ir::Switch::CaseSelector cs) {
                                                      return cs.IsDefault()
                                                                 ? b.DefaultCaseSelector()
                                                                 : b.CaseSelector(Expr(cs.val));
@@ -471,18 +484,18 @@ class State {
         Append(b.Switch(cond, std::move(cases)));
     }
 
-    void ExitSwitch(const ir::ExitSwitch* e) {
+    void ExitSwitch(const core::ir::ExitSwitch* e) {
         if (current_switch_case_ && current_switch_case_->Terminator() == e) {
             return;  // No need to emit
         }
         Append(b.Break());
     }
 
-    void ExitLoop(const ir::ExitLoop*) { Append(b.Break()); }
+    void ExitLoop(const core::ir::ExitLoop*) { Append(b.Break()); }
 
-    void BreakIf(ir::BreakIf* i) { Append(b.BreakIf(Expr(i->Condition()))); }
+    void BreakIf(core::ir::BreakIf* i) { Append(b.BreakIf(Expr(i->Condition()))); }
 
-    void Return(ir::Return* ret) {
+    void Return(core::ir::Return* ret) {
         if (ret->Args().IsEmpty()) {
             // Return has no arguments.
             // If this block is nested withing some control flow, then we must
@@ -503,9 +516,9 @@ class State {
         Append(b.Return(Expr(ret->Args().Front())));
     }
 
-    void Var(ir::Var* var) {
+    void Var(core::ir::Var* var) {
         auto* val = var->Result();
-        auto* ptr = As<type::Pointer>(val->Type());
+        auto* ptr = As<core::type::Pointer>(val->Type());
         auto ty = Type(ptr->StoreType());
         Symbol name = NameFor(var->Result());
         Bind(var->Result(), name, PtrKind::kRef);
@@ -521,13 +534,13 @@ class State {
             init = Expr(var->Initializer());
         }
         switch (ptr->AddressSpace()) {
-            case builtin::AddressSpace::kFunction:
+            case core::AddressSpace::kFunction:
                 Append(b.Decl(b.Var(name, ty, init, std::move(attrs))));
                 return;
-            case builtin::AddressSpace::kStorage:
+            case core::AddressSpace::kStorage:
                 b.GlobalVar(name, ty, init, ptr->Access(), ptr->AddressSpace(), std::move(attrs));
                 return;
-            case builtin::AddressSpace::kHandle:
+            case core::AddressSpace::kHandle:
                 b.GlobalVar(name, ty, init, std::move(attrs));
                 return;
             default:
@@ -536,110 +549,128 @@ class State {
         }
     }
 
-    void Let(ir::Let* let) {
+    void Let(core::ir::Let* let) {
         Symbol name = NameFor(let->Result());
         Append(b.Decl(b.Let(name, Expr(let->Value(), PtrKind::kPtr))));
         Bind(let->Result(), name, PtrKind::kPtr);
     }
 
-    void Store(ir::Store* store) {
+    void Store(core::ir::Store* store) {
         auto* dst = Expr(store->To());
         auto* src = Expr(store->From());
         Append(b.Assign(dst, src));
     }
 
-    void StoreVectorElement(ir::StoreVectorElement* store) {
+    void StoreVectorElement(core::ir::StoreVectorElement* store) {
         auto* ptr = Expr(store->To());
         auto* val = Expr(store->Value());
         Append(b.Assign(VectorMemberAccess(ptr, store->Index()), val));
     }
 
-    void Call(ir::Call* call) {
-        auto args = tint::Transform<4>(call->Args(), [&](ir::Value* arg) {
+    void Call(core::ir::Call* call) {
+        auto args = tint::Transform<4>(call->Args(), [&](core::ir::Value* arg) {
             // Pointer-like arguments are passed by pointer, never reference.
             return Expr(arg, PtrKind::kPtr);
         });
         tint::Switch(
             call,  //
-            [&](ir::UserCall* c) {
-                auto* expr = b.Call(NameFor(c->Func()), std::move(args));
+            [&](core::ir::UserCall* c) {
+                for (auto* arg : call->Args()) {
+                    if (ArgRequiresFullPtrParameters(arg)) {
+                        Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
+                        break;
+                    }
+                }
+                auto* expr = b.Call(NameFor(c->Target()), std::move(args));
                 if (!call->HasResults() || call->Result()->Usages().IsEmpty()) {
                     Append(b.CallStmt(expr));
                     return;
                 }
                 Bind(c->Result(), expr, PtrKind::kPtr);
             },
-            [&](ir::CoreBuiltinCall* c) {
+            [&](wgsl::ir::BuiltinCall* c) {
                 if (!disabled_derivative_uniformity_ && RequiresDerivativeUniformity(c->Func())) {
                     // TODO(crbug.com/tint/1985): Be smarter about disabling derivative uniformity.
-                    b.DiagnosticDirective(builtin::DiagnosticSeverity::kOff,
-                                          builtin::CoreDiagnosticRule::kDerivativeUniformity);
+                    b.DiagnosticDirective(wgsl::DiagnosticSeverity::kOff,
+                                          wgsl::CoreDiagnosticRule::kDerivativeUniformity);
                     disabled_derivative_uniformity_ = true;
                 }
 
+                switch (c->Func()) {
+                    case wgsl::BuiltinFn::kTextureBarrier:
+                        Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
+                        break;
+                    case wgsl::BuiltinFn::kSubgroupBallot:
+                    case wgsl::BuiltinFn::kSubgroupBroadcast:
+                        Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+                        break;
+                    default:
+                        break;
+                }
+
                 auto* expr = b.Call(c->Func(), std::move(args));
-                if (!call->HasResults() || call->Result()->Type()->Is<type::Void>()) {
+                if (!call->HasResults() || call->Result()->Type()->Is<core::type::Void>()) {
                     Append(b.CallStmt(expr));
                     return;
                 }
                 Bind(c->Result(), expr, PtrKind::kPtr);
             },
-            [&](ir::Construct* c) {
+            [&](core::ir::Construct* c) {
                 auto ty = Type(c->Result()->Type());
                 Bind(c->Result(), b.Call(ty, std::move(args)), PtrKind::kPtr);
             },
-            [&](ir::Convert* c) {
+            [&](core::ir::Convert* c) {
                 auto ty = Type(c->Result()->Type());
                 Bind(c->Result(), b.Call(ty, std::move(args)), PtrKind::kPtr);
             },
-            [&](ir::Bitcast* c) {
+            [&](core::ir::Bitcast* c) {
                 auto ty = Type(c->Result()->Type());
                 Bind(c->Result(), b.Bitcast(ty, args[0]), PtrKind::kPtr);
             },
-            [&](ir::Discard*) { Append(b.Discard()); },  //
+            [&](core::ir::Discard*) { Append(b.Discard()); },  //
             [&](Default) { UNHANDLED_CASE(call); });
     }
 
-    void Load(ir::Load* l) { Bind(l->Result(), Expr(l->From())); }
+    void Load(core::ir::Load* l) { Bind(l->Result(), Expr(l->From())); }
 
-    void LoadVectorElement(ir::LoadVectorElement* load) {
+    void LoadVectorElement(core::ir::LoadVectorElement* load) {
         auto* ptr = Expr(load->From());
         Bind(load->Result(), VectorMemberAccess(ptr, load->Index()));
     }
 
-    void Unary(ir::Unary* u) {
+    void Unary(core::ir::Unary* u) {
         const ast::Expression* expr = nullptr;
         switch (u->Kind()) {
-            case ir::Unary::Kind::kComplement:
+            case core::ir::Unary::Kind::kComplement:
                 expr = b.Complement(Expr(u->Val()));
                 break;
-            case ir::Unary::Kind::kNegation:
+            case core::ir::Unary::Kind::kNegation:
                 expr = b.Negation(Expr(u->Val()));
                 break;
         }
         Bind(u->Result(), expr);
     }
 
-    void Access(ir::Access* a) {
+    void Access(core::ir::Access* a) {
         auto* expr = Expr(a->Object());
         auto* obj_ty = a->Object()->Type()->UnwrapPtr();
         for (auto* index : a->Indices()) {
             tint::Switch(
                 obj_ty,
-                [&](const type::Vector* vec) {
+                [&](const core::type::Vector* vec) {
                     TINT_DEFER(obj_ty = vec->type());
                     expr = VectorMemberAccess(expr, index);
                 },
-                [&](const type::Matrix* mat) {
+                [&](const core::type::Matrix* mat) {
                     obj_ty = mat->ColumnType();
                     expr = b.IndexAccessor(expr, Expr(index));
                 },
-                [&](const type::Array* arr) {
+                [&](const core::type::Array* arr) {
                     obj_ty = arr->ElemType();
                     expr = b.IndexAccessor(expr, Expr(index));
                 },
-                [&](const type::Struct* s) {
-                    if (auto* c = index->As<ir::Constant>()) {
+                [&](const core::type::Struct* s) {
+                    if (auto* c = index->As<core::ir::Constant>()) {
                         auto i = c->Value()->ValueAs<uint32_t>();
                         TINT_ASSERT_OR_RETURN(i < s->Members().Length());
                         auto* member = s->Members()[i];
@@ -654,7 +685,7 @@ class State {
         Bind(a->Result(), expr);
     }
 
-    void Swizzle(ir::Swizzle* s) {
+    void Swizzle(core::ir::Swizzle* s) {
         auto* vec = Expr(s->Object());
         Vector<char, 4> components;
         for (uint32_t i : s->Indices()) {
@@ -669,10 +700,11 @@ class State {
         Bind(s->Result(), swizzle);
     }
 
-    void Binary(ir::Binary* e) {
-        if (e->Kind() == ir::Binary::Kind::kEqual) {
-            auto* rhs = e->RHS()->As<ir::Constant>();
-            if (rhs && rhs->Type()->Is<type::Bool>() && rhs->Value()->ValueAs<bool>() == false) {
+    void Binary(core::ir::Binary* e) {
+        if (e->Kind() == core::ir::Binary::Kind::kEqual) {
+            auto* rhs = e->RHS()->As<core::ir::Constant>();
+            if (rhs && rhs->Type()->Is<core::type::Bool>() &&
+                rhs->Value()->ValueAs<bool>() == false) {
                 // expr == false
                 Bind(e->Result(), b.Not(Expr(e->LHS())));
                 return;
@@ -682,52 +714,52 @@ class State {
         auto* rhs = Expr(e->RHS());
         const ast::Expression* expr = nullptr;
         switch (e->Kind()) {
-            case ir::Binary::Kind::kAdd:
+            case core::ir::Binary::Kind::kAdd:
                 expr = b.Add(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kSubtract:
+            case core::ir::Binary::Kind::kSubtract:
                 expr = b.Sub(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kMultiply:
+            case core::ir::Binary::Kind::kMultiply:
                 expr = b.Mul(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kDivide:
+            case core::ir::Binary::Kind::kDivide:
                 expr = b.Div(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kModulo:
+            case core::ir::Binary::Kind::kModulo:
                 expr = b.Mod(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kAnd:
+            case core::ir::Binary::Kind::kAnd:
                 expr = b.And(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kOr:
+            case core::ir::Binary::Kind::kOr:
                 expr = b.Or(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kXor:
+            case core::ir::Binary::Kind::kXor:
                 expr = b.Xor(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kEqual:
+            case core::ir::Binary::Kind::kEqual:
                 expr = b.Equal(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kNotEqual:
+            case core::ir::Binary::Kind::kNotEqual:
                 expr = b.NotEqual(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kLessThan:
+            case core::ir::Binary::Kind::kLessThan:
                 expr = b.LessThan(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kGreaterThan:
+            case core::ir::Binary::Kind::kGreaterThan:
                 expr = b.GreaterThan(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kLessThanEqual:
+            case core::ir::Binary::Kind::kLessThanEqual:
                 expr = b.LessThanEqual(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kGreaterThanEqual:
+            case core::ir::Binary::Kind::kGreaterThanEqual:
                 expr = b.GreaterThanEqual(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kShiftLeft:
+            case core::ir::Binary::Kind::kShiftLeft:
                 expr = b.Shl(lhs, rhs);
                 break;
-            case ir::Binary::Kind::kShiftRight:
+            case core::ir::Binary::Kind::kShiftRight:
                 expr = b.Shr(lhs, rhs);
                 break;
         }
@@ -736,12 +768,12 @@ class State {
 
     TINT_BEGIN_DISABLE_WARNING(UNREACHABLE_CODE);
 
-    const ast::Expression* Expr(ir::Value* value, PtrKind want_ptr_kind = PtrKind::kRef) {
+    const ast::Expression* Expr(core::ir::Value* value, PtrKind want_ptr_kind = PtrKind::kRef) {
         using ExprAndPtrKind = std::pair<const ast::Expression*, PtrKind>;
 
         auto [expr, got_ptr_kind] = tint::Switch(
             value,
-            [&](ir::Constant* c) -> ExprAndPtrKind {
+            [&](core::ir::Constant* c) -> ExprAndPtrKind {
                 return {Constant(c), PtrKind::kRef};
             },
             [&](Default) -> ExprAndPtrKind {
@@ -760,10 +792,11 @@ class State {
                         }
 
                         if constexpr (std::is_same_v<T, InlinedValue>) {
+                            auto result = ExprAndPtrKind{got.expr, got.ptr_kind};
                             // Single use (inlined) expression.
                             // Mark the bindings_ map entry as consumed.
                             *lookup = ConsumedValue{};
-                            return {got.expr, got.ptr_kind};
+                            return result;
                         }
 
                         if constexpr (std::is_same_v<T, ConsumedValue>) {
@@ -782,7 +815,7 @@ class State {
             return b.Expr("<error>");
         }
 
-        if (value->Type()->Is<type::Pointer>()) {
+        if (value->Type()->Is<core::type::Pointer>()) {
             return ToPtrKind(expr, got_ptr_kind, want_ptr_kind);
         }
 
@@ -791,15 +824,15 @@ class State {
 
     TINT_END_DISABLE_WARNING(UNREACHABLE_CODE);
 
-    const ast::Expression* Constant(ir::Constant* c) { return Constant(c->Value()); }
+    const ast::Expression* Constant(core::ir::Constant* c) { return Constant(c->Value()); }
 
-    const ast::Expression* Constant(const constant::Value* c) {
+    const ast::Expression* Constant(const core::constant::Value* c) {
         auto composite = [&](bool can_splat) {
             auto ty = Type(c->Type());
             if (c->AllZero()) {
                 return b.Call(ty);
             }
-            if (can_splat && c->Is<constant::Splat>()) {
+            if (can_splat && c->Is<core::constant::Splat>()) {
                 return b.Call(ty, Constant(c->Index(0)));
             }
 
@@ -811,25 +844,25 @@ class State {
         };
         return tint::Switch(
             c->Type(),  //
-            [&](const type::I32*) { return b.Expr(c->ValueAs<i32>()); },
-            [&](const type::U32*) { return b.Expr(c->ValueAs<u32>()); },
-            [&](const type::F32*) { return b.Expr(c->ValueAs<f32>()); },
-            [&](const type::F16*) {
-                Enable(builtin::Extension::kF16);
+            [&](const core::type::I32*) { return b.Expr(c->ValueAs<i32>()); },
+            [&](const core::type::U32*) { return b.Expr(c->ValueAs<u32>()); },
+            [&](const core::type::F32*) { return b.Expr(c->ValueAs<f32>()); },
+            [&](const core::type::F16*) {
+                Enable(wgsl::Extension::kF16);
                 return b.Expr(c->ValueAs<f16>());
             },
-            [&](const type::Bool*) { return b.Expr(c->ValueAs<bool>()); },
-            [&](const type::Array*) { return composite(/* can_splat */ false); },
-            [&](const type::Vector*) { return composite(/* can_splat */ true); },
-            [&](const type::Matrix*) { return composite(/* can_splat */ false); },
-            [&](const type::Struct*) { return composite(/* can_splat */ false); },
+            [&](const core::type::Bool*) { return b.Expr(c->ValueAs<bool>()); },
+            [&](const core::type::Array*) { return composite(/* can_splat */ false); },
+            [&](const core::type::Vector*) { return composite(/* can_splat */ true); },
+            [&](const core::type::Matrix*) { return composite(/* can_splat */ false); },
+            [&](const core::type::Struct*) { return composite(/* can_splat */ false); },
             [&](Default) {
                 UNHANDLED_CASE(c->Type());
                 return b.Expr("<error>");
             });
     }
 
-    void Enable(builtin::Extension ext) {
+    void Enable(wgsl::Extension ext) {
         if (enables_.Add(ext)) {
             b.Enable(ext);
         }
@@ -848,76 +881,79 @@ class State {
     /// @param ty the type::Type
     /// @return an ast::Type from @p ty.
     /// @note May be a semantically-invalid placeholder type on error.
-    ast::Type Type(const type::Type* ty) {
+    ast::Type Type(const core::type::Type* ty) {
         return tint::Switch(
-            ty,                                              //
-            [&](const type::Void*) { return ast::Type{}; },  //
-            [&](const type::I32*) { return b.ty.i32(); },    //
-            [&](const type::U32*) { return b.ty.u32(); },    //
-            [&](const type::F16*) {
-                Enable(builtin::Extension::kF16);
+            ty,                                                    //
+            [&](const core::type::Void*) { return ast::Type{}; },  //
+            [&](const core::type::I32*) { return b.ty.i32(); },    //
+            [&](const core::type::U32*) { return b.ty.u32(); },    //
+            [&](const core::type::F16*) {
+                Enable(wgsl::Extension::kF16);
                 return b.ty.f16();
             },
-            [&](const type::F32*) { return b.ty.f32(); },  //
-            [&](const type::Bool*) { return b.ty.bool_(); },
-            [&](const type::Matrix* m) {
+            [&](const core::type::F32*) { return b.ty.f32(); },  //
+            [&](const core::type::Bool*) { return b.ty.bool_(); },
+            [&](const core::type::Matrix* m) {
                 return b.ty.mat(Type(m->type()), m->columns(), m->rows());
             },
-            [&](const type::Vector* v) {
+            [&](const core::type::Vector* v) {
                 auto el = Type(v->type());
                 if (v->Packed()) {
                     TINT_ASSERT(v->Width() == 3u);
-                    return b.ty(builtin::Builtin::kPackedVec3, el);
+                    return b.ty(core::BuiltinType::kPackedVec3, el);
                 } else {
                     return b.ty.vec(el, v->Width());
                 }
             },
-            [&](const type::Array* a) {
+            [&](const core::type::Array* a) {
                 auto el = Type(a->ElemType());
                 Vector<const ast::Attribute*, 1> attrs;
                 if (!a->IsStrideImplicit()) {
                     attrs.Push(b.Stride(a->Stride()));
                 }
-                if (a->Count()->Is<type::RuntimeArrayCount>()) {
+                if (a->Count()->Is<core::type::RuntimeArrayCount>()) {
                     return b.ty.array(el, std::move(attrs));
                 }
                 auto count = a->ConstantCount();
                 if (TINT_UNLIKELY(!count)) {
-                    TINT_ICE() << type::Array::kErrExpectedConstantCount;
+                    TINT_ICE() << core::type::Array::kErrExpectedConstantCount;
                     return b.ty.array(el, u32(1), std::move(attrs));
                 }
                 return b.ty.array(el, u32(count.value()), std::move(attrs));
             },
-            [&](const type::Struct* s) { return Struct(s); },
-            [&](const type::Atomic* a) { return b.ty.atomic(Type(a->Type())); },
-            [&](const type::DepthTexture* t) { return b.ty.depth_texture(t->dim()); },
-            [&](const type::DepthMultisampledTexture* t) {
+            [&](const core::type::Struct* s) { return Struct(s); },
+            [&](const core::type::Atomic* a) { return b.ty.atomic(Type(a->Type())); },
+            [&](const core::type::DepthTexture* t) { return b.ty.depth_texture(t->dim()); },
+            [&](const core::type::DepthMultisampledTexture* t) {
                 return b.ty.depth_multisampled_texture(t->dim());
             },
-            [&](const type::ExternalTexture*) { return b.ty.external_texture(); },
-            [&](const type::MultisampledTexture* t) {
+            [&](const core::type::ExternalTexture*) { return b.ty.external_texture(); },
+            [&](const core::type::MultisampledTexture* t) {
                 auto el = Type(t->type());
                 return b.ty.multisampled_texture(t->dim(), el);
             },
-            [&](const type::SampledTexture* t) {
+            [&](const core::type::SampledTexture* t) {
                 auto el = Type(t->type());
                 return b.ty.sampled_texture(t->dim(), el);
             },
-            [&](const type::StorageTexture* t) {
+            [&](const core::type::StorageTexture* t) {
+                if (t->access() == core::Access::kRead || t->access() == core::Access::kReadWrite) {
+                    Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
+                }
                 return b.ty.storage_texture(t->dim(), t->texel_format(), t->access());
             },
-            [&](const type::Sampler* s) { return b.ty.sampler(s->kind()); },
-            [&](const type::Pointer* p) {
+            [&](const core::type::Sampler* s) { return b.ty.sampler(s->kind()); },
+            [&](const core::type::Pointer* p) {
                 // Note: type::Pointer always has an inferred access, but WGSL only allows an
                 // explicit access in the 'storage' address space.
                 auto el = Type(p->StoreType());
                 auto address_space = p->AddressSpace();
-                auto access = address_space == builtin::AddressSpace::kStorage
+                auto access = address_space == core::AddressSpace::kStorage
                                   ? p->Access()
-                                  : builtin::Access::kUndefined;
+                                  : core::Access::kUndefined;
                 return b.ty.ptr(address_space, el, access);
             },
-            [&](const type::Reference*) {
+            [&](const core::type::Reference*) {
                 TINT_ICE() << "reference types should never appear in the IR";
                 return b.ty.i32();
             },
@@ -927,9 +963,9 @@ class State {
             });
     }
 
-    ast::Type Struct(const type::Struct* s) {
+    ast::Type Struct(const core::type::Struct* s) {
         auto n = structs_.GetOrCreate(s, [&] {
-            auto members = tint::Transform<8>(s->Members(), [&](const type::StructMember* m) {
+            auto members = tint::Transform<8>(s->Members(), [&](const core::type::StructMember* m) {
                 auto ty = Type(m->Type());
                 const auto& ir_attrs = m->Attributes();
                 Vector<const ast::Attribute*, 4> ast_attrs;
@@ -943,10 +979,13 @@ class State {
                     ast_attrs.Push(b.Location(u32(*location)));
                 }
                 if (auto index = ir_attrs.index) {
-                    Enable(builtin::Extension::kChromiumInternalDualSourceBlending);
+                    Enable(wgsl::Extension::kChromiumInternalDualSourceBlending);
                     ast_attrs.Push(b.Index(u32(*index)));
                 }
                 if (auto builtin = ir_attrs.builtin) {
+                    if (RequiresSubgroups(*builtin)) {
+                        Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+                    }
                     ast_attrs.Push(b.Builtin(*builtin));
                 }
                 if (auto interpolation = ir_attrs.interpolation) {
@@ -985,7 +1024,7 @@ class State {
 
     /// @returns the AST name for the given value, creating and returning a new name on the first
     /// call.
-    Symbol NameFor(ir::Value* value, std::string_view suggested = {}) {
+    Symbol NameFor(core::ir::Value* value, std::string_view suggested = {}) {
         return names_.GetOrCreate(value, [&] {
             if (!suggested.empty()) {
                 return b.Symbols().Register(suggested);
@@ -999,7 +1038,9 @@ class State {
 
     /// Associates the IR value @p value with the AST expression @p expr.
     /// @p ptr_kind defines how pointer values are represented by @p expr.
-    void Bind(ir::Value* value, const ast::Expression* expr, PtrKind ptr_kind = PtrKind::kRef) {
+    void Bind(core::ir::Value* value,
+              const ast::Expression* expr,
+              PtrKind ptr_kind = PtrKind::kRef) {
         TINT_ASSERT(value);
         if (can_inline_.Remove(value)) {
             // Value will be inlined at its place of usage.
@@ -1007,7 +1048,7 @@ class State {
                 return;
             }
         } else {
-            if (value->Type()->Is<type::Pointer>()) {
+            if (value->Type()->Is<core::type::Pointer>()) {
                 expr = ToPtrKind(expr, ptr_kind, PtrKind::kPtr);
             }
             auto mod_name = mod.NameOf(value);
@@ -1030,7 +1071,7 @@ class State {
     /// Associates the IR value @p value with the AST 'var', 'let' or parameter with the name @p
     /// name.
     /// @p ptr_kind defines how pointer values are represented by @p expr.
-    void Bind(ir::Value* value, Symbol name, PtrKind ptr_kind) {
+    void Bind(core::ir::Value* value, Symbol name, PtrKind ptr_kind) {
         TINT_ASSERT(value);
 
         bool added = bindings_.Add(value, VariableValue{name, ptr_kind});
@@ -1042,14 +1083,14 @@ class State {
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Helpers
     ////////////////////////////////////////////////////////////////////////////////////////////////
-    bool AsShortCircuit(ir::If* i,
+    bool AsShortCircuit(core::ir::If* i,
                         const StatementList& true_stmts,
                         const StatementList& false_stmts) {
         if (!i->HasResults()) {
             return false;
         }
         auto* result = i->Result();
-        if (!result->Type()->Is<type::Bool>()) {
+        if (!result->Type()->Is<core::type::Bool>()) {
             return false;  // Wrong result type
         }
         if (i->Exits().Count() != 2) {
@@ -1103,17 +1144,17 @@ class State {
         return false;
     }
 
-    bool IsConstant(ir::Value* val, bool value) {
-        if (auto* c = val->As<ir::Constant>()) {
-            if (c->Type()->Is<type::Bool>()) {
+    bool IsConstant(core::ir::Value* val, bool value) {
+        if (auto* c = val->As<core::ir::Constant>()) {
+            if (c->Type()->Is<core::type::Bool>()) {
                 return c->Value()->ValueAs<bool>() == value;
             }
         }
         return false;
     }
 
-    const ast::Expression* VectorMemberAccess(const ast::Expression* expr, ir::Value* index) {
-        if (auto* c = index->As<ir::Constant>()) {
+    const ast::Expression* VectorMemberAccess(const ast::Expression* expr, core::ir::Value* index) {
+        if (auto* c = index->As<core::ir::Constant>()) {
             switch (c->Value()->ValueAs<int>()) {
                 case 0:
                     return b.MemberAccessor(expr, "x");
@@ -1128,30 +1169,80 @@ class State {
         return b.IndexAccessor(expr, Expr(index));
     }
 
-    bool RequiresDerivativeUniformity(builtin::Function fn) {
+    bool RequiresDerivativeUniformity(wgsl::BuiltinFn fn) {
         switch (fn) {
-            case builtin::Function::kDpdxCoarse:
-            case builtin::Function::kDpdyCoarse:
-            case builtin::Function::kFwidthCoarse:
-            case builtin::Function::kDpdxFine:
-            case builtin::Function::kDpdyFine:
-            case builtin::Function::kFwidthFine:
-            case builtin::Function::kDpdx:
-            case builtin::Function::kDpdy:
-            case builtin::Function::kFwidth:
-            case builtin::Function::kTextureSample:
-            case builtin::Function::kTextureSampleBias:
-            case builtin::Function::kTextureSampleCompare:
+            case wgsl::BuiltinFn::kDpdxCoarse:
+            case wgsl::BuiltinFn::kDpdyCoarse:
+            case wgsl::BuiltinFn::kFwidthCoarse:
+            case wgsl::BuiltinFn::kDpdxFine:
+            case wgsl::BuiltinFn::kDpdyFine:
+            case wgsl::BuiltinFn::kFwidthFine:
+            case wgsl::BuiltinFn::kDpdx:
+            case wgsl::BuiltinFn::kDpdy:
+            case wgsl::BuiltinFn::kFwidth:
+            case wgsl::BuiltinFn::kTextureSample:
+            case wgsl::BuiltinFn::kTextureSampleBias:
+            case wgsl::BuiltinFn::kTextureSampleCompare:
                 return true;
             default:
                 return false;
         }
     }
+
+    /// @returns true if the builtin value requires the kChromiumExperimentalSubgroups extension to
+    /// be enabled.
+    bool RequiresSubgroups(core::BuiltinValue builtin) {
+        switch (builtin) {
+            case core::BuiltinValue::kSubgroupInvocationId:
+            case core::BuiltinValue::kSubgroupSize:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// @returns true if a parameter of the type @p ty requires the
+    /// kChromiumExperimentalFullPtrParameters extension to be enabled.
+    bool ParamRequiresFullPtrParameters(const core::type::Type* ty) {
+        if (auto* ptr = ty->As<core::type::Pointer>()) {
+            switch (ptr->AddressSpace()) {
+                case core::AddressSpace::kUniform:
+                case core::AddressSpace::kStorage:
+                case core::AddressSpace::kWorkgroup:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    /// @returns true if the argument @p arg requires the kChromiumExperimentalFullPtrParameters
+    /// extension to be enabled.
+    bool ArgRequiresFullPtrParameters(core::ir::Value* arg) {
+        if (!arg->Type()->Is<core::type::Pointer>()) {
+            return false;
+        }
+
+        auto res = arg->As<core::ir::InstructionResult>();
+        while (res) {
+            auto* inst = res->Source();
+            if (inst->Is<core::ir::Access>()) {
+                return true;  // Passing pointer into sub-object
+            }
+            if (auto* let = inst->As<core::ir::Let>()) {
+                res = let->Value()->As<core::ir::InstructionResult>();
+            } else {
+                break;
+            }
+        }
+        return false;
+    }
 };
 
 }  // namespace
 
-Program IRToProgram(ir::Module& i) {
+Program IRToProgram(core::ir::Module& i) {
     return State{i}.Run();
 }
 

@@ -20,9 +20,9 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/lang/wgsl/ast/transform/get_insertion_point.h"
+#include "src/tint/lang/wgsl/ast/transform/hoist_to_decl_before.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
-#include "src/tint/lang/wgsl/ast/transform/utils/get_insertion_point.h"
-#include "src/tint/lang/wgsl/ast/transform/utils/hoist_to_decl_before.h"
 #include "src/tint/lang/wgsl/ast/traverse_expressions.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
@@ -56,20 +56,20 @@ class StateBase {
 // to else {if}s so that the next transform, DecomposeSideEffects, can insert
 // hoisted expressions above their current location.
 struct SimplifySideEffectStatements : Castable<PromoteSideEffectsToDecl, Transform> {
-    ApplyResult Apply(const Program* src, const DataMap& inputs, DataMap& outputs) const override;
+    ApplyResult Apply(const Program& src, const DataMap& inputs, DataMap& outputs) const override;
 };
 
-Transform::ApplyResult SimplifySideEffectStatements::Apply(const Program* src,
+Transform::ApplyResult SimplifySideEffectStatements::Apply(const Program& src,
                                                            const DataMap&,
                                                            DataMap&) const {
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
 
     bool made_changes = false;
 
     HoistToDeclBefore hoist_to_decl_before(ctx);
     for (auto* node : ctx.src->ASTNodes().Objects()) {
-        if (auto* sem_expr = src->Sem().GetVal(node)) {
+        if (auto* sem_expr = src.Sem().GetVal(node)) {
             if (!sem_expr->HasSideEffects()) {
                 continue;
             }
@@ -93,7 +93,7 @@ Transform::ApplyResult SimplifySideEffectStatements::Apply(const Program* src,
 struct DecomposeSideEffects : Castable<PromoteSideEffectsToDecl, Transform> {
     class CollectHoistsState;
     class DecomposeState;
-    ApplyResult Apply(const Program* src, const DataMap& inputs, DataMap& outputs) const override;
+    ApplyResult Apply(const Program& src, const DataMap& inputs, DataMap& outputs) const override;
 };
 
 // CollectHoistsState traverses the AST top-down, identifying which expressions
@@ -285,12 +285,14 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
                             return false;
                         }
                         // Don't hoist read-only variables as they cannot receive side-effects.
-                        if (var_user->Variable()->Access() == builtin::Access::kRead) {
+                        if (var_user->Variable()->Access() == core::Access::kRead) {
                             return false;
                         }
                         // Don't hoist textures / samplers as they can't be placed into a let, nor
                         // can they have side effects.
-                        if (var_user->Variable()->Type()->IsAnyOf<type::Texture, type::Sampler>()) {
+                        if (var_user->Variable()
+                                ->Type()
+                                ->IsAnyOf<core::type::Texture, core::type::Sampler>()) {
                             return false;
                         }
                         return true;
@@ -315,7 +317,7 @@ class DecomposeSideEffects::CollectHoistsState : public StateBase {
                 auto r = process(e->expr);
                 // Don't hoist address-of expressions.
                 // E.g. for "g(&b, a(0))", we hoist "a(0)" only.
-                if (e->op == UnaryOp::kAddressOf) {
+                if (e->op == core::UnaryOp::kAddressOf) {
                     return false;
                 }
                 return r;
@@ -646,11 +648,11 @@ class DecomposeSideEffects::DecomposeState : public StateBase {
     }
 };
 
-Transform::ApplyResult DecomposeSideEffects::Apply(const Program* src,
+Transform::ApplyResult DecomposeSideEffects::Apply(const Program& src,
                                                    const DataMap&,
                                                    DataMap&) const {
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
 
     // First collect side-effecting expressions to hoist
     CollectHoistsState collect_hoists_state{ctx};
@@ -669,7 +671,7 @@ Transform::ApplyResult DecomposeSideEffects::Apply(const Program* src,
 PromoteSideEffectsToDecl::PromoteSideEffectsToDecl() = default;
 PromoteSideEffectsToDecl::~PromoteSideEffectsToDecl() = default;
 
-Transform::ApplyResult PromoteSideEffectsToDecl::Apply(const Program* src,
+Transform::ApplyResult PromoteSideEffectsToDecl::Apply(const Program& src,
                                                        const DataMap& inputs,
                                                        DataMap& outputs) const {
     Manager manager;

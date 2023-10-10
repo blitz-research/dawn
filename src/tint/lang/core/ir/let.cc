@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include "src/tint/lang/core/ir/let.h"
+
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/store.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Let);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Let);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 Let::Let(InstructionResult* result, ir::Value* value) {
     AddOperand(Let::kValueOperandOffset, value);
@@ -26,4 +29,15 @@ Let::Let(InstructionResult* result, ir::Value* value) {
 
 Let::~Let() = default;
 
-}  // namespace tint::ir
+Let* Let::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto* val = ctx.Remap(Value());
+    auto* new_let = ctx.ir.instructions.Create<Let>(new_result, val);
+
+    auto name = ctx.ir.NameOf(this);
+    ctx.ir.SetName(new_let, name.Name());
+
+    return new_let;
+}
+
+}  // namespace tint::core::ir

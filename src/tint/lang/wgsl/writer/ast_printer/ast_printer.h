@@ -17,9 +17,10 @@
 
 #include <string>
 
+#include "src/tint/lang/core/binary_op.h"
 #include "src/tint/lang/wgsl/sem/struct.h"
+#include "src/tint/utils/generator/text_generator.h"
 #include "src/tint/utils/text/string_stream.h"
-#include "src/tint/utils/text/text_generator.h"
 
 // Forward declarations
 namespace tint {
@@ -29,7 +30,6 @@ namespace tint::ast {
 class AssignmentStatement;
 class Attribute;
 class BinaryExpression;
-enum class BinaryOp;
 class BitcastExpression;
 class BlockStatement;
 class BlockStatement;
@@ -66,9 +66,9 @@ class Variable;
 class WhileStatement;
 }  // namespace tint::ast
 
-namespace tint::builtin {
-enum class TexelFormat;
-}  // namespace tint::builtin
+namespace tint::core {
+enum class TexelFormat : uint8_t;
+}  // namespace tint::core
 
 namespace tint::wgsl::writer {
 
@@ -77,11 +77,12 @@ class ASTPrinter : public tint::TextGenerator {
   public:
     /// Constructor
     /// @param program the program
-    explicit ASTPrinter(const Program* program);
+    explicit ASTPrinter(const Program& program);
     ~ASTPrinter() override;
 
     /// Generates the result data
-    void Generate();
+    /// @returns true on successful generation, false otherwise
+    bool Generate();
 
     /// Handles generating a diagnostic control
     /// @param out the output stream
@@ -107,7 +108,7 @@ class ASTPrinter : public tint::TextGenerator {
     /// Handles generating a binary operator
     /// @param out the output stream
     /// @param op the binary operator
-    void EmitBinaryOp(StringStream& out, const ast::BinaryOp op);
+    void EmitBinaryOp(StringStream& out, const core::BinaryOp op);
     /// Handles generating a bitcast expression
     /// @param out the output stream
     /// @param expr the bitcast expression
@@ -203,7 +204,7 @@ class ASTPrinter : public tint::TextGenerator {
     /// Handles emitting an image format
     /// @param out the output stream
     /// @param fmt the format to generate
-    void EmitImageFormat(StringStream& out, const builtin::TexelFormat fmt);
+    void EmitImageFormat(StringStream& out, const core::TexelFormat fmt);
     /// Handles a unary op expression
     /// @param out the output stream
     /// @param expr the expression to emit
@@ -218,7 +219,7 @@ class ASTPrinter : public tint::TextGenerator {
     void EmitAttributes(StringStream& out, VectorRef<const ast::Attribute*> attrs);
 
   private:
-    Program const* const program_;
+    const Program& program_;
 };
 
 }  // namespace tint::wgsl::writer

@@ -18,9 +18,9 @@
 #include "src/tint/lang/core/ir/instruction.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Value);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Value);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 Value::Value() = default;
 
@@ -28,7 +28,6 @@ Value::~Value() = default;
 
 void Value::Destroy() {
     TINT_ASSERT(Alive());
-    TINT_ASSERT(Usages().Count() == 0);
     flags_.Add(Flag::kDead);
 }
 
@@ -54,4 +53,4 @@ void Value::ReplaceAllUsesWith(Value* replacement) {
     }
 }
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir

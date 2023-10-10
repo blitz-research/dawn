@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "dawn/tests/unittests/validation/ValidationTest.h"
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
@@ -126,7 +128,7 @@ TEST_F(CompatValidationTest, CanNotCreatePipelineWithDifferentPerTargetBlendStat
                 testDescriptor.cTargets[2].writeMask = wgpu::ColorWriteMask::Green;
                 break;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         if (expectError) {
@@ -908,7 +910,7 @@ TEST_F(CompatValidationTest, CanNotCreateBGRA8UnormTextureWithBGRA8UnormSrgbView
                         testing::HasSubstr("not supported in compatibility mode"));
 }
 
-class CompatCompressedTextureToBufferCopyValidationTests : public CompatValidationTest {
+class CompatCompressedCopyT2BAndCopyT2TValidationTests : public CompatValidationTest {
   protected:
     WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
                                 wgpu::DeviceDescriptor descriptor) override {
@@ -920,7 +922,7 @@ class CompatCompressedTextureToBufferCopyValidationTests : public CompatValidati
         }
 
         descriptor.requiredFeatures = requiredFeatures.data();
-        descriptor.requiredFeaturesCount = requiredFeatures.size();
+        descriptor.requiredFeatureCount = requiredFeatures.size();
         return dawnAdapter.CreateDevice(&descriptor);
     }
 
@@ -944,7 +946,7 @@ class CompatCompressedTextureToBufferCopyValidationTests : public CompatValidati
     };
 };
 
-TEST_F(CompatCompressedTextureToBufferCopyValidationTests, CanNotCopyCompressedTextureToBuffer) {
+TEST_F(CompatCompressedCopyT2BAndCopyT2TValidationTests, CanNotCopyCompressedTextureToBuffer) {
     for (TextureInfo textureInfo : textureInfos) {
         if (!device.HasFeature(textureInfo.feature)) {
             continue;
@@ -969,6 +971,120 @@ TEST_F(CompatCompressedTextureToBufferCopyValidationTests, CanNotCopyCompressedT
         encoder.CopyTextureToBuffer(&source, &destination, &descriptor.size);
         ASSERT_DEVICE_ERROR(encoder.Finish(), testing::HasSubstr("cannot be used"));
     }
+}
+
+TEST_F(CompatCompressedCopyT2BAndCopyT2TValidationTests, CanNotCopyCompressedTextureToTexture) {
+    for (TextureInfo textureInfo : textureInfos) {
+        if (!device.HasFeature(textureInfo.feature)) {
+            continue;
+        }
+
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {4, 4, 1};
+        descriptor.dimension = wgpu::TextureDimension::e2D;
+        descriptor.format = textureInfo.format;
+        descriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc;
+        wgpu::Texture srcTexture = device.CreateTexture(&descriptor);
+
+        descriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+        wgpu::Texture dstTexture = device.CreateTexture(&descriptor);
+
+        wgpu::ImageCopyTexture source = utils::CreateImageCopyTexture(srcTexture);
+        wgpu::ImageCopyTexture destination = utils::CreateImageCopyTexture(dstTexture);
+
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        encoder.CopyTextureToTexture(&source, &destination, &descriptor.size);
+        ASSERT_DEVICE_ERROR(encoder.Finish(), testing::HasSubstr("cannot be used"));
+    }
+}
+
+class CompatMaxVertexAttributesTest : public CompatValidationTest {
+  protected:
+    void TestMaxVertexAttributes(bool usesVertexIndex, bool usesInstanceIndex) {
+        wgpu::SupportedLimits limits;
+        device.GetLimits(&limits);
+
+        uint32_t maxAttributes = limits.limits.maxVertexAttributes;
+        uint32_t numAttributesUsedByBuiltins =
+            (usesVertexIndex ? 1 : 0) + (usesInstanceIndex ? 1 : 0);
+
+        TestAttributes(maxAttributes - numAttributesUsedByBuiltins, usesVertexIndex,
+                       usesInstanceIndex, true);
+        if (usesVertexIndex || usesInstanceIndex) {
+            TestAttributes(maxAttributes - numAttributesUsedByBuiltins + 1, usesVertexIndex,
+                           usesInstanceIndex, false);
+        }
+    }
+
+    void TestAttributes(uint32_t numAttributes,
+                        bool usesVertexIndex,
+                        bool usesInstanceIndex,
+                        bool expectSuccess) {
+        std::vector<std::string> inputs;
+        std::vector<std::string> outputs;
+
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.layout = {};
+        descriptor.vertex.entryPoint = "vs";
+        descriptor.vertex.bufferCount = 1;
+        descriptor.cFragment.entryPoint = "fs";
+        descriptor.cBuffers[0].arrayStride = 16;
+        descriptor.cBuffers[0].attributeCount = numAttributes;
+
+        for (uint32_t i = 0; i < numAttributes; ++i) {
+            inputs.push_back(absl::StrFormat("@location(%u) v%u: vec4f", i, i));
+            outputs.push_back(absl::StrFormat("v%u", i));
+            descriptor.cAttributes[i].format = wgpu::VertexFormat::Float32x4;
+            descriptor.cAttributes[i].shaderLocation = i;
+        }
+
+        if (usesVertexIndex) {
+            inputs.push_back("@builtin(vertex_index) vNdx: u32");
+            outputs.push_back("vec4f(f32(vNdx))");
+        }
+
+        if (usesInstanceIndex) {
+            inputs.push_back("@builtin(instance_index) iNdx: u32");
+            outputs.push_back("vec4f(f32(iNdx))");
+        }
+
+        auto wgsl = absl::StrFormat(R"(
+            @fragment fn fs() -> @location(0) vec4f {
+                return vec4f(1);
+            }
+            @vertex fn vs(%s) -> @builtin(position) vec4f {
+                return %s;
+            }
+            )",
+                                    absl::StrJoin(inputs, ", "), absl::StrJoin(outputs, " + "));
+
+        wgpu::ShaderModule module = utils::CreateShaderModule(device, wgsl.c_str());
+        descriptor.vertex.module = module;
+        descriptor.cFragment.module = module;
+
+        if (expectSuccess) {
+            device.CreateRenderPipeline(&descriptor);
+        } else {
+            ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
+                                testing::HasSubstr("compat"));
+        }
+    }
+};
+
+TEST_F(CompatMaxVertexAttributesTest, CanUseMaxVertexAttributes) {
+    TestMaxVertexAttributes(false, false);
+}
+
+TEST_F(CompatMaxVertexAttributesTest, VertexIndexTakesAnAttribute) {
+    TestMaxVertexAttributes(true, false);
+}
+
+TEST_F(CompatMaxVertexAttributesTest, InstanceIndexTakesAnAttribute) {
+    TestMaxVertexAttributes(false, true);
+}
+
+TEST_F(CompatMaxVertexAttributesTest, VertexAndInstanceIndexEachTakeAnAttribute) {
+    TestMaxVertexAttributes(true, true);
 }
 
 }  // anonymous namespace

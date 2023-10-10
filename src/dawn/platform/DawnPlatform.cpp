@@ -49,7 +49,7 @@ uint64_t Platform::AddTraceEvent(char phase,
                                  const uint64_t* argValues,
                                  unsigned char flags) {
     // AddTraceEvent cannot be called if events are disabled.
-    ASSERT(false);
+    DAWN_ASSERT(false);
     return 0;
 }
 
@@ -77,6 +77,20 @@ dawn::platform::CachingInterface* Platform::GetCachingInterface() {
 
 std::unique_ptr<dawn::platform::WorkerTaskPool> Platform::CreateWorkerTaskPool() {
     return std::make_unique<AsyncWorkerThreadPool>();
+}
+
+bool Platform::IsFeatureEnabled(Features feature) {
+    switch (feature) {
+        case Features::kWebGPUUseDXC:
+#ifdef DAWN_USE_BUILT_DXC
+            return true;
+#else
+            return false;
+#endif
+        case Features::kWebGPUUseTintIR:
+            return false;
+    }
+    return false;
 }
 
 }  // namespace dawn::platform

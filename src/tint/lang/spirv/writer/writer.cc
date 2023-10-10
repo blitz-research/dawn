@@ -18,62 +18,82 @@
 #include <utility>
 
 #include "src/tint/lang/spirv/writer/ast_printer/ast_printer.h"
-#if TINT_BUILD_IR
-#include "src/tint/lang/spirv/writer/printer/printer.h"             // nogncheck
-#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"  // nogncheck
-#endif                                                              // TINT_BUILD_IR
+#include "src/tint/lang/spirv/writer/common/option_builder.h"
+#include "src/tint/lang/spirv/writer/printer/printer.h"
+#include "src/tint/lang/spirv/writer/raise/raise.h"
+#include "src/tint/lang/wgsl/reader/lower/lower.h"
+#include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
+
+// Included by 'ast_printer.h', included again here for './tools/run gen' track the dependency.
+#include "spirv/unified1/spirv.h"
 
 namespace tint::spirv::writer {
 
-Result::Result() = default;
-Result::~Result() = default;
-Result::Result(const Result&) = default;
+Output::Output() = default;
+Output::~Output() = default;
+Output::Output(const Output&) = default;
 
-Result Generate(const Program* program, const Options& options) {
-    Result result;
-    if (!program->IsValid()) {
-        result.error = "input program is not valid";
-        return result;
+Result<Output> Generate(const Program& program, const Options& options) {
+    if (!program.IsValid()) {
+        return Failure{program.Diagnostics()};
     }
 
     bool zero_initialize_workgroup_memory =
         !options.disable_workgroup_init && options.use_zero_initialize_workgroup_memory_extension;
 
-#if TINT_BUILD_IR
+    {
+        diag::List validation_diagnostics;
+        if (!ValidateBindingOptions(options, validation_diagnostics)) {
+            return Failure{validation_diagnostics};
+        }
+    }
+
+    Output output;
+
     if (options.use_tint_ir) {
         // Convert the AST program to an IR module.
         auto converted = wgsl::reader::ProgramToIR(program);
         if (!converted) {
-            result.error = "IR converter: " + converted.Failure();
-            return result;
+            return converted.Failure();
+        }
+
+        auto ir = converted.Move();
+
+        // Lower from WGSL-dialect to core-dialect
+        if (auto res = wgsl::reader::Lower(ir); !res) {
+            return res.Failure();
+        }
+
+        // Raise from core-dialect to SPIR-V-dialect.
+        if (auto res = raise::Raise(ir, options); !res) {
+            return std::move(res.Failure());
         }
 
         // Generate the SPIR-V code.
-        auto ir = converted.Move();
-        auto impl = std::make_unique<Printer>(&ir, zero_initialize_workgroup_memory);
-        result.success = impl->Generate();
-        result.error = impl->Diagnostics().str();
-        result.spirv = std::move(impl->Result());
-    } else  // NOLINT(readability/braces)
-#endif
-    {
+        auto impl = std::make_unique<Printer>(ir, zero_initialize_workgroup_memory);
+        auto spirv = impl->Generate();
+        if (!spirv) {
+            return std::move(spirv.Failure());
+        }
+        output.spirv = std::move(spirv.Get());
+    } else {
         // Sanitize the program.
         auto sanitized_result = Sanitize(program, options);
         if (!sanitized_result.program.IsValid()) {
-            result.success = false;
-            result.error = sanitized_result.program.Diagnostics().str();
-            return result;
+            return Failure{sanitized_result.program.Diagnostics()};
         }
 
         // Generate the SPIR-V code.
-        auto impl = std::make_unique<ASTPrinter>(&sanitized_result.program,
-                                                 zero_initialize_workgroup_memory);
-        result.success = impl->Generate();
-        result.error = impl->Diagnostics().str();
-        result.spirv = std::move(impl->Result());
+        auto impl = std::make_unique<ASTPrinter>(
+            sanitized_result.program, zero_initialize_workgroup_memory,
+            options.experimental_require_subgroup_uniform_control_flow);
+        if (!impl->Generate()) {
+            return Failure{impl->Diagnostics()};
+        }
+        output.spirv = std::move(impl->Result());
     }
 
-    return result;
+    return output;
 }
 
 }  // namespace tint::spirv::writer

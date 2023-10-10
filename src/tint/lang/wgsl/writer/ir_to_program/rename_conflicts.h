@@ -15,26 +15,24 @@
 #ifndef SRC_TINT_LANG_WGSL_WRITER_IR_TO_PROGRAM_RENAME_CONFLICTS_H_
 #define SRC_TINT_LANG_WGSL_WRITER_IR_TO_PROGRAM_RENAME_CONFLICTS_H_
 
-#include "src/tint/lang/core/ir/transform/transform.h"
+#include <string>
+
+#include "src/tint/utils/diagnostic/diagnostic.h"
+#include "src/tint/utils/result/result.h"
+
+// Forward declarations.
+namespace tint::core::ir {
+class Module;
+}
 
 namespace tint::wgsl::writer {
 
 /// RenameConflicts is a transform that renames declarations which prevent identifiers from
 /// resolving to the correct declaration, and those with identical identifiers declared in the same
 /// scope.
-class RenameConflicts final : public Castable<RenameConflicts, ir::transform::Transform> {
-  public:
-    /// Constructor
-    RenameConflicts();
-    /// Destructor
-    ~RenameConflicts() override;
-
-    /// @copydoc ir::transform::Transform::Run
-    void Run(ir::Module* module) const override;
-
-  private:
-    struct State;
-};
+/// @param module the module to transform
+/// @returns success or failure
+Result<SuccessType> RenameConflicts(core::ir::Module* module);
 
 }  // namespace tint::wgsl::writer
 

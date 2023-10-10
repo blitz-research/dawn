@@ -56,7 +56,7 @@ D3D12_HEAP_TYPE GetD3D12HeapType(ResourceHeapKind resourceHeapKind) {
         case Upload_AllBuffersAndTextures:
             return D3D12_HEAP_TYPE_UPLOAD;
         case EnumCount:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -75,7 +75,7 @@ D3D12_HEAP_FLAGS GetD3D12HeapFlags(ResourceHeapKind resourceHeapKind) {
         case Default_OnlyRenderableOrDepthTextures:
             return D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES;
         case EnumCount:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -92,7 +92,7 @@ ResourceHeapKind GetResourceHeapKind(D3D12_RESOURCE_DIMENSION dimension,
             case D3D12_HEAP_TYPE_READBACK:
                 return Readback_AllBuffersAndTextures;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -106,7 +106,7 @@ ResourceHeapKind GetResourceHeapKind(D3D12_RESOURCE_DIMENSION dimension,
                 case D3D12_HEAP_TYPE_READBACK:
                     return Readback_OnlyBuffers;
                 default:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
             }
             break;
         }
@@ -123,12 +123,12 @@ ResourceHeapKind GetResourceHeapKind(D3D12_RESOURCE_DIMENSION dimension,
                 }
 
                 default:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
             }
             break;
         }
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -160,7 +160,7 @@ uint64_t GetInitialResourcePlacementAlignment(
         }
         case D3D12_RESOURCE_DIMENSION_UNKNOWN:
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -267,7 +267,7 @@ uint32_t ComputeExtraArraySizeForIntelGen12(uint32_t width,
             tileHeight = 64;
             break;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
     uint32_t tileWidth = kTileSize / tileHeight;
 
@@ -320,6 +320,21 @@ bool ShouldAllocateAsCommittedResource(Device* device, bool forceAllocateAsCommi
            device->IsToggleEnabled(Toggle::DisableResourceSuballocation);
 }
 
+D3D12_HEAP_FLAGS GetHeapFlagsForCommittedResource(Device* device,
+                                                  const D3D12_RESOURCE_DESC& resourceDescriptor) {
+    if (!device->IsToggleEnabled(Toggle::D3D12CreateNotZeroedHeap)) {
+        return D3D12_HEAP_FLAG_NONE;
+    }
+
+    if (device->IsToggleEnabled(
+            Toggle::D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources) &&
+        resourceDescriptor.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER) {
+        return D3D12_HEAP_FLAG_NONE;
+    }
+
+    return D3D12_HEAP_FLAG_CREATE_NOT_ZEROED;
+}
+
 }  // namespace
 
 ResourceAllocatorManager::ResourceAllocatorManager(Device* device) : mDevice(device) {
@@ -327,10 +342,16 @@ ResourceAllocatorManager::ResourceAllocatorManager(Device* device) : mDevice(dev
                             ? mDevice->GetDeviceInfo().resourceHeapTier
                             : 1;
 
+    D3D12_HEAP_FLAGS createNotZeroedHeapFlag =
+        mDevice->IsToggleEnabled(Toggle::D3D12CreateNotZeroedHeap)
+            ? D3D12_HEAP_FLAG_CREATE_NOT_ZEROED
+            : D3D12_HEAP_FLAG_NONE;
+
     for (uint32_t i = 0; i < ResourceHeapKind::EnumCount; i++) {
         const ResourceHeapKind resourceHeapKind = static_cast<ResourceHeapKind>(i);
+        D3D12_HEAP_FLAGS heapFlags = GetD3D12HeapFlags(resourceHeapKind) | createNotZeroedHeapFlag;
         mHeapAllocators[i] = std::make_unique<HeapAllocator>(
-            mDevice, GetD3D12HeapType(resourceHeapKind), GetD3D12HeapFlags(resourceHeapKind),
+            mDevice, GetD3D12HeapType(resourceHeapKind), heapFlags,
             GetMemorySegment(device, GetD3D12HeapType(resourceHeapKind)));
         mPooledHeapAllocators[i] =
             std::make_unique<PooledResourceMemoryAllocator>(mHeapAllocators[i].get());
@@ -345,8 +366,8 @@ ResourceAllocatorManager::~ResourceAllocatorManager() {
     Tick(std::numeric_limits<ExecutionSerial>::max());
     DestroyPool();
 
-    ASSERT(mAllocationsToDelete.Empty());
-    ASSERT(mHeapsToDelete.Empty());
+    DAWN_ASSERT(mAllocationsToDelete.Empty());
+    DAWN_ASSERT(mHeapsToDelete.Empty());
 }
 
 ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::AllocateMemory(
@@ -375,7 +396,7 @@ ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::AllocateMemory(
         resourceDescriptor.DepthOrArraySize > 1 && colorFormatBytesPerBlock > 0) {
         // Multisample textures have one layer at most. Only non-multisample textures need the
         // workaround.
-        ASSERT(revisedDescriptor.SampleDesc.Count <= 1);
+        DAWN_ASSERT(revisedDescriptor.SampleDesc.Count <= 1);
         revisedDescriptor.DepthOrArraySize += ComputeExtraArraySizeForIntelGen12(
             resourceDescriptor.Width, resourceDescriptor.Height,
             resourceDescriptor.DepthOrArraySize, resourceDescriptor.MipLevels,
@@ -439,11 +460,11 @@ void ResourceAllocatorManager::DeallocateMemory(ResourceHeapAllocation& allocati
     // calls DeallocateMemory again using the same allocation.
     allocation.Invalidate();
 
-    ASSERT(allocation.GetD3D12Resource() == nullptr);
+    DAWN_ASSERT(allocation.GetD3D12Resource() == nullptr);
 }
 
 void ResourceAllocatorManager::FreeMemory(ResourceHeapAllocation& allocation) {
-    ASSERT(allocation.GetInfo().mMethod == AllocationMethod::kSubAllocated);
+    DAWN_ASSERT(allocation.GetInfo().mMethod == AllocationMethod::kSubAllocated);
 
     D3D12_HEAP_PROPERTIES heapProp;
     allocation.GetD3D12Resource()->GetHeapProperties(&heapProp, nullptr);
@@ -575,9 +596,12 @@ ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::CreateCommittedR
         mDevice->IsToggleEnabled(Toggle::D3D12Use64KBAlignedMSAATexture)) {
         appliedResourceDescriptor.Alignment = D3D12_SMALL_MSAA_RESOURCE_PLACEMENT_ALIGNMENT;
     }
+
+    D3D12_HEAP_FLAGS heapFlags =
+        GetHeapFlagsForCommittedResource(mDevice, appliedResourceDescriptor);
     DAWN_TRY(CheckOutOfMemoryHRESULT(
         mDevice->GetD3D12Device()->CreateCommittedResource(
-            &heapProperties, D3D12_HEAP_FLAG_NONE, &appliedResourceDescriptor, initialUsage,
+            &heapProperties, heapFlags, &appliedResourceDescriptor, initialUsage,
             optimizedClearValue, IID_PPV_ARGS(&committedResource)),
         "ID3D12Device::CreateCommittedResource"));
 

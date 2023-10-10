@@ -16,12 +16,14 @@
 
 #include <utility>
 
+#include "src/tint/lang/core/ir/clone_context.h"
 #include "src/tint/lang/core/ir/if.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/multi_in_block.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::ExitIf);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::ExitIf);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 ExitIf::ExitIf(ir::If* i, VectorRef<Value*> args) {
     SetIf(i);
@@ -29,6 +31,12 @@ ExitIf::ExitIf(ir::If* i, VectorRef<Value*> args) {
 }
 
 ExitIf::~ExitIf() = default;
+
+ExitIf* ExitIf::Clone(CloneContext& ctx) {
+    auto* if_ = ctx.Remap(If());
+    auto args = ctx.Remap<ExitIf::kDefaultNumOperands>(Args());
+    return ctx.ir.instructions.Create<ExitIf>(if_, args);
+}
 
 void ExitIf::SetIf(ir::If* i) {
     SetControlInstruction(i);
@@ -38,4 +46,4 @@ ir::If* ExitIf::If() {
     return static_cast<ir::If*>(ControlInstruction());
 }
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir

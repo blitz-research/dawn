@@ -24,7 +24,7 @@
 #include "src/tint/utils/macros/compiler.h"
 #include "src/tint/utils/rtti/switch.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint {
 
@@ -46,16 +46,16 @@ ProgramBuilder& ProgramBuilder::operator=(ProgramBuilder&& rhs) {
     return *this;
 }
 
-ProgramBuilder ProgramBuilder::Wrap(const Program* program) {
+ProgramBuilder ProgramBuilder::Wrap(const Program& program) {
     ProgramBuilder builder;
-    builder.id_ = program->ID();
-    builder.last_ast_node_id_ = program->HighestASTNodeID();
-    builder.constants = constant::Manager::Wrap(program->Constants());
+    builder.id_ = program.ID();
+    builder.last_ast_node_id_ = program.HighestASTNodeID();
+    builder.constants = core::constant::Manager::Wrap(program.Constants());
     builder.ast_ =
-        builder.create<ast::Module>(program->AST().source, program->AST().GlobalDeclarations());
-    builder.sem_ = sem::Info::Wrap(program->Sem());
-    builder.symbols_.Wrap(program->Symbols());
-    builder.diagnostics_ = program->Diagnostics();
+        builder.create<ast::Module>(program.AST().source, program.AST().GlobalDeclarations());
+    builder.sem_ = sem::Info::Wrap(program.Sem());
+    builder.symbols_.Wrap(program.Symbols());
+    builder.diagnostics_ = program.Diagnostics();
     return builder;
 }
 
@@ -65,19 +65,19 @@ void ProgramBuilder::AssertNotMoved() const {
     }
 }
 
-const type::Type* ProgramBuilder::TypeOf(const ast::Expression* expr) const {
+const core::type::Type* ProgramBuilder::TypeOf(const ast::Expression* expr) const {
     return tint::Switch(
         Sem().Get(expr),  //
         [](const sem::ValueExpression* e) { return e->Type(); },
         [](const sem::TypeExpression* e) { return e->Type(); });
 }
 
-const type::Type* ProgramBuilder::TypeOf(const ast::Variable* var) const {
+const core::type::Type* ProgramBuilder::TypeOf(const ast::Variable* var) const {
     auto* sem = Sem().Get(var);
     return sem ? sem->Type() : nullptr;
 }
 
-const type::Type* ProgramBuilder::TypeOf(const ast::TypeDecl* type_decl) const {
+const core::type::Type* ProgramBuilder::TypeOf(const ast::TypeDecl* type_decl) const {
     return Sem().Get(type_decl);
 }
 

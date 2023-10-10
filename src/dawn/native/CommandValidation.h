@@ -40,6 +40,11 @@ MaybeError ValidateTimestampQuery(const DeviceBase* device,
                                   uint32_t queryIndex,
                                   Feature requiredFeature = Feature::TimestampQuery);
 
+MaybeError ValidatePassTimestampWrites(const DeviceBase* device,
+                                       const QuerySetBase* querySet,
+                                       uint32_t beginningOfPassWriteIndex,
+                                       uint32_t endOfPassWriteIndex);
+
 MaybeError ValidateWriteBuffer(const DeviceBase* device,
                                const BufferBase* buffer,
                                uint64_t bufferOffset,
@@ -98,6 +103,16 @@ MaybeError ValidateCanUseAs(const BufferBase* buffer, wgpu::BufferUsage usage);
 using ColorAttachmentFormats = StackVector<const Format*, kMaxColorAttachments>;
 MaybeError ValidateColorAttachmentBytesPerSample(DeviceBase* device,
                                                  const ColorAttachmentFormats& formats);
+
+struct StorageAttachmentInfoForValidation {
+    uint64_t offset;
+    // This format is assumed to support StorageAttachment.
+    wgpu::TextureFormat format;
+};
+MaybeError ValidatePLSInfo(
+    const DeviceBase* device,
+    uint64_t totalSize,
+    ityp::span<size_t, StorageAttachmentInfoForValidation> storageAttachments);
 
 }  // namespace dawn::native
 

@@ -16,7 +16,7 @@
 
 #include <algorithm>
 
-#include "src/tint/lang/core/builtin/texel_format.h"
+#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/wgsl/ast/accessor_expression.h"
 #include "src/tint/lang/wgsl/ast/alias.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
@@ -73,23 +73,23 @@
 #include "src/tint/utils/macros/scoped_assignment.h"
 #include "src/tint/utils/math/math.h"
 #include "src/tint/utils/rtti/switch.h"
-#include "src/tint/utils/text/float_to_string.h"
+#include "src/tint/utils/strconv/float_to_string.h"
 #include "src/tint/utils/text/string.h"
 
 namespace tint::wgsl::writer {
 
-ASTPrinter::ASTPrinter(const Program* program) : program_(program) {}
+ASTPrinter::ASTPrinter(const Program& program) : program_(program) {}
 
 ASTPrinter::~ASTPrinter() = default;
 
-void ASTPrinter::Generate() {
+bool ASTPrinter::Generate() {
     // Generate directives before any other global declarations.
     bool has_directives = false;
-    for (auto enable : program_->AST().Enables()) {
+    for (auto enable : program_.AST().Enables()) {
         EmitEnable(enable);
         has_directives = true;
     }
-    for (auto diagnostic : program_->AST().DiagnosticDirectives()) {
+    for (auto diagnostic : program_.AST().DiagnosticDirectives()) {
         auto out = Line();
         EmitDiagnosticControl(out, diagnostic->control);
         out << ";";
@@ -99,7 +99,7 @@ void ASTPrinter::Generate() {
         Line();
     }
     // Generate global declarations in the order they appear in the module.
-    for (auto* decl : program_->AST().GlobalDeclarations()) {
+    for (auto* decl : program_.AST().GlobalDeclarations()) {
         if (decl->IsAnyOf<ast::DiagnosticDirective, ast::Enable>()) {
             continue;
         }
@@ -110,10 +110,12 @@ void ASTPrinter::Generate() {
             [&](const ast::Variable* var) { return EmitVariable(Line(), var); },
             [&](const ast::ConstAssert* ca) { return EmitConstAssert(ca); },
             [&](Default) { TINT_UNREACHABLE(); });
-        if (decl != program_->AST().GlobalDeclarations().Back()) {
+        if (decl != program_.AST().GlobalDeclarations().Back()) {
             Line();
         }
     }
+
+    return !diagnostics_.contains_errors();
 }
 
 void ASTPrinter::EmitDiagnosticControl(StringStream& out,
@@ -315,9 +317,9 @@ void ASTPrinter::EmitFunction(const ast::Function* func) {
     }
 }
 
-void ASTPrinter::EmitImageFormat(StringStream& out, const builtin::TexelFormat fmt) {
+void ASTPrinter::EmitImageFormat(StringStream& out, const core::TexelFormat fmt) {
     switch (fmt) {
-        case builtin::TexelFormat::kUndefined:
+        case core::TexelFormat::kUndefined:
             diagnostics_.add_error(diag::System::Writer, "unknown image format");
             break;
         default:
@@ -332,9 +334,9 @@ void ASTPrinter::EmitStructType(const ast::Struct* str) {
     }
     Line() << "struct " << str->name->symbol.Name() << " {";
 
-    Hashset<std::string_view, 8> member_names;
+    Hashset<std::string, 8> member_names;
     for (auto* mem : str->members) {
-        member_names.Add(mem->name->symbol.NameView());
+        member_names.Add(std::string(mem->name->symbol.NameView()));
     }
     size_t padding_idx = 0;
     auto new_padding_name = [&] {
@@ -359,7 +361,7 @@ void ASTPrinter::EmitStructType(const ast::Struct* str) {
     for (auto* mem : str->members) {
         // TODO(crbug.com/tint/798) move the @offset attribute handling to the transform::Wgsl
         // sanitizer.
-        if (auto* mem_sem = program_->Sem().Get(mem)) {
+        if (auto* mem_sem = program_.Sem().Get(mem)) {
             offset = tint::RoundUp(mem_sem->Align(), offset);
             if (uint32_t padding = mem_sem->Offset() - offset) {
                 add_padding(padding);
@@ -541,83 +543,81 @@ void ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr
     out << ")";
 }
 
-void ASTPrinter::EmitBinaryOp(StringStream& out, const ast::BinaryOp op) {
+void ASTPrinter::EmitBinaryOp(StringStream& out, const core::BinaryOp op) {
     switch (op) {
-        case ast::BinaryOp::kAnd:
+        case core::BinaryOp::kAnd:
             out << "&";
-            break;
-        case ast::BinaryOp::kOr:
+            return;
+        case core::BinaryOp::kOr:
             out << "|";
-            break;
-        case ast::BinaryOp::kXor:
+            return;
+        case core::BinaryOp::kXor:
             out << "^";
-            break;
-        case ast::BinaryOp::kLogicalAnd:
+            return;
+        case core::BinaryOp::kLogicalAnd:
             out << "&&";
-            break;
-        case ast::BinaryOp::kLogicalOr:
+            return;
+        case core::BinaryOp::kLogicalOr:
             out << "||";
-            break;
-        case ast::BinaryOp::kEqual:
+            return;
+        case core::BinaryOp::kEqual:
             out << "==";
-            break;
-        case ast::BinaryOp::kNotEqual:
+            return;
+        case core::BinaryOp::kNotEqual:
             out << "!=";
-            break;
-        case ast::BinaryOp::kLessThan:
+            return;
+        case core::BinaryOp::kLessThan:
             out << "<";
-            break;
-        case ast::BinaryOp::kGreaterThan:
+            return;
+        case core::BinaryOp::kGreaterThan:
             out << ">";
-            break;
-        case ast::BinaryOp::kLessThanEqual:
+            return;
+        case core::BinaryOp::kLessThanEqual:
             out << "<=";
-            break;
-        case ast::BinaryOp::kGreaterThanEqual:
+            return;
+        case core::BinaryOp::kGreaterThanEqual:
             out << ">=";
-            break;
-        case ast::BinaryOp::kShiftLeft:
+            return;
+        case core::BinaryOp::kShiftLeft:
             out << "<<";
-            break;
-        case ast::BinaryOp::kShiftRight:
+            return;
+        case core::BinaryOp::kShiftRight:
             out << ">>";
-            break;
-        case ast::BinaryOp::kAdd:
+            return;
+        case core::BinaryOp::kAdd:
             out << "+";
-            break;
-        case ast::BinaryOp::kSubtract:
+            return;
+        case core::BinaryOp::kSubtract:
             out << "-";
-            break;
-        case ast::BinaryOp::kMultiply:
+            return;
+        case core::BinaryOp::kMultiply:
             out << "*";
-            break;
-        case ast::BinaryOp::kDivide:
+            return;
+        case core::BinaryOp::kDivide:
             out << "/";
-            break;
-        case ast::BinaryOp::kModulo:
+            return;
+        case core::BinaryOp::kModulo:
             out << "%";
-            break;
-        case ast::BinaryOp::kNone:
-            diagnostics_.add_error(diag::System::Writer, "missing binary operation type");
-            break;
+            return;
     }
+    TINT_ICE() << "invalid binary op " << op;
 }
 
 void ASTPrinter::EmitUnaryOp(StringStream& out, const ast::UnaryOpExpression* expr) {
     switch (expr->op) {
-        case ast::UnaryOp::kAddressOf:
+        case core::UnaryOp::kAddressOf:
             out << "&";
             break;
-        case ast::UnaryOp::kComplement:
+        case core::UnaryOp::kComplement:
             out << "~";
             break;
-        case ast::UnaryOp::kIndirection:
+        case core::UnaryOp::kIndirection:
             out << "*";
             break;
-        case ast::UnaryOp::kNot:
+        case core::UnaryOp::kNot:
             out << "!";
             break;
-        case ast::UnaryOp::kNegation:
+        case core::UnaryOp::kNegation:
             out << "-";
             break;
     }

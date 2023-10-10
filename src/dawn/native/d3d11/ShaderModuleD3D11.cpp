@@ -67,7 +67,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     const std::bitset<kMaxInterStageShaderVariables>* usedInterstageVariables) {
     Device* device = ToBackend(GetDevice());
     TRACE_EVENT0(device->GetPlatform(), General, "ShaderModuleD3D11::Compile");
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
 
     ScopedTintICEHandler scopedICEHandler(device);
     const EntryPointMetadata& entryPoint = GetEntryPoint(programmableStage.entryPoint);
@@ -91,7 +91,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     req.bytecode.compiler = d3d::Compiler::FXC;
     req.bytecode.d3dCompile = device->GetFunctions()->d3dCompile;
     req.bytecode.compilerVersion = D3D_COMPILER_VERSION;
-    ASSERT(device->GetDeviceInfo().shaderModel == 50);
+    DAWN_ASSERT(device->GetDeviceInfo().shaderModel == 50);
     switch (stage) {
         case SingleShaderStage::Vertex:
             req.bytecode.fxcShaderProfile = "vs_5_0";
@@ -105,10 +105,6 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     }
 
     tint::BindingRemapperOptions bindingRemapper;
-    // D3D11 registers like `t3` and `c3` have the same bindingOffset number in
-    // the remapping but should not be considered a collision because they have
-    // different types.
-    bindingRemapper.allow_collisions = true;
 
     const BindingInfoArray& moduleBindingInfo = entryPoint.bindings;
 
@@ -196,7 +192,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     }();
 
     if (device->IsToggleEnabled(Toggle::DumpShaders)) {
-        d3d::DumpCompiledShader(device, *compiledShader, compileFlags);
+        d3d::DumpFXCCompiledShader(device, *compiledShader, compileFlags);
     }
 
     if (compileError.IsError()) {

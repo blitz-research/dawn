@@ -65,8 +65,15 @@ static constexpr uint8_t kSampledTexturesPerExternalTexture = 4u;
 static constexpr uint8_t kSamplersPerExternalTexture = 1u;
 static constexpr uint8_t kUniformsPerExternalTexture = 1u;
 
+static constexpr uint8_t kMaxPLSSlots = 4;
+static constexpr size_t kPLSSlotByteSize = 4;
+static constexpr uint8_t kMaxPLSSize = kMaxPLSSlots * kPLSSlotByteSize;
+
 // Wire buffer alignments.
 static constexpr size_t kWireBufferAlignment = 8u;
+
+// Timestamp query quantization mask to perform a granularity of ~0.1ms.
+static constexpr uint32_t kTimestampQuantizationMask = 0xFFFF0000;
 
 }  // namespace dawn
 

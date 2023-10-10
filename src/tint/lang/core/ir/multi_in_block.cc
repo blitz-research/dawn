@@ -14,16 +14,32 @@
 
 #include "src/tint/lang/core/ir/multi_in_block.h"
 
+#include "src/tint/lang/core/ir/block_param.h"
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/utils/containers/predicates.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::MultiInBlock);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::MultiInBlock);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 MultiInBlock::MultiInBlock() : Base() {}
 
 MultiInBlock::~MultiInBlock() = default;
+
+MultiInBlock* MultiInBlock::Clone(CloneContext&) {
+    TINT_UNREACHABLE() << "blocks must be cloned with CloneInto";
+    return nullptr;
+}
+
+void MultiInBlock::CloneInto(CloneContext& ctx, Block* out) {
+    TINT_ASSERT(out->Is<MultiInBlock>());
+
+    auto new_params = ctx.Clone(params_);
+    out->As<MultiInBlock>()->SetParams(new_params);
+    Block::CloneInto(ctx, out);
+}
 
 void MultiInBlock::SetParams(VectorRef<BlockParam*> params) {
     params_ = std::move(params);
@@ -41,4 +57,4 @@ void MultiInBlock::AddInboundSiblingBranch(ir::Terminator* node) {
     }
 }
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir

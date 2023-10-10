@@ -125,6 +125,12 @@ void FreeCommands(CommandIterator* commands) {
                 cmd->~ClearBufferCmd();
                 break;
             }
+            case Command::PixelLocalStorageBarrier: {
+                PixelLocalStorageBarrierCmd* cmd =
+                    commands->NextCommand<PixelLocalStorageBarrierCmd>();
+                cmd->~PixelLocalStorageBarrierCmd();
+                break;
+            }
             case Command::InsertDebugMarker: {
                 InsertDebugMarkerCmd* cmd = commands->NextCommand<InsertDebugMarkerCmd>();
                 commands->NextData<char>(cmd->length + 1);
@@ -288,6 +294,10 @@ void SkipCommand(CommandIterator* commands, Command type) {
             commands->NextCommand<ClearBufferCmd>();
             break;
 
+        case Command::PixelLocalStorageBarrier:
+            commands->NextCommand<PixelLocalStorageBarrierCmd>();
+            break;
+
         case Command::InsertDebugMarker: {
             InsertDebugMarkerCmd* cmd = commands->NextCommand<InsertDebugMarkerCmd>();
             commands->NextData<char>(cmd->length + 1);
@@ -361,8 +371,8 @@ void SkipCommand(CommandIterator* commands, Command type) {
     }
 }
 
-TimestampWrite::TimestampWrite() = default;
-TimestampWrite::~TimestampWrite() = default;
+TimestampWrites::TimestampWrites() = default;
+TimestampWrites::~TimestampWrites() = default;
 
 BeginComputePassCmd::BeginComputePassCmd() = default;
 BeginComputePassCmd::~BeginComputePassCmd() = default;

@@ -19,10 +19,10 @@
 #include <string>
 #include <utility>
 
+#include "src/tint/lang/core/evaluation_stage.h"
 #include "src/tint/lang/wgsl/ast/pipeline_stage.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/sem_helper.h"
-#include "src/tint/lang/wgsl/sem/evaluation_stage.h"
 #include "src/tint/utils/containers/hashmap.h"
 #include "src/tint/utils/containers/scope_stack.h"
 #include "src/tint/utils/containers/vector.h"
@@ -52,7 +52,7 @@ namespace tint::sem {
 class Array;
 class BlockStatement;
 class BreakIfStatement;
-class Builtin;
+class BuiltinFn;
 class Call;
 class CaseStatement;
 class ForLoopStatement;
@@ -63,18 +63,18 @@ class Statement;
 class SwitchStatement;
 class WhileStatement;
 }  // namespace tint::sem
-namespace tint::type {
+namespace tint::core::type {
 class Atomic;
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 namespace tint::resolver {
 
 /// TypeAndAddressSpace is a pair of type and address space
 struct TypeAndAddressSpace {
     /// The type
-    const type::Type* type;
+    const core::type::Type* type;
     /// The address space
-    builtin::AddressSpace address_space;
+    core::AddressSpace address_space;
 
     /// Equality operator
     /// @param other the other TypeAndAddressSpace to compare this TypeAndAddressSpace to
@@ -82,10 +82,13 @@ struct TypeAndAddressSpace {
     bool operator==(const TypeAndAddressSpace& other) const {
         return type == other.type && address_space == other.address_space;
     }
+
+    /// @returns the hash value of this object
+    std::size_t HashCode() const { return Hash(type, address_space); }
 };
 
 /// DiagnosticFilterStack is a scoped stack of diagnostic filters.
-using DiagnosticFilterStack = ScopeStack<builtin::DiagnosticRule, builtin::DiagnosticSeverity>;
+using DiagnosticFilterStack = ScopeStack<wgsl::DiagnosticRule, wgsl::DiagnosticSeverity>;
 
 /// Validation logic for various ast nodes. The validations in general should
 /// be shallow and depend on the resolver to call on children. The validations
@@ -101,8 +104,8 @@ class Validator {
     /// @param valid_type_storage_layouts a set of validated type layouts by address space
     Validator(ProgramBuilder* builder,
               SemHelper& helper,
-              const builtin::Extensions& enabled_extensions,
-              const Hashmap<const type::Type*, const Source*, 8>& atomic_composite_info,
+              const wgsl::Extensions& enabled_extensions,
+              const Hashmap<const core::type::Type*, const Source*, 8>& atomic_composite_info,
               Hashset<TypeAndAddressSpace, 8>& valid_type_storage_layouts);
     ~Validator();
 
@@ -126,7 +129,7 @@ class Validator {
     /// @param msg the diagnostic message
     /// @param source the diagnostic source
     /// @returns false if the diagnostic is an error for the given trigger rule
-    bool AddDiagnostic(builtin::DiagnosticRule rule,
+    bool AddDiagnostic(wgsl::DiagnosticRule rule,
                        const std::string& msg,
                        const Source& source) const;
 
@@ -135,29 +138,30 @@ class Validator {
 
     /// @param type the given type
     /// @returns true if the given type is a plain type
-    bool IsPlain(const type::Type* type) const;
+    bool IsPlain(const core::type::Type* type) const;
 
     /// @param type the given type
     /// @returns true if the given type is a fixed-footprint type
-    bool IsFixedFootprint(const type::Type* type) const;
+    bool IsFixedFootprint(const core::type::Type* type) const;
 
     /// @param type the given type
     /// @returns true if the given type is storable
-    bool IsStorable(const type::Type* type) const;
+    bool IsStorable(const core::type::Type* type) const;
 
     /// @param type the given type
     /// @returns true if the given type is host-shareable
-    bool IsHostShareable(const type::Type* type) const;
+    bool IsHostShareable(const core::type::Type* type) const;
 
     /// Validates pipeline stages
     /// @param entry_points the entry points to the module
     /// @returns true on success, false otherwise.
     bool PipelineStages(VectorRef<sem::Function*> entry_points) const;
 
-    /// Validates push_constant variables
+    /// Validates usages of module-scope vars.
+    /// @note Must only be called after all functions have been resolved.
     /// @param entry_points the entry points to the module
     /// @returns true on success, false otherwise.
-    bool PushConstants(VectorRef<sem::Function*> entry_points) const;
+    bool ModuleScopeVarUsages(VectorRef<sem::Function*> entry_points) const;
 
     /// Validates aliases
     /// @param alias the alias to validate
@@ -169,7 +173,7 @@ class Validator {
     /// @param el_source the source of the array element, or the array if the array does not have a
     ///        locally-declared element AST node.
     /// @returns true on success, false otherwise.
-    bool Array(const type::Array* arr, const Source& el_source) const;
+    bool Array(const sem::Array* arr, const Source& el_source) const;
 
     /// Validates an array stride attribute
     /// @param attr the stride attribute to validate
@@ -184,25 +188,25 @@ class Validator {
     /// @param a the atomic ast node
     /// @param s the atomic sem node
     /// @returns true on success, false otherwise.
-    bool Atomic(const ast::TemplatedIdentifier* a, const type::Atomic* s) const;
+    bool Atomic(const ast::TemplatedIdentifier* a, const core::type::Atomic* s) const;
 
     /// Validates a pointer type
     /// @param a the pointer ast node
     /// @param s the pointer sem node
     /// @returns true on success, false otherwise.
-    bool Pointer(const ast::TemplatedIdentifier* a, const type::Pointer* s) const;
+    bool Pointer(const ast::TemplatedIdentifier* a, const core::type::Pointer* s) const;
 
     /// Validates an assignment
     /// @param a the assignment statement
     /// @param rhs_ty the type of the right hand side
     /// @returns true on success, false otherwise.
-    bool Assignment(const ast::Statement* a, const type::Type* rhs_ty) const;
+    bool Assignment(const ast::Statement* a, const core::type::Type* rhs_ty) const;
 
     /// Validates a bitcase
     /// @param cast the bitcast expression
     /// @param to the destination type
     /// @returns true on success, false otherwise
-    bool Bitcast(const ast::BitcastExpression* cast, const type::Type* to) const;
+    bool Bitcast(const ast::BitcastExpression* cast, const core::type::Type* to) const;
 
     /// Validates a break statement
     /// @param stmt the break statement to validate
@@ -217,7 +221,7 @@ class Validator {
     /// @param is_input true if this is an input attribute
     /// @returns true on success, false otherwise.
     bool BuiltinAttribute(const ast::BuiltinAttribute* attr,
-                          const type::Type* storage_type,
+                          const core::type::Type* storage_type,
                           ast::PipelineStage stage,
                           const bool is_input) const;
 
@@ -245,7 +249,7 @@ class Validator {
     /// @param constraint the 'thing' that is imposing the contraint. e.g. "var declaration"
     /// @returns true if @p expr is evaluated in or before @p latest_stage, false otherwise
     bool EvaluationStage(const sem::ValueExpression* expr,
-                         sem::EvaluationStage latest_stage,
+                         core::EvaluationStage latest_stage,
                          std::string_view constraint) const;
 
     /// Validates a for loop
@@ -299,7 +303,7 @@ class Validator {
     /// @param storage_type the storage type of the attached variable
     /// @returns true on succes, false otherwise
     bool InterpolateAttribute(const ast::InterpolateAttribute* attr,
-                              const type::Type* storage_type) const;
+                              const core::type::Type* storage_type) const;
 
     /// Validates a builtin call
     /// @param call the builtin call to validate
@@ -319,7 +323,7 @@ class Validator {
     /// @param is_input true if this is an input variable
     /// @returns true on success, false otherwise.
     bool LocationAttribute(const ast::LocationAttribute* loc_attr,
-                           const type::Type* type,
+                           const core::type::Type* type,
                            ast::PipelineStage stage,
                            const Source& source,
                            const bool is_input = false) const;
@@ -340,13 +344,15 @@ class Validator {
     /// @param from the abstract numeric type
     /// @param source the source of the materialization
     /// @returns true on success, false otherwise
-    bool Materialize(const type::Type* to, const type::Type* from, const Source& source) const;
+    bool Materialize(const core::type::Type* to,
+                     const core::type::Type* from,
+                     const Source& source) const;
 
     /// Validates a matrix
     /// @param el_ty the matrix element type to validate
     /// @param source the source of the matrix
     /// @returns true on success, false otherwise
-    bool Matrix(const type::Type* el_ty, const Source& source) const;
+    bool Matrix(const core::type::Type* el_ty, const Source& source) const;
 
     /// Validates a function parameter
     /// @param var the variable to validate
@@ -360,8 +366,8 @@ class Validator {
     /// @param current_statement the current statement being resolved
     /// @returns true on success, false otherwise
     bool Return(const ast::ReturnStatement* ret,
-                const type::Type* func_type,
-                const type::Type* ret_type,
+                const core::type::Type* func_type,
+                const core::type::Type* ret_type,
                 sem::Statement* current_statement) const;
 
     /// Validates a list of statements
@@ -373,19 +379,19 @@ class Validator {
     /// @param t the texture to validate
     /// @param source the source of the texture
     /// @returns true on success, false otherwise
-    bool StorageTexture(const type::StorageTexture* t, const Source& source) const;
+    bool StorageTexture(const core::type::StorageTexture* t, const Source& source) const;
 
     /// Validates a sampled texture
     /// @param t the texture to validate
     /// @param source the source of the texture
     /// @returns true on success, false otherwise
-    bool SampledTexture(const type::SampledTexture* t, const Source& source) const;
+    bool SampledTexture(const core::type::SampledTexture* t, const Source& source) const;
 
     /// Validates a multisampled texture
     /// @param t the texture to validate
     /// @param source the source of the texture
     /// @returns true on success, false otherwise
-    bool MultisampledTexture(const type::MultisampledTexture* t, const Source& source) const;
+    bool MultisampledTexture(const core::type::MultisampledTexture* t, const Source& source) const;
 
     /// Validates a structure
     /// @param str the structure to validate
@@ -398,7 +404,7 @@ class Validator {
     /// @param struct_type the type of the structure
     /// @returns true on success, false otherwise
     bool StructureInitializer(const ast::CallExpression* ctor,
-                              const type::Struct* struct_type) const;
+                              const core::type::Struct* struct_type) const;
 
     /// Validates a switch statement
     /// @param s the switch to validate
@@ -433,35 +439,40 @@ class Validator {
     /// @param initializer the RHS initializer expression
     /// @returns true on succes, false otherwise
     bool VariableInitializer(const ast::Variable* v,
-                             const type::Type* storage_type,
+                             const core::type::Type* storage_type,
                              const sem::ValueExpression* initializer) const;
 
     /// Validates a vector
     /// @param el_ty the vector element type to validate
     /// @param source the source of the vector
     /// @returns true on success, false otherwise
-    bool Vector(const type::Type* el_ty, const Source& source) const;
+    bool Vector(const core::type::Type* el_ty, const Source& source) const;
 
     /// Validates an array constructor
     /// @param ctor the call expresion to validate
     /// @param arr_type the type of the array
     /// @returns true on success, false otherwise
-    bool ArrayConstructor(const ast::CallExpression* ctor, const type::Array* arr_type) const;
+    bool ArrayConstructor(const ast::CallExpression* ctor, const sem::Array* arr_type) const;
 
     /// Validates a texture builtin function
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
-    bool TextureBuiltinFunction(const sem::Call* call) const;
+    bool TextureBuiltinFn(const sem::Call* call) const;
 
     /// Validates a workgroupUniformLoad builtin function
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
     bool WorkgroupUniformLoad(const sem::Call* call) const;
 
+    /// Validates a subgroupBroadcast builtin function
+    /// @param call the builtin call to validate
+    /// @returns true on success, false otherwise
+    bool SubgroupBroadcast(const sem::Call* call) const;
+
     /// Validates an optional builtin function and its required extension.
     /// @param call the builtin call to validate
     /// @returns true on success, false otherwise
-    bool RequiredExtensionForBuiltinFunction(const sem::Call* call) const;
+    bool RequiredExtensionForBuiltinFn(const sem::Call* call) const;
 
     /// Validates that 'f16' extension is enabled for f16 usage at @p source
     /// @param source the source of the f16 usage
@@ -485,7 +496,9 @@ class Validator {
     /// @param sc the address space
     /// @param source the source of the type
     /// @returns true on success, false otherwise
-    bool AddressSpaceLayout(const type::Type* type, builtin::AddressSpace sc, Source source) const;
+    bool AddressSpaceLayout(const core::type::Type* type,
+                            core::AddressSpace sc,
+                            Source source) const;
 
     /// @returns true if the attribute list contains a
     /// ast::DisableValidationAttribute with the validation mode equal to
@@ -507,7 +520,7 @@ class Validator {
     /// @param ty the type to check
     /// @returns true if @p ty is an array with an `override` expression element count, otherwise
     ///          false.
-    bool IsArrayWithOverrideCount(const type::Type* ty) const;
+    bool IsArrayWithOverrideCount(const core::type::Type* ty) const;
 
     /// Raises an error about an array type using an `override` expression element count, outside
     /// the single allowed use of a `var<workgroup>`.
@@ -529,7 +542,7 @@ class Validator {
     /// @param size the vector dimension
     /// @param element_type scalar vector sub-element type
     /// @return pretty string representation
-    std::string VectorPretty(uint32_t size, const type::Type* element_type) const;
+    std::string VectorPretty(uint32_t size, const core::type::Type* element_type) const;
 
     /// Raises an error if combination of @p store_ty, @p access and @p address_space are not valid
     /// for a `var` or `ptr` declaration.
@@ -538,35 +551,29 @@ class Validator {
     /// @param address_space the var or pointer address space
     /// @param source the source for the error
     /// @returns true on success, false if an error was raised.
-    bool CheckTypeAccessAddressSpace(const type::Type* store_ty,
-                                     builtin::Access access,
-                                     builtin::AddressSpace address_space,
+    bool CheckTypeAccessAddressSpace(const core::type::Type* store_ty,
+                                     core::Access access,
+                                     core::AddressSpace address_space,
                                      VectorRef<const tint::ast::Attribute*> attributes,
                                      const Source& source) const;
+
+    /// Raises an error if the entry_point @p entry_point uses two or more module-scope 'var's with
+    /// the address space @p space.
+    /// @param entry_point the entry point
+    /// @param space the address space
+    /// @returns true if no duplicate uses were found or false if an error was raised.
+    bool CheckNoMultipleModuleScopeVarsOfAddressSpace(sem::Function* entry_point,
+                                                      core::AddressSpace space) const;
+
     SymbolTable& symbols_;
     diag::List& diagnostics_;
     SemHelper& sem_;
     DiagnosticFilterStack diagnostic_filters_;
-    const builtin::Extensions& enabled_extensions_;
-    const Hashmap<const type::Type*, const Source*, 8>& atomic_composite_info_;
+    const wgsl::Extensions& enabled_extensions_;
+    const Hashmap<const core::type::Type*, const Source*, 8>& atomic_composite_info_;
     Hashset<TypeAndAddressSpace, 8>& valid_type_storage_layouts_;
 };
 
 }  // namespace tint::resolver
-
-namespace std {
-
-/// Custom std::hash specialization for tint::resolver::TypeAndAddressSpace.
-template <>
-class hash<tint::resolver::TypeAndAddressSpace> {
-  public:
-    /// @param tas the TypeAndAddressSpace
-    /// @return the hash value
-    inline std::size_t operator()(const tint::resolver::TypeAndAddressSpace& tas) const {
-        return Hash(tas.type, tas.address_space);
-    }
-};
-
-}  // namespace std
 
 #endif  // SRC_TINT_LANG_WGSL_RESOLVER_VALIDATOR_H_

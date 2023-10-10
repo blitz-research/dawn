@@ -62,7 +62,7 @@ def main():
     logged_errors = ""
 
     for in_file in list_spvasm_files(input_dir):
-        if in_file.endswith(".expected.spvasm"):
+        if ".expected." in in_file:
             continue
         out_file = os.path.splitext(
             corpus_dir + os.sep +
@@ -81,7 +81,7 @@ def main():
 
     if num_errors > max_tolerated_errors:
         print("Too many (" + str(num_errors) +
-              ") errors occured while generating the SPIR-V corpus.")
+              ") errors occurred while generating the SPIR-V corpus.")
         print(logged_errors)
         return 1
 

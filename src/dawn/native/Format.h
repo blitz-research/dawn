@@ -93,7 +93,7 @@ struct AspectInfo {
 
 // The number of formats Dawn knows about. Asserts in BuildFormatTable ensure that this is the
 // exact number of known format.
-static constexpr uint32_t kKnownFormatCount = 95;
+static constexpr uint32_t kKnownFormatCount = 103;
 
 using FormatIndex = TypedInteger<struct FormatIndexT, uint32_t>;
 
@@ -112,8 +112,10 @@ struct Format {
     // A format can be known but not supported because it is part of a disabled extension.
     UnsupportedReason unsupportedReason;
     bool supportsStorageUsage = false;
+    bool supportsReadWriteStorageUsage = false;
     bool supportsMultisample = false;
     bool supportsResolveTarget = false;
+    bool supportsStorageAttachment = false;
     Aspect aspects{};
     // Only used for renderable color formats:
     uint8_t componentCount = 0;                  // number of color channels

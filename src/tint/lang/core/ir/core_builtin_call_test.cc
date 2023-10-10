@@ -15,18 +15,18 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/core/ir/block_param.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using IR_CoreBuiltinCallTest = IRTestHelper;
 
 TEST_F(IR_CoreBuiltinCallTest, Usage) {
     auto* arg1 = b.Constant(1_u);
     auto* arg2 = b.Constant(2_u);
-    auto* builtin = b.Call(mod.Types().f32(), builtin::Function::kAbs, arg1, arg2);
+    auto* builtin = b.Call(mod.Types().f32(), core::BuiltinFn::kAbs, arg1, arg2);
 
     EXPECT_THAT(arg1->Usages(), testing::UnorderedElementsAre(Usage{builtin, 0u}));
     EXPECT_THAT(arg2->Usages(), testing::UnorderedElementsAre(Usage{builtin, 1u}));
@@ -35,7 +35,7 @@ TEST_F(IR_CoreBuiltinCallTest, Usage) {
 TEST_F(IR_CoreBuiltinCallTest, Result) {
     auto* arg1 = b.Constant(1_u);
     auto* arg2 = b.Constant(2_u);
-    auto* builtin = b.Call(mod.Types().f32(), builtin::Function::kAbs, arg1, arg2);
+    auto* builtin = b.Call(mod.Types().f32(), core::BuiltinFn::kAbs, arg1, arg2);
 
     EXPECT_TRUE(builtin->HasResults());
     EXPECT_FALSE(builtin->HasMultiResults());
@@ -48,7 +48,7 @@ TEST_F(IR_CoreBuiltinCallTest, Fail_NullType) {
         {
             Module mod;
             Builder b{mod};
-            b.Call(nullptr, builtin::Function::kAbs);
+            b.Call(static_cast<type::Type*>(nullptr), core::BuiltinFn::kAbs);
         },
         "");
 }
@@ -58,7 +58,7 @@ TEST_F(IR_CoreBuiltinCallTest, Fail_NoneFunction) {
         {
             Module mod;
             Builder b{mod};
-            b.Call(mod.Types().f32(), builtin::Function::kNone);
+            b.Call(mod.Types().f32(), core::BuiltinFn::kNone);
         },
         "");
 }
@@ -68,10 +68,44 @@ TEST_F(IR_CoreBuiltinCallTest, Fail_TintMaterializeFunction) {
         {
             Module mod;
             Builder b{mod};
-            b.Call(mod.Types().f32(), builtin::Function::kTintMaterialize);
+            b.Call(mod.Types().f32(), core::BuiltinFn::kTintMaterialize);
         },
         "");
 }
 
+TEST_F(IR_CoreBuiltinCallTest, Clone) {
+    auto* builtin = b.Call(mod.Types().f32(), core::BuiltinFn::kAbs, 1_u, 2_u);
+
+    auto* new_b = clone_ctx.Clone(builtin);
+
+    EXPECT_NE(builtin, new_b);
+    EXPECT_NE(builtin->Result(), new_b->Result());
+    EXPECT_EQ(mod.Types().f32(), new_b->Result()->Type());
+
+    EXPECT_EQ(core::BuiltinFn::kAbs, new_b->Func());
+
+    auto args = new_b->Args();
+    EXPECT_EQ(2u, args.Length());
+
+    auto* val0 = args[0]->As<Constant>()->Value();
+    EXPECT_EQ(1_u, val0->As<core::constant::Scalar<u32>>()->ValueAs<u32>());
+
+    auto* val1 = args[1]->As<Constant>()->Value();
+    EXPECT_EQ(2_u, val1->As<core::constant::Scalar<u32>>()->ValueAs<u32>());
+}
+
+TEST_F(IR_CoreBuiltinCallTest, CloneNoArgs) {
+    auto* builtin = b.Call(mod.Types().f32(), core::BuiltinFn::kAbs);
+
+    auto* new_b = clone_ctx.Clone(builtin);
+    EXPECT_NE(builtin->Result(), new_b->Result());
+    EXPECT_EQ(mod.Types().f32(), new_b->Result()->Type());
+
+    EXPECT_EQ(core::BuiltinFn::kAbs, new_b->Func());
+
+    auto args = new_b->Args();
+    EXPECT_TRUE(args.IsEmpty());
+}
+
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

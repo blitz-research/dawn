@@ -14,7 +14,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
 
@@ -73,7 +73,7 @@ TEST_F(ModuleTest, Assert_DifferentGenerationID_GlobalVariable) {
         {
             ProgramBuilder b1;
             ProgramBuilder b2;
-            b1.AST().AddGlobalVariable(b2.Var("var", b2.ty.i32(), builtin::AddressSpace::kPrivate));
+            b1.AST().AddGlobalVariable(b2.Var("var", b2.ty.i32(), core::AddressSpace::kPrivate));
         },
         "internal compiler error");
 }
@@ -93,7 +93,7 @@ TEST_F(ModuleTest, CloneOrder) {
         ProgramBuilder b;
         b.Func("F", {}, b.ty.void_(), {});
         b.Alias("A", b.ty.u32());
-        b.GlobalVar("V", b.ty.i32(), builtin::AddressSpace::kPrivate);
+        b.GlobalVar("V", b.ty.i32(), core::AddressSpace::kPrivate);
         return resolver::Resolve(b);
     }();
 
@@ -132,10 +132,10 @@ TEST_F(ModuleTest, CloneOrder) {
 }
 
 TEST_F(ModuleTest, Directives) {
-    auto* enable_1 = Enable(builtin::Extension::kF16);
-    auto* diagnostic_1 = DiagnosticDirective(builtin::DiagnosticSeverity::kWarning, "foo");
-    auto* enable_2 = Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
-    auto* diagnostic_2 = DiagnosticDirective(builtin::DiagnosticSeverity::kOff, "bar");
+    auto* enable_1 = Enable(wgsl::Extension::kF16);
+    auto* diagnostic_1 = DiagnosticDirective(wgsl::DiagnosticSeverity::kWarning, "foo");
+    auto* enable_2 = Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
+    auto* diagnostic_2 = DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "bar");
 
     Program program(std::move(*this));
     EXPECT_THAT(program.AST().GlobalDeclarations(), ::testing::ContainerEq(tint::Vector{

@@ -18,11 +18,11 @@
 #include <unordered_map>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/function.h"
+#include "src/tint/api/common/binding_point.h"
+#include "src/tint/api/options/external_texture.h"
+#include "src/tint/lang/core/builtin_fn.h"
 #include "src/tint/lang/wgsl/ast/struct_member.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
-#include "src/tint/lang/wgsl/sem/external_texture.h"
-#include "tint/binding_point.h"
 
 namespace tint::ast::transform {
 
@@ -41,12 +41,12 @@ class MultiplanarExternalTexture final : public Castable<MultiplanarExternalText
   public:
     /// This struct identifies the binding groups and locations for new bindings to
     /// use when transforming a texture_external instance.
-    using BindingPoints = sem::external_texture::BindingPoints;
+    using BindingPoints = ExternalTextureOptions::BindingPoints;
 
     /// BindingsMap is a map where the key is the binding location of a
     /// texture_external and the value is a struct containing the desired
     /// locations for new bindings expanded from the texture_external instance.
-    using BindingsMap = sem::external_texture::BindingsMap;
+    using BindingsMap = ExternalTextureOptions::BindingsMap;
 
     /// NewBindingPoints is consumed by the MultiplanarExternalTexture transform.
     /// Data holds information about location of each texture_external binding and
@@ -69,7 +69,7 @@ class MultiplanarExternalTexture final : public Castable<MultiplanarExternalText
     ~MultiplanarExternalTexture() override;
 
     /// @copydoc Transform::Apply
-    ApplyResult Apply(const Program* program,
+    ApplyResult Apply(const Program& program,
                       const DataMap& inputs,
                       DataMap& outputs) const override;
 

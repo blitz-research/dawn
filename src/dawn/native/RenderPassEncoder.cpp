@@ -145,7 +145,7 @@ void RenderPassEncoder::APIEnd() {
 }
 
 void RenderPassEncoder::End() {
-    ASSERT(GetDevice()->IsLockedByCurrentThreadIfNeeded());
+    DAWN_ASSERT(GetDevice()->IsLockedByCurrentThreadIfNeeded());
 
     if (mEnded && IsValidationEnabled()) {
         GetDevice()->HandleError(DAWN_VALIDATION_ERROR("%s was already ended.", this));
@@ -438,6 +438,21 @@ void RenderPassEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t query
             return {};
         },
         "encoding %s.WriteTimestamp(%s, %u).", this, querySet, queryIndex);
+}
+
+void RenderPassEncoder::APIPixelLocalStorageBarrier() {
+    mEncodingContext->TryEncode(
+        this,
+        [&](CommandAllocator* allocator) -> MaybeError {
+            if (IsValidationEnabled()) {
+                DAWN_INVALID_IF(!GetAttachmentState()->HasPixelLocalStorage(),
+                                "%s does not define any pixel local storage.", this);
+            }
+
+            allocator->Allocate<PixelLocalStorageBarrierCmd>(Command::PixelLocalStorageBarrier);
+            return {};
+        },
+        "encoding %s.PixelLocalStorageBarrier().", this);
 }
 
 }  // namespace dawn::native

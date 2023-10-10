@@ -14,17 +14,19 @@
 
 #include "src/tint/lang/core/ir/load.h"
 
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Load);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Load);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 Load::Load(InstructionResult* result, Value* from) {
     flags_.Add(Flag::kSequenced);
 
-    TINT_ASSERT(from->Type()->Is<type::Pointer>());
+    TINT_ASSERT(from->Type()->Is<core::type::Pointer>());
     TINT_ASSERT(from && from->Type()->UnwrapPtr() == result->Type());
 
     AddOperand(Load::kFromOperandOffset, from);
@@ -33,4 +35,10 @@ Load::Load(InstructionResult* result, Value* from) {
 
 Load::~Load() = default;
 
-}  // namespace tint::ir
+Load* Load::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto* from = ctx.Remap(From());
+    return ctx.ir.instructions.Create<Load>(new_result, from);
+}
+
+}  // namespace tint::core::ir

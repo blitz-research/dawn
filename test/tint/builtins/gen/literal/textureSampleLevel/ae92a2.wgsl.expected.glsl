@@ -4,8 +4,13 @@ SKIP: FAILED
 
 uniform highp samplerCubeShadow arg_0_arg_1;
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  float inner;
+} prevent_dce;
+
 void textureSampleLevel_ae92a2() {
   float res = textureLod(arg_0_arg_1, vec4(vec3(1.0f), 0.0f), float(1u));
+  prevent_dce.inner = res;
 }
 
 vec4 vertex_main() {
@@ -22,19 +27,25 @@ void main() {
   return;
 }
 Error parsing GLSL shader:
-ERROR: 0:6: 'textureLod' : no matching overloaded function found 
-ERROR: 0:6: '' : compilation terminated 
-ERROR: 2 compilation errors.  No code generated.
+ERROR: 0:10: 'textureLod(..., float lod)' : required extension not requested: GL_EXT_texture_shadow_lod
+ERROR: 0:10: 'textureLod(..., float lod)' : GL_EXT_texture_shadow_lod not supported for this ES version 
+ERROR: 0:10: '' : compilation terminated 
+ERROR: 3 compilation errors.  No code generated.
 
 
 
 #version 310 es
-precision mediump float;
+precision highp float;
 
 uniform highp samplerCubeShadow arg_0_arg_1;
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  float inner;
+} prevent_dce;
+
 void textureSampleLevel_ae92a2() {
   float res = textureLod(arg_0_arg_1, vec4(vec3(1.0f), 0.0f), float(1u));
+  prevent_dce.inner = res;
 }
 
 void fragment_main() {
@@ -46,9 +57,10 @@ void main() {
   return;
 }
 Error parsing GLSL shader:
-ERROR: 0:7: 'textureLod' : no matching overloaded function found 
-ERROR: 0:7: '' : compilation terminated 
-ERROR: 2 compilation errors.  No code generated.
+ERROR: 0:11: 'textureLod(..., float lod)' : required extension not requested: GL_EXT_texture_shadow_lod
+ERROR: 0:11: 'textureLod(..., float lod)' : GL_EXT_texture_shadow_lod not supported for this ES version 
+ERROR: 0:11: '' : compilation terminated 
+ERROR: 3 compilation errors.  No code generated.
 
 
 
@@ -56,8 +68,13 @@ ERROR: 2 compilation errors.  No code generated.
 
 uniform highp samplerCubeShadow arg_0_arg_1;
 
+layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+  float inner;
+} prevent_dce;
+
 void textureSampleLevel_ae92a2() {
   float res = textureLod(arg_0_arg_1, vec4(vec3(1.0f), 0.0f), float(1u));
+  prevent_dce.inner = res;
 }
 
 void compute_main() {
@@ -70,9 +87,10 @@ void main() {
   return;
 }
 Error parsing GLSL shader:
-ERROR: 0:6: 'textureLod' : no matching overloaded function found 
-ERROR: 0:6: '' : compilation terminated 
-ERROR: 2 compilation errors.  No code generated.
+ERROR: 0:10: 'textureLod(..., float lod)' : required extension not requested: GL_EXT_texture_shadow_lod
+ERROR: 0:10: 'textureLod(..., float lod)' : GL_EXT_texture_shadow_lod not supported for this ES version 
+ERROR: 0:10: '' : compilation terminated 
+ERROR: 3 compilation errors.  No code generated.
 
 
 

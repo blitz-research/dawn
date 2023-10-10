@@ -125,7 +125,7 @@ MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
     DAWN_TRY(GetDevice()->ValidateObject(group));
 
     // Dynamic offsets count must match the number required by the layout perfectly.
-    const BindGroupLayoutBase* layout = group->GetLayout();
+    const BindGroupLayoutInternalBase* layout = group->GetLayout();
     DAWN_INVALID_IF(
         layout->GetDynamicBufferCount() != dynamicOffsets.size(),
         "The number of dynamic offsets (%u) does not match the number of dynamic buffers (%u) "
@@ -137,9 +137,9 @@ MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
         const BindingInfo& bindingInfo = layout->GetBindingInfo(i);
 
         // BGL creation sorts bindings such that the dynamic buffer bindings are first.
-        // ASSERT that this true.
-        ASSERT(bindingInfo.bindingType == BindingInfoType::Buffer);
-        ASSERT(bindingInfo.buffer.hasDynamicOffset);
+        // DAWN_ASSERT that this true.
+        DAWN_ASSERT(bindingInfo.bindingType == BindingInfoType::Buffer);
+        DAWN_ASSERT(bindingInfo.buffer.hasDynamicOffset);
 
         uint64_t requiredAlignment;
         switch (bindingInfo.buffer.type) {
@@ -152,7 +152,7 @@ MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
                 requiredAlignment = GetDevice()->GetLimits().v1.minStorageBufferOffsetAlignment;
                 break;
             case wgpu::BufferBindingType::Undefined:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         DAWN_INVALID_IF(!IsAligned(dynamicOffsets[i], requiredAlignment),
@@ -163,8 +163,8 @@ MaybeError ProgrammableEncoder::ValidateSetBindGroup(BindGroupIndex index,
 
         // During BindGroup creation, validation ensures binding offset + binding size
         // <= buffer size.
-        ASSERT(bufferBinding.buffer->GetSize() >= bufferBinding.size);
-        ASSERT(bufferBinding.buffer->GetSize() - bufferBinding.size >= bufferBinding.offset);
+        DAWN_ASSERT(bufferBinding.buffer->GetSize() >= bufferBinding.size);
+        DAWN_ASSERT(bufferBinding.buffer->GetSize() - bufferBinding.size >= bufferBinding.offset);
 
         if ((dynamicOffsets[i] >
              bufferBinding.buffer->GetSize() - bufferBinding.offset - bufferBinding.size)) {

@@ -20,7 +20,7 @@
 #include "src/tint/utils/text/string_stream.h"
 #include "src/tint/utils/traits/traits.h"
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 
 /// Records the properties of a sampler or texture based on how it's used
 /// by image instructions inside function bodies.
@@ -66,9 +66,11 @@ class Usage {
     /// @returns true if this usage is a dpeth texture usage.
     bool IsDepthTexture() const { return is_depth_; }
     /// @returns true if this usage is a read-only storage texture
-    bool IsStorageReadTexture() const { return is_storage_read_; }
+    bool IsStorageReadOnlyTexture() const { return is_storage_read_ && !is_storage_write_; }
+    /// @returns true if this usage is a read-write storage texture
+    bool IsStorageReadWriteTexture() const { return is_storage_read_ && is_storage_write_; }
     /// @returns true if this usage is a write-only storage texture
-    bool IsStorageWriteTexture() const { return is_storage_write_; }
+    bool IsStorageWriteOnlyTexture() const { return is_storage_write_ && !is_storage_read_; }
 
     /// @returns true if this is a storage texture.
     bool IsStorageTexture() const { return is_storage_read_ || is_storage_write_; }
@@ -134,6 +136,6 @@ auto& operator<<(STREAM& out, const Usage& u) {
     return u.operator<<(out);
 }
 
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser
 
 #endif  // SRC_TINT_LANG_SPIRV_READER_AST_PARSER_USAGE_H_

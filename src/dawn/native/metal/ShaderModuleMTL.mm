@@ -14,7 +14,7 @@
 
 #include "dawn/native/metal/ShaderModuleMTL.h"
 
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/CacheRequest.h"
 #include "dawn/native/Serializable.h"
 #include "dawn/native/TintUtils.h"
@@ -117,13 +117,12 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
     using BindingPoint = tint::BindingPoint;
 
     tint::BindingRemapperOptions bindingRemapper;
-    bindingRemapper.allow_collisions = true;
 
     tint::ArrayLengthFromUniformOptions arrayLengthFromUniform;
     arrayLengthFromUniform.ubo_binding = {0, kBufferLengthBufferSlot};
 
     for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
-        const BindGroupLayoutBase::BindingMap& bindingMap =
+        const BindGroupLayoutInternalBase::BindingMap& bindingMap =
             layout->GetBindGroupLayout(group)->GetBindingMap();
         for (const auto [bindingNumber, bindingIndex] : bindingMap) {
             const BindingInfo& bindingInfo =
@@ -280,27 +279,28 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
             options.external_texture_options = r.externalTextureOptions;
 
             TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::msl::writer::Generate");
-            auto result = tint::msl::writer::Generate(&program, options);
-            DAWN_INVALID_IF(!result.success, "An error occured while generating MSL: %s.",
-                            result.error);
+            auto result = tint::msl::writer::Generate(program, options);
+            DAWN_INVALID_IF(!result, "An error occurred while generating MSL:\n%s",
+                            result.Failure().reason.str());
 
             // Metal uses Clang to compile the shader as C++14. Disable everything in the -Wall
             // category. -Wunused-variable in particular comes up a lot in generated code, and some
             // (old?) Metal drivers accidentally treat it as a MTLLibraryErrorCompileError instead
             // of a warning.
-            result.msl = R"(
+            auto msl = std::move(result->msl);
+            msl = R"(
                 #ifdef __clang__
                 #pragma clang diagnostic ignored "-Wall"
                 #endif
-            )" + result.msl;
+            )" + msl;
 
             auto workgroupAllocations =
-                std::move(result.workgroup_allocations[remappedEntryPointName]);
+                std::move(result->workgroup_allocations.at(remappedEntryPointName));
             return MslCompilation{{
-                std::move(result.msl),
+                std::move(msl),
                 std::move(remappedEntryPointName),
-                result.needs_storage_buffer_sizes,
-                result.has_invariant_attribute,
+                result->needs_storage_buffer_sizes,
+                result->has_invariant_attribute,
                 std::move(workgroupAllocations),
                 localSize,
             }};
@@ -326,14 +326,14 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
                                         const RenderPipeline* renderPipeline) {
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "ShaderModuleMTL::CreateFunction");
 
-    ASSERT(!IsError());
-    ASSERT(out);
+    DAWN_ASSERT(!IsError());
+    DAWN_ASSERT(out);
 
     const char* entryPointName = programmableStage.entryPoint.c_str();
 
     // Vertex stages must specify a renderPipeline
     if (stage == SingleShaderStage::Vertex) {
-        ASSERT(renderPipeline != nullptr);
+        DAWN_ASSERT(renderPipeline != nullptr);
     }
 
     CacheResult<MslCompilation> mslCompilation;
@@ -354,6 +354,8 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
             (*compileOptions).preserveInvariance = true;
         }
     }
+    (*compileOptions).fastMathEnabled = true;
+
     auto mtlDevice = ToBackend(GetDevice())->GetMTLDevice();
     NSError* error = nullptr;
 
@@ -370,7 +372,7 @@ MaybeError ShaderModule::CreateFunction(SingleShaderStage stage,
                         "Unable to create library object: %s.",
                         [error.localizedDescription UTF8String]);
     }
-    ASSERT(library != nil);
+    DAWN_ASSERT(library != nil);
 
     NSRef<NSString> name = AcquireNSRef(
         [[NSString alloc] initWithUTF8String:mslCompilation->remappedEntryPointName.c_str()]);

@@ -31,7 +31,7 @@ class ErrorQuerySet final : public QuerySetBase {
         : QuerySetBase(device, descriptor, ObjectBase::kError) {}
 
   private:
-    void DestroyImpl() override { UNREACHABLE(); }
+    void DestroyImpl() override { DAWN_UNREACHABLE(); }
 };
 
 }  // anonymous namespace
@@ -47,7 +47,7 @@ MaybeError ValidateQuerySetDescriptor(DeviceBase* device, const QuerySetDescript
 
     switch (descriptor->type) {
         case wgpu::QueryType::Occlusion:
-            DAWN_INVALID_IF(descriptor->pipelineStatisticsCount != 0,
+            DAWN_INVALID_IF(descriptor->pipelineStatisticCount != 0,
                             "Pipeline statistics specified for a query of type %s.",
                             descriptor->type);
             break;
@@ -63,11 +63,11 @@ MaybeError ValidateQuerySetDescriptor(DeviceBase* device, const QuerySetDescript
                 !device->HasFeature(Feature::PipelineStatisticsQuery),
                 "Pipeline statistics query set created without the feature being enabled.");
 
-            DAWN_INVALID_IF(descriptor->pipelineStatisticsCount == 0,
+            DAWN_INVALID_IF(descriptor->pipelineStatisticCount == 0,
                             "Pipeline statistics query set created with 0 statistics.");
 
             std::set<wgpu::PipelineStatisticName> pipelineStatisticsSet;
-            for (uint32_t i = 0; i < descriptor->pipelineStatisticsCount; i++) {
+            for (uint32_t i = 0; i < descriptor->pipelineStatisticCount; i++) {
                 DAWN_TRY(ValidatePipelineStatisticName(descriptor->pipelineStatistics[i]));
 
                 auto [_, inserted] =
@@ -86,7 +86,7 @@ MaybeError ValidateQuerySetDescriptor(DeviceBase* device, const QuerySetDescript
                                 !device->HasFeature(Feature::TimestampQueryInsidePasses),
                             "Timestamp query set created without the feature being enabled.");
 
-            DAWN_INVALID_IF(descriptor->pipelineStatisticsCount != 0,
+            DAWN_INVALID_IF(descriptor->pipelineStatisticCount != 0,
                             "Pipeline statistics specified for a query of type %s.",
                             descriptor->type);
             break;
@@ -103,7 +103,7 @@ QuerySetBase::QuerySetBase(DeviceBase* device, const QuerySetDescriptor* descrip
       mQueryType(descriptor->type),
       mQueryCount(descriptor->count),
       mState(QuerySetState::Available) {
-    for (uint32_t i = 0; i < descriptor->pipelineStatisticsCount; i++) {
+    for (uint32_t i = 0; i < descriptor->pipelineStatisticCount; i++) {
         mPipelineStatistics.push_back(descriptor->pipelineStatistics[i]);
     }
 
@@ -120,10 +120,17 @@ QuerySetBase::QuerySetBase(DeviceBase* device,
 
 QuerySetBase::~QuerySetBase() {
     // Uninitialized or already destroyed
-    ASSERT(mState == QuerySetState::Unavailable || mState == QuerySetState::Destroyed);
+    DAWN_ASSERT(mState == QuerySetState::Unavailable || mState == QuerySetState::Destroyed);
 }
 
 void QuerySetBase::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the query set is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the query set.
+    // - It may be called when the last ref to the query set is dropped and it
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the query set since there are no other live refs.
     mState = QuerySetState::Destroyed;
 }
 
@@ -157,7 +164,7 @@ void QuerySetBase::SetQueryAvailability(uint32_t index, bool available) {
 }
 
 MaybeError QuerySetBase::ValidateCanUseInSubmitNow() const {
-    ASSERT(!IsError());
+    DAWN_ASSERT(!IsError());
     DAWN_INVALID_IF(mState == QuerySetState::Destroyed, "%s used while destroyed.", this);
     return {};
 }

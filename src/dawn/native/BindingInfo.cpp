@@ -51,7 +51,7 @@ void IncrementBindingCounts(BindingCounts* bindingCounts, const BindGroupLayoutE
 
             case wgpu::BufferBindingType::Undefined:
                 // Can't get here due to the enclosing if statement.
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
     } else if (entry.sampler.type != wgpu::SamplerBindingType::Undefined) {
@@ -68,7 +68,7 @@ void IncrementBindingCounts(BindingCounts* bindingCounts, const BindGroupLayoutE
         }
     }
 
-    ASSERT(perStageBindingCountMember != nullptr);
+    DAWN_ASSERT(perStageBindingCountMember != nullptr);
     for (SingleShaderStage stage : IterateStages(entry.visibility)) {
         ++(bindingCounts->perStage[stage].*perStageBindingCountMember);
     }

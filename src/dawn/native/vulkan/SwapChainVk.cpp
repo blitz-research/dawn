@@ -29,7 +29,7 @@
 #include "dawn/native/vulkan/VulkanError.h"
 
 #if defined(DAWN_USE_X11)
-#include "dawn/native/XlibXcbFunctions.h"
+#include "dawn/native/X11Functions.h"
 #endif  // defined(DAWN_USE_X11)
 
 namespace dawn::native::vulkan {
@@ -88,7 +88,7 @@ ResultOrError<VkSurfaceKHR> CreateVulkanSurface(const PhysicalDevice* physicalDe
 #if DAWN_PLATFORM_IS(ANDROID)
         case Surface::Type::AndroidWindow: {
             if (info.HasExt(InstanceExt::AndroidSurface)) {
-                ASSERT(surface->GetAndroidNativeWindow() != nullptr);
+                DAWN_ASSERT(surface->GetAndroidNativeWindow() != nullptr);
 
                 VkAndroidSurfaceCreateInfoKHR createInfo;
                 createInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
@@ -149,18 +149,17 @@ ResultOrError<VkSurfaceKHR> CreateVulkanSurface(const PhysicalDevice* physicalDe
             // Fall back to using XCB surfaces if the Xlib extension isn't available.
             // See https://xcb.freedesktop.org/MixingCalls/ for more information about
             // interoperability between Xlib and XCB
-            const XlibXcbFunctions* xlibXcb =
-                physicalDevice->GetInstance()->GetOrCreateXlibXcbFunctions();
-            ASSERT(xlibXcb != nullptr);
+            const X11Functions* x11 = physicalDevice->GetInstance()->GetOrLoadX11Functions();
+            DAWN_ASSERT(x11 != nullptr);
 
-            if (info.HasExt(InstanceExt::XcbSurface) && xlibXcb->IsLoaded()) {
+            if (info.HasExt(InstanceExt::XcbSurface) && x11->IsX11XcbLoaded()) {
                 VkXcbSurfaceCreateInfoKHR createInfo;
                 createInfo.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
                 createInfo.pNext = nullptr;
                 createInfo.flags = 0;
                 // The XCB connection lives as long as the X11 display.
                 createInfo.connection =
-                    xlibXcb->xGetXCBConnection(static_cast<Display*>(surface->GetXDisplay()));
+                    x11->xGetXCBConnection(static_cast<Display*>(surface->GetXDisplay()));
                 createInfo.window = surface->GetXWindow();
 
                 VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
@@ -189,7 +188,7 @@ VkPresentModeKHR ToVulkanPresentMode(wgpu::PresentMode mode) {
         case wgpu::PresentMode::Mailbox:
             return VK_PRESENT_MODE_MAILBOX_KHR;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 uint32_t MinImageCountForPresentMode(VkPresentModeKHR mode) {
@@ -202,7 +201,7 @@ uint32_t MinImageCountForPresentMode(VkPresentModeKHR mode) {
         default:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 }  // anonymous namespace
@@ -407,7 +406,7 @@ ResultOrError<SwapChain::Config> SwapChain::ChooseConfig(
             modeIndex++;
         }
 
-        ASSERT(modeIndex < kPresentModeFallbacks.size());
+        DAWN_ASSERT(modeIndex < kPresentModeFallbacks.size());
         config.presentMode = kPresentModeFallbacks[modeIndex];
     }
 
@@ -480,8 +479,8 @@ ResultOrError<SwapChain::Config> SwapChain::ChooseConfig(
 
     // Choose the number of images for the swapchain= and clamp it to the min and max from the
     // surface capabilities. maxImageCount = 0 means there is no limit.
-    ASSERT(surfaceInfo.capabilities.maxImageCount == 0 ||
-           surfaceInfo.capabilities.minImageCount <= surfaceInfo.capabilities.maxImageCount);
+    DAWN_ASSERT(surfaceInfo.capabilities.maxImageCount == 0 ||
+                surfaceInfo.capabilities.minImageCount <= surfaceInfo.capabilities.maxImageCount);
     uint32_t targetCount = MinImageCountForPresentMode(config.presentMode);
 
     targetCount = std::max(targetCount, surfaceInfo.capabilities.minImageCount);
@@ -552,13 +551,13 @@ MaybeError SwapChain::PresentImpl() {
         region.srcSubresource.baseArrayLayer = 0;
         region.srcSubresource.layerCount = 1;
         region.srcOffsets[0] = {0, 0, 0};
-        region.srcOffsets[1] = {static_cast<int32_t>(mBlitTexture->GetWidth()),
-                                static_cast<int32_t>(mBlitTexture->GetHeight()), 1};
+        region.srcOffsets[1] = {static_cast<int32_t>(mBlitTexture->GetWidth(Aspect::Color)),
+                                static_cast<int32_t>(mBlitTexture->GetHeight(Aspect::Color)), 1};
 
         region.dstSubresource = region.srcSubresource;
         region.dstOffsets[0] = {0, 0, 0};
-        region.dstOffsets[1] = {static_cast<int32_t>(mTexture->GetWidth()),
-                                static_cast<int32_t>(mTexture->GetHeight()), 1};
+        region.dstOffsets[1] = {static_cast<int32_t>(mTexture->GetWidth(Aspect::Color)),
+                                static_cast<int32_t>(mTexture->GetHeight(Aspect::Color)), 1};
 
         device->fn.CmdBlitImage(recordingContext->commandBuffer, mBlitTexture->GetHandle(),
                                 mBlitTexture->GetCurrentLayoutForSwapChain(), mTexture->GetHandle(),
@@ -599,7 +598,7 @@ MaybeError SwapChain::PresentImpl() {
     mTexture = nullptr;
 
     VkResult result =
-        VkResult::WrapUnsafe(device->fn.QueuePresentKHR(device->GetQueue(), &presentInfo));
+        VkResult::WrapUnsafe(device->fn.QueuePresentKHR(device->GetVkQueue(), &presentInfo));
 
     switch (result) {
         case VK_SUCCESS:

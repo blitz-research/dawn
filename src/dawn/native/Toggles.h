@@ -60,7 +60,6 @@ enum class Toggle {
     EmitHLSLDebugSymbols,
     DisallowSpirv,
     DumpShaders,
-    ForceWGSLStep,
     DisableWorkgroupInit,
     DisableSymbolRenaming,
     UseUserDefinedLabelsInBackend,
@@ -68,6 +67,7 @@ enum class Toggle {
     FxcOptimizations,
     RecordDetailedTimingInTraceEvents,
     DisableTimestampQueryConversion,
+    TimestampQuantization,
     ClearBufferBeforeResolveQueries,
     VulkanUseZeroInitializeWorkgroupMemoryExtension,
     D3D12SplitBufferTextureCopyForRowsPerImagePaddings,
@@ -81,7 +81,7 @@ enum class Toggle {
     D3D12UseTempBufferInTextureToTextureCopyBetweenDifferentDimensions,
     ApplyClearBigIntegerColorValueWithDraw,
     MetalUseMockBlitEncoderForWriteTimestamp,
-    VulkanSplitCommandBufferOnDepthStencilComputeSampleAfterRenderPass,
+    VulkanSplitCommandBufferOnComputePassAfterRenderPass,
     DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment,
     MetalUseCombinedDepthStencilFormatForStencil8,
     MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
@@ -95,6 +95,7 @@ enum class Toggle {
     UseBlitForStencilTextureToBufferCopy,
     UseBlitForSnormTextureToBufferCopy,
     UseBlitForBGRA8UnormTextureToBufferCopy,
+    UseBlitForRGB9E5UfloatTextureToBufferCopy,
     D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
     D3D12PolyfillReflectVec2F32,
     VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
@@ -103,6 +104,10 @@ enum class Toggle {
     VulkanUseBufferRobustAccess2,
     D3D12Use64KBAlignedMSAATexture,
     ResolveMultipleAttachmentInSeparatePasses,
+    D3D12CreateNotZeroedHeap,
+    D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
+    UseTintIR,
+    D3DDisableIEEEStrictness,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
@@ -188,6 +193,9 @@ class TogglesInfo {
   public:
     TogglesInfo();
     ~TogglesInfo();
+
+    // Retrieves all fo the ToggleInfo information
+    static std::vector<const ToggleInfo*> AllToggleInfos();
 
     // Used to query the details of a toggle. Return nullptr if toggleName is not a valid name
     // of a toggle supported in Dawn.

@@ -26,6 +26,7 @@
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
+#include "dawn/platform/DawnPlatform.h"
 
 namespace dawn::native::d3d12 {
 
@@ -118,13 +119,15 @@ bool PhysicalDevice::AreTimestampQueriesSupported() const {
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::TextureCompressionBC);
-    EnableFeature(Feature::MultiPlanarFormats);
+    EnableFeature(Feature::DawnMultiPlanarFormats);
     EnableFeature(Feature::Depth32FloatStencil8);
     EnableFeature(Feature::IndirectFirstInstance);
     EnableFeature(Feature::RG11B10UfloatRenderable);
     EnableFeature(Feature::DepthClipControl);
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::Float32Filterable);
+    EnableFeature(Feature::DualSourceBlending);
+    EnableFeature(Feature::Norm16TextureFormats);
 
     if (AreTimestampQueriesSupported()) {
         EnableFeature(Feature::TimestampQuery);
@@ -142,6 +145,11 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         }
     }
 
+    // ChromiumExperimentalSubgroups requires SM >= 6.0 and capabilities flags.
+    if (GetBackend()->IsDXCAvailable() && mDeviceInfo.supportsWaveOps) {
+        EnableFeature(Feature::ChromiumExperimentalSubgroups);
+    }
+
     D3D12_FEATURE_DATA_FORMAT_SUPPORT bgra8unormFormatInfo = {};
     bgra8unormFormatInfo.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     HRESULT hr = mD3d12Device->CheckFeatureSupport(
@@ -150,6 +158,16 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         (bgra8unormFormatInfo.Support1 & D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW)) {
         EnableFeature(Feature::BGRA8UnormStorage);
     }
+
+    D3D12_FEATURE_DATA_EXISTING_HEAPS existingHeapInfo = {};
+    hr = mD3d12Device->CheckFeatureSupport(D3D12_FEATURE_EXISTING_HEAPS, &existingHeapInfo,
+                                           sizeof(existingHeapInfo));
+    if (SUCCEEDED(hr) && existingHeapInfo.Supported) {
+        EnableFeature(Feature::HostMappedPointer);
+    }
+
+    EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
+    EnableFeature(Feature::SharedFenceDXGISharedHandle);
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
@@ -176,7 +194,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
             "devices.");
     }
 
-    GetDefaultLimits(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3d12/hardware-feature-levels
 
@@ -229,8 +247,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
             break;
     }
 
-    ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageTexturesPerShaderStage);
-    ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageBuffersPerShaderStage);
+    DAWN_ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageTexturesPerShaderStage);
+    DAWN_ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageBuffersPerShaderStage);
     uint32_t maxUAVsPerStage = maxUAVsAllStages / 2;
 
     limits->v1.maxUniformBuffersPerShaderStage = maxCBVsPerStage;
@@ -241,6 +259,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.maxSamplersPerShaderStage = maxSamplersPerStage;
 
     limits->v1.maxColorAttachments = D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT;
+    // This is maxColorAttachments times 16, the color format with the largest cost.
+    limits->v1.maxColorAttachmentBytesPerSample = D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT * 16;
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3d12/root-signature-limits
     // In DWORDS. Descriptor tables cost 1, Root constants cost 1, Root descriptors cost 2.
@@ -287,9 +307,10 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
         }
     }
 
-    ASSERT(2 * limits->v1.maxBindGroups + 2 * limits->v1.maxDynamicUniformBuffersPerPipelineLayout +
-               3 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout <=
-           kMaxRootSignatureSize - kReservedSlots);
+    DAWN_ASSERT(2 * limits->v1.maxBindGroups +
+                    2 * limits->v1.maxDynamicUniformBuffersPerPipelineLayout +
+                    3 * limits->v1.maxDynamicStorageBuffersPerPipelineLayout <=
+                kMaxRootSignatureSize - kReservedSlots);
 
     // https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/sm5-attributes-numthreads
     limits->v1.maxComputeWorkgroupSizeX = D3D12_CS_THREAD_GROUP_MAX_X;
@@ -329,6 +350,13 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     // TODO(crbug.com/dawn/1448):
     // - maxInterStageShaderVariables
+
+    // Experimental limits for subgroups
+    limits->experimentalSubgroupLimits.minSubgroupSize = mDeviceInfo.waveLaneCountMin;
+    // Currently the WaveLaneCountMax queried from D3D12 API is not reliable and the meaning is
+    // unclear. Use 128 instead, which is the largest possible size. Reference:
+    // https://github.com/Microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics#:~:text=UINT%20WaveLaneCountMax
+    limits->experimentalSubgroupLimits.maxSubgroupSize = 128u;
 
     return {};
 }
@@ -464,7 +492,10 @@ void PhysicalDevice::SetupBackendAdapterToggles(TogglesState* adapterToggles) co
     if (GetDeviceInfo().shaderModel <= 60) {
         adapterToggles->ForceSet(Toggle::UseDXC, false);
     }
-    adapterToggles->Default(Toggle::UseDXC, true);
+
+    bool useDxc =
+        GetInstance()->GetPlatform()->IsFeatureEnabled(dawn::platform::Features::kWebGPUUseDXC);
+    adapterToggles->Default(Toggle::UseDXC, useDxc);
 #else
     // Default to using FXC
     if (!GetBackend()->IsDXCAvailable()) {
@@ -512,6 +543,14 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     }
     deviceToggles->Default(Toggle::D3D12Use64KBAlignedMSAATexture,
                            GetDeviceInfo().use64KBAlignedMSAATexture);
+
+    // By default use D3D12_HEAP_FLAG_CREATE_NOT_ZEROED when possible, otherwise we should never
+    // enable this toggle.
+    if (!GetDeviceInfo().supportsHeapFlagCreateNotZeroed) {
+        deviceToggles->ForceSet(Toggle::D3D12CreateNotZeroedHeap, false);
+    }
+    deviceToggles->Default(Toggle::D3D12CreateNotZeroedHeap,
+                           GetDeviceInfo().supportsHeapFlagCreateNotZeroed);
 
     uint32_t deviceId = GetDeviceId();
     uint32_t vendorId = GetVendorId();
@@ -586,10 +625,12 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
         }
     }
 
-    // Currently these workarounds are only needed on Intel Gen9.5 and Gen11 GPUs.
-    // See http://crbug.com/1237175 and http://crbug.com/dawn/1628 for more information.
+    // Currently these workarounds are needed on Intel Gen9.5 and Gen11 GPUs, as well as
+    // AMD GPUS.
+    // See http://crbug.com/1237175, http://crbug.com/dawn/1628, and http://crbug.com/dawn/2032
+    // for more information.
     if ((gpu_info::IsIntelGen9(vendorId, deviceId) && !gpu_info::IsSkylake(deviceId)) ||
-        gpu_info::IsIntelGen11(vendorId, deviceId)) {
+        gpu_info::IsIntelGen11(vendorId, deviceId) || gpu_info::IsAMD(vendorId)) {
         deviceToggles->Default(
             Toggle::DisableSubAllocationFor2DTextureWithCopyDstOrRenderAttachment, true);
         // Now we don't need to force clearing depth stencil textures with CopyDst as all the depth
@@ -615,17 +656,14 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
         }
     }
 
-#if D3D12_SDK_VERSION >= 602
-    D3D12_FEATURE_DATA_D3D12_OPTIONS13 featureData13;
-    if (FAILED(mD3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS13, &featureData13,
-                                                 sizeof(featureData13)))) {
-        // If the platform doesn't support D3D12_FEATURE_D3D12_OPTIONS13, default initialize the
-        // struct to set all features to false.
-        featureData13 = {};
+    // Currently these workarounds are only needed on Intel Gen9 and Gen11 GPUs.
+    // See http://crbug.com/dawn/484 for more information.
+    if (gpu_info::IsIntelGen9(vendorId, deviceId) || gpu_info::IsIntelGen11(vendorId, deviceId)) {
+        deviceToggles->Default(Toggle::D3D12DontUseNotZeroedHeapFlagOnTexturesAsCommitedResources,
+                               true);
     }
-    if (!featureData13.TextureCopyBetweenDimensionsSupported)
-#endif
-    {
+
+    if (!mDeviceInfo.supportsTextureCopyBetweenDimensions) {
         deviceToggles->ForceSet(
             Toggle::D3D12UseTempBufferInTextureToTextureCopyBetweenDifferentDimensions, true);
     }
@@ -649,7 +687,7 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* ada
 // creating a new one.
 MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     [[maybe_unused]] auto refCount = mD3d12Device.Reset();
-    ASSERT(refCount == 0);
+    DAWN_ASSERT(refCount == 0);
     DAWN_TRY(Initialize());
 
     return {};

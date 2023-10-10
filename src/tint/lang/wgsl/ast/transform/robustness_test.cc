@@ -14,7 +14,7 @@
 
 #include "src/tint/lang/wgsl/ast/transform/robustness.h"
 
-#include "src/tint/lang/wgsl/ast/transform/test_helper.h"
+#include "src/tint/lang/wgsl/ast/transform/helper_test.h"
 
 namespace tint::ast::transform {
 
@@ -1788,7 +1788,7 @@ fn f() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Texture
+// Texture builtin calls.
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST_P(RobustnessTest, TextureDimensions) {

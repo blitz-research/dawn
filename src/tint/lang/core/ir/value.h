@@ -20,11 +20,12 @@
 #include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
+class CloneContext;
 class Instruction;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A specific usage of a Value in the IR.
 struct Usage {
@@ -57,11 +58,15 @@ class Value : public Castable<Value> {
     ~Value() override;
 
     /// @returns the type of the value
-    virtual const type::Type* Type() { return nullptr; }
+    virtual const core::type::Type* Type() { return nullptr; }
 
     /// Destroys the Value. Once called, the Value must not be used again.
     /// The Value must not be in use by any instruction.
     virtual void Destroy();
+
+    /// @param ctx the CloneContext used to clone this value
+    /// @returns a clone of this value
+    virtual Value* Clone(CloneContext& ctx) = 0;
 
     /// @returns true if the Value has not been destroyed with Destroy()
     bool Alive() const { return !flags_.Contains(Flag::kDead); }
@@ -106,6 +111,6 @@ class Value : public Castable<Value> {
     /// Bitset of value flags
     tint::EnumSet<Flag> flags_;
 };
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_VALUE_H_

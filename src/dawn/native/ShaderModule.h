@@ -37,9 +37,8 @@
 #include "dawn/native/Limits.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/PerStage.h"
-#include "dawn/native/VertexFormat.h"
 #include "dawn/native/dawn_platform.h"
-#include "tint/override_id.h"
+#include "tint/tint.h"
 
 namespace tint {
 
@@ -78,6 +77,12 @@ enum class InterpolationSampling {
     Center,
     Centroid,
     Sample,
+};
+
+enum class PixelLocalMemberType {
+    I32,
+    U32,
+    F32,
 };
 
 // Use map to make sure constant keys are sorted for creating shader cache keys
@@ -214,7 +219,7 @@ struct EntryPointMetadata {
     std::array<InterStageVariableInfo, kMaxInterStageShaderVariables> interStageVariables;
     uint32_t totalInterStageShaderComponents;
 
-    // The shader stage for this binding.
+    // The shader stage for this entry point.
     SingleShaderStage stage;
 
     struct Override {
@@ -245,10 +250,16 @@ struct EntryPointMetadata {
     // overridden
     std::unordered_set<std::string> initializedOverrides;
 
-    bool usesNumWorkgroups = false;
+    // Reflection information about potential `pixel_local` variable use.
+    bool usesPixelLocal = false;
+    size_t pixelLocalBlockSize = 0;
+    std::vector<PixelLocalMemberType> pixelLocalMembers;
+
     bool usesFragDepth = false;
-    // Used at render pipeline validation.
+    bool usesInstanceIndex = false;
+    bool usesNumWorkgroups = false;
     bool usesSampleMaskOutput = false;
+    bool usesVertexIndex = false;
 };
 
 class ShaderModuleBase : public ApiObjectBase,

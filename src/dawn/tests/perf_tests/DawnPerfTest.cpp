@@ -51,7 +51,7 @@ void DumpTraceEventsToJSONFile(
                 category = "gpu";
                 break;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         uint64_t microseconds = static_cast<uint64_t>(traceEvent.timestamp * 1000.0 * 1000.0);
@@ -126,7 +126,7 @@ DawnPerfTestEnvironment::~DawnPerfTestEnvironment() = default;
 void DawnPerfTestEnvironment::SetUp() {
     mPlatform = std::make_unique<DawnPerfTestPlatform>();
     mInstance = CreateInstance(mPlatform.get());
-    ASSERT(mInstance);
+    DAWN_ASSERT(mInstance);
 
     // Begin writing the trace event array.
     if (mTraceFile != nullptr) {
@@ -337,7 +337,7 @@ void DawnPerfTestBase::OutputResults() {
 
         if (traceEvent.phase == TRACE_EVENT_PHASE_END) {
             tracker->end = std::max(tracker->end, traceEvent.timestamp);
-            ASSERT(tracker->count > 0);
+            DAWN_ASSERT(tracker->count > 0);
             tracker->count--;
 
             if (tracker->count == 0) {

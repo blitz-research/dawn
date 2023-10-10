@@ -25,10 +25,10 @@
 #include "src/tint/utils/containers/unique_vector.h"
 #include "src/tint/utils/macros/compiler.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// Array holds the type information for Array nodes.
-class Array final : public Castable<Array, Type> {
+class Array : public Castable<Array, Type> {
   public:
     /// An error message string stating that the array count was expected to be a constant
     /// expression. Used by multiple writers and transforms.
@@ -117,6 +117,6 @@ class Array final : public Castable<Array, Type> {
     const uint32_t implicit_stride_;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_ARRAY_H_

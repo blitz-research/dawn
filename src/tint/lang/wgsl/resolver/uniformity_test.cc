@@ -29,8 +29,8 @@
 namespace tint::resolver {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 class UniformityAnalysisTestBase {
   protected:
@@ -113,6 +113,7 @@ class BasicTest : public UniformityAnalysisTestBase,
         kUserRequiredToBeUniform,
         kWorkgroupBarrier,
         kStorageBarrier,
+        kTextureBarrier,
         kWorkgroupUniformLoad,
         kTextureSample,
         kTextureSampleBias,
@@ -182,6 +183,8 @@ class BasicTest : public UniformityAnalysisTestBase,
                 return "workgroupBarrier()";
             case kStorageBarrier:
                 return "storageBarrier()";
+            case kTextureBarrier:
+                return "textureBarrier()";
             case kWorkgroupUniformLoad:
                 return "_ = workgroupUniformLoad(&w)";
             case kTextureSample:
@@ -257,6 +260,7 @@ class BasicTest : public UniformityAnalysisTestBase,
             CASE(kUserRequiredToBeUniform);
             CASE(kWorkgroupBarrier);
             CASE(kStorageBarrier);
+            CASE(kTextureBarrier);
             CASE(kWorkgroupUniformLoad);
             CASE(kTextureSample);
             CASE(kTextureSampleBias);
@@ -284,6 +288,8 @@ TEST_P(BasicTest, ConditionalFunctionCall) {
     auto condition = static_cast<Condition>(std::get<0>(GetParam()));
     auto function = static_cast<Function>(std::get<1>(GetParam()));
     std::string src = R"(
+enable chromium_experimental_read_write_storage_texture;
+
 var<private> p : i32;
 var<workgroup> w : i32;
 @group(0) @binding(0) var<uniform> u : i32;
@@ -5320,7 +5326,7 @@ TEST_F(UniformityAnalysisTest, MaximumNumberOfPointerParameters) {
     //     workgroupBarrier();
     //   }
     // }
-    b.GlobalVar("non_uniform_global", ty.i32(), builtin::AddressSpace::kPrivate);
+    b.GlobalVar("non_uniform_global", ty.i32(), core::AddressSpace::kPrivate);
     Vector<const ast::Statement*, 8> main_body;
     Vector<const ast::Expression*, 8> args;
     for (int i = 0; i < 255; i++) {
@@ -8222,6 +8228,51 @@ test:5:7 note: return value of 'atomicAdd' may be non-uniform
 )");
 }
 
+TEST_F(UniformityAnalysisTest, StorageTextureLoad_ReadOnly) {
+    std::string src = R"(
+enable chromium_experimental_read_write_storage_texture;
+
+@group(0) @binding(0) var t : texture_storage_2d<r32sint, read>;
+
+fn foo() {
+  if (textureLoad(t, vec2()).r == 0) {
+    storageBarrier();
+  }
+}
+)";
+
+    RunTest(src, true);
+}
+
+TEST_F(UniformityAnalysisTest, StorageTextureLoad_ReadWrite) {
+    std::string src = R"(
+enable chromium_experimental_read_write_storage_texture;
+
+@group(0) @binding(0) var t : texture_storage_2d<r32sint, read_write>;
+
+fn foo() {
+  if (textureLoad(t, vec2()).r == 0) {
+    storageBarrier();
+  }
+}
+)";
+
+    RunTest(src, false);
+    EXPECT_EQ(error_,
+              R"(test:8:5 error: 'storageBarrier' must only be called from uniform control flow
+    storageBarrier();
+    ^^^^^^^^^^^^^^
+
+test:7:3 note: control flow depends on possibly non-uniform value
+  if (textureLoad(t, vec2()).r == 0) {
+  ^^
+
+test:7:7 note: return value of 'textureLoad' may be non-uniform
+  if (textureLoad(t, vec2()).r == 0) {
+      ^^^^^^^^^^^^^^^^^^^^^^
+)");
+}
+
 TEST_F(UniformityAnalysisTest, DisableAnalysisWithExtension) {
     std::string src = R"(
 enable chromium_disable_uniformity_analysis;
@@ -8254,7 +8305,7 @@ TEST_F(UniformityAnalysisTest, StressGraphTraversalDepth) {
     //     workgroupBarrier();
     //   }
     // }
-    b.GlobalVar("v0", ty.i32(), builtin::AddressSpace::kPrivate, b.Expr(0_i));
+    b.GlobalVar("v0", ty.i32(), core::AddressSpace::kPrivate, b.Expr(0_i));
     Vector<const ast::Statement*, 8> foo_body;
     std::string v_last = "v0";
     for (int i = 1; i < 100000; i++) {
@@ -8278,16 +8329,16 @@ note: reading from module-scope private variable 'v0' may result in a non-unifor
 
 class UniformityAnalysisDiagnosticFilterTest
     : public UniformityAnalysisTestBase,
-      public ::testing::TestWithParam<builtin::DiagnosticSeverity> {
+      public ::testing::TestWithParam<wgsl::DiagnosticSeverity> {
   protected:
     // TODO(jrprice): Remove this in favour of tint::ToString() when we change "note" to "info".
-    const char* ToStr(builtin::DiagnosticSeverity severity) {
+    const char* ToStr(wgsl::DiagnosticSeverity severity) {
         switch (severity) {
-            case builtin::DiagnosticSeverity::kError:
+            case wgsl::DiagnosticSeverity::kError:
                 return "error";
-            case builtin::DiagnosticSeverity::kWarning:
+            case wgsl::DiagnosticSeverity::kWarning:
                 return "warning";
-            case builtin::DiagnosticSeverity::kInfo:
+            case wgsl::DiagnosticSeverity::kInfo:
                 return "note";
             default:
                 return "<undefined>";
@@ -8311,9 +8362,9 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
 
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8339,8 +8390,8 @@ TEST_P(UniformityAnalysisDiagnosticFilterTest, AttributeOnFunction) {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8365,8 +8416,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8388,8 +8439,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8411,8 +8462,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8434,8 +8485,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8460,8 +8511,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8483,8 +8534,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8509,8 +8560,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8536,8 +8587,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8563,8 +8614,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8590,8 +8641,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8617,8 +8668,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8644,8 +8695,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8671,8 +8722,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8695,8 +8746,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8723,8 +8774,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8751,8 +8802,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8774,8 +8825,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8800,8 +8851,8 @@ fn foo() {
 }
 )";
 
-    RunTest(ss.str(), param != builtin::DiagnosticSeverity::kError);
-    if (param == builtin::DiagnosticSeverity::kOff) {
+    RunTest(ss.str(), param != wgsl::DiagnosticSeverity::kError);
+    if (param == wgsl::DiagnosticSeverity::kOff) {
         EXPECT_TRUE(error_.empty());
     } else {
         StringStream err;
@@ -8812,10 +8863,10 @@ fn foo() {
 
 INSTANTIATE_TEST_SUITE_P(UniformityAnalysisTest,
                          UniformityAnalysisDiagnosticFilterTest,
-                         ::testing::Values(builtin::DiagnosticSeverity::kError,
-                                           builtin::DiagnosticSeverity::kWarning,
-                                           builtin::DiagnosticSeverity::kInfo,
-                                           builtin::DiagnosticSeverity::kOff));
+                         ::testing::Values(wgsl::DiagnosticSeverity::kError,
+                                           wgsl::DiagnosticSeverity::kWarning,
+                                           wgsl::DiagnosticSeverity::kInfo,
+                                           wgsl::DiagnosticSeverity::kOff));
 
 TEST_F(UniformityAnalysisDiagnosticFilterTest, AttributeOnFunction_CalledByAnotherFunction) {
     std::string src = R"(

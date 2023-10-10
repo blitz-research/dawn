@@ -49,7 +49,7 @@ void PrintDeviceError(WGPUErrorType errorType, const char* message, void*) {
             errorTypeName = "Device lost";
             break;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             return;
     }
     dawn::ErrorLog() << errorTypeName << " error: " << message;
@@ -91,6 +91,8 @@ static wgpu::BackendType backendType = wgpu::BackendType::OpenGL;
 #error
 #endif
 
+static wgpu::AdapterType adapterType = wgpu::AdapterType::Unknown;
+
 static std::vector<std::string> enableToggles;
 static std::vector<std::string> disableToggles;
 
@@ -127,13 +129,32 @@ wgpu::Device CreateCppDawnDevice() {
         return wgpu::Device();
     }
 
-    instance = std::make_unique<dawn::native::Instance>();
+    WGPUInstanceDescriptor instanceDescriptor{};
+    instanceDescriptor.features.timedWaitAnyEnable = true;
+    instance = std::make_unique<dawn::native::Instance>(&instanceDescriptor);
 
     wgpu::RequestAdapterOptions options = {};
     options.backendType = backendType;
 
     // Get an adapter for the backend to use, and create the device.
-    dawn::native::Adapter backendAdapter = instance->EnumerateAdapters(&options)[0];
+    auto adapters = instance->EnumerateAdapters(&options);
+    wgpu::DawnAdapterPropertiesPowerPreference power_props{};
+    wgpu::AdapterProperties adapterProperties{};
+    adapterProperties.nextInChain = &power_props;
+    // Find the first adapter which satisfies the adapterType requirement.
+    auto isAdapterType = [&adapterProperties](const auto& adapter) -> bool {
+        // picks the first adapter when adapterType is unknown.
+        if (adapterType == wgpu::AdapterType::Unknown) {
+            return true;
+        }
+        adapter.GetProperties(&adapterProperties);
+        return adapterProperties.adapterType == adapterType;
+    };
+    auto preferredAdapter = std::find_if(adapters.begin(), adapters.end(), isAdapterType);
+    if (preferredAdapter == adapters.end()) {
+        fprintf(stderr, "Failed to find an adapter! Please try another adapter type.\n");
+        return wgpu::Device();
+    }
 
     std::vector<const char*> enableToggleNames;
     std::vector<const char*> disabledToggleNames;
@@ -148,14 +169,14 @@ wgpu::Device CreateCppDawnDevice() {
     toggles.chain.sType = WGPUSType_DawnTogglesDescriptor;
     toggles.chain.next = nullptr;
     toggles.enabledToggles = enableToggleNames.data();
-    toggles.enabledTogglesCount = enableToggleNames.size();
+    toggles.enabledToggleCount = enableToggleNames.size();
     toggles.disabledToggles = disabledToggleNames.data();
-    toggles.disabledTogglesCount = disabledToggleNames.size();
+    toggles.disabledToggleCount = disabledToggleNames.size();
 
     WGPUDeviceDescriptor deviceDesc = {};
     deviceDesc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&toggles);
 
-    WGPUDevice backendDevice = backendAdapter.CreateDevice(&deviceDesc);
+    WGPUDevice backendDevice = preferredAdapter->CreateDevice(&deviceDesc);
     DawnProcTable backendProcs = dawn::native::GetProcs();
 
     // Create the swapchain
@@ -257,7 +278,7 @@ bool InitSample(int argc, const char** argv) {
         } options[] = {
             {"-b", "--backend=", true},       {"-c", "--cmd-buf=", true},
             {"-e", "--enable-toggle=", true}, {"-d", "--disable-toggle=", true},
-            {"-h", "--help", false},
+            {"-a", "--adapter-type=", true},  {"-h", "--help", false},
         };
 
         for (const Option& option : options) {
@@ -344,11 +365,32 @@ bool InitSample(int argc, const char** argv) {
             continue;
         }
 
+        if (opt == "-a") {
+            if (value == "discrete") {
+                adapterType = wgpu::AdapterType::DiscreteGPU;
+                continue;
+            }
+            if (value == "integrated") {
+                adapterType = wgpu::AdapterType::IntegratedGPU;
+                continue;
+            }
+            if (value == "cpu") {
+                adapterType = wgpu::AdapterType::CPU;
+                continue;
+            }
+            fprintf(stderr, "--adapter-type expects an adapter type (discrete, integrated, cpu)\n");
+            return false;
+        }
+
         if (opt == "-h") {
-            printf("Usage: %s [-b BACKEND] [-c COMMAND_BUFFER] [-e TOGGLE] [-d TOGGLE]\n", argv[0]);
+            printf(
+                "Usage: %s [-b BACKEND] [-c COMMAND_BUFFER] [-e TOGGLE] [-d TOGGLE] [-a "
+                "ADAPTER]\n",
+                argv[0]);
             printf("  BACKEND is one of: d3d12, metal, null, opengl, opengles, vulkan\n");
             printf("  COMMAND_BUFFER is one of: none, terrible\n");
             printf("  TOGGLE is device toggle name to enable or disable\n");
+            printf("  ADAPTER is one of: discrete, integrated, cpu\n");
             return false;
         }
     }
@@ -370,7 +412,7 @@ void DoFlush() {
         bool c2sSuccess = c2sBuf->Flush();
         bool s2cSuccess = s2cBuf->Flush();
 
-        ASSERT(c2sSuccess && s2cSuccess);
+        DAWN_ASSERT(c2sSuccess && s2cSuccess);
     }
     glfwPollEvents();
 }

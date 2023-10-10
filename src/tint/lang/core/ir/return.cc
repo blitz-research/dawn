@@ -16,11 +16,13 @@
 
 #include <utility>
 
+#include "src/tint/lang/core/ir/clone_context.h"
 #include "src/tint/lang/core/ir/function.h"
+#include "src/tint/lang/core/ir/module.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Return);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Return);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 Return::Return(Function* func) {
     AddOperand(Return::kFunctionOperandOffset, func);
@@ -33,4 +35,16 @@ Return::Return(Function* func, ir::Value* arg) {
 
 Return::~Return() = default;
 
-}  // namespace tint::ir
+Return* Return::Clone(CloneContext& ctx) {
+    auto* fn = ctx.Remap(Func());
+    if (auto* val = Value()) {
+        return ctx.ir.instructions.Create<Return>(fn, ctx.Remap(val));
+    }
+    return ctx.ir.instructions.Create<Return>(fn);
+}
+
+Function* Return::Func() const {
+    return tint::As<Function>(operands_[kFunctionOperandOffset]);
+}
+
+}  // namespace tint::core::ir

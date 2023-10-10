@@ -15,18 +15,20 @@
 #ifndef SRC_TINT_LANG_CORE_IR_CONTINUE_H_
 #define SRC_TINT_LANG_CORE_IR_CONTINUE_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/terminator.h"
 #include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class Loop;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A continue instruction.
-class Continue : public Castable<Continue, Terminator> {
+class Continue final : public Castable<Continue, Terminator> {
   public:
     /// The base offset in Operands() for the args
     static constexpr size_t kArgsOperandOffset = 0;
@@ -37,16 +39,19 @@ class Continue : public Castable<Continue, Terminator> {
     explicit Continue(ir::Loop* loop, VectorRef<Value*> args = tint::Empty);
     ~Continue() override;
 
+    /// @copydoc Instruction::Clone()
+    Continue* Clone(CloneContext& ctx) override;
+
     /// @returns the loop owning the continue block
     ir::Loop* Loop() { return loop_; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "continue"; }
+    std::string FriendlyName() override { return "continue"; }
 
   private:
     ir::Loop* loop_ = nullptr;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_CONTINUE_H_

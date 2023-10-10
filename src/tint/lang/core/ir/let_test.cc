@@ -18,13 +18,13 @@
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/instruction.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using IR_LetTest = IRTestHelper;
 
@@ -49,5 +49,23 @@ TEST_F(IR_LetTest, Results) {
     EXPECT_EQ(let->Result()->Type(), value->Type());
 }
 
+TEST_F(IR_LetTest, Clone) {
+    auto* value = b.Constant(4_f);
+    auto* let = b.Let("l", value);
+
+    auto* new_let = clone_ctx.Clone(let);
+
+    EXPECT_NE(let, new_let);
+    EXPECT_NE(nullptr, new_let->Result());
+    EXPECT_NE(let->Result(), new_let->Result());
+
+    auto new_val = new_let->Value()->As<Constant>()->Value();
+    ASSERT_TRUE(new_val->Is<core::constant::Scalar<f32>>());
+    EXPECT_FLOAT_EQ(4_f, new_val->As<core::constant::Scalar<f32>>()->ValueAs<f32>());
+
+    EXPECT_EQ(std::string("l"), mod.NameOf(new_let).Name());
+    EXPECT_EQ(std::string("l"), mod.NameOf(new_let->Result()).Name());
+}
+
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

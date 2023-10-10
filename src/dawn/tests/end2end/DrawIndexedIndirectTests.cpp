@@ -464,6 +464,52 @@ TEST_P(DrawIndexedIndirectTest, ValidateEncodeMultipleThenSubmitAtOnce) {
     EXPECT_PIXEL_RGBA8_EQ(filled, renderPass.color, 3, 1);
 }
 
+TEST_P(DrawIndexedIndirectTest, ValidateEncodeMultipleMixedDrawsOneIndirectBufferThenSubmitAtOnce) {
+    // TODO(crbug.com/dawn/789): Test is failing after a roll on SwANGLE on Windows only.
+    DAWN_SUPPRESS_TEST_IF(IsANGLE() && IsWindows());
+
+    // TODO(crbug.com/dawn/1292): Some Intel OpenGL drivers don't seem to like
+    // the offsets that Tint/GLSL produces.
+    DAWN_SUPPRESS_TEST_IF(IsIntel() && IsOpenGL() && IsLinux());
+
+    // It's necessary to for this feature to be disabled so that validation layers
+    // can reject non-indexed indirect draws that use a nonzero firstInstance.
+    DAWN_SUPPRESS_TEST_IF(device.HasFeature(wgpu::FeatureName::IndirectFirstInstance));
+
+    utils::RGBA8 filled(0, 255, 0, 255);
+    utils::RGBA8 notFilled(0, 0, 0, 0);
+
+    // Use the same indirect buffer for both Indexed and non-Indexed draws
+    //
+    // Note: Indexed's vertexOffset and non-Indexed's firstInstance share the same offset.
+    //
+    // If the Indexed draw command (vertexOffset = 4) is correctly interpreted as an Indexed
+    // draw command, then the first 3 vertices of the second quad (top right triangle) will be
+    // drawn.
+    //
+    // Otherwise, if the Indexed draw command is incorrectly interpreted as a non-Indexed
+    // draw command (firstInstance = 4), then it won't be drawn since the validation procedure
+    // will reject draws with non-zero firstInstance (firstInstance = 4).
+    wgpu::Buffer indirectBuffer = CreateIndirectBuffer({0, 0, 0, 0, 0,    // Non-Indexed
+                                                        3, 1, 0, 4, 0});  // Indexed
+
+    wgpu::Buffer indexBuffer = CreateIndexBuffer({0, 1, 2});
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass.renderPassInfo);
+    pass.SetPipeline(pipeline);
+    pass.SetVertexBuffer(0, vertexBuffer);
+    pass.SetIndexBuffer(indexBuffer, wgpu::IndexFormat::Uint32, 0);
+    pass.DrawIndirect(indirectBuffer, 0);
+    pass.DrawIndexedIndirect(indirectBuffer, 20);
+    pass.End();
+    wgpu::CommandBuffer commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    EXPECT_PIXEL_RGBA8_EQ(notFilled, renderPass.color, 1, 3);
+    EXPECT_PIXEL_RGBA8_EQ(filled, renderPass.color, 3, 1);
+}
+
 TEST_P(DrawIndexedIndirectTest, ValidateEncodeMultipleThenSubmitOutOfOrder) {
     // TODO(crbug.com/dawn/789): Test is failing under SwANGLE on Windows only.
     DAWN_SUPPRESS_TEST_IF(IsANGLE() && IsWindows());
@@ -519,7 +565,7 @@ TEST_P(DrawIndexedIndirectTest, ValidateWithBundlesInSamePass) {
     std::vector<wgpu::RenderBundle> bundles;
     {
         utils::ComboRenderBundleEncoderDescriptor desc = {};
-        desc.colorFormatsCount = 1;
+        desc.colorFormatCount = 1;
         desc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
         wgpu::RenderBundleEncoder bundleEncoder = device.CreateRenderBundleEncoder(&desc);
         bundleEncoder.SetPipeline(pipeline);
@@ -530,7 +576,7 @@ TEST_P(DrawIndexedIndirectTest, ValidateWithBundlesInSamePass) {
     }
     {
         utils::ComboRenderBundleEncoderDescriptor desc = {};
-        desc.colorFormatsCount = 1;
+        desc.colorFormatCount = 1;
         desc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
         wgpu::RenderBundleEncoder bundleEncoder = device.CreateRenderBundleEncoder(&desc);
         bundleEncoder.SetPipeline(pipeline);
@@ -575,7 +621,7 @@ TEST_P(DrawIndexedIndirectTest, ValidateWithBundlesInDifferentPasses) {
     {
         wgpu::RenderBundle bundle;
         utils::ComboRenderBundleEncoderDescriptor desc = {};
-        desc.colorFormatsCount = 1;
+        desc.colorFormatCount = 1;
         desc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
         wgpu::RenderBundleEncoder bundleEncoder = device.CreateRenderBundleEncoder(&desc);
         bundleEncoder.SetPipeline(pipeline);
@@ -596,7 +642,7 @@ TEST_P(DrawIndexedIndirectTest, ValidateWithBundlesInDifferentPasses) {
     {
         wgpu::RenderBundle bundle;
         utils::ComboRenderBundleEncoderDescriptor desc = {};
-        desc.colorFormatsCount = 1;
+        desc.colorFormatCount = 1;
         desc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
         wgpu::RenderBundleEncoder bundleEncoder = device.CreateRenderBundleEncoder(&desc);
         bundleEncoder.SetPipeline(pipeline);
@@ -645,7 +691,7 @@ TEST_P(DrawIndexedIndirectTest, ValidateReusedBundleWithChangingParams) {
     // Encode a single bundle that always uses indirectBuffer offset 0 for its params.
     wgpu::RenderBundle bundle;
     utils::ComboRenderBundleEncoderDescriptor desc = {};
-    desc.colorFormatsCount = 1;
+    desc.colorFormatCount = 1;
     desc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
     wgpu::RenderBundleEncoder bundleEncoder = device.CreateRenderBundleEncoder(&desc);
     bundleEncoder.SetPipeline(pipeline);

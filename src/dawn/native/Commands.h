@@ -55,6 +55,7 @@ enum class Command {
     EndRenderPass,
     ExecuteBundles,
     InsertDebugMarker,
+    PixelLocalStorageBarrier,
     PopDebugGroup,
     PushDebugGroup,
     ResolveQuerySet,
@@ -71,20 +72,20 @@ enum class Command {
     WriteTimestamp,
 };
 
-struct TimestampWrite {
-    TimestampWrite();
-    ~TimestampWrite();
+struct TimestampWrites {
+    TimestampWrites();
+    ~TimestampWrites();
 
     Ref<QuerySetBase> querySet;
-    uint32_t queryIndex;
+    uint32_t beginningOfPassWriteIndex = wgpu::kQuerySetIndexUndefined;
+    uint32_t endOfPassWriteIndex = wgpu::kQuerySetIndexUndefined;
 };
 
 struct BeginComputePassCmd {
     BeginComputePassCmd();
     ~BeginComputePassCmd();
 
-    TimestampWrite beginTimestamp;
-    TimestampWrite endTimestamp;
+    TimestampWrites timestampWrites;
     std::string label;
 };
 
@@ -101,6 +102,7 @@ struct RenderPassColorAttachmentInfo {
     ~RenderPassColorAttachmentInfo();
 
     Ref<TextureViewBase> view;
+    uint32_t depthSlice;
     Ref<TextureViewBase> resolveTarget;
     wgpu::LoadOp loadOp;
     wgpu::StoreOp storeOp;
@@ -136,8 +138,7 @@ struct BeginRenderPassCmd {
     uint32_t height;
 
     Ref<QuerySetBase> occlusionQuerySet;
-    TimestampWrite beginTimestamp;
-    TimestampWrite endTimestamp;
+    TimestampWrites timestampWrites;
     std::string label;
 };
 
@@ -265,6 +266,8 @@ struct ClearBufferCmd {
 struct InsertDebugMarkerCmd {
     uint32_t length;
 };
+
+struct PixelLocalStorageBarrierCmd {};
 
 struct PopDebugGroupCmd {};
 

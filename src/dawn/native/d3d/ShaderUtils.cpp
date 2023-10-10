@@ -34,8 +34,18 @@ namespace dawn::native::d3d {
 
 namespace {
 
-std::vector<const wchar_t*> GetDXCArguments(uint32_t compileFlags, bool enable16BitTypes) {
+// Be careful that the return vector may contain the pointers that point to non-static memory.
+std::vector<const wchar_t*> GetDXCArguments(std::wstring_view entryPointNameW,
+                                            const d3d::D3DBytecodeCompilationRequest& r) {
     std::vector<const wchar_t*> arguments;
+
+    arguments.push_back(L"-T");
+    arguments.push_back(r.dxcShaderProfile.data());
+
+    arguments.push_back(L"-E");
+    arguments.push_back(entryPointNameW.data());
+
+    uint32_t compileFlags = r.compileFlags;
     if (compileFlags & D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY) {
         arguments.push_back(L"/Gec");
     }
@@ -75,7 +85,7 @@ std::vector<const wchar_t*> GetDXCArguments(uint32_t compileFlags, bool enable16
         arguments.push_back(L"/res_may_alias");
     }
 
-    if (enable16BitTypes) {
+    if (r.hasShaderF16Feature) {
         // enable-16bit-types are only allowed in -HV 2018 (default)
         arguments.push_back(L"/enable-16bit-types");
     }
@@ -89,20 +99,20 @@ std::vector<const wchar_t*> GetDXCArguments(uint32_t compileFlags, bool enable16
 ResultOrError<ComPtr<IDxcBlob>> CompileShaderDXC(const d3d::D3DBytecodeCompilationRequest& r,
                                                  const std::string& entryPointName,
                                                  const std::string& hlslSource) {
-    ComPtr<IDxcBlobEncoding> sourceBlob;
-    DAWN_TRY(CheckHRESULT(r.dxcLibrary->CreateBlobWithEncodingFromPinned(
-                              hlslSource.c_str(), hlslSource.length(), CP_UTF8, &sourceBlob),
-                          "DXC create blob"));
+    DxcBuffer dxcBuffer;
+    dxcBuffer.Ptr = hlslSource.c_str();
+    dxcBuffer.Size = hlslSource.length();
+    dxcBuffer.Encoding = DXC_CP_UTF8;
 
     std::wstring entryPointW;
     DAWN_TRY_ASSIGN(entryPointW, d3d::ConvertStringToWstring(entryPointName));
 
-    std::vector<const wchar_t*> arguments = GetDXCArguments(r.compileFlags, r.hasShaderF16Feature);
-
-    ComPtr<IDxcOperationResult> result;
-    DAWN_TRY(CheckHRESULT(r.dxcCompiler->Compile(sourceBlob.Get(), nullptr, entryPointW.c_str(),
-                                                 r.dxcShaderProfile.data(), arguments.data(),
-                                                 arguments.size(), nullptr, 0, nullptr, &result),
+    // Note that the contents in `arguments` shouldn't be mutated or moved around as some of the
+    // pointers in this vector don't have static lifetime.
+    std::vector<const wchar_t*> arguments = GetDXCArguments(entryPointW, r);
+    ComPtr<IDxcResult> result;
+    DAWN_TRY(CheckHRESULT(r.dxcCompiler->Compile(&dxcBuffer, arguments.data(), arguments.size(),
+                                                 nullptr, IID_PPV_ARGS(&result)),
                           "DXC compile"));
 
     HRESULT hr;
@@ -216,6 +226,7 @@ MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
     options.disable_robustness = !r.isRobustnessEnabled;
     options.disable_workgroup_init = r.disableWorkgroupInit;
     options.binding_remapper_options = r.bindingRemapper;
+    options.access_controls = r.accessControls;
     options.external_texture_options = r.externalTextureOptions;
 
     if (r.usesNumWorkgroups) {
@@ -243,14 +254,17 @@ MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
         std::move(r.bindingPointsIgnoredInRobustnessTransform);
 
     TRACE_EVENT0(tracePlatform.UnsafeGetValue(), General, "tint::hlsl::writer::Generate");
-    auto result = tint::hlsl::writer::Generate(&transformedProgram, options);
-    DAWN_INVALID_IF(!result.success, "An error occured while generating HLSL: %s", result.error);
+    auto result = tint::hlsl::writer::Generate(transformedProgram, options);
+    DAWN_INVALID_IF(!result, "An error occurred while generating HLSL:\n%s",
+                    result.Failure().reason.str());
 
     compiledShader->usesVertexIndex = usesVertexIndex;
     compiledShader->usesInstanceIndex = usesInstanceIndex;
-    compiledShader->hlslSource = std::move(result.hlsl);
+    compiledShader->hlslSource = std::move(result->hlsl);
     return {};
 }
+
+}  // anonymous namespace
 
 std::string CompileFlagsToString(uint32_t compileFlags) {
     struct Flag {
@@ -314,8 +328,6 @@ std::string CompileFlagsToString(uint32_t compileFlags) {
     return result;
 }
 
-}  // anonymous namespace
-
 ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r) {
     CompiledShader compiledShader;
     bool shouldDumpShader = r.hlsl.dumpShaders;
@@ -351,9 +363,9 @@ ResultOrError<CompiledShader> CompileShader(d3d::D3DCompilationRequest r) {
     return compiledShader;
 }
 
-void DumpCompiledShader(Device* device,
-                        const CompiledShader& compiledShader,
-                        uint32_t compileFlags) {
+void DumpFXCCompiledShader(Device* device,
+                           const CompiledShader& compiledShader,
+                           uint32_t compileFlags) {
     std::ostringstream dumpedMsg;
     // The HLSL may be empty if compilation failed.
     if (!compiledShader.hlslSource.empty()) {
@@ -361,41 +373,23 @@ void DumpCompiledShader(Device* device,
                   << compiledShader.hlslSource << std::endl;
     }
 
-    // The blob may be empty if FXC/DXC compilation failed.
+    // The blob may be empty if FXC compilation failed.
     const Blob& shaderBlob = compiledShader.shaderBlob;
     if (!shaderBlob.Empty()) {
-        if (device->IsToggleEnabled(Toggle::UseDXC)) {
-            dumpedMsg << "/* DXC compile flags */ " << std::endl
-                      << CompileFlagsToString(compileFlags) << std::endl;
-            dumpedMsg << "/* Dumped disassembled DXIL */" << std::endl;
-            ComPtr<IDxcBlobEncoding> dxcBlob;
-            ComPtr<IDxcBlobEncoding> disassembly;
-            if (FAILED(device->GetDxcLibrary()->CreateBlobWithEncodingFromPinned(
-                    shaderBlob.Data(), shaderBlob.Size(), 0, &dxcBlob)) ||
-                FAILED(device->GetDxcCompiler()->Disassemble(dxcBlob.Get(), &disassembly))) {
-                dumpedMsg << "DXC disassemble failed" << std::endl;
-            } else {
-                dumpedMsg << std::string_view(
-                    static_cast<const char*>(disassembly->GetBufferPointer()),
-                    disassembly->GetBufferSize());
-            }
+        dumpedMsg << "/* FXC compile flags */ " << std::endl
+                  << CompileFlagsToString(compileFlags) << std::endl;
+        dumpedMsg << "/* Dumped disassembled DXBC */" << std::endl;
+        ComPtr<ID3DBlob> disassembly;
+        UINT flags =
+            // Some literals are printed as floats with precision(6) which is not enough
+            // precision for values very close to 0, so always print literals as hex values.
+            D3D_DISASM_PRINT_HEX_LITERALS;
+        if (FAILED(device->GetFunctions()->d3dDisassemble(shaderBlob.Data(), shaderBlob.Size(),
+                                                          flags, nullptr, &disassembly))) {
+            dumpedMsg << "D3D disassemble failed" << std::endl;
         } else {
-            dumpedMsg << "/* FXC compile flags */ " << std::endl
-                      << CompileFlagsToString(compileFlags) << std::endl;
-            dumpedMsg << "/* Dumped disassembled DXBC */" << std::endl;
-            ComPtr<ID3DBlob> disassembly;
-            UINT flags =
-                // Some literals are printed as floats with precision(6) which is not enough
-                // precision for values very close to 0, so always print literals as hex values.
-                D3D_DISASM_PRINT_HEX_LITERALS;
-            if (FAILED(device->GetFunctions()->d3dDisassemble(shaderBlob.Data(), shaderBlob.Size(),
-                                                              flags, nullptr, &disassembly))) {
-                dumpedMsg << "D3D disassemble failed" << std::endl;
-            } else {
-                dumpedMsg << std::string_view(
-                    static_cast<const char*>(disassembly->GetBufferPointer()),
-                    disassembly->GetBufferSize());
-            }
+            dumpedMsg << std::string_view(static_cast<const char*>(disassembly->GetBufferPointer()),
+                                          disassembly->GetBufferSize());
         }
     }
 

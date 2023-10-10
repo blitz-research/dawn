@@ -21,6 +21,7 @@
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
 #include "dawn/native/d3d12/GPUDescriptorHeapAllocationD3D12.h"
+#include "dawn/native/d3d12/QueueD3D12.h"
 #include "dawn/native/d3d12/ResidencyManagerD3D12.h"
 
 namespace dawn::native::d3d12 {
@@ -47,7 +48,7 @@ uint32_t GetD3D12ShaderVisibleHeapMinSize(D3D12_DESCRIPTOR_HEAP_TYPE heapType, b
         case D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER:
             return 256;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -62,7 +63,7 @@ uint32_t GetD3D12ShaderVisibleHeapMaxSize(D3D12_DESCRIPTOR_HEAP_TYPE heapType, b
         case D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER:
             return D3D12_MAX_SHADER_VISIBLE_SAMPLER_HEAP_SIZE;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -72,16 +73,16 @@ D3D12_DESCRIPTOR_HEAP_FLAGS GetD3D12HeapFlags(D3D12_DESCRIPTOR_HEAP_TYPE heapTyp
         case D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER:
             return D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
 // static
-ResultOrError<std::unique_ptr<ShaderVisibleDescriptorAllocator>>
+ResultOrError<std::unique_ptr<MutexProtected<ShaderVisibleDescriptorAllocator>>>
 ShaderVisibleDescriptorAllocator::Create(Device* device, D3D12_DESCRIPTOR_HEAP_TYPE heapType) {
-    std::unique_ptr<ShaderVisibleDescriptorAllocator> allocator =
-        std::make_unique<ShaderVisibleDescriptorAllocator>(device, heapType);
-    DAWN_TRY(allocator->AllocateAndSwitchShaderVisibleHeap());
+    std::unique_ptr<MutexProtected<ShaderVisibleDescriptorAllocator>> allocator =
+        std::make_unique<MutexProtected<ShaderVisibleDescriptorAllocator>>(device, heapType);
+    DAWN_TRY((*allocator)->AllocateAndSwitchShaderVisibleHeap());
     return std::move(allocator);
 }
 
@@ -94,8 +95,8 @@ ShaderVisibleDescriptorAllocator::ShaderVisibleDescriptorAllocator(
       mDescriptorCount(GetD3D12ShaderVisibleHeapMinSize(
           heapType,
           mDevice->IsToggleEnabled(Toggle::UseD3D12SmallShaderVisibleHeapForTesting))) {
-    ASSERT(heapType == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV ||
-           heapType == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+    DAWN_ASSERT(heapType == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV ||
+                heapType == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 }
 
 bool ShaderVisibleDescriptorAllocator::AllocateGPUDescriptors(
@@ -103,7 +104,7 @@ bool ShaderVisibleDescriptorAllocator::AllocateGPUDescriptors(
     ExecutionSerial pendingSerial,
     D3D12_CPU_DESCRIPTOR_HANDLE* baseCPUDescriptor,
     GPUDescriptorHeapAllocation* allocation) {
-    ASSERT(mHeap != nullptr);
+    DAWN_ASSERT(mHeap != nullptr);
     const uint64_t startOffset = mAllocator.Allocate(descriptorCount, pendingSerial);
     if (startOffset == RingBufferAllocator::kInvalidOffset) {
         return false;
@@ -116,7 +117,7 @@ bool ShaderVisibleDescriptorAllocator::AllocateGPUDescriptors(
     // Check for 32-bit overflow since CPU heap start handle uses size_t.
     const size_t cpuHeapStartPtr = descriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr;
 
-    ASSERT(heapOffset <= std::numeric_limits<size_t>::max() - cpuHeapStartPtr);
+    DAWN_ASSERT(heapOffset <= std::numeric_limits<size_t>::max() - cpuHeapStartPtr);
 
     *baseCPUDescriptor = {cpuHeapStartPtr + static_cast<size_t>(heapOffset)};
 
@@ -189,7 +190,7 @@ MaybeError ShaderVisibleDescriptorAllocator::AllocateAndSwitchShaderVisibleHeap(
             // heaps for heavy users.
             // TODO(dawn:256): Consider periodically triming to avoid OOM.
             mPool.push_back({mDevice->GetPendingCommandSerial(), std::move(mHeap)});
-            if (mPool.front().heapSerial <= mDevice->GetCompletedCommandSerial()) {
+            if (mPool.front().heapSerial <= mDevice->GetQueue()->GetCompletedCommandSerial()) {
                 descriptorHeap = std::move(mPool.front().heap);
                 mPool.pop_front();
             }
@@ -231,7 +232,7 @@ bool ShaderVisibleDescriptorAllocator::IsShaderVisibleHeapLockedResidentForTesti
 }
 
 bool ShaderVisibleDescriptorAllocator::IsLastShaderVisibleHeapInLRUForTesting() const {
-    ASSERT(!mPool.empty());
+    DAWN_ASSERT(!mPool.empty());
     return mPool.back().heap->IsInResidencyLRUCache();
 }
 
@@ -241,7 +242,7 @@ bool ShaderVisibleDescriptorAllocator::IsAllocationStillValid(
     // re-allocated every submit. For this reason, we view any descriptors allocated prior to the
     // pending submit as invalid. We must also verify the descriptor heap has not switched (because
     // a larger descriptor heap was needed).
-    return (allocation.GetLastUsageSerial() == mDevice->GetPendingCommandSerial() &&
+    return (allocation.GetLastUsageSerial() == mDevice->GetQueue()->GetPendingCommandSerial() &&
             allocation.GetHeapSerial() == mHeapSerial);
 }
 

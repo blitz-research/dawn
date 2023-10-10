@@ -14,16 +14,16 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/spirv/writer/ast_printer/test_helper.h"
-#include "src/tint/lang/spirv/writer/spv_dump.h"
+#include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
 
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using SpirvASTPrinterTest = TestHelper;
 
@@ -61,7 +61,7 @@ TEST_P(Attribute_StageTest, Emit) {
     Vector<const ast::Statement*, 2> body;
     if (params.stage == ast::PipelineStage::kVertex) {
         ret_type = ty.vec4<f32>();
-        ret_type_attrs.Push(Builtin(builtin::BuiltinValue::kPosition));
+        ret_type_attrs.Push(Builtin(core::BuiltinValue::kPosition));
         body.Push(Return(Call<vec4<f32>>()));
     }
 
@@ -164,10 +164,10 @@ TEST_F(SpirvASTPrinterTest, Decoration_ExecutionMode_WorkgroupSize_OverridableCo
                                      pb.WorkgroupSize("width", "height", "depth"),
                                      pb.Stage(ast::PipelineStage::kCompute),
                                  });
-            auto program = std::make_unique<Program>(resolver::Resolve(pb));
-            auto b = std::make_unique<Builder>(program.get());
+            auto program = resolver::Resolve(pb);
+            Builder b(program);
 
-            b->GenerateExecutionModes(func, 3);
+            b.GenerateExecutionModes(func, 3);
         },
         "override-expressions should have been removed with the SubstituteOverride transform");
 }
@@ -185,10 +185,10 @@ TEST_F(SpirvASTPrinterTest, Decoration_ExecutionMode_WorkgroupSize_LiteralAndCon
                                      pb.Stage(ast::PipelineStage::kCompute),
                                  });
 
-            auto program = std::make_unique<Program>(resolver::Resolve(pb));
-            auto b = std::make_unique<Builder>(program.get());
+            auto program = resolver::Resolve(pb);
+            Builder b(program);
 
-            b->GenerateExecutionModes(func, 3);
+            b.GenerateExecutionModes(func, 3);
         },
         "override-expressions should have been removed with the SubstituteOverride transform");
 }
@@ -237,7 +237,7 @@ TEST_F(SpirvASTPrinterTest, Decoration_ExecutionMode_FragDepth) {
              Stage(ast::PipelineStage::kFragment),
          },
          Vector{
-             Builtin(builtin::BuiltinValue::kFragDepth),
+             Builtin(core::BuiltinValue::kFragDepth),
          });
 
     Builder& b = SanitizeAndBuild();

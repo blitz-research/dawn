@@ -15,14 +15,16 @@
 #ifndef SRC_TINT_LANG_CORE_IR_IF_H_
 #define SRC_TINT_LANG_CORE_IR_IF_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/control_instruction.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class MultiInBlock;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// If instruction.
 ///
@@ -40,7 +42,7 @@ namespace tint::ir {
 ///                    ▼
 ///                   out
 /// ```
-class If : public Castable<If, ControlInstruction> {
+class If final : public Castable<If, ControlInstruction> {
   public:
     /// The index of the condition operand
     static constexpr size_t kConditionOperandOffset = 0;
@@ -51,6 +53,9 @@ class If : public Castable<If, ControlInstruction> {
     /// @param f the false block
     If(Value* cond, ir::Block* t, ir::Block* f);
     ~If() override;
+
+    /// @copydoc Instruction::Clone()
+    If* Clone(CloneContext& ctx) override;
 
     /// @copydoc ControlInstruction::ForeachBlock
     void ForeachBlock(const std::function<void(ir::Block*)>& cb) override;
@@ -65,13 +70,13 @@ class If : public Castable<If, ControlInstruction> {
     ir::Block* False() { return false_; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "if"; }
+    std::string FriendlyName() override { return "if"; }
 
   private:
     ir::Block* true_ = nullptr;
     ir::Block* false_ = nullptr;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_IF_H_

@@ -21,7 +21,7 @@
 namespace tint::wgsl::reader {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using ProgramToIRBinaryTest = helpers::IRProgramTest;
 
@@ -31,7 +31,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Add) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -49,12 +49,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Add) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Increment) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
     auto* expr = Increment("v1");
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -72,12 +72,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Increment) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundAdd) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
-    auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kAdd);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
+    auto* expr = CompoundAssign("v1", 1_u, core::BinaryOp::kAdd);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -100,7 +100,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Subtract) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -118,12 +118,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Subtract) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Decrement) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.i32());
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.i32());
     auto* expr = Decrement("v1");
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, i32, read_write> = var
@@ -141,12 +141,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Decrement) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundSubtract) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
-    auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kSubtract);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
+    auto* expr = CompoundAssign("v1", 1_u, core::BinaryOp::kSubtract);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -169,7 +169,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Multiply) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -187,12 +187,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Multiply) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundMultiply) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
-    auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kMultiply);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
+    auto* expr = CompoundAssign("v1", 1_u, core::BinaryOp::kMultiply);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -215,7 +215,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Div) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -233,12 +233,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Div) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundDiv) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
-    auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kDivide);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
+    auto* expr = CompoundAssign("v1", 1_u, core::BinaryOp::kDivide);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -261,7 +261,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Modulo) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -279,12 +279,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Modulo) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundModulo) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
-    auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kModulo);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
+    auto* expr = CompoundAssign("v1", 1_u, core::BinaryOp::kModulo);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -307,7 +307,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_And) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -325,12 +325,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_And) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundAnd) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.bool_());
-    auto* expr = CompoundAssign("v1", false, ast::BinaryOp::kAnd);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.bool_());
+    auto* expr = CompoundAssign("v1", false, core::BinaryOp::kAnd);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, bool, read_write> = var
@@ -353,7 +353,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Or) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -371,12 +371,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Or) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundOr) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.bool_());
-    auto* expr = CompoundAssign("v1", false, ast::BinaryOp::kOr);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.bool_());
+    auto* expr = CompoundAssign("v1", false, core::BinaryOp::kOr);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, bool, read_write> = var
@@ -399,7 +399,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Xor) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -417,12 +417,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Xor) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundXor) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
-    auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kXor);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
+    auto* expr = CompoundAssign("v1", 1_u, core::BinaryOp::kXor);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -446,7 +446,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LogicalAnd) {
     WrapInFunction(let, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():bool -> %b1 {
   %b1 = block {
@@ -482,7 +482,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LogicalOr) {
     WrapInFunction(let, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():bool -> %b1 {
   %b1 = block {
@@ -517,7 +517,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Equal) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -540,7 +540,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_NotEqual) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -563,7 +563,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LessThan) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -586,7 +586,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_GreaterThan) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -609,7 +609,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LessThanEqual) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -632,7 +632,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_GreaterThanEqual) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -655,7 +655,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_ShiftLeft) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -673,12 +673,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_ShiftLeft) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundShiftLeft) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
-    auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kShiftLeft);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
+    auto* expr = CompoundAssign("v1", 1_u, core::BinaryOp::kShiftLeft);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -701,7 +701,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_ShiftRight) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -719,12 +719,12 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_ShiftRight) {
 }
 
 TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_CompoundShiftRight) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.u32());
-    auto* expr = CompoundAssign("v1", 1_u, ast::BinaryOp::kShiftRight);
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.u32());
+    auto* expr = CompoundAssign("v1", 1_u, core::BinaryOp::kShiftRight);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, u32, read_write> = var
@@ -749,7 +749,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Compound) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():f32 -> %b1 {
   %b1 = block {
@@ -786,7 +786,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Compound_WithConstEval) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func(%p:bool):bool -> %b1 {
   %b1 = block {

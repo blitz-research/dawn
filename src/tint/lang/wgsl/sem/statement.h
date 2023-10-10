@@ -19,7 +19,7 @@
 #include "src/tint/lang/wgsl/sem/behavior.h"
 #include "src/tint/lang/wgsl/sem/node.h"
 #include "src/tint/utils/containers/hashmap.h"
-#include "src/tint/utils/text/symbol.h"
+#include "src/tint/utils/symbol/symbol.h"
 
 // Forward declarations
 namespace tint::ast {
@@ -113,12 +113,12 @@ class Statement : public Castable<Statement, Node> {
     /// Modifies the severity of a specific diagnostic rule for this statement.
     /// @param rule the diagnostic rule
     /// @param severity the new diagnostic severity
-    void SetDiagnosticSeverity(builtin::DiagnosticRule rule, builtin::DiagnosticSeverity severity) {
+    void SetDiagnosticSeverity(wgsl::DiagnosticRule rule, wgsl::DiagnosticSeverity severity) {
         diagnostic_severities_[rule] = severity;
     }
 
     /// @returns the diagnostic severity modifications applied to this statement
-    const builtin::DiagnosticRuleSeverities& DiagnosticSeverities() const {
+    const wgsl::DiagnosticRuleSeverities& DiagnosticSeverities() const {
         return diagnostic_severities_;
     }
 
@@ -128,7 +128,7 @@ class Statement : public Castable<Statement, Node> {
     const sem::Function* const function_;
     sem::Behaviors behaviors_{sem::Behavior::kNext};
     bool is_reachable_ = true;
-    builtin::DiagnosticRuleSeverities diagnostic_severities_;
+    wgsl::DiagnosticRuleSeverities diagnostic_severities_;
 };
 
 /// CompoundStatement is the base class of statements that can hold other

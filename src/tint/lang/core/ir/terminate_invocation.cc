@@ -14,10 +14,17 @@
 
 #include "src/tint/lang/core/ir/terminate_invocation.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::TerminateInvocation);
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 
-namespace tint::ir {
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::TerminateInvocation);
+
+namespace tint::core::ir {
 
 TerminateInvocation::~TerminateInvocation() = default;
 
-}  // namespace tint::ir
+TerminateInvocation* TerminateInvocation::Clone(CloneContext& ctx) {
+    return ctx.ir.instructions.Create<TerminateInvocation>();
+}
+
+}  // namespace tint::core::ir

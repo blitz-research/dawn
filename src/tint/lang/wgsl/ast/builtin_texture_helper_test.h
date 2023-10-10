@@ -17,8 +17,8 @@
 
 #include <vector>
 
-#include "src/tint/lang/core/builtin/access.h"
-#include "src/tint/lang/core/builtin/texel_format.h"
+#include "src/tint/lang/core/access.h"
+#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ast/builder.h"
@@ -192,8 +192,8 @@ struct TextureOverloadCase {
     TextureOverloadCase(ValidTextureOverload,
                         const char*,
                         TextureKind,
-                        type::SamplerKind,
-                        type::TextureDimension,
+                        core::type::SamplerKind,
+                        core::type::TextureDimension,
                         TextureDataType,
                         const char*,
                         std::function<Args(ProgramBuilder*)>,
@@ -202,7 +202,7 @@ struct TextureOverloadCase {
     TextureOverloadCase(ValidTextureOverload,
                         const char*,
                         TextureKind,
-                        type::TextureDimension,
+                        core::type::TextureDimension,
                         TextureDataType,
                         const char*,
                         std::function<Args(ProgramBuilder*)>,
@@ -210,9 +210,9 @@ struct TextureOverloadCase {
     /// Constructor for textureLoad() with storage textures
     TextureOverloadCase(ValidTextureOverload,
                         const char*,
-                        tint::builtin::Access,
-                        tint::builtin::TexelFormat,
-                        type::TextureDimension,
+                        tint::core::Access,
+                        tint::core::TexelFormat,
+                        core::type::TextureDimension,
                         TextureDataType,
                         const char*,
                         std::function<Args(ProgramBuilder*)>,
@@ -247,15 +247,15 @@ struct TextureOverloadCase {
     const TextureKind texture_kind;
     /// The sampler kind for the sampler parameter
     /// Used only when texture_kind is not kStorage
-    type::SamplerKind const sampler_kind = type::SamplerKind::kSampler;
+    core::type::SamplerKind const sampler_kind = core::type::SamplerKind::kSampler;
     /// The access control for the storage texture
     /// Used only when texture_kind is kStorage
-    tint::builtin::Access const access = tint::builtin::Access::kReadWrite;
+    tint::core::Access const access = tint::core::Access::kReadWrite;
     /// The image format for the storage texture
     /// Used only when texture_kind is kStorage
-    tint::builtin::TexelFormat const texel_format = tint::builtin::TexelFormat::kUndefined;
+    tint::core::TexelFormat const texel_format = tint::core::TexelFormat::kUndefined;
     /// The dimensions of the texture parameter
-    type::TextureDimension const texture_dimension;
+    core::type::TextureDimension const texture_dimension;
     /// The data type of the texture parameter
     const TextureDataType texture_data_type;
     /// Name of the function. e.g. `textureSample`, `textureSampleGrad`, etc

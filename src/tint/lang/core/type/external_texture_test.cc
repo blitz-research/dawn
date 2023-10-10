@@ -15,13 +15,13 @@
 #include "src/tint/lang/core/type/external_texture.h"
 
 #include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/helper_test.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
-#include "src/tint/lang/core/type/test_helper.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 
-namespace tint::type {
+namespace tint::core::type {
 namespace {
 
 using ExternalTextureTest = TestHelper;
@@ -70,12 +70,12 @@ TEST_F(ExternalTextureTest, FriendlyName) {
 TEST_F(ExternalTextureTest, Clone) {
     auto* a = create<ExternalTexture>();
 
-    type::Manager mgr;
-    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+    core::type::Manager mgr;
+    core::type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
 
     auto* b = a->Clone(ctx);
     ASSERT_TRUE(b->Is<ExternalTexture>());
 }
 
 }  // namespace
-}  // namespace tint::type
+}  // namespace tint::core::type

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/wgsl/writer/ast_printer/helper_test.h"
 
 #include "gmock/gmock.h"
 
@@ -21,8 +21,8 @@ using ::testing::HasSubstr;
 namespace tint::wgsl::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using WgslASTPrinterTest_Constructor = TestHelper;
 
@@ -65,7 +65,7 @@ TEST_F(WgslASTPrinterTest_Constructor, F32) {
 }
 
 TEST_F(WgslASTPrinterTest_Constructor, F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     // Use a number close to 1<<16 but whose decimal representation ends in 0.
     WrapInFunction(Expr(f16((1 << 15) - 8)));
@@ -88,7 +88,7 @@ TEST_F(WgslASTPrinterTest_Constructor, Type_F32) {
 }
 
 TEST_F(WgslASTPrinterTest_Constructor, Type_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     WrapInFunction(Call<f16>(Expr(-1.2e-5_h)));
 
@@ -140,7 +140,7 @@ TEST_F(WgslASTPrinterTest_Constructor, Type_Vec_F32) {
 }
 
 TEST_F(WgslASTPrinterTest_Constructor, Type_Vec_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     WrapInFunction(Call<vec3<f16>>(1_h, 2_h, 3_h));
 
@@ -164,7 +164,7 @@ TEST_F(WgslASTPrinterTest_Constructor, Type_Mat_F32) {
 }
 
 TEST_F(WgslASTPrinterTest_Constructor, Type_Mat_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     WrapInFunction(
         Call<mat2x3<f16>>(Call<vec3<f16>>(1_h, 2_h, 3_h), Call<vec3<f16>>(3_h, 4_h, 5_h)));

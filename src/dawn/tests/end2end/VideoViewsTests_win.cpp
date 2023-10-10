@@ -20,6 +20,7 @@
 
 #include <memory>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "VideoViewsTests.h"
@@ -85,8 +86,10 @@ class VideoViewsTestBackendWin : public VideoViewsTestBackend {
         switch (format) {
             case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
                 return DXGI_FORMAT_NV12;
+            case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+                return DXGI_FORMAT_P010;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -99,13 +102,13 @@ class VideoViewsTestBackendWin : public VideoViewsTestBackend {
         textureDesc.format = format;
         textureDesc.dimension = wgpu::TextureDimension::e2D;
         textureDesc.usage = usage;
-        textureDesc.size = {VideoViewsTests::kYUVImageDataWidthInTexels,
-                            VideoViewsTests::kYUVImageDataHeightInTexels, 1};
+        textureDesc.size = {VideoViewsTestsBase::kYUVImageDataWidthInTexels,
+                            VideoViewsTestsBase::kYUVImageDataHeightInTexels, 1};
 
         // Create a DX11 texture with data then wrap it in a shared handle.
         D3D11_TEXTURE2D_DESC d3dDescriptor;
-        d3dDescriptor.Width = VideoViewsTests::kYUVImageDataWidthInTexels;
-        d3dDescriptor.Height = VideoViewsTests::kYUVImageDataHeightInTexels;
+        d3dDescriptor.Width = VideoViewsTestsBase::kYUVImageDataWidthInTexels;
+        d3dDescriptor.Height = VideoViewsTestsBase::kYUVImageDataHeightInTexels;
         d3dDescriptor.MipLevels = 1;
         d3dDescriptor.ArraySize = 1;
         d3dDescriptor.Format = GetDXGITextureFormat(format);
@@ -116,52 +119,58 @@ class VideoViewsTestBackendWin : public VideoViewsTestBackend {
         d3dDescriptor.CPUAccessFlags = 0;
         d3dDescriptor.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED;
 
-        std::vector<uint8_t> initialData =
-            VideoViewsTests::GetTestTextureData(format, isCheckerboard);
-
         D3D11_SUBRESOURCE_DATA subres;
-        subres.pSysMem = initialData.data();
-        subres.SysMemPitch = VideoViewsTests::kYUVImageDataWidthInTexels;
+        subres.SysMemPitch = VideoViewsTestsBase::kYUVImageDataWidthInTexels;
+
+        std::variant<std::vector<uint8_t>, std::vector<uint16_t>> initialData;
+        if (format == wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm) {
+            initialData = VideoViewsTestsBase::GetTestTextureData<uint16_t>(format, isCheckerboard);
+            subres.pSysMem = std::get<1>(initialData).data();
+            subres.SysMemPitch *= 2;
+        } else {
+            initialData = VideoViewsTestsBase::GetTestTextureData<uint8_t>(format, isCheckerboard);
+            subres.pSysMem = std::get<0>(initialData).data();
+        }
 
         ComPtr<ID3D11Texture2D> d3d11Texture;
         HRESULT hr = mD3d11Device->CreateTexture2D(
             &d3dDescriptor, (initialized ? &subres : nullptr), &d3d11Texture);
-        ASSERT(hr == S_OK);
+        DAWN_ASSERT(hr == S_OK);
 
         ComPtr<IDXGIResource1> dxgiResource;
         hr = d3d11Texture.As(&dxgiResource);
-        ASSERT(hr == S_OK);
+        DAWN_ASSERT(hr == S_OK);
 
         HANDLE sharedHandle;
         hr = dxgiResource->CreateSharedHandle(
             nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr,
             &sharedHandle);
-        ASSERT(hr == S_OK);
+        DAWN_ASSERT(hr == S_OK);
 
         HANDLE fenceSharedHandle = nullptr;
         ComPtr<ID3D11Fence> d3d11Fence;
 
         ComPtr<ID3D11Device5> d3d11Device5;
         hr = mD3d11Device.As(&d3d11Device5);
-        ASSERT(hr == S_OK);
+        DAWN_ASSERT(hr == S_OK);
 
         hr = d3d11Device5->CreateFence(0, D3D11_FENCE_FLAG_SHARED, IID_PPV_ARGS(&d3d11Fence));
-        ASSERT(hr == S_OK);
+        DAWN_ASSERT(hr == S_OK);
 
         hr = d3d11Fence->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &fenceSharedHandle);
-        ASSERT(hr == S_OK);
+        DAWN_ASSERT(hr == S_OK);
 
         ComPtr<ID3D11DeviceContext> d3d11DeviceContext;
         mD3d11Device->GetImmediateContext(&d3d11DeviceContext);
 
         ComPtr<ID3D11DeviceContext4> d3d11DeviceContext4;
         hr = d3d11DeviceContext.As(&d3d11DeviceContext4);
-        ASSERT(hr == S_OK);
+        DAWN_ASSERT(hr == S_OK);
         // D3D11 texture should be initialized upon CreateTexture2D, but we need to make Dawn/D3D12
         // wait on the initializtaion. The fence starts with 0 signaled, but that won't capture the
         // initialization above, so signal explicitly with 1 and make Dawn wait on it.
         hr = d3d11DeviceContext4->Signal(d3d11Fence.Get(), 1);
-        ASSERT(hr == S_OK);
+        DAWN_ASSERT(hr == S_OK);
 
         // Open the DX11 texture in Dawn from the shared handle and return it as a WebGPU texture.
         native::d3d::ExternalImageDescriptorDXGISharedHandle externalImageDesc;
@@ -212,6 +221,13 @@ class VideoViewsTestBackendWin : public VideoViewsTestBackend {
 std::vector<BackendTestConfig> VideoViewsTestBackend::Backends() {
     return {D3D11Backend(), D3D12Backend()};
 }
+
+// static
+std::vector<Format> VideoViewsTestBackend::Formats() {
+    return {wgpu::TextureFormat::R8BG8Biplanar420Unorm,
+            wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm};
+}
+
 // static
 std::unique_ptr<VideoViewsTestBackend> VideoViewsTestBackend::Create() {
     return std::make_unique<VideoViewsTestBackendWin>();

@@ -23,15 +23,15 @@
 #include "src/tint/lang/core/type/sampler.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
-#include "src/tint/lang/msl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/msl/writer/ast_printer/helper_test.h"
 #include "src/tint/utils/text/string_stream.h"
 
 namespace tint::msl::writer {
 namespace {
 
 using ::testing::HasSubstr;
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 void FormatMSLField(StringStream& out,
                     const char* addr,
@@ -91,7 +91,7 @@ using MslASTPrinterTest = TestHelper;
 
 TEST_F(MslASTPrinterTest, EmitType_Array) {
     auto arr = ty.array<bool, 4>();
-    ast::Type type = GlobalVar("G", arr, builtin::AddressSpace::kPrivate)->type;
+    ast::Type type = GlobalVar("G", arr, core::AddressSpace::kPrivate)->type;
 
     ASTPrinter& gen = Build();
 
@@ -103,7 +103,7 @@ TEST_F(MslASTPrinterTest, EmitType_Array) {
 TEST_F(MslASTPrinterTest, EmitType_ArrayOfArray) {
     auto a = ty.array<bool, 4>();
     auto b = ty.array(a, 5_u);
-    ast::Type type = GlobalVar("G", b, builtin::AddressSpace::kPrivate)->type;
+    ast::Type type = GlobalVar("G", b, core::AddressSpace::kPrivate)->type;
 
     ASTPrinter& gen = Build();
 
@@ -116,7 +116,7 @@ TEST_F(MslASTPrinterTest, EmitType_ArrayOfArrayOfArray) {
     auto a = ty.array<bool, 4>();
     auto b = ty.array(a, 5_u);
     auto c = ty.array(b, 6_u);
-    ast::Type type = GlobalVar("G", c, builtin::AddressSpace::kPrivate)->type;
+    ast::Type type = GlobalVar("G", c, core::AddressSpace::kPrivate)->type;
 
     ASTPrinter& gen = Build();
 
@@ -127,7 +127,7 @@ TEST_F(MslASTPrinterTest, EmitType_ArrayOfArrayOfArray) {
 
 TEST_F(MslASTPrinterTest, EmitType_Array_WithoutName) {
     auto arr = ty.array<bool, 4>();
-    ast::Type type = GlobalVar("G", arr, builtin::AddressSpace::kPrivate)->type;
+    ast::Type type = GlobalVar("G", arr, core::AddressSpace::kPrivate)->type;
 
     ASTPrinter& gen = Build();
 
@@ -138,7 +138,7 @@ TEST_F(MslASTPrinterTest, EmitType_Array_WithoutName) {
 
 TEST_F(MslASTPrinterTest, EmitType_RuntimeArray) {
     auto arr = ty.array<bool, 1>();
-    ast::Type type = GlobalVar("G", arr, builtin::AddressSpace::kPrivate)->type;
+    ast::Type type = GlobalVar("G", arr, core::AddressSpace::kPrivate)->type;
 
     ASTPrinter& gen = Build();
 
@@ -148,7 +148,7 @@ TEST_F(MslASTPrinterTest, EmitType_RuntimeArray) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_Bool) {
-    auto* bool_ = create<type::Bool>();
+    auto* bool_ = create<core::type::Bool>();
 
     ASTPrinter& gen = Build();
 
@@ -158,7 +158,7 @@ TEST_F(MslASTPrinterTest, EmitType_Bool) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_F32) {
-    auto* f32 = create<type::F32>();
+    auto* f32 = create<core::type::F32>();
 
     ASTPrinter& gen = Build();
 
@@ -168,7 +168,7 @@ TEST_F(MslASTPrinterTest, EmitType_F32) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_F16) {
-    auto* f16 = create<type::F16>();
+    auto* f16 = create<core::type::F16>();
 
     ASTPrinter& gen = Build();
 
@@ -178,7 +178,7 @@ TEST_F(MslASTPrinterTest, EmitType_F16) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_I32) {
-    auto* i32 = create<type::I32>();
+    auto* i32 = create<core::type::I32>();
 
     ASTPrinter& gen = Build();
 
@@ -188,9 +188,9 @@ TEST_F(MslASTPrinterTest, EmitType_I32) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_Matrix_F32) {
-    auto* f32 = create<type::F32>();
-    auto* vec3 = create<type::Vector>(f32, 3u);
-    auto* mat2x3 = create<type::Matrix>(vec3, 2u);
+    auto* f32 = create<core::type::F32>();
+    auto* vec3 = create<core::type::Vector>(f32, 3u);
+    auto* mat2x3 = create<core::type::Matrix>(vec3, 2u);
 
     ASTPrinter& gen = Build();
 
@@ -200,9 +200,9 @@ TEST_F(MslASTPrinterTest, EmitType_Matrix_F32) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_Matrix_F16) {
-    auto* f16 = create<type::F16>();
-    auto* vec3 = create<type::Vector>(f16, 3u);
-    auto* mat2x3 = create<type::Matrix>(vec3, 2u);
+    auto* f16 = create<core::type::F16>();
+    auto* vec3 = create<core::type::Vector>(f16, 3u);
+    auto* mat2x3 = create<core::type::Matrix>(vec3, 2u);
 
     ASTPrinter& gen = Build();
 
@@ -212,9 +212,9 @@ TEST_F(MslASTPrinterTest, EmitType_Matrix_F16) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_Pointer) {
-    auto* f32 = create<type::F32>();
+    auto* f32 = create<core::type::F32>();
     auto* p =
-        create<type::Pointer>(builtin::AddressSpace::kWorkgroup, f32, builtin::Access::kReadWrite);
+        create<core::type::Pointer>(core::AddressSpace::kWorkgroup, f32, core::Access::kReadWrite);
 
     ASTPrinter& gen = Build();
 
@@ -245,7 +245,7 @@ TEST_F(MslASTPrinterTest, EmitType_StructDecl) {
     ASTPrinter& gen = Build();
 
     tint::TextGenerator::TextBuffer buf;
-    auto* str = program->TypeOf(s)->As<type::Struct>();
+    auto* str = program->TypeOf(s)->As<core::type::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, str)) << gen.Diagnostics();
     EXPECT_EQ(buf.String(), R"(struct S {
   int a;
@@ -285,14 +285,14 @@ TEST_F(MslASTPrinterTest, EmitType_Struct_Layout_NonComposites) {
                            Member("z", ty.f32()),
                        });
 
-    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
-                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+    ast::Type type = GlobalVar("G", ty.Of(s), core::AddressSpace::kStorage, core::Access::kRead,
+                               Binding(0_a), Group(0_a))
                          ->type;
 
     ASTPrinter& gen = Build();
 
     tint::TextGenerator::TextBuffer buf;
-    auto* str = program->TypeOf(type)->As<type::Struct>();
+    auto* str = program->TypeOf(type)->As<core::type::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, str)) << gen.Diagnostics();
 
     // ALL_FIELDS() calls the macro FIELD(ADDR, TYPE, ARRAY_COUNT, NAME)
@@ -392,14 +392,14 @@ TEST_F(MslASTPrinterTest, EmitType_Struct_Layout_Structures) {
                                  Member("e", ty.f32()),
                              });
 
-    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
-                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+    ast::Type type = GlobalVar("G", ty.Of(s), core::AddressSpace::kStorage, core::Access::kRead,
+                               Binding(0_a), Group(0_a))
                          ->type;
 
     ASTPrinter& gen = Build();
 
     tint::TextGenerator::TextBuffer buf;
-    auto* str = program->TypeOf(type)->As<type::Struct>();
+    auto* str = program->TypeOf(type)->As<core::type::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, str)) << gen.Diagnostics();
 
     // ALL_FIELDS() calls the macro FIELD(ADDR, TYPE, ARRAY_COUNT, NAME)
@@ -484,14 +484,14 @@ TEST_F(MslASTPrinterTest, EmitType_Struct_Layout_ArrayDefaultStride) {
                                  Member("f", array_z),
                              });
 
-    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
-                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+    ast::Type type = GlobalVar("G", ty.Of(s), core::AddressSpace::kStorage, core::Access::kRead,
+                               Binding(0_a), Group(0_a))
                          ->type;
 
     ASTPrinter& gen = Build();
 
     tint::TextGenerator::TextBuffer buf;
-    auto* str = program->TypeOf(type)->As<type::Struct>();
+    auto* str = program->TypeOf(type)->As<core::type::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, str)) << gen.Diagnostics();
 
     // ALL_FIELDS() calls the macro FIELD(ADDR, TYPE, ARRAY_COUNT, NAME)
@@ -568,14 +568,14 @@ TEST_F(MslASTPrinterTest, EmitType_Struct_Layout_ArrayVec3DefaultStride) {
                                  Member("c", ty.i32()),
                              });
 
-    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
-                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+    ast::Type type = GlobalVar("G", ty.Of(s), core::AddressSpace::kStorage, core::Access::kRead,
+                               Binding(0_a), Group(0_a))
                          ->type;
 
     ASTPrinter& gen = Build();
 
     tint::TextGenerator::TextBuffer buf;
-    auto* str = program->TypeOf(type)->As<type::Struct>();
+    auto* str = program->TypeOf(type)->As<core::type::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, str)) << gen.Diagnostics();
 
     // ALL_FIELDS() calls the macro FIELD(ADDR, TYPE, ARRAY_COUNT, NAME)
@@ -630,14 +630,14 @@ TEST_F(MslASTPrinterTest, AttemptTintPadSymbolCollision) {
                  Member("tint_pad_21", ty.f32()),
              });
 
-    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
-                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+    ast::Type type = GlobalVar("G", ty.Of(s), core::AddressSpace::kStorage, core::Access::kRead,
+                               Binding(0_a), Group(0_a))
                          ->type;
 
     ASTPrinter& gen = Build();
 
     tint::TextGenerator::TextBuffer buf;
-    auto* str = program->TypeOf(type)->As<type::Struct>();
+    auto* str = program->TypeOf(type)->As<core::type::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, str)) << gen.Diagnostics();
     EXPECT_EQ(buf.String(), R"(struct S {
   /* 0x0000 */ int tint_pad_2;
@@ -689,14 +689,14 @@ TEST_F(MslASTPrinterTest, EmitType_Struct_WithAttribute) {
                                  Member("b", ty.f32()),
                              });
 
-    ast::Type type = GlobalVar("G", ty.Of(s), builtin::AddressSpace::kStorage,
-                               builtin::Access::kRead, Binding(0_a), Group(0_a))
+    ast::Type type = GlobalVar("G", ty.Of(s), core::AddressSpace::kStorage, core::Access::kRead,
+                               Binding(0_a), Group(0_a))
                          ->type;
 
     ASTPrinter& gen = Build();
 
     tint::TextGenerator::TextBuffer buf;
-    auto* str = program->TypeOf(type)->As<type::Struct>();
+    auto* str = program->TypeOf(type)->As<core::type::Struct>();
     ASSERT_TRUE(gen.EmitStructType(&buf, str)) << gen.Diagnostics();
     EXPECT_EQ(buf.String(), R"(struct S {
   /* 0x0000 */ int a;
@@ -706,7 +706,7 @@ TEST_F(MslASTPrinterTest, EmitType_Struct_WithAttribute) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_U32) {
-    auto* u32 = create<type::U32>();
+    auto* u32 = create<core::type::U32>();
 
     ASTPrinter& gen = Build();
 
@@ -716,8 +716,8 @@ TEST_F(MslASTPrinterTest, EmitType_U32) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_Vector) {
-    auto* f32 = create<type::F32>();
-    auto* vec3 = create<type::Vector>(f32, 3u);
+    auto* f32 = create<core::type::F32>();
+    auto* vec3 = create<core::type::Vector>(f32, 3u);
 
     ASTPrinter& gen = Build();
 
@@ -727,7 +727,7 @@ TEST_F(MslASTPrinterTest, EmitType_Vector) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_Void) {
-    auto* void_ = create<type::Void>();
+    auto* void_ = create<core::type::Void>();
 
     ASTPrinter& gen = Build();
 
@@ -737,7 +737,7 @@ TEST_F(MslASTPrinterTest, EmitType_Void) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_Sampler) {
-    auto* sampler = create<type::Sampler>(type::SamplerKind::kSampler);
+    auto* sampler = create<core::type::Sampler>(core::type::SamplerKind::kSampler);
 
     ASTPrinter& gen = Build();
 
@@ -747,7 +747,7 @@ TEST_F(MslASTPrinterTest, EmitType_Sampler) {
 }
 
 TEST_F(MslASTPrinterTest, EmitType_SamplerComparison) {
-    auto* sampler = create<type::Sampler>(type::SamplerKind::kComparisonSampler);
+    auto* sampler = create<core::type::Sampler>(core::type::SamplerKind::kComparisonSampler);
 
     ASTPrinter& gen = Build();
 
@@ -757,7 +757,7 @@ TEST_F(MslASTPrinterTest, EmitType_SamplerComparison) {
 }
 
 struct MslDepthTextureData {
-    type::TextureDimension dim;
+    core::type::TextureDimension dim;
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, MslDepthTextureData data) {
@@ -770,7 +770,7 @@ using MslDepthTexturesTest = TestParamHelper<MslDepthTextureData>;
 TEST_P(MslDepthTexturesTest, Emit) {
     auto params = GetParam();
 
-    type::DepthTexture s(params.dim);
+    core::type::DepthTexture s(params.dim);
 
     ASTPrinter& gen = Build();
 
@@ -781,17 +781,18 @@ TEST_P(MslDepthTexturesTest, Emit) {
 INSTANTIATE_TEST_SUITE_P(
     MslASTPrinterTest,
     MslDepthTexturesTest,
-    testing::Values(
-        MslDepthTextureData{type::TextureDimension::k2d, "depth2d<float, access::sample>"},
-        MslDepthTextureData{type::TextureDimension::k2dArray,
-                            "depth2d_array<float, access::sample>"},
-        MslDepthTextureData{type::TextureDimension::kCube, "depthcube<float, access::sample>"},
-        MslDepthTextureData{type::TextureDimension::kCubeArray,
-                            "depthcube_array<float, access::sample>"}));
+    testing::Values(MslDepthTextureData{core::type::TextureDimension::k2d,
+                                        "depth2d<float, access::sample>"},
+                    MslDepthTextureData{core::type::TextureDimension::k2dArray,
+                                        "depth2d_array<float, access::sample>"},
+                    MslDepthTextureData{core::type::TextureDimension::kCube,
+                                        "depthcube<float, access::sample>"},
+                    MslDepthTextureData{core::type::TextureDimension::kCubeArray,
+                                        "depthcube_array<float, access::sample>"}));
 
 using MslDepthMultisampledTexturesTest = TestHelper;
 TEST_F(MslDepthMultisampledTexturesTest, Emit) {
-    type::DepthMultisampledTexture s(type::TextureDimension::k2d);
+    core::type::DepthMultisampledTexture s(core::type::TextureDimension::k2d);
 
     ASTPrinter& gen = Build();
 
@@ -801,7 +802,7 @@ TEST_F(MslDepthMultisampledTexturesTest, Emit) {
 }
 
 struct MslTextureData {
-    type::TextureDimension dim;
+    core::type::TextureDimension dim;
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, MslTextureData data) {
@@ -814,8 +815,8 @@ using MslSampledtexturesTest = TestParamHelper<MslTextureData>;
 TEST_P(MslSampledtexturesTest, Emit) {
     auto params = GetParam();
 
-    auto* f32 = create<type::F32>();
-    auto* s = create<type::SampledTexture>(params.dim, f32);
+    auto* f32 = create<core::type::F32>();
+    auto* s = create<core::type::SampledTexture>(params.dim, f32);
 
     ASTPrinter& gen = Build();
 
@@ -827,17 +828,18 @@ INSTANTIATE_TEST_SUITE_P(
     MslASTPrinterTest,
     MslSampledtexturesTest,
     testing::Values(
-        MslTextureData{type::TextureDimension::k1d, "texture1d<float, access::sample>"},
-        MslTextureData{type::TextureDimension::k2d, "texture2d<float, access::sample>"},
-        MslTextureData{type::TextureDimension::k2dArray, "texture2d_array<float, access::sample>"},
-        MslTextureData{type::TextureDimension::k3d, "texture3d<float, access::sample>"},
-        MslTextureData{type::TextureDimension::kCube, "texturecube<float, access::sample>"},
-        MslTextureData{type::TextureDimension::kCubeArray,
+        MslTextureData{core::type::TextureDimension::k1d, "texture1d<float, access::sample>"},
+        MslTextureData{core::type::TextureDimension::k2d, "texture2d<float, access::sample>"},
+        MslTextureData{core::type::TextureDimension::k2dArray,
+                       "texture2d_array<float, access::sample>"},
+        MslTextureData{core::type::TextureDimension::k3d, "texture3d<float, access::sample>"},
+        MslTextureData{core::type::TextureDimension::kCube, "texturecube<float, access::sample>"},
+        MslTextureData{core::type::TextureDimension::kCubeArray,
                        "texturecube_array<float, access::sample>"}));
 
 TEST_F(MslASTPrinterTest, Emit_TypeMultisampledTexture) {
-    auto* u32 = create<type::U32>();
-    auto* ms = create<type::MultisampledTexture>(type::TextureDimension::k2d, u32);
+    auto* u32 = create<core::type::U32>();
+    auto* ms = create<core::type::MultisampledTexture>(core::type::TextureDimension::k2d, u32);
 
     ASTPrinter& gen = Build();
 
@@ -847,7 +849,7 @@ TEST_F(MslASTPrinterTest, Emit_TypeMultisampledTexture) {
 }
 
 struct MslStorageTextureData {
-    type::TextureDimension dim;
+    core::type::TextureDimension dim;
     std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out, MslStorageTextureData data) {
@@ -859,8 +861,7 @@ using MslStorageTexturesTest = TestParamHelper<MslStorageTextureData>;
 TEST_P(MslStorageTexturesTest, Emit) {
     auto params = GetParam();
 
-    auto s =
-        ty.storage_texture(params.dim, builtin::TexelFormat::kR32Float, builtin::Access::kWrite);
+    auto s = ty.storage_texture(params.dim, core::TexelFormat::kR32Float, core::Access::kWrite);
     ast::Type type = GlobalVar("test_var", s, Binding(0_a), Group(0_a))->type;
 
     ASTPrinter& gen = Build();
@@ -869,15 +870,17 @@ TEST_P(MslStorageTexturesTest, Emit) {
     ASSERT_TRUE(gen.EmitType(out, program->TypeOf(type))) << gen.Diagnostics();
     EXPECT_EQ(out.str(), params.result);
 }
-INSTANTIATE_TEST_SUITE_P(
-    MslASTPrinterTest,
-    MslStorageTexturesTest,
-    testing::Values(
-        MslStorageTextureData{type::TextureDimension::k1d, "texture1d<float, access::write>"},
-        MslStorageTextureData{type::TextureDimension::k2d, "texture2d<float, access::write>"},
-        MslStorageTextureData{type::TextureDimension::k2dArray,
-                              "texture2d_array<float, access::write>"},
-        MslStorageTextureData{type::TextureDimension::k3d, "texture3d<float, access::write>"}));
+INSTANTIATE_TEST_SUITE_P(MslASTPrinterTest,
+                         MslStorageTexturesTest,
+                         testing::Values(MslStorageTextureData{core::type::TextureDimension::k1d,
+                                                               "texture1d<float, access::write>"},
+                                         MslStorageTextureData{core::type::TextureDimension::k2d,
+                                                               "texture2d<float, access::write>"},
+                                         MslStorageTextureData{
+                                             core::type::TextureDimension::k2dArray,
+                                             "texture2d_array<float, access::write>"},
+                                         MslStorageTextureData{core::type::TextureDimension::k3d,
+                                                               "texture3d<float, access::write>"}));
 
 }  // namespace
 }  // namespace tint::msl::writer

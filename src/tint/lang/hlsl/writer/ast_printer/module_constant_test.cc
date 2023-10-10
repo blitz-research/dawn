@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/hlsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/hlsl/writer/ast_printer/helper_test.h"
 #include "src/tint/lang/wgsl/ast/id_attribute.h"
 
 namespace tint::hlsl::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using HlslASTPrinterTest_ModuleConstant = TestHelper;
 
@@ -94,7 +94,7 @@ TEST_F(HlslASTPrinterTest_ModuleConstant, Emit_GlobalConst_f32) {
 }
 
 TEST_F(HlslASTPrinterTest_ModuleConstant, Emit_GlobalConst_f16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* var = GlobalConst("G", Expr(1_h));
     Func("f", tint::Empty, ty.void_(), Vector{Decl(Let("l", Expr(var)))});
@@ -152,7 +152,7 @@ TEST_F(HlslASTPrinterTest_ModuleConstant, Emit_GlobalConst_vec3_f32) {
 }
 
 TEST_F(HlslASTPrinterTest_ModuleConstant, Emit_GlobalConst_vec3_f16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* var = GlobalConst("G", Call<vec3<f16>>(1_h, 2_h, 3_h));
     Func("f", tint::Empty, ty.void_(), Vector{Decl(Let("l", Expr(var)))});
@@ -196,7 +196,7 @@ TEST_F(HlslASTPrinterTest_ModuleConstant, Emit_GlobalConst_mat2x3_f32) {
 }
 
 TEST_F(HlslASTPrinterTest_ModuleConstant, Emit_GlobalConst_mat2x3_f16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* var = GlobalConst("G", Call<mat2x3<f16>>(1_h, 2_h, 3_h, 4_h, 5_h, 6_h));
     Func("f", tint::Empty, ty.void_(), Vector{Decl(Let("l", Expr(var)))});

@@ -20,7 +20,7 @@
 #include <tuple>
 #include <vector>
 
-#include "tint/override_id.h"
+#include "src/tint/api/common/override_id.h"
 
 #include "src/tint/lang/wgsl/ast/interpolate_attribute.h"
 #include "src/tint/lang/wgsl/ast/pipeline_stage.h"
@@ -28,28 +28,36 @@
 namespace tint::inspector {
 
 /// Base component type of a stage variable.
-enum class ComponentType {
-    kUnknown = -1,
+enum class ComponentType : uint8_t {
     kF32,
     kU32,
     kI32,
     kF16,
+    kUnknown,
 };
 
 /// Composition of components of a stage variable.
-enum class CompositionType {
-    kUnknown = -1,
+enum class CompositionType : uint8_t {
     kScalar,
     kVec2,
     kVec3,
     kVec4,
+    kUnknown,
+};
+
+/// Types of `pixel_local` variable members.
+enum class PixelLocalMemberType : uint8_t {
+    kF32,
+    kU32,
+    kI32,
+    kUnknown,
 };
 
 /// Type of interpolation of a stage variable.
-enum class InterpolationType { kUnknown = -1, kPerspective, kLinear, kFlat };
+enum class InterpolationType : uint8_t { kPerspective, kLinear, kFlat, kUnknown };
 
 /// Type of interpolation sampling of a stage variable.
-enum class InterpolationSampling { kUnknown = -1, kNone, kCenter, kCentroid, kSample };
+enum class InterpolationSampling : uint8_t { kNone, kCenter, kCentroid, kSample, kUnknown };
 
 /// Reflection data about an entry point input or output.
 struct StageVariable {
@@ -138,12 +146,17 @@ struct EntryPoint {
     /// size is derived from an override-expression. In this situation you first need to run the
     /// tint::ast::transform::SubstituteOverride transform before using the inspector.
     std::optional<WorkgroupSize> workgroup_size;
+    /// The total size in bytes of all Workgroup storage-class storage accessed via the entry point.
+    uint32_t workgroup_storage_size = 0;
     /// List of the input variable accessed via this entry point.
     std::vector<StageVariable> input_variables;
     /// List of the output variable accessed via this entry point.
     std::vector<StageVariable> output_variables;
     /// List of the pipeline overridable constants accessed via this entry point.
     std::vector<Override> overrides;
+    /// List of the variable types used in the `pixel_local` block accessed by this entry point (if
+    /// any).
+    std::vector<PixelLocalMemberType> pixel_local_members;
     /// Does the entry point use the sample_mask builtin as an input builtin
     /// variable.
     bool input_sample_mask_used = false;
@@ -161,6 +174,10 @@ struct EntryPoint {
     bool num_workgroups_used = false;
     /// Does the entry point use the frag_depth builtin
     bool frag_depth_used = false;
+    /// Does the entry point use the vertex_index builtin
+    bool vertex_index_used = false;
+    /// Does the entry point use the instance_index builtin
+    bool instance_index_used = false;
 };
 
 }  // namespace tint::inspector

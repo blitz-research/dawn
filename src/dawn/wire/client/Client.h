@@ -27,12 +27,14 @@
 #include "dawn/wire/WireCmd_autogen.h"
 #include "dawn/wire/WireDeserializeAllocator.h"
 #include "dawn/wire/client/ClientBase_autogen.h"
+#include "dawn/wire/client/EventManager.h"
 #include "dawn/wire/client/ObjectStore.h"
 
 namespace dawn::wire::client {
 
 class Device;
 class MemoryTransferService;
+class EventManager;
 
 class Client : public ClientBase {
   public:
@@ -91,6 +93,8 @@ class Client : public ClientBase {
         mSerializer.SerializeCommand(cmd, *this, std::forward<Extensions>(es)...);
     }
 
+    EventManager* GetEventManager();
+
     void Disconnect();
     bool IsDisconnected() const;
 
@@ -105,6 +109,8 @@ class Client : public ClientBase {
     MemoryTransferService* mMemoryTransferService = nullptr;
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
     PerObjectType<LinkedList<ObjectBase>> mObjects;
+    // TODO(crbug.com/dawn/2061) Eventually we want an EventManager per instance not per client.
+    std::unique_ptr<EventManager> mEventManager = nullptr;
     bool mDisconnected = false;
 };
 

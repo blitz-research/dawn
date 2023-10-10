@@ -15,10 +15,10 @@
 #include "src/tint/lang/spirv/reader/ast_parser/namer.h"
 
 #include "gmock/gmock.h"
-#include "src/tint/lang/core/builtin/function.h"
+#include "src/tint/lang/core/builtin_fn.h"
 #include "src/tint/utils/text/string_stream.h"
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 namespace {
 
 using ::testing::Eq;
@@ -408,7 +408,7 @@ TEST_P(SpvNamerBuiltinFunctionTest, BuiltinFunctionsAreUsed) {
 
 INSTANTIATE_TEST_SUITE_P(SpirvASTParserTest_BuiltinFunctions,
                          SpvNamerBuiltinFunctionTest,
-                         ::testing::ValuesIn(builtin::kFunctionStrings));
+                         ::testing::ValuesIn(core::kBuiltinFnStrings));
 
 }  // namespace
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser

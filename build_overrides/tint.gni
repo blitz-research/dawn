@@ -12,12 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# True if Tint can access build/, testing/ and other Chrome folders.
+tint_has_build = true
+
 tint_spirv_tools_dir = "//third_party/vulkan-deps/spirv-tools/src"
 tint_spirv_headers_dir = "//third_party/vulkan-deps/spirv-headers/src"
-
-tint_build_spv_reader = true
-tint_build_spv_writer = true
-tint_build_wgsl_reader = true
-tint_build_wgsl_writer = true
-
-tint_build_unittests = true
+tint_glslang_dir = "//third_party/vulkan-deps/glslang/src"

@@ -15,44 +15,46 @@
 #include "src/tint/lang/glsl/writer/writer.h"
 
 #include <memory>
+#include <utility>
 
 #include "src/tint/lang/glsl/writer/ast_printer/ast_printer.h"
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
-#include "src/tint/lang/wgsl/ast/transform/combine_samplers.h"
 
 namespace tint::glsl::writer {
 
-Result Generate(const Program* program, const Options& options, const std::string& entry_point) {
-    Result result;
-    if (!program->IsValid()) {
-        result.error = "input program is not valid";
-        return result;
+Result<Output> Generate(const Program& program,
+                        const Options& options,
+                        const std::string& entry_point) {
+    if (!program.IsValid()) {
+        return Failure{program.Diagnostics()};
     }
 
     // Sanitize the program.
     auto sanitized_result = Sanitize(program, options, entry_point);
     if (!sanitized_result.program.IsValid()) {
-        result.success = false;
-        result.error = sanitized_result.program.Diagnostics().str();
-        return result;
+        return Failure{sanitized_result.program.Diagnostics()};
     }
 
     // Generate the GLSL code.
-    auto impl = std::make_unique<ASTPrinter>(&sanitized_result.program, options.version);
-    impl->Generate();
-    result.success = impl->Diagnostics().empty();
-    result.error = impl->Diagnostics().str();
-    result.glsl = impl->Result();
+    auto impl = std::make_unique<ASTPrinter>(sanitized_result.program, options.version);
+    if (!impl->Generate()) {
+        return Failure{impl->Diagnostics()};
+    }
+
+    Output output;
+    output.glsl = impl->Result();
+    output.needs_internal_uniform_buffer = sanitized_result.needs_internal_uniform_buffer;
+    output.bindpoint_to_data = std::move(sanitized_result.bindpoint_to_data);
 
     // Collect the list of entry points in the sanitized program.
     for (auto* func : sanitized_result.program.AST().Functions()) {
         if (func->IsEntryPoint()) {
             auto name = func->name->symbol.Name();
-            result.entry_points.push_back({name, func->PipelineStage()});
+            output.entry_points.push_back({name, func->PipelineStage()});
         }
     }
 
-    return result;
+    return output;
 }
 
 }  // namespace tint::glsl::writer

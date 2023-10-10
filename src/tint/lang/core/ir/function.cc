@@ -14,14 +14,16 @@
 
 #include "src/tint/lang/core/ir/function.h"
 
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/utils/containers/predicates.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Function);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Function);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
-Function::Function(const type::Type* rt,
+Function::Function(const core::type::Type* rt,
                    PipelineStage stage,
                    std::optional<std::array<uint32_t, 3>> wg_size)
     : pipeline_stage_(stage), workgroup_size_(wg_size) {
@@ -32,6 +34,21 @@ Function::Function(const type::Type* rt,
 
 Function::~Function() = default;
 
+Function* Function::Clone(CloneContext& ctx) {
+    auto* new_func = ctx.ir.values.Create<Function>(return_.type, pipeline_stage_, workgroup_size_);
+    new_func->block_ = ctx.ir.blocks.Create<ir::Block>();
+    new_func->params_ = ctx.Clone<1>(params_.Slice());
+    new_func->return_.builtin = return_.builtin;
+    new_func->return_.location = return_.location;
+    new_func->return_.invariant = return_.invariant;
+
+    ctx.Replace(this, new_func);
+    block_->CloneInto(ctx, new_func->block_);
+
+    ctx.ir.SetName(new_func, ctx.ir.NameOf(this).Name());
+    return new_func;
+}
+
 void Function::SetParams(VectorRef<FunctionParam*> params) {
     params_ = std::move(params);
     TINT_ASSERT(!params_.Any(IsNull));
@@ -40,6 +57,11 @@ void Function::SetParams(VectorRef<FunctionParam*> params) {
 void Function::SetParams(std::initializer_list<FunctionParam*> params) {
     params_ = params;
     TINT_ASSERT(!params_.Any(IsNull));
+}
+
+void Function::Destroy() {
+    Base::Destroy();
+    block_->Destroy();
 }
 
 std::string_view ToString(Function::PipelineStage value) {
@@ -68,4 +90,4 @@ std::string_view ToString(enum Function::ReturnBuiltin value) {
     return "<unknown>";
 }
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir

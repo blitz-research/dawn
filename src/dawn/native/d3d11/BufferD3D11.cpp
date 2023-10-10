@@ -198,7 +198,7 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
             "ID3D11Device::CreateBuffer"));
     }
 
-    ASSERT(mD3d11NonConstantBuffer || mD3d11ConstantBuffer);
+    DAWN_ASSERT(mD3d11NonConstantBuffer || mD3d11ConstantBuffer);
 
     SetLabelImpl();
 
@@ -287,6 +287,13 @@ void* Buffer::GetMappedPointer() {
 }
 
 void Buffer::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the buffer is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the buffer.
+    // - It may be called when the last ref to the buffer is dropped and the buffer
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the buffer since there are no other live refs.
     BufferBase::DestroyImpl();
     if (mMappedData) {
         UnmapInternal();
@@ -447,7 +454,7 @@ MaybeError Buffer::ClearInternal(CommandRecordingContext* commandContext,
     if (mMappedData) {
         memset(mMappedData + offset, clearValue, size);
         // The WebGPU uniform buffer is not mappable.
-        ASSERT(!mD3d11ConstantBuffer);
+        DAWN_ASSERT(!mD3d11ConstantBuffer);
         return {};
     }
 
@@ -489,7 +496,7 @@ MaybeError Buffer::WriteInternal(CommandRecordingContext* commandContext,
     if (scopedMap.GetMappedData()) {
         memcpy(scopedMap.GetMappedData() + offset, data, size);
         // The WebGPU uniform buffer is not mappable.
-        ASSERT(!mD3d11ConstantBuffer);
+        DAWN_ASSERT(!mD3d11ConstantBuffer);
         return {};
     }
 
@@ -529,11 +536,28 @@ MaybeError Buffer::WriteInternal(CommandRecordingContext* commandContext,
         return {};
     }
 
-    ASSERT(mD3d11ConstantBuffer);
+    DAWN_ASSERT(mD3d11ConstantBuffer);
+
+    // For a full size write, UpdateSubresource() can be used to update mD3d11ConstantBuffer.
+    if (size == GetSize() && offset == 0) {
+        if (size == mAllocatedSize) {
+            d3d11DeviceContext1->UpdateSubresource(mD3d11ConstantBuffer.Get(), /*DstSubresource=*/0,
+                                                   nullptr, data,
+                                                   /*SrcRowPitch=*/size,
+                                                   /*SrcDepthPitch*/ 0);
+        } else {
+            std::vector<uint8_t> allocatedData(mAllocatedSize, 0);
+            std::memcpy(allocatedData.data(), data, size);
+            d3d11DeviceContext1->UpdateSubresource(mD3d11ConstantBuffer.Get(), /*DstSubresource=*/0,
+                                                   nullptr, allocatedData.data(),
+                                                   /*SrcRowPitch=*/mAllocatedSize,
+                                                   /*SrcDepthPitch*/ 0);
+        }
+        return {};
+    }
 
     // If the mD3d11NonConstantBuffer is null, we have to create a staging buffer for transfer the
-    // data to mD3d11ConstantBuffer, since UpdateSubresource() has many restrictions. For example,
-    // the size of the data has to be a multiple of 16, etc
+    // data to mD3d11ConstantBuffer.
     BufferDescriptor descriptor;
     descriptor.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
     descriptor.size = Align(size, D3D11BufferSizeAlignment(descriptor.usage));
@@ -580,7 +604,7 @@ MaybeError Buffer::CopyInternal(CommandRecordingContext* commandContext,
     ID3D11Buffer* d3d11SourceBuffer = source->mD3d11NonConstantBuffer
                                           ? source->mD3d11NonConstantBuffer.Get()
                                           : source->mD3d11ConstantBuffer.Get();
-    ASSERT(d3d11SourceBuffer);
+    DAWN_ASSERT(d3d11SourceBuffer);
 
     if (destination->mD3d11NonConstantBuffer) {
         commandContext->GetD3D11DeviceContext()->CopySubresourceRegion(

@@ -38,7 +38,7 @@ TEST(WrapUnaryOperatorTest, Applicable1) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -50,13 +50,13 @@ TEST(WrapUnaryOperatorTest, Applicable1) {
 
     ASSERT_TRUE(MaybeApplyMutation(
         program,
-        MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(), ast::UnaryOp::kNot),
-        node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+        MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(), core::UnaryOp::kNot),
+        node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   var a = 5;
@@ -65,7 +65,7 @@ TEST(WrapUnaryOperatorTest, Applicable1) {
   }
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(WrapUnaryOperatorTest, Applicable2) {
@@ -76,7 +76,7 @@ TEST(WrapUnaryOperatorTest, Applicable2) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -91,19 +91,19 @@ TEST(WrapUnaryOperatorTest, Applicable2) {
 
     ASSERT_TRUE(MaybeApplyMutation(
         program,
-        MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(), ast::UnaryOp::kNot),
-        node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+        MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(), core::UnaryOp::kNot),
+        node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   let a = !(vec3<bool>(true, false, true));
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(WrapUnaryOperatorTest, Applicable3) {
@@ -115,7 +115,7 @@ TEST(WrapUnaryOperatorTest, Applicable3) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -129,20 +129,20 @@ TEST(WrapUnaryOperatorTest, Applicable3) {
     ASSERT_TRUE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kComplement),
-                           node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+                                                     core::UnaryOp::kComplement),
+                           node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   var a : u32;
   a = ~(6u);
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(WrapUnaryOperatorTest, Applicable4) {
@@ -154,7 +154,7 @@ TEST(WrapUnaryOperatorTest, Applicable4) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -171,20 +171,20 @@ TEST(WrapUnaryOperatorTest, Applicable4) {
     ASSERT_TRUE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kComplement),
-                           node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+                                                     core::UnaryOp::kComplement),
+                           node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() -> vec2<bool> {
   var a = (~(vec2<u32>(1u, 2u)) == vec2<u32>(1u, 2u));
   return a;
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(WrapUnaryOperatorTest, Applicable5) {
@@ -195,7 +195,7 @@ TEST(WrapUnaryOperatorTest, Applicable5) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -212,19 +212,19 @@ TEST(WrapUnaryOperatorTest, Applicable5) {
     ASSERT_TRUE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kNegation),
-                           node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+                                                     core::UnaryOp::kNegation),
+                           node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   let a : f32 = -(-(1.0));
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(WrapUnaryOperatorTest, Applicable6) {
@@ -235,7 +235,7 @@ TEST(WrapUnaryOperatorTest, Applicable6) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -251,19 +251,19 @@ TEST(WrapUnaryOperatorTest, Applicable6) {
     ASSERT_TRUE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kNegation),
-                           node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+                                                     core::UnaryOp::kNegation),
+                           node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   var a : vec4<f32> = -(vec4<f32>(-(1.0), -(1.0), -(1.0), -(1.0)));
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(WrapUnaryOperatorTest, Applicable7) {
@@ -277,7 +277,7 @@ TEST(WrapUnaryOperatorTest, Applicable7) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -294,13 +294,13 @@ TEST(WrapUnaryOperatorTest, Applicable7) {
     ASSERT_TRUE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kNegation),
-                           node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+                                                     core::UnaryOp::kNegation),
+                           node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   var a = 1;
@@ -309,7 +309,7 @@ TEST(WrapUnaryOperatorTest, Applicable7) {
   }
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(WrapUnaryOperatorTest, Applicable8) {
@@ -320,7 +320,7 @@ TEST(WrapUnaryOperatorTest, Applicable8) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -336,19 +336,19 @@ TEST(WrapUnaryOperatorTest, Applicable8) {
     ASSERT_TRUE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kComplement),
-                           node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+                                                     core::UnaryOp::kComplement),
+                           node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn main() {
   var a : vec4<i32> = ~(vec4<i32>(1, 0, -(1), 0));
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(WrapUnaryOperatorTest, NotApplicable1) {
@@ -359,7 +359,7 @@ TEST(WrapUnaryOperatorTest, NotApplicable1) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -376,8 +376,8 @@ TEST(WrapUnaryOperatorTest, NotApplicable1) {
     ASSERT_FALSE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kNegation),
-                           node_id_map, &program, &node_id_map, nullptr));
+                                                     core::UnaryOp::kNegation),
+                           node_id_map, program, &node_id_map, nullptr));
 }
 
 TEST(WrapUnaryOperatorTest, NotApplicable2) {
@@ -388,7 +388,7 @@ TEST(WrapUnaryOperatorTest, NotApplicable2) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -404,8 +404,8 @@ TEST(WrapUnaryOperatorTest, NotApplicable2) {
     // Not cannot be applied to integer types.
     ASSERT_FALSE(MaybeApplyMutation(
         program,
-        MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(), ast::UnaryOp::kNot),
-        node_id_map, &program, &node_id_map, nullptr));
+        MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(), core::UnaryOp::kNot),
+        node_id_map, program, &node_id_map, nullptr));
 }
 
 TEST(WrapUnaryOperatorTest, NotApplicable3) {
@@ -416,7 +416,7 @@ TEST(WrapUnaryOperatorTest, NotApplicable3) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -433,8 +433,8 @@ TEST(WrapUnaryOperatorTest, NotApplicable3) {
     ASSERT_FALSE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kNegation),
-                           node_id_map, &program, &node_id_map, nullptr));
+                                                     core::UnaryOp::kNegation),
+                           node_id_map, program, &node_id_map, nullptr));
 }
 
 TEST(WrapUnaryOperatorTest, NotApplicable4) {
@@ -445,7 +445,7 @@ TEST(WrapUnaryOperatorTest, NotApplicable4) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -462,8 +462,8 @@ TEST(WrapUnaryOperatorTest, NotApplicable4) {
     ASSERT_FALSE(
         MaybeApplyMutation(program,
                            MutationWrapUnaryOperator(expression_id, node_id_map.TakeFreshId(),
-                                                     ast::UnaryOp::kComplement),
-                           node_id_map, &program, &node_id_map, nullptr));
+                                                     core::UnaryOp::kComplement),
+                           node_id_map, program, &node_id_map, nullptr));
 }
 
 TEST(WrapUnaryOperatorTest, NotApplicable5) {
@@ -474,7 +474,7 @@ TEST(WrapUnaryOperatorTest, NotApplicable5) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -489,8 +489,8 @@ TEST(WrapUnaryOperatorTest, NotApplicable5) {
 
     // Id for the replacement expression is not fresh.
     ASSERT_FALSE(MaybeApplyMutation(
-        program, MutationWrapUnaryOperator(expression_id, expression_id, ast::UnaryOp::kNegation),
-        node_id_map, &program, &node_id_map, nullptr));
+        program, MutationWrapUnaryOperator(expression_id, expression_id, core::UnaryOp::kNegation),
+        node_id_map, program, &node_id_map, nullptr));
 }
 
 TEST(WrapUnaryOperatorTest, NotApplicable6) {
@@ -501,7 +501,7 @@ TEST(WrapUnaryOperatorTest, NotApplicable6) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -513,10 +513,11 @@ TEST(WrapUnaryOperatorTest, NotApplicable6) {
     ASSERT_NE(statement_id, 0);
 
     // The id provided for the expression is not a valid expression type.
-    ASSERT_FALSE(MaybeApplyMutation(
-        program,
-        MutationWrapUnaryOperator(statement_id, node_id_map.TakeFreshId(), ast::UnaryOp::kNegation),
-        node_id_map, &program, &node_id_map, nullptr));
+    ASSERT_FALSE(
+        MaybeApplyMutation(program,
+                           MutationWrapUnaryOperator(statement_id, node_id_map.TakeFreshId(),
+                                                     core::UnaryOp::kNegation),
+                           node_id_map, program, &node_id_map, nullptr));
 }
 
 TEST(WrapUnaryOperatorTest, NotApplicable_CallStmt) {
@@ -530,7 +531,7 @@ TEST(WrapUnaryOperatorTest, NotApplicable_CallStmt) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -544,8 +545,8 @@ TEST(WrapUnaryOperatorTest, NotApplicable_CallStmt) {
 
     // The id provided for the expression is not a valid expression type.
     ASSERT_FALSE(MaybeApplyMutation(
-        program, MutationWrapUnaryOperator(expr_id, node_id_map.TakeFreshId(), ast::UnaryOp::kNot),
-        node_id_map, &program, &node_id_map, nullptr));
+        program, MutationWrapUnaryOperator(expr_id, node_id_map.TakeFreshId(), core::UnaryOp::kNot),
+        node_id_map, program, &node_id_map, nullptr));
 }
 
 }  // namespace

@@ -13,14 +13,14 @@
 // limitations under the License.
 
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/spirv/writer/ast_printer/test_helper.h"
-#include "src/tint/lang/spirv/writer/spv_dump.h"
+#include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using SpirvASTPrinterTest = TestHelper;
 
@@ -36,17 +36,17 @@ TEST_F(SpirvASTPrinterTest, IdentifierExpression_GlobalConst) {
             auto* expr = pb.Expr("c");
             pb.WrapInFunction(expr);
 
-            auto program = std::make_unique<Program>(resolver::Resolve(pb));
-            auto b = std::make_unique<Builder>(program.get());
+            auto program = resolver::Resolve(pb);
+            Builder b(program);
 
-            b->GenerateGlobalVariable(v);
-            b->GenerateIdentifierExpression(expr);
+            b.GenerateGlobalVariable(v);
+            b.GenerateIdentifierExpression(expr);
         },
         "internal compiler error: unable to find ID for variable: c");
 }
 
 TEST_F(SpirvASTPrinterTest, IdentifierExpression_GlobalVar) {
-    auto* v = GlobalVar("var", ty.f32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("var", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* expr = Expr("var");
     WrapInFunction(expr);
@@ -90,7 +90,7 @@ TEST_F(SpirvASTPrinterTest, IdentifierExpression_FunctionConst) {
 }
 
 TEST_F(SpirvASTPrinterTest, IdentifierExpression_FunctionVar) {
-    auto* v = Var("var", ty.f32(), builtin::AddressSpace::kFunction);
+    auto* v = Var("var", ty.f32(), core::AddressSpace::kFunction);
     auto* expr = Expr("var");
     WrapInFunction(v, expr);
 
@@ -114,7 +114,7 @@ TEST_F(SpirvASTPrinterTest, IdentifierExpression_FunctionVar) {
 }
 
 TEST_F(SpirvASTPrinterTest, IdentifierExpression_Load) {
-    auto* var = GlobalVar("var", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* var = GlobalVar("var", ty.i32(), core::AddressSpace::kPrivate);
     auto* expr = Add("var", "var");
     WrapInFunction(expr);
 

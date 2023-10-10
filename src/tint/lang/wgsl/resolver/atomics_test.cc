@@ -15,52 +15,50 @@
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
 #include "gmock/gmock.h"
 
 namespace tint::resolver {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 struct ResolverAtomicTest : public resolver::TestHelper, public testing::Test {};
 
 TEST_F(ResolverAtomicTest, GlobalWorkgroupI32) {
-    auto* g =
-        GlobalVar("a", ty.atomic(Source{{12, 34}}, ty.i32()), builtin::AddressSpace::kWorkgroup);
+    auto* g = GlobalVar("a", ty.atomic(Source{{12, 34}}, ty.i32()), core::AddressSpace::kWorkgroup);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
-    ASSERT_TRUE(TypeOf(g)->Is<type::Reference>());
-    auto* atomic = TypeOf(g)->UnwrapRef()->As<type::Atomic>();
+    ASSERT_TRUE(TypeOf(g)->Is<core::type::Reference>());
+    auto* atomic = TypeOf(g)->UnwrapRef()->As<core::type::Atomic>();
     ASSERT_NE(atomic, nullptr);
-    EXPECT_TRUE(atomic->Type()->Is<type::I32>());
+    EXPECT_TRUE(atomic->Type()->Is<core::type::I32>());
 }
 
 TEST_F(ResolverAtomicTest, GlobalWorkgroupU32) {
-    auto* g =
-        GlobalVar("a", ty.atomic(Source{{12, 34}}, ty.u32()), builtin::AddressSpace::kWorkgroup);
+    auto* g = GlobalVar("a", ty.atomic(Source{{12, 34}}, ty.u32()), core::AddressSpace::kWorkgroup);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
-    ASSERT_TRUE(TypeOf(g)->Is<type::Reference>());
-    auto* atomic = TypeOf(g)->UnwrapRef()->As<type::Atomic>();
+    ASSERT_TRUE(TypeOf(g)->Is<core::type::Reference>());
+    auto* atomic = TypeOf(g)->UnwrapRef()->As<core::type::Atomic>();
     ASSERT_NE(atomic, nullptr);
-    EXPECT_TRUE(atomic->Type()->Is<type::U32>());
+    EXPECT_TRUE(atomic->Type()->Is<core::type::U32>());
 }
 
 TEST_F(ResolverAtomicTest, GlobalStorageStruct) {
     auto* s = Structure("s", Vector{Member("a", ty.atomic(Source{{12, 34}}, ty.i32()))});
-    auto* g = GlobalVar("g", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+    auto* g = GlobalVar("g", ty.Of(s), core::AddressSpace::kStorage, core::Access::kReadWrite,
                         Binding(0_a), Group(0_a));
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
-    ASSERT_TRUE(TypeOf(g)->Is<type::Reference>());
+    ASSERT_TRUE(TypeOf(g)->Is<core::type::Reference>());
     auto* str = TypeOf(g)->UnwrapRef()->As<sem::Struct>();
     ASSERT_NE(str, nullptr);
     ASSERT_EQ(str->Members().Length(), 1u);
-    auto* atomic = str->Members()[0]->Type()->As<type::Atomic>();
+    auto* atomic = str->Members()[0]->Type()->As<core::type::Atomic>();
     ASSERT_NE(atomic, nullptr);
-    ASSERT_TRUE(atomic->Type()->Is<type::I32>());
+    ASSERT_TRUE(atomic->Type()->Is<core::type::I32>());
 }
 
 }  // namespace

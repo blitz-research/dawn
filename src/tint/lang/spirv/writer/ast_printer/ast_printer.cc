@@ -14,22 +14,27 @@
 
 #include "src/tint/lang/spirv/writer/ast_printer/ast_printer.h"
 
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "src/tint/lang/spirv/writer/ast_raise/clamp_frag_depth.h"
+#include "src/tint/lang/spirv/writer/ast_raise/for_loop_to_loop.h"
+#include "src/tint/lang/spirv/writer/ast_raise/merge_return.h"
+#include "src/tint/lang/spirv/writer/ast_raise/var_for_dynamic_index.h"
+#include "src/tint/lang/spirv/writer/ast_raise/vectorize_matrix_conversions.h"
+#include "src/tint/lang/spirv/writer/ast_raise/while_to_loop.h"
+#include "src/tint/lang/spirv/writer/common/option_builder.h"
 #include "src/tint/lang/wgsl/ast/transform/add_block_attribute.h"
 #include "src/tint/lang/wgsl/ast/transform/add_empty_entry_point.h"
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
 #include "src/tint/lang/wgsl/ast/transform/builtin_polyfill.h"
 #include "src/tint/lang/wgsl/ast/transform/canonicalize_entry_point_io.h"
-#include "src/tint/lang/wgsl/ast/transform/clamp_frag_depth.h"
 #include "src/tint/lang/wgsl/ast/transform/demote_to_helper.h"
 #include "src/tint/lang/wgsl/ast/transform/direct_variable_access.h"
 #include "src/tint/lang/wgsl/ast/transform/disable_uniformity_analysis.h"
 #include "src/tint/lang/wgsl/ast/transform/expand_compound_assignment.h"
-#include "src/tint/lang/wgsl/ast/transform/for_loop_to_loop.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
-#include "src/tint/lang/wgsl/ast/transform/merge_return.h"
 #include "src/tint/lang/wgsl/ast/transform/multiplanar_external_texture.h"
 #include "src/tint/lang/wgsl/ast/transform/preserve_padding.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_side_effects_to_decl.h"
@@ -39,20 +44,17 @@
 #include "src/tint/lang/wgsl/ast/transform/simplify_pointers.h"
 #include "src/tint/lang/wgsl/ast/transform/std140.h"
 #include "src/tint/lang/wgsl/ast/transform/unshadow.h"
-#include "src/tint/lang/wgsl/ast/transform/var_for_dynamic_index.h"
-#include "src/tint/lang/wgsl/ast/transform/vectorize_matrix_conversions.h"
 #include "src/tint/lang/wgsl/ast/transform/vectorize_scalar_matrix_initializers.h"
-#include "src/tint/lang/wgsl/ast/transform/while_to_loop.h"
 #include "src/tint/lang/wgsl/ast/transform/zero_init_workgroup_memory.h"
 
 namespace tint::spirv::writer {
 
-SanitizedResult Sanitize(const Program* in, const Options& options) {
+SanitizedResult Sanitize(const Program& in, const Options& options) {
     ast::transform::Manager manager;
     ast::transform::DataMap data;
 
     if (options.clamp_frag_depth) {
-        manager.Add<tint::ast::transform::ClampFragDepth>();
+        manager.Add<ClampFragDepth>();
     }
 
     manager.Add<ast::transform::DisableUniformityAnalysis>();
@@ -74,9 +76,9 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
 
     manager.Add<ast::transform::RemovePhonies>();
     manager.Add<ast::transform::VectorizeScalarMatrixInitializers>();
-    manager.Add<ast::transform::VectorizeMatrixConversions>();
-    manager.Add<ast::transform::WhileToLoop>();  // ZeroInitWorkgroupMemory
-    manager.Add<ast::transform::MergeReturn>();
+    manager.Add<VectorizeMatrixConversions>();
+    manager.Add<WhileToLoop>();  // ZeroInitWorkgroupMemory
+    manager.Add<MergeReturn>();
 
     if (!options.disable_robustness) {
         // Robustness must come after PromoteSideEffectsToDecl
@@ -92,17 +94,21 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         data.Add<ast::transform::Robustness::Config>(config);
     }
 
+    ExternalTextureOptions external_texture_options{};
+    RemapperData remapper_data{};
+    PopulateRemapperAndMultiplanarOptions(options, remapper_data, external_texture_options);
+
     // BindingRemapper must come before MultiplanarExternalTexture. Note, this is flipped to the
     // other generators which run Multiplanar first and then binding remapper.
     manager.Add<ast::transform::BindingRemapper>();
+
     data.Add<ast::transform::BindingRemapper::Remappings>(
-        options.binding_remapper_options.binding_points,
-        options.binding_remapper_options.access_controls,
-        options.binding_remapper_options.allow_collisions);
+        remapper_data, std::unordered_map<BindingPoint, core::Access>{},
+        /* allow_collisions */ false);
 
     // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
     data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
-        options.external_texture_options.bindings_map);
+        external_texture_options.bindings_map);
     manager.Add<ast::transform::MultiplanarExternalTexture>();
 
     {  // Builtin polyfills
@@ -163,10 +169,10 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     manager.Add<ast::transform::Std140>();
 
     // VarForDynamicIndex must come after Std140
-    manager.Add<ast::transform::VarForDynamicIndex>();
+    manager.Add<VarForDynamicIndex>();
 
     // ForLoopToLoop must come after Std140, ZeroInitWorkgroupMemory
-    manager.Add<ast::transform::ForLoopToLoop>();
+    manager.Add<ForLoopToLoop>();
 
     data.Add<ast::transform::CanonicalizeEntryPointIO::Config>(
         ast::transform::CanonicalizeEntryPointIO::Config(
@@ -179,14 +185,18 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     return result;
 }
 
-ASTPrinter::ASTPrinter(const Program* program, bool zero_initialize_workgroup_memory)
-    : builder_(program, zero_initialize_workgroup_memory) {}
+ASTPrinter::ASTPrinter(const Program& program,
+                       bool zero_initialize_workgroup_memory,
+                       bool experimental_require_subgroup_uniform_control_flow)
+    : builder_(program,
+               zero_initialize_workgroup_memory,
+               experimental_require_subgroup_uniform_control_flow) {}
 
 bool ASTPrinter::Generate() {
     if (builder_.Build()) {
         auto& module = builder_.Module();
         writer_.WriteHeader(module.IdBound());
-        writer_.WriteModule(&module);
+        writer_.WriteModule(module);
         return true;
     }
     return false;

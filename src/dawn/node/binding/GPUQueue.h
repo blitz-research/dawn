@@ -22,7 +22,7 @@
 #include "dawn/native/DawnNative.h"
 #include "dawn/webgpu_cpp.h"
 #include "src/dawn/node/binding/AsyncRunner.h"
-#include "src/dawn/node/interop/Napi.h"
+#include "src/dawn/node/interop/NodeAPI.h"
 #include "src/dawn/node/interop/WebGPU.h"
 
 namespace wgpu::binding {
@@ -39,12 +39,12 @@ class GPUQueue final : public interop::GPUQueue {
     void writeBuffer(Napi::Env,
                      interop::Interface<interop::GPUBuffer> buffer,
                      interop::GPUSize64 bufferOffset,
-                     interop::BufferSource data,
+                     interop::AllowSharedBufferSource data,
                      interop::GPUSize64 dataOffset,
                      std::optional<interop::GPUSize64> size) override;
     void writeTexture(Napi::Env,
                       interop::GPUImageCopyTexture destination,
-                      interop::BufferSource data,
+                      interop::AllowSharedBufferSource data,
                       interop::GPUImageDataLayout dataLayout,
                       interop::GPUExtent3D size) override;
     void copyExternalImageToTexture(Napi::Env,

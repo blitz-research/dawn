@@ -372,7 +372,7 @@ class CopyTextureForBrowserTests : public Parent {
             case wgpu::TextureFormat::R32Float:
                 return 1;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -665,7 +665,7 @@ class CopyTextureForBrowser_Formats
                     srcSpec, srcUsage, srcCopyLayout, srcRGBA16FloatTextureArrayCopyData.data(),
                     srcRGBA16FloatTextureArrayCopyData.size() * sizeof(uint16_t));
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 
@@ -781,8 +781,8 @@ class CopyTextureForBrowser_ColorSpace
   protected:
     const ColorSpaceInfo& GetColorSpaceInfo(ColorSpace colorSpace) {
         uint32_t index = static_cast<uint32_t>(colorSpace);
-        ASSERT(index < ColorSpaceTable.size());
-        ASSERT(ColorSpaceTable[index].index == colorSpace);
+        DAWN_ASSERT(index < ColorSpaceTable.size());
+        DAWN_ASSERT(ColorSpaceTable[index].index == colorSpace);
         return ColorSpaceTable[index];
     }
 
@@ -933,13 +933,13 @@ class CopyTextureForBrowser_ColorSpace
                                    : expected;
                     }
                     default:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
             }
             default:
                 break;
         }
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
 
     std::vector<float> GetExpectedDataForSeperateSource(ColorSpace srcColorSpace,
@@ -985,13 +985,13 @@ class CopyTextureForBrowser_ColorSpace
                         };
                     }
                     default:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
             }
             default:
                 break;
         }
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
     }
 
     void DoColorSpaceConversionTest() {

@@ -45,7 +45,7 @@ uint32_t GetBytesPerPixel(wgpu::TextureFormat format, wgpu::TextureAspect aspect
     uint32_t bytesPerPixel = 0;
     switch (format) {
         case wgpu::TextureFormat::Depth24PlusStencil8: {
-            ASSERT(aspect == wgpu::TextureAspect::StencilOnly);
+            DAWN_ASSERT(aspect == wgpu::TextureAspect::StencilOnly);
             bytesPerPixel = 1;
             break;
         }
@@ -58,7 +58,7 @@ uint32_t GetBytesPerPixel(wgpu::TextureFormat format, wgpu::TextureAspect aspect
                     bytesPerPixel = 1;
                     break;
                 default:
-                    UNREACHABLE();
+                    DAWN_UNREACHABLE();
                     break;
             }
             break;
@@ -765,7 +765,7 @@ TEST_P(DepthCopyTests, BufferCopySizeEdgeCase) {
 
             // Unable to check the result since either MapAsync and CopyBufferToBuffer requires size
             // to be multiple of 4 bytes.
-            // Just run and don't crash on ASSERT.
+            // Just run and don't crash on DAWN_ASSERT.
         }
     }
 }
@@ -890,10 +890,6 @@ class StencilCopyTests : public DepthStencilCopyTests {
                                          uint32_t textureArrayLayerCount,
                                          uint32_t testLevel,
                                          bool checkBufferContent) {
-        // TODO(crbug.com/dawn/1835): ResourceBarrier state mismatch.
-        DAWN_SUPPRESS_TEST_IF(textureArrayLayerCount > 1 && IsD3D12() &&
-                              IsBackendValidationEnabled());
-
         // TODO(crbug.com/dawn/667): Work around the fact that some platforms are unable to read
         // stencil.
         DAWN_TEST_UNSUPPORTED_IF(HasToggleEnabled("disable_depth_stencil_read"));
@@ -956,9 +952,6 @@ class StencilCopyTests : public DepthStencilCopyTests {
         // Copies to a single aspect are unsupported on OpenGL.
         DAWN_TEST_UNSUPPORTED_IF(IsOpenGL());
         DAWN_TEST_UNSUPPORTED_IF(IsOpenGLES());
-
-        // TODO(crbug.com/dawn/1273): Fails on Win11 with D3D12 debug layer and full validation
-        DAWN_SUPPRESS_TEST_IF(IsD3D12() && IsBackendValidationEnabled());
 
         // Create a stencil texture
         constexpr uint32_t kWidth = 4;
@@ -1252,7 +1245,7 @@ TEST_P(StencilCopyTests, BufferCopySizeEdgeCase) {
 
             // Unable to check the result since either MapAsync and CopyBufferToBuffer requires size
             // to be multiple of 4 bytes.
-            // Just run and don't crash on ASSERT.
+            // Just run and don't crash on DAWN_ASSERT.
         }
     }
 }
@@ -1400,7 +1393,7 @@ TEST_P(DepthStencilCopyTests_RegressionDawn1083, Run) {
                                 d2, d1,  //
                             };
                         }
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                     };
 
                     // Check the depth

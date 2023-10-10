@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/glsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/glsl/writer/ast_printer/helper_test.h"
 
 #include "gmock/gmock.h"
 
@@ -22,8 +22,8 @@ namespace {
 using GlslASTPrinterTest_Assign = TestHelper;
 
 TEST_F(GlslASTPrinterTest_Assign, Emit_Assign) {
-    GlobalVar("lhs", ty.i32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("rhs", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("lhs", ty.i32(), core::AddressSpace::kPrivate);
+    GlobalVar("rhs", ty.i32(), core::AddressSpace::kPrivate);
     auto* assign = Assign("lhs", "rhs");
     WrapInFunction(assign);
 

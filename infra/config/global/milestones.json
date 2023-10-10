@@ -47,5 +47,35 @@
             "mac",
             "win"
         ]
+    },
+    "117": {
+        "name": "m117",
+        "chromium_project": "chromium-m117",
+        "ref": "refs/heads/chromium/5938",
+        "platforms": [
+            "linux",
+            "mac",
+            "win"
+        ]
+    },
+    "118": {
+        "name": "m118",
+        "chromium_project": "chromium-m118",
+        "ref": "refs/heads/chromium/5993",
+        "platforms": [
+            "linux",
+            "mac",
+            "win"
+        ]
+    },
+    "119": {
+        "name": "m119",
+        "chromium_project": "chromium-m119",
+        "ref": "refs/heads/chromium/6045",
+        "platforms": [
+            "linux",
+            "mac",
+            "win"
+        ]
     }
 }

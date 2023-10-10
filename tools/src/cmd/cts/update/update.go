@@ -19,9 +19,11 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"strings"
 
+	"dawn.googlesource.com/dawn/tools/src/auth"
 	"dawn.googlesource.com/dawn/tools/src/cmd/cts/common"
 	"dawn.googlesource.com/dawn/tools/src/cts/expectations"
 	"dawn.googlesource.com/dawn/tools/src/cts/query"
@@ -52,7 +54,7 @@ func (cmd) Desc() string {
 func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, error) {
 	defaultExpectations := common.DefaultExpectationsPath()
 	c.flags.results.RegisterFlags(cfg)
-	c.flags.auth.Register(flag.CommandLine, common.DefaultAuthOptions())
+	c.flags.auth.Register(flag.CommandLine, auth.DefaultAuthOptions())
 	flag.StringVar(&c.flags.expectations, "expectations", defaultExpectations, "path to CTS expectations file to update")
 	return nil, nil
 }
@@ -78,31 +80,37 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 	}
 
 	// Fetch the results
+	log.Println("fetching results...")
 	results, err := c.flags.results.GetResults(ctx, cfg, auth)
 	if err != nil {
 		return err
 	}
 
 	// Merge to remove duplicates
+	log.Println("removing duplicate results...")
 	results = result.Merge(results)
 
 	// Load the expectations file
+	log.Println("loading expectations...")
 	ex, err := expectations.Load(c.flags.expectations)
 	if err != nil {
 		return err
 	}
 
+	log.Println("loading test list...")
 	testlist, err := loadTestList(common.DefaultTestListPath())
 	if err != nil {
 		return err
 	}
 
+	log.Println("validating...")
 	if diag := ex.Validate(); diag.NumErrors() > 0 {
 		diag.Print(os.Stdout, c.flags.expectations)
 		return fmt.Errorf("validation failed")
 	}
 
 	// Update the expectations file with the results
+	log.Println("updating expectations...")
 	diag, err := ex.Update(results, testlist)
 	if err != nil {
 		return err

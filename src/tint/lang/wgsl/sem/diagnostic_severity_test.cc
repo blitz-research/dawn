@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/sem/test_helper.h"
+#include "src/tint/lang/wgsl/sem/helper_test.h"
 
 #include "src/tint/lang/wgsl/sem/module.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::sem {
 namespace {
@@ -27,7 +27,7 @@ class DiagnosticSeverityTest : public TestHelper {
     /// using an attribute. Test that we correctly track the severity of the filter for the
     /// functions and the statements with them.
     /// @param global_severity the global severity of the "chromium.unreachable_code" filter
-    void Run(builtin::DiagnosticSeverity global_severity) {
+    void Run(wgsl::DiagnosticSeverity global_severity) {
         // @diagnostic(off, chromium.unreachable_code)
         // fn foo() {
         //   @diagnostic(info, chromium.unreachable_code) {
@@ -74,22 +74,22 @@ class DiagnosticSeverityTest : public TestHelper {
         // fn bar() {
         //   return;
         // }
-        auto rule = builtin::ChromiumDiagnosticRule::kUnreachableCode;
-        auto func_severity = builtin::DiagnosticSeverity::kOff;
-        auto block_severity = builtin::DiagnosticSeverity::kInfo;
-        auto if_severity = builtin::DiagnosticSeverity::kError;
-        auto if_body_severity = builtin::DiagnosticSeverity::kWarning;
-        auto else_body_severity = builtin::DiagnosticSeverity::kInfo;
-        auto switch_severity = builtin::DiagnosticSeverity::kError;
-        auto switch_body_severity = builtin::DiagnosticSeverity::kOff;
-        auto case_severity = builtin::DiagnosticSeverity::kWarning;
-        auto for_severity = builtin::DiagnosticSeverity::kError;
-        auto for_body_severity = builtin::DiagnosticSeverity::kWarning;
-        auto loop_severity = builtin::DiagnosticSeverity::kWarning;
-        auto loop_body_severity = builtin::DiagnosticSeverity::kOff;
-        auto continuing_severity = builtin::DiagnosticSeverity::kInfo;
-        auto while_severity = builtin::DiagnosticSeverity::kError;
-        auto while_body_severity = builtin::DiagnosticSeverity::kWarning;
+        auto rule = wgsl::ChromiumDiagnosticRule::kUnreachableCode;
+        auto func_severity = wgsl::DiagnosticSeverity::kOff;
+        auto block_severity = wgsl::DiagnosticSeverity::kInfo;
+        auto if_severity = wgsl::DiagnosticSeverity::kError;
+        auto if_body_severity = wgsl::DiagnosticSeverity::kWarning;
+        auto else_body_severity = wgsl::DiagnosticSeverity::kInfo;
+        auto switch_severity = wgsl::DiagnosticSeverity::kError;
+        auto switch_body_severity = wgsl::DiagnosticSeverity::kOff;
+        auto case_severity = wgsl::DiagnosticSeverity::kWarning;
+        auto for_severity = wgsl::DiagnosticSeverity::kError;
+        auto for_body_severity = wgsl::DiagnosticSeverity::kWarning;
+        auto loop_severity = wgsl::DiagnosticSeverity::kWarning;
+        auto loop_body_severity = wgsl::DiagnosticSeverity::kOff;
+        auto continuing_severity = wgsl::DiagnosticSeverity::kInfo;
+        auto while_severity = wgsl::DiagnosticSeverity::kError;
+        auto while_body_severity = wgsl::DiagnosticSeverity::kWarning;
         auto attr = [&](auto severity) {
             return tint::Vector{DiagnosticAttribute(severity, "chromium", "unreachable_code")};
         };
@@ -130,7 +130,7 @@ class DiagnosticSeverityTest : public TestHelper {
         auto* bar = Func("bar", {}, ty.void_(), tint::Vector{return_bar});
 
         auto p = Build();
-        EXPECT_TRUE(p.IsValid()) << p.Diagnostics().str();
+        EXPECT_TRUE(p.IsValid()) << p.Diagnostics();
 
         EXPECT_EQ(p.Sem().DiagnosticSeverity(foo, rule), func_severity);
         EXPECT_EQ(p.Sem().DiagnosticSeverity(block_1, rule), block_severity);
@@ -173,12 +173,12 @@ class DiagnosticSeverityTest : public TestHelper {
 };
 
 TEST_F(DiagnosticSeverityTest, WithDirective) {
-    DiagnosticDirective(builtin::DiagnosticSeverity::kError, "chromium", "unreachable_code");
-    Run(builtin::DiagnosticSeverity::kError);
+    DiagnosticDirective(wgsl::DiagnosticSeverity::kError, "chromium", "unreachable_code");
+    Run(wgsl::DiagnosticSeverity::kError);
 }
 
 TEST_F(DiagnosticSeverityTest, WithoutDirective) {
-    Run(builtin::DiagnosticSeverity::kWarning);
+    Run(wgsl::DiagnosticSeverity::kWarning);
 }
 
 }  // namespace

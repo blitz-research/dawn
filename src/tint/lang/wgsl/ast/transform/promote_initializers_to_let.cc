@@ -17,7 +17,7 @@
 #include <utility>
 
 #include "src/tint/lang/core/type/struct.h"
-#include "src/tint/lang/wgsl/ast/transform/utils/hoist_to_decl_before.h"
+#include "src/tint/lang/wgsl/ast/transform/hoist_to_decl_before.h"
 #include "src/tint/lang/wgsl/ast/traverse_expressions.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
@@ -35,16 +35,16 @@ PromoteInitializersToLet::PromoteInitializersToLet() = default;
 
 PromoteInitializersToLet::~PromoteInitializersToLet() = default;
 
-Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
+Transform::ApplyResult PromoteInitializersToLet::Apply(const Program& src,
                                                        const DataMap&,
                                                        DataMap&) const {
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
 
     // Returns true if the expression should be hoisted to a new let statement before the
     // expression's statement.
     auto should_hoist = [&](const sem::ValueExpression* expr) {
-        if (!expr->Type()->IsAnyOf<type::Array, type::Struct>()) {
+        if (!expr->Type()->IsAnyOf<core::type::Array, core::type::Struct>()) {
             // We only care about array and struct initializers
             return false;
         }
@@ -53,7 +53,7 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
         {
             // Follow const-chains
             auto* root_expr = expr;
-            if (expr->Stage() == sem::EvaluationStage::kConstant) {
+            if (expr->Stage() == core::EvaluationStage::kConstant) {
                 if (expr->Type()->HoldsAbstract()) {
                     // Do not hoist expressions that are not materialized, as doing so would cause
                     // premature materialization.
@@ -89,8 +89,8 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
     Hashset<const Expression*, 32> const_chains;
 
     // Walk the AST nodes. This order guarantees that leaf-expressions are visited first.
-    for (auto* node : src->ASTNodes().Objects()) {
-        if (auto* sem = src->Sem().GetVal(node)) {
+    for (auto* node : src.ASTNodes().Objects()) {
+        if (auto* sem = src.Sem().GetVal(node)) {
             auto* stmt = sem->Stmt();
             if (!stmt) {
                 // Expression is outside of a statement. This usually means the expression is part
@@ -99,7 +99,7 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
                 continue;
             }
 
-            if (sem->Stage() == sem::EvaluationStage::kConstant) {
+            if (sem->Stage() == core::EvaluationStage::kConstant) {
                 // Expression is constant. We only need to hoist expressions if they're the
                 // outermost constant expression in a chain. Remove the immediate child nodes of the
                 // expression from const_chains, and add this expression to the const_chains. As we
@@ -123,7 +123,7 @@ Transform::ApplyResult PromoteInitializersToLet::Apply(const Program* src,
     // After walking the full AST, const_chains only contains the outer-most constant expressions.
     // Check if any of these need hoisting, and append those to to_hoist.
     for (auto* expr : const_chains) {
-        if (auto* sem = src->Sem().GetVal(expr); should_hoist(sem)) {
+        if (auto* sem = src.Sem().GetVal(expr); should_hoist(sem)) {
             to_hoist.Push(sem);
         }
     }

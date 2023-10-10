@@ -381,7 +381,7 @@ TEST_F(CopyCommandTest_B2B, CopyWithinSameBuffer) {
         constexpr uint32_t kSrcOffset = 0u;
         constexpr uint32_t kDstOffset = 4u;
         constexpr uint32_t kCopySize = 8u;
-        ASSERT(kDstOffset > kSrcOffset && kDstOffset < kSrcOffset + kCopySize);
+        DAWN_ASSERT(kDstOffset > kSrcOffset && kDstOffset < kSrcOffset + kCopySize);
 
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         encoder.CopyBufferToBuffer(buffer, kSrcOffset, buffer, kDstOffset, kCopySize);
@@ -403,7 +403,7 @@ TEST_F(CopyCommandTest_B2B, CopyWithinSameBuffer) {
         constexpr uint32_t kSrcOffset = 4u;
         constexpr uint32_t kDstOffset = 0u;
         constexpr uint32_t kCopySize = 8u;
-        ASSERT(kSrcOffset > kDstOffset && kSrcOffset < kDstOffset + kCopySize);
+        DAWN_ASSERT(kSrcOffset > kDstOffset && kSrcOffset < kDstOffset + kCopySize);
 
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         encoder.CopyBufferToBuffer(buffer, kSrcOffset, buffer, kDstOffset, kCopySize);
@@ -427,7 +427,7 @@ class CopyCommandTest_B2T : public CopyCommandTest {
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::Depth32FloatStencil8};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 };
@@ -1035,7 +1035,7 @@ class CopyCommandTest_T2B : public CopyCommandTest {
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::Depth32FloatStencil8};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 };
@@ -1672,7 +1672,7 @@ class CopyCommandTest_T2T : public CopyCommandTest {
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::Depth32FloatStencil8};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 
@@ -1687,7 +1687,7 @@ class CopyCommandTest_T2T : public CopyCommandTest {
             case wgpu::TextureFormat::RGBA8UnormSrgb:
                 return wgpu::TextureFormat::RGBA8Unorm;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 };
@@ -2083,7 +2083,7 @@ TEST_F(CopyCommandTest_T2T, CopyWithinSameTexture) {
 
             constexpr uint32_t kSrcBaseArrayLayer = 0;
             constexpr uint32_t kDstBaseArrayLayer = 1;
-            ASSERT(kSrcBaseArrayLayer + kCopyArrayLayerCount > kDstBaseArrayLayer);
+            DAWN_ASSERT(kSrcBaseArrayLayer + kCopyArrayLayerCount > kDstBaseArrayLayer);
 
             constexpr wgpu::Extent3D kCopyExtent = {1, 1, kCopyArrayLayerCount};
 
@@ -2100,7 +2100,7 @@ TEST_F(CopyCommandTest_T2T, CopyWithinSameTexture) {
         constexpr uint32_t kMinBaseArrayLayer = 0;
         constexpr uint32_t kMaxBaseArrayLayer = 1;
         constexpr uint32_t kCopyArrayLayerCount = 3;
-        ASSERT(kMinBaseArrayLayer + kCopyArrayLayerCount > kMaxBaseArrayLayer);
+        DAWN_ASSERT(kMinBaseArrayLayer + kCopyArrayLayerCount > kMaxBaseArrayLayer);
 
         constexpr wgpu::Extent3D kCopyExtent = {4, 4, kCopyArrayLayerCount};
 
@@ -2153,7 +2153,7 @@ class CopyCommandTest_CompressedTextureFormats : public CopyCommandTest {
                                                  wgpu::FeatureName::TextureCompressionETC2,
                                                  wgpu::FeatureName::TextureCompressionASTC};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 3;
+        descriptor.requiredFeatureCount = 3;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 
@@ -2263,7 +2263,7 @@ class CopyCommandTest_CompressedTextureFormats : public CopyCommandTest {
             case wgpu::TextureFormat::ASTC12x12UnormSrgb:
                 return wgpu::TextureFormat::ASTC12x12Unorm;
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
 };

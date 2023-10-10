@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_CONSTRUCT_H_
 #define SRC_TINT_LANG_CORE_IR_CONSTRUCT_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/call.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A constructor instruction in the IR.
-class Construct : public Castable<Construct, Call> {
+class Construct final : public Castable<Construct, Call> {
   public:
     /// The base offset in Operands() for the args
     static constexpr size_t kArgsOperandOffset = 0;
@@ -32,10 +34,13 @@ class Construct : public Castable<Construct, Call> {
     explicit Construct(InstructionResult* result, VectorRef<Value*> args = tint::Empty);
     ~Construct() override;
 
+    /// @copydoc Instruction::Clone()
+    Construct* Clone(CloneContext& ctx) override;
+
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "construct"; }
+    std::string FriendlyName() override { return "construct"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_CONSTRUCT_H_

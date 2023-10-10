@@ -87,7 +87,7 @@ class BindGroupValidationTest : public ValidationTest {
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::Depth32FloatStencil8};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 
@@ -407,15 +407,15 @@ TEST_F(BindGroupValidationTest, ExternalTextureBindingType) {
 
     // Setting the external texture to an error external texture is an error.
     {
-        wgpu::Texture errorTexture = CreateTexture(wgpu::TextureUsage::TextureBinding,
-                                                   wgpu::TextureFormat::RGBA8UnormSrgb, 1);
-        wgpu::ExternalTextureDescriptor errorExternalDesciptor =
+        wgpu::Texture errorTexture =
+            CreateTexture(wgpu::TextureUsage::TextureBinding, wgpu::TextureFormat::R8Unorm, 1);
+        wgpu::ExternalTextureDescriptor errorExternalDescriptor =
             CreateDefaultExternalTextureDescriptor();
-        errorExternalDesciptor.plane0 = errorTexture.CreateView();
+        errorExternalDescriptor.plane0 = errorTexture.CreateView();
 
         wgpu::ExternalTexture errorExternalTexture;
         ASSERT_DEVICE_ERROR(errorExternalTexture =
-                                device.CreateExternalTexture(&errorExternalDesciptor));
+                                device.CreateExternalTexture(&errorExternalDescriptor));
 
         wgpu::ExternalTextureBindingEntry errorExternalBindingEntry;
         errorExternalBindingEntry.externalTexture = errorExternalTexture;
@@ -483,7 +483,7 @@ TEST_F(BindGroupValidationTest, StorageTextureUsage) {
     ASSERT_DEVICE_ERROR(utils::MakeBindGroup(device, layout, {{0, view}}));
 
     // Multisampled texture is invalid with storage buffer binding
-    // Regression case for crbug.com/dawn/614 where this hit an ASSERT.
+    // Regression case for crbug.com/dawn/614 where this hit an DAWN_ASSERT.
     descriptor.sampleCount = 4;
     descriptor.usage |= wgpu::TextureUsage::RenderAttachment;
     view = device.CreateTexture(&descriptor).CreateView();
@@ -621,7 +621,7 @@ class BindGroupValidationTest_Float32Filterable : public BindGroupValidationTest
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::Float32Filterable};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 };
@@ -1543,10 +1543,10 @@ TEST_F(BindGroupLayoutValidationTest, DynamicBufferNumberLimit) {
 
     // In this test, we use all the same shader stage. Ensure that this does not exceed the
     // per-stage limit.
-    ASSERT(limits.maxDynamicUniformBuffersPerPipelineLayout <=
-           limits.maxUniformBuffersPerShaderStage);
-    ASSERT(limits.maxDynamicStorageBuffersPerPipelineLayout <=
-           limits.maxStorageBuffersPerShaderStage);
+    DAWN_ASSERT(limits.maxDynamicUniformBuffersPerPipelineLayout <=
+                limits.maxUniformBuffersPerShaderStage);
+    DAWN_ASSERT(limits.maxDynamicStorageBuffersPerPipelineLayout <=
+                limits.maxStorageBuffersPerShaderStage);
 
     for (uint32_t i = 0; i < limits.maxDynamicUniformBuffersPerPipelineLayout; ++i) {
         maxUniformDB.push_back(utils::BindingLayoutEntryInitializationHelper(
@@ -2257,7 +2257,7 @@ TEST_F(SetBindGroupValidationTest, BindGroupSlotBoundary) {
 
         {
             utils::ComboRenderBundleEncoderDescriptor renderBundleDesc = {};
-            renderBundleDesc.colorFormatsCount = 1;
+            renderBundleDesc.colorFormatCount = 1;
             renderBundleDesc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
             wgpu::RenderBundleEncoder rb = device.CreateRenderBundleEncoder(&renderBundleDesc);
             rb.SetBindGroup(i, bg);
@@ -2314,7 +2314,7 @@ TEST_F(SetBindGroupValidationTest, UnsetWithDynamicOffsetIsInvalid) {
 
         {
             utils::ComboRenderBundleEncoderDescriptor renderBundleDesc = {};
-            renderBundleDesc.colorFormatsCount = 1;
+            renderBundleDesc.colorFormatCount = 1;
             renderBundleDesc.cColorFormats[0] = wgpu::TextureFormat::RGBA8Unorm;
             wgpu::RenderBundleEncoder rb = device.CreateRenderBundleEncoder(&renderBundleDesc);
             rb.SetBindGroup(0, nullptr, count, offsets);
@@ -2451,7 +2451,7 @@ class SetBindGroupPersistenceValidationTest : public ValidationTest {
                         ss << "var<uniform> set" << l << "_binding" << b << " : S;";
                         break;
                     default:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
             }
         }

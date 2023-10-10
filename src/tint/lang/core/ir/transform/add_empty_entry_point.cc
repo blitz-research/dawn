@@ -18,26 +18,36 @@
 
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/lang/core/ir/validator.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::transform::AddEmptyEntryPoint);
+namespace tint::core::ir::transform {
 
-namespace tint::ir::transform {
+namespace {
 
-AddEmptyEntryPoint::AddEmptyEntryPoint() = default;
-
-AddEmptyEntryPoint::~AddEmptyEntryPoint() = default;
-
-void AddEmptyEntryPoint::Run(ir::Module* ir) const {
-    for (auto* func : ir->functions) {
+void Run(ir::Module& ir) {
+    for (auto* func : ir.functions) {
         if (func->Stage() != Function::PipelineStage::kUndefined) {
             return;
         }
     }
 
-    ir::Builder builder(*ir);
-    auto* ep = builder.Function("unused_entry_point", ir->Types().void_(),
+    ir::Builder builder{ir};
+    auto* ep = builder.Function("unused_entry_point", ir.Types().void_(),
                                 Function::PipelineStage::kCompute, std::array{1u, 1u, 1u});
     ep->Block()->Append(builder.Return(ep));
 }
 
-}  // namespace tint::ir::transform
+}  // namespace
+
+Result<SuccessType> AddEmptyEntryPoint(Module& ir) {
+    auto result = ValidateAndDumpIfNeeded(ir, "AddEmptyEntryPoint transform");
+    if (!result) {
+        return result.Failure();
+    }
+
+    Run(ir);
+
+    return Success;
+}
+
+}  // namespace tint::core::ir::transform

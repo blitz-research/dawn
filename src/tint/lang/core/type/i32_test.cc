@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/core/type/test_helper.h"
+#include "src/tint/lang/core/type/helper_test.h"
 #include "src/tint/lang/core/type/texture.h"
 
-namespace tint::type {
+namespace tint::core::type {
 namespace {
 
 using I32Test = TestHelper;
@@ -47,12 +47,12 @@ TEST_F(I32Test, FriendlyName) {
 TEST_F(I32Test, Clone) {
     auto* a = create<I32>();
 
-    type::Manager mgr;
-    type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
+    core::type::Manager mgr;
+    core::type::CloneContext ctx{{nullptr}, {nullptr, &mgr}};
 
     auto* b = a->Clone(ctx);
     ASSERT_TRUE(b->Is<I32>());
 }
 
 }  // namespace
-}  // namespace tint::type
+}  // namespace tint::core::type

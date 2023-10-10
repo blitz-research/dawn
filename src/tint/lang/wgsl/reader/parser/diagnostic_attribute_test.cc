@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/reader/parser/test_helper.h"
+#include "src/tint/lang/wgsl/reader/parser/helper_test.h"
 
 #include "src/tint/lang/wgsl/ast/diagnostic_control.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::wgsl::reader {
 namespace {
@@ -27,7 +27,7 @@ TEST_F(WGSLParserTest, DiagnosticAttribute_Name) {
     EXPECT_TRUE(a.matched);
     auto* d = a.value->As<ast::DiagnosticAttribute>();
     ASSERT_NE(d, nullptr);
-    EXPECT_EQ(d->control.severity, builtin::DiagnosticSeverity::kOff);
+    EXPECT_EQ(d->control.severity, wgsl::DiagnosticSeverity::kOff);
     auto* r = d->control.rule_name;
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->category, nullptr);
@@ -41,7 +41,7 @@ TEST_F(WGSLParserTest, DiagnosticAttribute_CategoryName) {
     EXPECT_TRUE(a.matched);
     auto* d = a.value->As<ast::DiagnosticAttribute>();
     ASSERT_NE(d, nullptr);
-    EXPECT_EQ(d->control.severity, builtin::DiagnosticSeverity::kOff);
+    EXPECT_EQ(d->control.severity, wgsl::DiagnosticSeverity::kOff);
     auto* r = d->control.rule_name;
     ASSERT_NE(r, nullptr);
     ast::CheckIdentifier(r->category, "foo");

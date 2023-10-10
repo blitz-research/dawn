@@ -27,12 +27,12 @@
 #include "src/tint/lang/core/type/manager.h"
 #include "src/tint/utils/containers/vector.h"
 #include "src/tint/utils/diagnostic/source.h"
-#include "src/tint/utils/generation_id.h"
+#include "src/tint/utils/id/generation_id.h"
 #include "src/tint/utils/memory/block_allocator.h"
 #include "src/tint/utils/result/result.h"
-#include "src/tint/utils/text/symbol_table.h"
+#include "src/tint/utils/symbol/symbol_table.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// Main module class for the IR.
 class Module {
@@ -79,13 +79,13 @@ class Module {
     void SetName(Value* value, Symbol name);
 
     /// @return the type manager for the module
-    type::Manager& Types() { return constant_values.types; }
+    core::type::Manager& Types() { return constant_values.types; }
 
     /// The block allocator
     BlockAllocator<Block> blocks;
 
     /// The constant value manager
-    constant::Manager constant_values;
+    core::constant::Manager constant_values;
 
     /// The instruction allocator
     BlockAllocator<Instruction> instructions;
@@ -102,13 +102,13 @@ class Module {
     /// The symbol table for the module
     SymbolTable symbols{prog_id_};
 
-    /// The map of constant::Value to their ir::Constant.
-    Hashmap<const constant::Value*, ir::Constant*, 16> constants;
+    /// The map of core::constant::Value to their ir::Constant.
+    Hashmap<const core::constant::Value*, ir::Constant*, 16> constants;
 
     /// If the module generated a validation error, will store the file for the disassembly text.
     std::unique_ptr<Source::File> disassembly_file;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_MODULE_H_

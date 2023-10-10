@@ -35,7 +35,7 @@ TEST(ExpressionSizeTest, Basic) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     ExpressionSize expression_size(program);
     for (const auto* node : program.ASTNodes().Objects()) {
@@ -49,10 +49,10 @@ TEST(ExpressionSizeTest, Basic) {
             const auto* binary_expr = expr->As<ast::BinaryExpression>();
             ASSERT_TRUE(binary_expr != nullptr);
             switch (binary_expr->op) {
-                case ast::BinaryOp::kAdd:
+                case core::BinaryOp::kAdd:
                     ASSERT_EQ(3, expression_size(expr));
                     break;
-                case ast::BinaryOp::kMultiply:
+                case core::BinaryOp::kMultiply:
                     ASSERT_EQ(7, expression_size(expr));
                     break;
                 default:

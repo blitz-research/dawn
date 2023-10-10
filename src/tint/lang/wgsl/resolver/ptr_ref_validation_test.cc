@@ -17,13 +17,13 @@
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
 namespace tint::resolver {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 struct ResolverPtrRefValidationTest : public resolver::TestHelper, public testing::Test {};
 
@@ -55,7 +55,7 @@ TEST_F(ResolverPtrRefValidationTest, AddressOfLet) {
 TEST_F(ResolverPtrRefValidationTest, AddressOfHandle) {
     // @group(0) @binding(0) var t: texture_3d<f32>;
     // &t
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k3d, ty.f32()), Group(0_a),
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k3d, ty.f32()), Group(0_a),
               Binding(0_a));
     auto* expr = AddressOf(Expr(Source{{12, 34}}, "t"));
     WrapInFunction(expr);
@@ -95,7 +95,7 @@ TEST_F(ResolverPtrRefValidationTest, AddressOfVectorComponent_IndexAccessor) {
 TEST_F(ResolverPtrRefValidationTest, IndirectOfAddressOfHandle) {
     // @group(0) @binding(0) var t: texture_3d<f32>;
     // *&t
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k3d, ty.f32()), Group(0_a),
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k3d, ty.f32()), Group(0_a),
               Binding(0_a));
     auto* expr = Deref(AddressOf(Expr(Source{{12, 34}}, "t")));
     WrapInFunction(expr);
@@ -144,8 +144,8 @@ TEST_F(ResolverPtrRefValidationTest, InferredPtrAccessMismatch) {
     // }
     auto* inner = Structure("Inner", Vector{Member("arr", ty.array<i32, 4>())});
     auto* buf = Structure("S", Vector{Member("inner", ty.Of(inner))});
-    auto* var = GlobalVar("s", ty.Of(buf), builtin::AddressSpace::kStorage,
-                          builtin::Access::kReadWrite, Binding(0_a), Group(0_a));
+    auto* var = GlobalVar("s", ty.Of(buf), core::AddressSpace::kStorage, core::Access::kReadWrite,
+                          Binding(0_a), Group(0_a));
 
     auto* expr = IndexAccessor(MemberAccessor(MemberAccessor(var, "inner"), "arr"), 2_i);
     auto* ptr = Let(Source{{12, 34}}, "p", ty.ptr<storage, i32>(), AddressOf(expr));

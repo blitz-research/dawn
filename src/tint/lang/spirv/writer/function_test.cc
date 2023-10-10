@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, Function_Empty) {
     auto* func = b.Function("foo", ty.void_());
@@ -78,7 +78,7 @@ TEST_F(SpirvWriterTest, Function_DeduplicateType) {
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Compute) {
     auto* func =
-        b.Function("main", ty.void_(), ir::Function::PipelineStage::kCompute, {{32, 4, 1}});
+        b.Function("main", ty.void_(), core::ir::Function::PipelineStage::kCompute, {{32, 4, 1}});
     b.Append(func->Block(), [&] {  //
         b.Return(func);
     });
@@ -104,7 +104,7 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Compute) {
 }
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Fragment) {
-    auto* func = b.Function("main", ty.void_(), ir::Function::PipelineStage::kFragment);
+    auto* func = b.Function("main", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {  //
         b.Return(func);
     });
@@ -130,7 +130,7 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Fragment) {
 }
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Vertex) {
-    auto* func = b.Function("main", ty.void_(), ir::Function::PipelineStage::kVertex);
+    auto* func = b.Function("main", ty.void_(), core::ir::Function::PipelineStage::kVertex);
     b.Append(func->Block(), [&] {  //
         b.Return(func);
     });
@@ -155,17 +155,19 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Vertex) {
 }
 
 TEST_F(SpirvWriterTest, Function_EntryPoint_Multiple) {
-    auto* f1 = b.Function("main1", ty.void_(), ir::Function::PipelineStage::kCompute, {{32, 4, 1}});
+    auto* f1 =
+        b.Function("main1", ty.void_(), core::ir::Function::PipelineStage::kCompute, {{32, 4, 1}});
     b.Append(f1->Block(), [&] {  //
         b.Return(f1);
     });
 
-    auto* f2 = b.Function("main2", ty.void_(), ir::Function::PipelineStage::kCompute, {{8, 2, 16}});
+    auto* f2 =
+        b.Function("main2", ty.void_(), core::ir::Function::PipelineStage::kCompute, {{8, 2, 16}});
     b.Append(f2->Block(), [&] {  //
         b.Return(f2);
     });
 
-    auto* f3 = b.Function("main3", ty.void_(), ir::Function::PipelineStage::kFragment);
+    auto* f3 = b.Function("main3", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(f3->Block(), [&] {  //
         b.Return(f3);
     });
@@ -296,6 +298,145 @@ TEST_F(SpirvWriterTest, Function_Call_Void) {
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST("%result = OpFunctionCall %void %foo");
+}
+
+TEST_F(SpirvWriterTest, Function_ShaderIO_VertexPointSize) {
+    auto* func = b.Function("main", ty.vec4<f32>(), core::ir::Function::PipelineStage::kVertex);
+    func->SetReturnBuiltin(core::ir::Function::ReturnBuiltin::kPosition);
+    b.Append(func->Block(), [&] {  //
+        b.Return(func, b.Construct(ty.vec4<f32>(), 0.5_f));
+    });
+
+    Options options;
+    options.emit_vertex_point_size = true;
+    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    EXPECT_INST(
+        R"(OpEntryPoint Vertex %main "main" %main_position_Output %main___point_size_Output)");
+    EXPECT_INST(R"(
+               OpDecorate %main_position_Output BuiltIn Position
+               OpDecorate %main___point_size_Output BuiltIn PointSize
+)");
+    EXPECT_INST(R"(
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+%main_position_Output = OpVariable %_ptr_Output_v4float Output
+%_ptr_Output_float = OpTypePointer Output %float
+%main___point_size_Output = OpVariable %_ptr_Output_float Output
+)");
+    EXPECT_INST(R"(
+       %main = OpFunction %void None %14
+         %15 = OpLabel
+         %16 = OpFunctionCall %v4float %main_inner
+               OpStore %main_position_Output %16
+               OpStore %main___point_size_Output %float_1
+               OpReturn
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Function_ShaderIO_DualSourceBlend) {
+    auto* outputs = ty.Struct(mod.symbols.New("Outputs"),
+                              {
+                                  {mod.symbols.Register("a"), ty.f32(), {0u, 0u, {}, {}, false}},
+                                  {mod.symbols.Register("b"), ty.f32(), {0u, 1u, {}, {}, false}},
+                              });
+
+    auto* func = b.Function("main", outputs, core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {  //
+        b.Return(func, b.Construct(outputs, 0.5_f, 0.6_f));
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(
+        R"(OpEntryPoint Fragment %main "main" %main_loc0_idx0_Output %main_loc0_idx1_Output)");
+    EXPECT_INST(R"(
+               OpDecorate %main_loc0_idx0_Output Location 0
+               OpDecorate %main_loc0_idx0_Output Index 0
+               OpDecorate %main_loc0_idx1_Output Location 0
+               OpDecorate %main_loc0_idx1_Output Index 1
+    )");
+    EXPECT_INST(R"(
+%main_loc0_idx0_Output = OpVariable %_ptr_Output_float Output
+%main_loc0_idx1_Output = OpVariable %_ptr_Output_float Output
+    )");
+    EXPECT_INST(R"(
+       %main = OpFunction %void None %14
+         %15 = OpLabel
+         %16 = OpFunctionCall %Outputs %main_inner
+         %17 = OpCompositeExtract %float %16 0
+               OpStore %main_loc0_idx0_Output %17
+         %18 = OpCompositeExtract %float %16 1
+               OpStore %main_loc0_idx1_Output %18
+               OpReturn
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Function_PassMatrixByPointer) {
+    auto* mat_ty = ty.mat3x3<f32>();
+    auto* arr = mod.root_block->Append(b.Var("var", ty.ptr(private_, ty.array(mat_ty, 4))));
+
+    auto* target = b.Function("target", mat_ty);
+    auto* value_a = b.FunctionParam("value_a", mat_ty);
+    auto* scalar = b.FunctionParam("scalar", ty.f32());
+    auto* value_b = b.FunctionParam("value_b", mat_ty);
+    target->SetParams({value_a, scalar, value_b});
+    b.Append(target->Block(), [&] {
+        auto* scale = b.Multiply(mat_ty, value_a, scalar);
+        auto* sum = b.Add(mat_ty, scale, value_b);
+        b.Return(target, sum);
+    });
+
+    auto* caller = b.Function("caller", mat_ty);
+    b.Append(caller->Block(), [&] {
+        auto* mat_ptr = ty.ptr(private_, mat_ty);
+        auto* ma = b.Load(b.Access(mat_ptr, arr, 0_u));
+        auto* mb = b.Load(b.Access(mat_ptr, arr, 1_u));
+        auto* result = b.Call(mat_ty, target, ma, b.Constant(2_f), mb);
+        b.Return(caller, result);
+    });
+
+    Options options;
+    options.pass_matrix_by_pointer = true;
+    ASSERT_TRUE(Generate(options)) << Error() << output_;
+
+    EXPECT_INST(R"(
+               ; Function target
+     %target = OpFunction %mat3v3float None %15
+         %12 = OpFunctionParameter %_ptr_Function_mat3v3float
+     %scalar = OpFunctionParameter %float
+         %14 = OpFunctionParameter %_ptr_Function_mat3v3float
+         %16 = OpLabel
+         %17 = OpLoad %mat3v3float %14
+         %18 = OpLoad %mat3v3float %12
+         %19 = OpMatrixTimesScalar %mat3v3float %18 %scalar
+         %20 = OpCompositeExtract %v3float %19 0
+         %21 = OpCompositeExtract %v3float %17 0
+         %22 = OpFAdd %v3float %20 %21
+         %23 = OpCompositeExtract %v3float %19 1
+         %24 = OpCompositeExtract %v3float %17 1
+         %25 = OpFAdd %v3float %23 %24
+         %26 = OpCompositeExtract %v3float %19 2
+         %27 = OpCompositeExtract %v3float %17 2
+         %28 = OpFAdd %v3float %26 %27
+         %29 = OpCompositeConstruct %mat3v3float %22 %25 %28
+               OpReturnValue %29
+               OpFunctionEnd
+
+               ; Function caller
+     %caller = OpFunction %mat3v3float None %31
+         %32 = OpLabel
+         %40 = OpVariable %_ptr_Function_mat3v3float Function
+         %41 = OpVariable %_ptr_Function_mat3v3float Function
+         %33 = OpAccessChain %_ptr_Private_mat3v3float %var %uint_0
+         %36 = OpLoad %mat3v3float %33
+         %37 = OpAccessChain %_ptr_Private_mat3v3float %var %uint_1
+         %39 = OpLoad %mat3v3float %37
+               OpStore %40 %36
+               OpStore %41 %39
+         %42 = OpFunctionCall %mat3v3float %target %40 %float_2 %41
+               OpReturnValue %42
+               OpFunctionEnd
+)");
 }
 
 }  // namespace

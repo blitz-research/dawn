@@ -147,7 +147,7 @@ TEST_F(TextureValidationTest, SampleCount) {
 
         for (wgpu::TextureFormat format : utils::kFormatsInCoreSpec) {
             descriptor.format = format;
-            if (utils::TextureFormatSupportsMultisampling(format)) {
+            if (utils::TextureFormatSupportsMultisampling(device, format)) {
                 device.CreateTexture(&descriptor);
             } else {
                 ASSERT_DEVICE_ERROR(device.CreateTexture(&descriptor));
@@ -645,10 +645,10 @@ TEST_F(TextureValidationTest, TextureDimensionNotSupportRenderAttachment) {
         {wgpu::TextureDimension::e1D, wgpu::TextureDimension::e2D, wgpu::TextureDimension::e3D}};
     for (wgpu::TextureDimension dimension : kTextureDimensions) {
         descriptor.dimension = dimension;
-        if (dimension == wgpu::TextureDimension::e2D) {
-            device.CreateTexture(&descriptor);
-        } else {
+        if (dimension == wgpu::TextureDimension::e1D) {
             ASSERT_DEVICE_ERROR(device.CreateTexture(&descriptor));
+        } else {
+            device.CreateTexture(&descriptor);
         }
     }
 }
@@ -704,7 +704,7 @@ class D32S8TextureFormatsValidationTests : public TextureValidationTest {
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::Depth32FloatStencil8};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 };
@@ -728,7 +728,7 @@ class CompressedTextureFormatsValidationTests : public TextureValidationTest {
                                                  wgpu::FeatureName::TextureCompressionETC2,
                                                  wgpu::FeatureName::TextureCompressionASTC};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 3;
+        descriptor.requiredFeatureCount = 3;
 
         return dawnAdapter.CreateDevice(&descriptor);
     }
@@ -883,7 +883,7 @@ class RG11B10UfloatTextureFormatsValidationTests : public TextureValidationTest 
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::RG11B10UfloatRenderable};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 };
@@ -906,7 +906,7 @@ class BGRA8UnormTextureFormatsValidationTests : public TextureValidationTest {
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::BGRA8UnormStorage};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 };
@@ -918,6 +918,43 @@ TEST_F(BGRA8UnormTextureFormatsValidationTests, StorageFeature) {
     descriptor.usage = wgpu::TextureUsage::StorageBinding;
 
     descriptor.format = wgpu::TextureFormat::BGRA8Unorm;
+    device.CreateTexture(&descriptor);
+}
+
+class Norm16TextureFormatsValidationTests : public TextureValidationTest {
+  protected:
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
+        wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::Norm16TextureFormats};
+        descriptor.requiredFeatures = requiredFeatures;
+        descriptor.requiredFeatureCount = 1;
+        return dawnAdapter.CreateDevice(&descriptor);
+    }
+};
+
+// Test that Norm16 formats are valid as renderable and sample-able texture if
+// 'norm16-texture-formats' is enabled.
+TEST_F(Norm16TextureFormatsValidationTests, RenderAndSample) {
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {1, 1, 1};
+    descriptor.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding;
+
+    descriptor.format = wgpu::TextureFormat::R16Unorm;
+    device.CreateTexture(&descriptor);
+
+    descriptor.format = wgpu::TextureFormat::RG16Unorm;
+    device.CreateTexture(&descriptor);
+
+    descriptor.format = wgpu::TextureFormat::RGBA16Unorm;
+    device.CreateTexture(&descriptor);
+
+    descriptor.format = wgpu::TextureFormat::R16Snorm;
+    device.CreateTexture(&descriptor);
+
+    descriptor.format = wgpu::TextureFormat::RG16Snorm;
+    device.CreateTexture(&descriptor);
+
+    descriptor.format = wgpu::TextureFormat::RGBA16Snorm;
     device.CreateTexture(&descriptor);
 }
 
@@ -1042,7 +1079,7 @@ class TransientAttachmentValidationTest : public TextureValidationTest {
                                 wgpu::DeviceDescriptor descriptor) override {
         wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::TransientAttachments};
         descriptor.requiredFeatures = requiredFeatures;
-        descriptor.requiredFeaturesCount = 1;
+        descriptor.requiredFeatureCount = 1;
         return dawnAdapter.CreateDevice(&descriptor);
     }
 };

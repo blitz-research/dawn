@@ -31,13 +31,13 @@
 namespace dawn::native::d3d12 {
 
 void CommandRecordingContext::AddToSharedTextureList(Texture* texture) {
-    ASSERT(IsOpen());
+    DAWN_ASSERT(IsOpen());
     mSharedTextures.insert(texture);
 }
 
 MaybeError CommandRecordingContext::Open(ID3D12Device* d3d12Device,
                                          CommandAllocatorManager* commandAllocationManager) {
-    ASSERT(!IsOpen());
+    DAWN_ASSERT(!IsOpen());
     ID3D12CommandAllocator* commandAllocator;
     DAWN_TRY_ASSIGN(commandAllocator, commandAllocationManager->ReserveCommandAllocator());
     if (mD3d12CommandList != nullptr) {
@@ -67,13 +67,8 @@ MaybeError CommandRecordingContext::Open(ID3D12Device* d3d12Device,
 
 MaybeError CommandRecordingContext::ExecuteCommandList(Device* device) {
     if (IsOpen()) {
-        // Shared textures must be transitioned to common state after the last usage in order
-        // for them to be used by other APIs like D3D11. We ensure this by transitioning to the
-        // common state right before command list submission. TransitionUsageNow itself ensures
-        // no unnecessary transitions happen if the resources is already in the common state.
         for (Texture* texture : mSharedTextures) {
             DAWN_TRY(texture->SynchronizeImportedTextureBeforeUse());
-            texture->TrackAllUsageAndTransitionNow(this, D3D12_RESOURCE_STATE_COMMON);
         }
 
         MaybeError error =
@@ -147,16 +142,16 @@ void CommandRecordingContext::TrackHeapUsage(Heap* heap, ExecutionSerial serial)
 }
 
 ID3D12GraphicsCommandList* CommandRecordingContext::GetCommandList() const {
-    ASSERT(mD3d12CommandList != nullptr);
-    ASSERT(IsOpen());
+    DAWN_ASSERT(mD3d12CommandList != nullptr);
+    DAWN_ASSERT(IsOpen());
     return mD3d12CommandList.Get();
 }
 
 // This function will fail on Windows versions prior to 1809. Support must be queried through
 // the device before calling.
 ID3D12GraphicsCommandList4* CommandRecordingContext::GetCommandList4() const {
-    ASSERT(IsOpen());
-    ASSERT(mD3d12CommandList != nullptr);
+    DAWN_ASSERT(IsOpen());
+    DAWN_ASSERT(mD3d12CommandList != nullptr);
     return mD3d12CommandList4.Get();
 }
 

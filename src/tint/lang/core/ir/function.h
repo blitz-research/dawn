@@ -26,12 +26,12 @@
 #include "src/tint/utils/ice/ice.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class Block;
 class FunctionTerminator;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// An IR representation of a function
 class Function : public Castable<Function, Value> {
@@ -62,10 +62,13 @@ class Function : public Castable<Function, Value> {
     /// @param rt the function return type
     /// @param stage the function stage
     /// @param wg_size the workgroup_size
-    Function(const type::Type* rt,
+    Function(const core::type::Type* rt,
              PipelineStage stage = PipelineStage::kUndefined,
              std::optional<std::array<uint32_t, 3>> wg_size = {});
     ~Function() override;
+
+    /// @copydoc Instruction::Clone()
+    Function* Clone(CloneContext& ctx) override;
 
     /// Sets the function stage
     /// @param stage the stage to set
@@ -87,7 +90,7 @@ class Function : public Castable<Function, Value> {
     std::optional<std::array<uint32_t, 3>> WorkgroupSize() { return workgroup_size_; }
 
     /// @returns the return type for the function
-    const type::Type* ReturnType() { return return_.type; }
+    const core::type::Type* ReturnType() { return return_.type; }
 
     /// Sets the return attributes
     /// @param builtin the builtin to set
@@ -103,7 +106,7 @@ class Function : public Castable<Function, Value> {
     /// Sets the return location
     /// @param loc the location to set
     /// @param interp the interpolation
-    void SetReturnLocation(uint32_t loc, std::optional<builtin::Interpolation> interp) {
+    void SetReturnLocation(uint32_t loc, std::optional<core::Interpolation> interp) {
         return_.location = {loc, interp};
     }
     /// @returns the return location
@@ -137,12 +140,15 @@ class Function : public Castable<Function, Value> {
     /// @returns the function root block
     ir::Block* Block() { return block_; }
 
+    /// Destroys the function and all of its instructions.
+    void Destroy() override;
+
   private:
     PipelineStage pipeline_stage_;
     std::optional<std::array<uint32_t, 3>> workgroup_size_;
 
     struct {
-        const type::Type* type = nullptr;
+        const core::type::Type* type = nullptr;
         std::optional<enum ReturnBuiltin> builtin;
         std::optional<Location> location;
         bool invariant = false;
@@ -176,6 +182,6 @@ auto& operator<<(STREAM& out, enum Function::ReturnBuiltin value) {
     return out << ToString(value);
 }
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_FUNCTION_H_

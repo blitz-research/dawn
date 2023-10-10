@@ -20,7 +20,7 @@
 #include <bitset>
 
 #include "dawn/common/Constants.h"
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BindGroup.h"
 #include "dawn/native/Pipeline.h"
 #include "dawn/native/PipelineLayout.h"
 
@@ -37,7 +37,7 @@ class BindGroupTrackerBase {
                         BindGroupBase* bindGroup,
                         uint32_t dynamicOffsetCount,
                         uint32_t* dynamicOffsets) {
-        ASSERT(index < kMaxBindGroupsTyped);
+        DAWN_ASSERT(index < kMaxBindGroupsTyped);
 
         if (mBindGroupLayoutsMask[index]) {
             // It is okay to only dirty bind groups that are used by the current pipeline

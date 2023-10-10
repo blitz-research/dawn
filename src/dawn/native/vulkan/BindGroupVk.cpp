@@ -31,7 +31,8 @@ namespace dawn::native::vulkan {
 // static
 ResultOrError<Ref<BindGroup>> BindGroup::Create(Device* device,
                                                 const BindGroupDescriptor* descriptor) {
-    return ToBackend(descriptor->layout)->AllocateBindGroup(device, descriptor);
+    return ToBackend(descriptor->layout->GetInternalBindGroupLayout())
+        ->AllocateBindGroup(device, descriptor);
 }
 
 BindGroup::BindGroup(Device* device,
@@ -100,9 +101,6 @@ BindGroup::BindGroup(Device* device,
                     continue;
                 }
                 writeImageInfo[numWrites].imageView = handle;
-
-                // The layout may be GENERAL here because of interactions between the Sampled
-                // and ReadOnlyStorage usages. See the logic in VulkanImageLayout.
                 writeImageInfo[numWrites].imageLayout = VulkanImageLayout(
                     ToBackend(view->GetTexture()), wgpu::TextureUsage::TextureBinding);
 
@@ -135,7 +133,7 @@ BindGroup::BindGroup(Device* device,
             }
 
             case BindingInfoType::ExternalTexture:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
 

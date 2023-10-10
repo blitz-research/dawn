@@ -19,13 +19,14 @@
 #include <string>
 
 #include "dawn/common/Log.h"
+#include "dawn/native/BindGroupLayout.h"
 #include "dawn/native/DawnNative.h"
 #include "dawn/webgpu_cpp.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 // Argument helpers to allow macro overriding.
-#define UNIMPLEMENTED_MACRO(...) UNREACHABLE()
+#define UNIMPLEMENTED_MACRO(...) DAWN_UNREACHABLE()
 #define GET_3RD_ARG_HELPER_(_1, _2, NAME, ...) NAME
 #define GET_3RD_ARG_(args) GET_3RD_ARG_HELPER_ args
 
@@ -89,6 +90,20 @@
     } while (0)
 #define EXPECT_DEPRECATION_WARNING(statement) EXPECT_DEPRECATION_WARNINGS(statement, 1)
 
+// Gmock matcher helpers that may be used throughout other tests.
+
+// BindGroupLayouts can either be cache equivalent meaning that they may have different
+// compatibility tokens but same internal layout, or fully equivalent meaning that they have the
+// same token and internal layout. Note that being fully equivalent implies that they are cache
+// equivalent.
+MATCHER_P(BindGroupLayoutCacheEq, other, "") {
+    return dawn::native::FromAPI(arg.Get())->GetInternalBindGroupLayout() ==
+           dawn::native::FromAPI(other.Get())->GetInternalBindGroupLayout();
+}
+MATCHER_P(BindGroupLayoutEq, other, "") {
+    return dawn::native::FromAPI(arg.Get())->IsLayoutEqual(dawn::native::FromAPI(other.Get()));
+}
+
 namespace dawn::utils {
 class WireHelper;
 }  // namespace dawn::utils
@@ -135,6 +150,9 @@ class ValidationTest : public testing::Test {
 
   protected:
     dawn::native::Adapter& GetBackendAdapter();
+    // Helper function to create testing adapter and store into ValidationTest::adapter during
+    // SetUp. Override this function to change the adapter creation behavior.
+    virtual void CreateTestAdapter(wgpu::Instance instance, wgpu::RequestAdapterOptions options);
     virtual WGPUDevice CreateTestDevice(dawn::native::Adapter dawnAdapter,
                                         wgpu::DeviceDescriptor descriptor);
 

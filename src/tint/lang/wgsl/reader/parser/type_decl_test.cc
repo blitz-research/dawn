@@ -14,13 +14,13 @@
 
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/wgsl/ast/alias.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
-#include "src/tint/lang/wgsl/reader/parser/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
+#include "src/tint/lang/wgsl/reader/parser/helper_test.h"
 
 namespace tint::wgsl::reader {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(WGSLParserTest, TypeDecl_Invalid) {
     auto p = parser("1234");
@@ -319,7 +319,7 @@ TEST_F(WGSLParserTest, TypeDecl_Array_ExpressionSize) {
 
     auto* count = As<ast::BinaryExpression>(arr->arguments[1]);
     ASSERT_NE(count, nullptr);
-    EXPECT_EQ(ast::BinaryOp::kAdd, count->op);
+    EXPECT_EQ(core::BinaryOp::kAdd, count->op);
 
     auto* count_lhs = As<ast::IdentifierExpression>(count->lhs);
     ASSERT_NE(count_lhs, nullptr);

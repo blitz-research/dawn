@@ -21,6 +21,10 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/wgsl/resolver/resolve.h"
+
+using namespace tint::core::fluent_types;  // NOLINT
 
 namespace tint::inspector {
 
@@ -124,20 +128,19 @@ void InspectorBuilder::AddUniformBuffer(const std::string& name,
                                         ast::Type type,
                                         uint32_t group,
                                         uint32_t binding) {
-    GlobalVar(name, type, builtin::AddressSpace::kUniform, Binding(AInt(binding)),
-              Group(AInt(group)));
+    GlobalVar(name, type, core::AddressSpace::kUniform, Binding(AInt(binding)), Group(AInt(group)));
 }
 
 void InspectorBuilder::AddWorkgroupStorage(const std::string& name, ast::Type type) {
-    GlobalVar(name, type, builtin::AddressSpace::kWorkgroup);
+    GlobalVar(name, type, core::AddressSpace::kWorkgroup);
 }
 
 void InspectorBuilder::AddStorageBuffer(const std::string& name,
                                         ast::Type type,
-                                        builtin::Access access,
+                                        core::Access access,
                                         uint32_t group,
                                         uint32_t binding) {
-    GlobalVar(name, type, builtin::AddressSpace::kStorage, access, Binding(AInt(binding)),
+    GlobalVar(name, type, core::AddressSpace::kStorage, access, Binding(AInt(binding)),
               Group(AInt(group)));
 }
 
@@ -170,14 +173,14 @@ void InspectorBuilder::MakeStructVariableReferenceBodyFunction(
 }
 
 void InspectorBuilder::AddSampler(const std::string& name, uint32_t group, uint32_t binding) {
-    GlobalVar(name, ty.sampler(type::SamplerKind::kSampler), Binding(AInt(binding)),
+    GlobalVar(name, ty.sampler(core::type::SamplerKind::kSampler), Binding(AInt(binding)),
               Group(AInt(group)));
 }
 
 void InspectorBuilder::AddComparisonSampler(const std::string& name,
                                             uint32_t group,
                                             uint32_t binding) {
-    GlobalVar(name, ty.sampler(type::SamplerKind::kComparisonSampler), Binding(AInt(binding)),
+    GlobalVar(name, ty.sampler(core::type::SamplerKind::kComparisonSampler), Binding(AInt(binding)),
               Group(AInt(group)));
 }
 
@@ -189,7 +192,7 @@ void InspectorBuilder::AddResource(const std::string& name,
 }
 
 void InspectorBuilder::AddGlobalVariable(const std::string& name, ast::Type type) {
-    GlobalVar(name, type, builtin::AddressSpace::kPrivate);
+    GlobalVar(name, type, core::AddressSpace::kPrivate);
 }
 
 const ast::Function* InspectorBuilder::MakeSamplerReferenceBodyFunction(
@@ -260,16 +263,16 @@ ast::Type InspectorBuilder::GetBaseType(ResourceBinding::SampledKind sampled_kin
     }
 }
 
-ast::Type InspectorBuilder::GetCoordsType(type::TextureDimension dim, ast::Type scalar) {
+ast::Type InspectorBuilder::GetCoordsType(core::type::TextureDimension dim, ast::Type scalar) {
     switch (dim) {
-        case type::TextureDimension::k1d:
+        case core::type::TextureDimension::k1d:
             return scalar;
-        case type::TextureDimension::k2d:
-        case type::TextureDimension::k2dArray:
+        case core::type::TextureDimension::k2d:
+        case core::type::TextureDimension::k2dArray:
             return ty.vec2(scalar);
-        case type::TextureDimension::k3d:
-        case type::TextureDimension::kCube:
-        case type::TextureDimension::kCubeArray:
+        case core::type::TextureDimension::k3d:
+        case core::type::TextureDimension::kCube:
+        case core::type::TextureDimension::kCubeArray:
             return ty.vec3(scalar);
         default:
             [=] {
@@ -281,9 +284,10 @@ ast::Type InspectorBuilder::GetCoordsType(type::TextureDimension dim, ast::Type 
     return ast::Type{};
 }
 
-ast::Type InspectorBuilder::MakeStorageTextureTypes(type::TextureDimension dim,
-                                                    builtin::TexelFormat format) {
-    return ty.storage_texture(dim, format, builtin::Access::kWrite);
+ast::Type InspectorBuilder::MakeStorageTextureTypes(core::type::TextureDimension dim,
+                                                    core::TexelFormat format,
+                                                    core::Access access) {
+    return ty.storage_texture(dim, format, access);
 }
 
 void InspectorBuilder::AddStorageTexture(const std::string& name,
@@ -352,8 +356,10 @@ Inspector& InspectorBuilder::Build() {
         return *inspector_;
     }
     program_ = std::make_unique<Program>(resolver::Resolve(*this));
-    [&] { ASSERT_TRUE(program_->IsValid()) << program_->Diagnostics().str(); }();
-    inspector_ = std::make_unique<Inspector>(program_.get());
+    if (!program_->IsValid()) {
+        ADD_FAILURE() << program_->Diagnostics();
+    }
+    inspector_ = std::make_unique<Inspector>(*program_);
     return *inspector_;
 }
 

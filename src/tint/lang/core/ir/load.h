@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_LOAD_H_
 #define SRC_TINT_LANG_CORE_IR_LOAD_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/operand_instruction.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A load instruction in the IR.
-class Load : public Castable<Load, OperandInstruction<1, 1>> {
+class Load final : public Castable<Load, OperandInstruction<1, 1>> {
   public:
     /// The offset in Operands() for the from value
     static constexpr size_t kFromOperandOffset = 0;
@@ -33,13 +35,16 @@ class Load : public Castable<Load, OperandInstruction<1, 1>> {
 
     ~Load() override;
 
+    /// @copydoc Instruction::Clone()
+    Load* Clone(CloneContext& ctx) override;
+
     /// @returns the value being loaded from
     Value* From() { return operands_[kFromOperandOffset]; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "load"; }
+    std::string FriendlyName() override { return "load"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_LOAD_H_

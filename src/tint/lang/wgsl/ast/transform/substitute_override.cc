@@ -17,14 +17,17 @@
 #include <functional>
 #include <utility>
 
-#include "src/tint/lang/core/builtin/function.h"
+#include "src/tint/lang/core/builtin_fn.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
-#include "src/tint/lang/wgsl/sem/builtin.h"
+#include "src/tint/lang/wgsl/sem/builtin_fn.h"
 #include "src/tint/lang/wgsl/sem/index_accessor_expression.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
 #include "src/tint/utils/rtti/switch.h"
+
+using namespace tint::core::fluent_types;  // NOLINT
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::SubstituteOverride);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::SubstituteOverride::Config);
@@ -32,8 +35,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::SubstituteOverride::Config);
 namespace tint::ast::transform {
 namespace {
 
-bool ShouldRun(const Program* program) {
-    for (auto* node : program->AST().GlobalVariables()) {
+bool ShouldRun(const Program& program) {
+    for (auto* node : program.AST().GlobalVariables()) {
         if (node->Is<Override>()) {
             return true;
         }
@@ -47,11 +50,11 @@ SubstituteOverride::SubstituteOverride() = default;
 
 SubstituteOverride::~SubstituteOverride() = default;
 
-Transform::ApplyResult SubstituteOverride::Apply(const Program* src,
+Transform::ApplyResult SubstituteOverride::Apply(const Program& src,
                                                  const DataMap& config,
                                                  DataMap&) const {
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
 
     const auto* data = config.Get<Config>();
     if (!data) {
@@ -59,7 +62,7 @@ Transform::ApplyResult SubstituteOverride::Apply(const Program* src,
         return resolver::Resolve(b);
     }
 
-    if (!ShouldRun(ctx.src)) {
+    if (!ShouldRun(src)) {
         return SkipTransform;
     }
 
@@ -85,11 +88,11 @@ Transform::ApplyResult SubstituteOverride::Apply(const Program* src,
         auto value = iter->second;
         auto* ctor = Switch(
             sem->Type(),
-            [&](const type::Bool*) { return b.Expr(!std::equal_to<double>()(value, 0.0)); },
-            [&](const type::I32*) { return b.Expr(i32(value)); },
-            [&](const type::U32*) { return b.Expr(u32(value)); },
-            [&](const type::F32*) { return b.Expr(f32(value)); },
-            [&](const type::F16*) { return b.Expr(f16(value)); });
+            [&](const core::type::Bool*) { return b.Expr(!std::equal_to<double>()(value, 0.0)); },
+            [&](const core::type::I32*) { return b.Expr(i32(value)); },
+            [&](const core::type::U32*) { return b.Expr(u32(value)); },
+            [&](const core::type::F32*) { return b.Expr(f32(value)); },
+            [&](const core::type::F16*) { return b.Expr(f16(value)); });
 
         if (!ctor) {
             b.Diagnostics().add_error(diag::System::Transform,
@@ -104,11 +107,11 @@ Transform::ApplyResult SubstituteOverride::Apply(const Program* src,
     // If the object is not materialized, and the 'override' variable is turned to a 'const', the
     // resulting type of the index may change. See: crbug.com/tint/1697.
     ctx.ReplaceAll([&](const IndexAccessorExpression* expr) -> const IndexAccessorExpression* {
-        if (auto* sem = src->Sem().Get(expr)) {
+        if (auto* sem = src.Sem().Get(expr)) {
             if (auto* access = sem->UnwrapMaterialize()->As<sem::IndexAccessorExpression>()) {
                 if (access->Object()->UnwrapMaterialize()->Type()->HoldsAbstract() &&
-                    access->Index()->Stage() == sem::EvaluationStage::kOverride) {
-                    auto* obj = b.Call(builtin::str(builtin::Function::kTintMaterialize),
+                    access->Index()->Stage() == core::EvaluationStage::kOverride) {
+                    auto* obj = b.Call(wgsl::str(wgsl::BuiltinFn::kTintMaterialize),
                                        ctx.Clone(expr->object));
                     return b.IndexAccessor(obj, ctx.Clone(expr->index));
                 }

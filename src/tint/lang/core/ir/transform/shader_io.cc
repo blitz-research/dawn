@@ -21,86 +21,78 @@
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/type/struct.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::transform::ShaderIO);
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
-
-namespace tint::ir::transform {
+namespace tint::core::ir::transform {
 
 namespace {
 
-builtin::BuiltinValue FunctionParamBuiltin(enum FunctionParam::Builtin builtin) {
+core::BuiltinValue FunctionParamBuiltin(enum FunctionParam::Builtin builtin) {
     switch (builtin) {
         case FunctionParam::Builtin::kVertexIndex:
-            return builtin::BuiltinValue::kVertexIndex;
+            return core::BuiltinValue::kVertexIndex;
         case FunctionParam::Builtin::kInstanceIndex:
-            return builtin::BuiltinValue::kInstanceIndex;
+            return core::BuiltinValue::kInstanceIndex;
         case FunctionParam::Builtin::kPosition:
-            return builtin::BuiltinValue::kPosition;
+            return core::BuiltinValue::kPosition;
         case FunctionParam::Builtin::kFrontFacing:
-            return builtin::BuiltinValue::kFrontFacing;
+            return core::BuiltinValue::kFrontFacing;
         case FunctionParam::Builtin::kLocalInvocationId:
-            return builtin::BuiltinValue::kLocalInvocationId;
+            return core::BuiltinValue::kLocalInvocationId;
         case FunctionParam::Builtin::kLocalInvocationIndex:
-            return builtin::BuiltinValue::kLocalInvocationIndex;
+            return core::BuiltinValue::kLocalInvocationIndex;
         case FunctionParam::Builtin::kGlobalInvocationId:
-            return builtin::BuiltinValue::kGlobalInvocationId;
+            return core::BuiltinValue::kGlobalInvocationId;
         case FunctionParam::Builtin::kWorkgroupId:
-            return builtin::BuiltinValue::kWorkgroupId;
+            return core::BuiltinValue::kWorkgroupId;
         case FunctionParam::Builtin::kNumWorkgroups:
-            return builtin::BuiltinValue::kNumWorkgroups;
+            return core::BuiltinValue::kNumWorkgroups;
         case FunctionParam::Builtin::kSampleIndex:
-            return builtin::BuiltinValue::kSampleIndex;
+            return core::BuiltinValue::kSampleIndex;
         case FunctionParam::Builtin::kSampleMask:
-            return builtin::BuiltinValue::kSampleMask;
+            return core::BuiltinValue::kSampleMask;
+        case FunctionParam::Builtin::kSubgroupInvocationId:
+            return core::BuiltinValue::kSubgroupInvocationId;
+        case FunctionParam::Builtin::kSubgroupSize:
+            return core::BuiltinValue::kSubgroupSize;
     }
-    return builtin::BuiltinValue::kUndefined;
+    return core::BuiltinValue::kUndefined;
 }
 
-builtin::BuiltinValue ReturnBuiltin(enum Function::ReturnBuiltin builtin) {
+core::BuiltinValue ReturnBuiltin(enum Function::ReturnBuiltin builtin) {
     switch (builtin) {
         case Function::ReturnBuiltin::kPosition:
-            return builtin::BuiltinValue::kPosition;
+            return core::BuiltinValue::kPosition;
         case Function::ReturnBuiltin::kFragDepth:
-            return builtin::BuiltinValue::kFragDepth;
+            return core::BuiltinValue::kFragDepth;
         case Function::ReturnBuiltin::kSampleMask:
-            return builtin::BuiltinValue::kSampleMask;
+            return core::BuiltinValue::kSampleMask;
     }
-    return builtin::BuiltinValue::kUndefined;
+    return core::BuiltinValue::kUndefined;
 }
 
-}  // namespace
-
-ShaderIO::ShaderIO() = default;
-
-ShaderIO::~ShaderIO() = default;
-
-/// PIMPL state for the transform, for a single entry point function.
-struct ShaderIO::State {
+/// PIMPL state for the transform.
+struct State {
     /// The IR module.
-    Module* ir = nullptr;
+    Module& ir;
     /// The IR builder.
-    Builder b{*ir};
+    Builder b{ir};
     /// The type manager.
-    type::Manager& ty{ir->Types()};
+    core::type::Manager& ty{ir.Types()};
     /// The set of struct members that need to have their IO attributes stripped.
-    Hashset<const type::StructMember*, 8> members_to_strip;
+    Hashset<const core::type::StructMember*, 8> members_to_strip{};
 
     /// The entry point currently being processed.
     Function* func = nullptr;
 
     /// The backend state object for the current entry point.
-    std::unique_ptr<ShaderIO::BackendState> backend;
-
-    /// Constructor
-    /// @param mod the module
-    explicit State(Module* mod) : ir(mod) {}
+    std::unique_ptr<ShaderIOBackendState> backend{};
 
     /// Process an entry point.
     /// @param f the original entry point function
     /// @param bs the backend state object
-    void Process(Function* f, std::unique_ptr<ShaderIO::BackendState> bs) {
+    void Process(Function* f, std::unique_ptr<ShaderIOBackendState> bs) {
         TINT_SCOPED_ASSIGNMENT(func, f);
         backend = std::move(bs);
         TINT_DEFER(backend = nullptr);
@@ -108,15 +100,24 @@ struct ShaderIO::State {
         // Process the parameters and return value to prepare for building a wrapper function.
         GatherInputs();
         GatherOutput();
+
+        // Add an output for the vertex point size if needed.
+        std::optional<uint32_t> vertex_point_size_index;
+        if (func->Stage() == Function::PipelineStage::kVertex && backend->NeedsVertexPointSize()) {
+            vertex_point_size_index =
+                backend->AddOutput(ir.symbols.New("vertex_point_size"), ty.f32(),
+                                   {{}, {}, {BuiltinValue::kPointSize}, {}, false});
+        }
+
         auto new_params = backend->FinalizeInputs();
         auto* new_ret_val = backend->FinalizeOutputs();
 
         // Rename the old function and remove its pipeline stage and workgroup size, as we will be
         // wrapping it with a new entry point.
-        auto name = ir->NameOf(func).Name();
+        auto name = ir.NameOf(func).Name();
         auto stage = func->Stage();
         auto wgsize = func->WorkgroupSize();
-        ir->SetName(func, name + "_inner");
+        ir.SetName(func, name + "_inner");
         func->SetStage(Function::PipelineStage::kUndefined);
         func->ClearWorkgroupSize();
 
@@ -132,6 +133,9 @@ struct ShaderIO::State {
         auto inner_call_args = BuildInnerCallArgs(wrapper);
         auto* inner_result = wrapper.Call(func->ReturnType(), func, std::move(inner_call_args));
         SetOutputs(wrapper, inner_result->Result());
+        if (vertex_point_size_index) {
+            backend->SetOutput(wrapper, vertex_point_size_index.value(), b.Constant(1_f));
+        }
 
         // Return the new result.
         wrapper.Return(ep, new_ret_val);
@@ -140,19 +144,23 @@ struct ShaderIO::State {
     /// Gather the shader inputs.
     void GatherInputs() {
         for (auto* param : func->Params()) {
-            if (auto* str = param->Type()->As<type::Struct>()) {
+            if (auto* str = param->Type()->As<core::type::Struct>()) {
                 for (auto* member : str->Members()) {
                     auto name = str->Name().Name() + "_" + member->Name().Name();
-                    backend->AddInput(ir->symbols.Register(name), member->Type(),
-                                      member->Attributes());
+                    auto attributes = member->Attributes();
+                    if (attributes.interpolation &&
+                        func->Stage() != Function::PipelineStage::kFragment) {
+                        attributes.interpolation = {};
+                    }
+                    backend->AddInput(ir.symbols.Register(name), member->Type(), attributes);
                     members_to_strip.Add(member);
                 }
             } else {
                 // Pull out the IO attributes and remove them from the parameter.
-                type::StructMemberAttributes attributes;
+                core::type::StructMemberAttributes attributes;
                 if (auto loc = param->Location()) {
                     attributes.location = loc->value;
-                    if (loc->interpolation) {
+                    if (loc->interpolation && func->Stage() == Function::PipelineStage::kFragment) {
                         attributes.interpolation = *loc->interpolation;
                     }
                     param->ClearLocation();
@@ -163,7 +171,7 @@ struct ShaderIO::State {
                 attributes.invariant = param->Invariant();
                 param->SetInvariant(false);
 
-                auto name = ir->NameOf(param);
+                auto name = ir.NameOf(param);
                 backend->AddInput(name, param->Type(), std::move(attributes));
             }
         }
@@ -171,22 +179,28 @@ struct ShaderIO::State {
 
     /// Gather the shader outputs.
     void GatherOutput() {
-        if (func->ReturnType()->Is<type::Void>()) {
+        if (func->ReturnType()->Is<core::type::Void>()) {
             return;
         }
 
-        if (auto* str = func->ReturnType()->As<type::Struct>()) {
+        if (auto* str = func->ReturnType()->As<core::type::Struct>()) {
             for (auto* member : str->Members()) {
                 auto name = str->Name().Name() + "_" + member->Name().Name();
-                backend->AddOutput(ir->symbols.Register(name), member->Type(),
-                                   member->Attributes());
+                auto attributes = member->Attributes();
+                if (attributes.interpolation && func->Stage() != Function::PipelineStage::kVertex) {
+                    attributes.interpolation = {};
+                }
+                backend->AddOutput(ir.symbols.Register(name), member->Type(), attributes);
                 members_to_strip.Add(member);
             }
         } else {
             // Pull out the IO attributes and remove them from the original function.
-            type::StructMemberAttributes attributes;
+            core::type::StructMemberAttributes attributes;
             if (auto loc = func->ReturnLocation()) {
                 attributes.location = loc->value;
+                if (loc->interpolation && func->Stage() == Function::PipelineStage::kVertex) {
+                    attributes.interpolation = *loc->interpolation;
+                }
                 func->ClearReturnLocation();
             } else if (auto builtin = func->ReturnBuiltin()) {
                 attributes.builtin = ReturnBuiltin(*builtin);
@@ -195,7 +209,7 @@ struct ShaderIO::State {
             attributes.invariant = func->ReturnInvariant();
             func->SetReturnInvariant(false);
 
-            backend->AddOutput(ir->symbols.New(), func->ReturnType(), std::move(attributes));
+            backend->AddOutput(ir.symbols.New(), func->ReturnType(), std::move(attributes));
         }
     }
 
@@ -206,7 +220,7 @@ struct ShaderIO::State {
         uint32_t input_idx = 0;
         Vector<Value*, 4> args;
         for (auto* param : func->Params()) {
-            if (auto* str = param->Type()->As<type::Struct>()) {
+            if (auto* str = param->Type()->As<core::type::Struct>()) {
                 Vector<Value*, 4> construct_args;
                 for (uint32_t i = 0; i < str->Members().Length(); i++) {
                     construct_args.Push(backend->GetInput(builder, input_idx++));
@@ -224,13 +238,13 @@ struct ShaderIO::State {
     /// @param builder the IR builder for new instructions
     /// @param inner_result the return value from calling the original entry point function
     void SetOutputs(Builder& builder, Value* inner_result) {
-        if (auto* str = inner_result->Type()->As<type::Struct>()) {
+        if (auto* str = inner_result->Type()->As<core::type::Struct>()) {
             for (auto* member : str->Members()) {
                 Value* from =
                     builder.Access(member->Type(), inner_result, u32(member->Index()))->Result();
                 backend->SetOutput(builder, member->Index(), from);
             }
-        } else if (!inner_result->Type()->Is<type::Void>()) {
+        } else if (!inner_result->Type()->Is<core::type::Void>()) {
             backend->SetOutput(builder, 0u, inner_result);
         }
     }
@@ -240,29 +254,34 @@ struct ShaderIO::State {
         // Remove IO attributes from all structure members that had them prior to this transform.
         for (auto* member : members_to_strip) {
             // TODO(crbug.com/tint/745): Remove the const_cast.
-            const_cast<type::StructMember*>(member)->SetAttributes({});
+            const_cast<core::type::StructMember*>(member)->SetAttributes({});
         }
     }
 };
 
-void ShaderIO::Run(Module* ir) const {
-    ShaderIO::State state(ir);
-    for (auto* func : ir->functions) {
+}  // namespace
+
+void RunShaderIOBase(Module& module, std::function<MakeBackendStateFunc> make_backend_state) {
+    State state{module};
+
+    // Take a copy of the function list since the transform will add new functions to the module.
+    auto functions = module.functions;
+    for (auto* func : functions) {
         // Only process entry points.
         if (func->Stage() == Function::PipelineStage::kUndefined) {
             continue;
         }
 
         // Skip entry points with no inputs or outputs.
-        if (func->Params().IsEmpty() && func->ReturnType()->Is<type::Void>()) {
+        if (func->Params().IsEmpty() && func->ReturnType()->Is<core::type::Void>()) {
             continue;
         }
 
-        state.Process(func, MakeBackendState(ir, func));
+        state.Process(func, make_backend_state(module, func));
     }
     state.Finalize();
 }
 
-ShaderIO::BackendState::~BackendState() = default;
+ShaderIOBackendState::~ShaderIOBackendState() = default;
 
-}  // namespace tint::ir::transform
+}  // namespace tint::core::ir::transform

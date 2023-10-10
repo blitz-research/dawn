@@ -52,7 +52,7 @@ WireResult Server::PreHandleBufferDestroy(const BufferDestroyCmd& cmd) {
 }
 
 WireResult Server::DoBufferMapAsync(Known<WGPUBuffer> buffer,
-                                    uint64_t requestSerial,
+                                    WGPUFuture future,
                                     WGPUMapModeFlags mode,
                                     uint64_t offset64,
                                     uint64_t size64) {
@@ -61,7 +61,7 @@ WireResult Server::DoBufferMapAsync(Known<WGPUBuffer> buffer,
     std::unique_ptr<MapUserdata> userdata = MakeUserdata<MapUserdata>();
     userdata->buffer = buffer.AsHandle();
     userdata->bufferObj = buffer->handle;
-    userdata->requestSerial = requestSerial;
+    userdata->future = future;
     userdata->mode = mode;
 
     // Make sure that the deserialized offset and size are no larger than
@@ -126,7 +126,7 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
                 &writeHandle)) {
             return WireResult::FatalError;
         }
-        ASSERT(writeHandle != nullptr);
+        DAWN_ASSERT(writeHandle != nullptr);
         buffer->writeHandle.reset(writeHandle);
         writeHandle->SetDataLength(descriptor->size);
 
@@ -139,7 +139,7 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
                 buffer->mapWriteState = BufferMapWriteState::MapError;
                 return WireResult::Success;
             }
-            ASSERT(mapping != nullptr);
+            DAWN_ASSERT(mapping != nullptr);
             writeHandle->SetTarget(mapping);
 
             buffer->mapWriteState = BufferMapWriteState::Mapped;
@@ -154,7 +154,7 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
                 &readHandle)) {
             return WireResult::FatalError;
         }
-        ASSERT(readHandle != nullptr);
+        DAWN_ASSERT(readHandle != nullptr);
 
         buffer->readHandle.reset(readHandle);
     }
@@ -211,7 +211,7 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data, WGPUBufferMapAsyncStatu
 
     ReturnBufferMapAsyncCallbackCmd cmd;
     cmd.buffer = data->buffer;
-    cmd.requestSerial = data->requestSerial;
+    cmd.future = data->future;
     cmd.status = status;
     cmd.readDataUpdateInfoLength = 0;
     cmd.readDataUpdateInfo = nullptr;
@@ -226,7 +226,7 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data, WGPUBufferMapAsyncStatu
                 buffer->readHandle->SizeOfSerializeDataUpdate(data->offset, data->size);
             cmd.readDataUpdateInfoLength = readDataUpdateInfoLength;
         } else {
-            ASSERT(data->mode & WGPUMapMode_Write);
+            DAWN_ASSERT(data->mode & WGPUMapMode_Write);
             // The in-flight map request returned successfully.
             buffer->mapWriteState = BufferMapWriteState::Mapped;
             // Set the target of the WriteHandle to the mapped buffer data.

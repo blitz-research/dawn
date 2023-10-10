@@ -17,11 +17,11 @@
 
 #include <string>
 
-#include "src/tint/lang/core/builtin/access.h"
-#include "src/tint/lang/core/builtin/address_space.h"
+#include "src/tint/lang/core/access.h"
+#include "src/tint/lang/core/address_space.h"
 #include "src/tint/lang/core/type/type.h"
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// A pointer type.
 class Pointer final : public Castable<Pointer, Type> {
@@ -30,7 +30,7 @@ class Pointer final : public Castable<Pointer, Type> {
     /// @param address_space the address space of the pointer
     /// @param subtype the pointee type
     /// @param access the resolved access control of the reference
-    Pointer(builtin::AddressSpace address_space, const Type* subtype, builtin::Access access);
+    Pointer(core::AddressSpace address_space, const Type* subtype, core::Access access);
 
     /// Destructor
     ~Pointer() override;
@@ -43,10 +43,10 @@ class Pointer final : public Castable<Pointer, Type> {
     const Type* StoreType() const { return subtype_; }
 
     /// @returns the address space of the pointer
-    builtin::AddressSpace AddressSpace() const { return address_space_; }
+    core::AddressSpace AddressSpace() const { return address_space_; }
 
     /// @returns the access control of the reference
-    builtin::Access Access() const { return access_; }
+    core::Access Access() const { return access_; }
 
     /// @returns the name for this type that closely resembles how it would be
     /// declared in WGSL.
@@ -58,10 +58,10 @@ class Pointer final : public Castable<Pointer, Type> {
 
   private:
     Type const* const subtype_;
-    builtin::AddressSpace const address_space_;
-    builtin::Access const access_;
+    core::AddressSpace const address_space_;
+    core::Access const access_;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_POINTER_H_

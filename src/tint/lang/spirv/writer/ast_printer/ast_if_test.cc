@@ -14,10 +14,10 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/spirv/writer/ast_printer/test_helper.h"
-#include "src/tint/lang/spirv/writer/spv_dump.h"
+#include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::spirv::writer {
 namespace {
@@ -60,10 +60,10 @@ TEST_F(SpirvASTPrinterTest, If_Empty_OutsideFunction_IsError) {
             auto* expr = pb.If(true, block);
             pb.WrapInFunction(expr);
 
-            auto program = std::make_unique<Program>(resolver::Resolve(pb));
-            auto b = std::make_unique<Builder>(program.get());
+            auto program = resolver::Resolve(pb);
+            Builder b(program);
 
-            b->GenerateIfStatement(expr);
+            b.GenerateIfStatement(expr);
         },
         "Internal error: trying to add SPIR-V instruction 247 outside a function");
 }
@@ -73,7 +73,7 @@ TEST_F(SpirvASTPrinterTest, If_WithStatements) {
     //   v = 2;
     // }
 
-    auto* var = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* var = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
     auto* body = Block(Assign("v", 2_i));
     auto* expr = If(true, body);
     WrapInFunction(expr);
@@ -109,7 +109,7 @@ TEST_F(SpirvASTPrinterTest, If_WithElse) {
     //   v = 3i;
     // }
 
-    auto* var = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* var = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
     auto* body = Block(Assign("v", 2_i));
     auto* else_body = Block(Assign("v", 3_i));
 
@@ -151,7 +151,7 @@ TEST_F(SpirvASTPrinterTest, If_WithElseIf) {
     //   v = 3i;
     // }
 
-    auto* var = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* var = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
     auto* body = Block(Assign("v", 2_i));
     auto* else_body = Block(Assign("v", 3_i));
 
@@ -202,7 +202,7 @@ TEST_F(SpirvASTPrinterTest, If_WithMultiple) {
     //   v = 5i;
     // }
 
-    auto* var = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* var = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
     auto* body = Block(Assign("v", 2_i));
     auto* elseif_1_body = Block(Assign("v", 3_i));
     auto* elseif_2_body = Block(Assign("v", 4_i));
@@ -567,7 +567,7 @@ TEST_F(SpirvASTPrinterTest, If_WithLoad_Bug327) {
     // if (a) {
     // }
 
-    auto* var = GlobalVar("a", ty.bool_(), builtin::AddressSpace::kPrivate);
+    auto* var = GlobalVar("a", ty.bool_(), core::AddressSpace::kPrivate);
     auto* fn = Func("f", tint::Empty, ty.void_(),
                     Vector{
                         If("a", Block()),

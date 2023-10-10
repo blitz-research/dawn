@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/glsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/glsl/writer/ast_printer/helper_test.h"
 #include "src/tint/utils/text/string_stream.h"
 
 #include "gmock/gmock.h"
@@ -20,8 +20,8 @@
 namespace tint::glsl::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using GlslASTPrinterTest_Import = TestHelper;
 
@@ -266,7 +266,7 @@ INSTANTIATE_TEST_SUITE_P(GlslASTPrinterTest_Import,
                          testing::Values(GlslImportData{"clamp", "clamp"}));
 
 TEST_F(GlslASTPrinterTest_Import, GlslImportData_Determinant) {
-    GlobalVar("var", ty.mat3x3<f32>(), builtin::AddressSpace::kPrivate);
+    GlobalVar("var", ty.mat3x3<f32>(), core::AddressSpace::kPrivate);
 
     auto* expr = Call("determinant", "var");
     WrapInFunction(expr);

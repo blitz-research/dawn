@@ -128,11 +128,11 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
         // the device.
         GatherQueueFromDevice();
 
-        mDeleter = std::make_unique<FencedDeleter>(this);
+        mDeleter = std::make_unique<MutexProtected<FencedDeleter>>(this);
     }
 
     mRenderPassCache = std::make_unique<RenderPassCache>(this);
-    mResourceMemoryAllocator = std::make_unique<ResourceMemoryAllocator>(this);
+    mResourceMemoryAllocator = std::make_unique<MutexProtected<ResourceMemoryAllocator>>(this);
 
     mExternalMemoryService = std::make_unique<external_memory::Service>(this);
     mExternalSemaphoreService = std::make_unique<external_semaphore::Service>(this);
@@ -154,10 +154,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
     return BindGroup::Create(this, descriptor);
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return BindGroupLayout::Create(this, descriptor);
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     return Buffer::Create(this, descriptor);
@@ -225,17 +224,16 @@ ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
 }
 
 MaybeError Device::TickImpl() {
-    RecycleCompletedCommands();
-
-    ExecutionSerial completedSerial = GetCompletedCommandSerial();
+    ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
+    RecycleCompletedCommands(completedSerial);
 
     for (Ref<DescriptorSetAllocator>& allocator :
          mDescriptorAllocatorsPendingDeallocation.IterateUpTo(completedSerial)) {
         allocator->FinishDeallocation(completedSerial);
     }
 
-    mResourceMemoryAllocator->Tick(completedSerial);
-    mDeleter->Tick(completedSerial);
+    GetResourceMemoryAllocator()->Tick(completedSerial);
+    GetFencedDeleter()->Tick(completedSerial);
     mDescriptorAllocatorsPendingDeallocation.ClearUpTo(completedSerial);
 
     if (mRecordingContext.needsSubmit) {
@@ -266,20 +264,20 @@ uint32_t Device::GetGraphicsQueueFamily() const {
     return mQueueFamily;
 }
 
-VkQueue Device::GetQueue() const {
+VkQueue Device::GetVkQueue() const {
     return mQueue;
 }
 
-FencedDeleter* Device::GetFencedDeleter() const {
-    return mDeleter.get();
+MutexProtected<FencedDeleter>& Device::GetFencedDeleter() const {
+    return *mDeleter;
 }
 
 RenderPassCache* Device::GetRenderPassCache() const {
     return mRenderPassCache.get();
 }
 
-ResourceMemoryAllocator* Device::GetResourceMemoryAllocator() const {
-    return mResourceMemoryAllocator.get();
+MutexProtected<ResourceMemoryAllocator>& Device::GetResourceMemoryAllocator() const {
+    return *mResourceMemoryAllocator;
 }
 
 external_semaphore::Service* Device::GetExternalSemaphoreService() const {
@@ -291,7 +289,7 @@ void Device::EnqueueDeferredDeallocation(DescriptorSetAllocator* allocator) {
 }
 
 CommandRecordingContext* Device::GetPendingRecordingContext(Device::SubmitMode submitMode) {
-    ASSERT(mRecordingContext.commandBuffer != VK_NULL_HANDLE);
+    DAWN_ASSERT(mRecordingContext.commandBuffer != VK_NULL_HANDLE);
     mRecordingContext.needsSubmit |= (submitMode == DeviceBase::SubmitMode::Normal);
     mRecordingContext.used = true;
     return &mRecordingContext;
@@ -368,9 +366,9 @@ MaybeError Device::SubmitPendingCommands() {
     // Enqueue the semaphores before incrementing the serial, so that they can be deleted as
     // soon as the current submission is finished.
     for (VkSemaphore semaphore : mRecordingContext.waitSemaphores) {
-        mDeleter->DeleteWhenUnused(semaphore);
+        GetFencedDeleter()->DeleteWhenUnused(semaphore);
     }
-    IncrementLastSubmittedCommandSerial();
+    GetQueue()->IncrementLastSubmittedCommandSerial();
     ExecutionSerial lastSubmittedSerial = GetLastSubmittedCommandSerial();
     mFencesInFlight.emplace(fence, lastSubmittedSerial);
 
@@ -440,7 +438,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) {
-        ASSERT(usedKnobs.HasExt(DeviceExt::SubgroupSizeControl));
+        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::SubgroupSizeControl));
 
         // Always request all the features from VK_EXT_subgroup_size_control when available.
         usedKnobs.subgroupSizeControlFeatures = mDeviceInfo.subgroupSizeControlFeatures;
@@ -448,7 +446,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory)) {
-        ASSERT(usedKnobs.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory));
+        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::ZeroInitializeWorkgroupMemory));
 
         // Always allow initializing workgroup memory with OpConstantNull when available.
         // Note that the driver still won't initialize workgroup memory unless the workgroup
@@ -459,7 +457,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::ShaderIntegerDotProduct)) {
-        ASSERT(usedKnobs.HasExt(DeviceExt::ShaderIntegerDotProduct));
+        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::ShaderIntegerDotProduct));
 
         usedKnobs.shaderIntegerDotProductFeatures = mDeviceInfo.shaderIntegerDotProductFeatures;
         featuresChain.Add(&usedKnobs.shaderIntegerDotProductFeatures);
@@ -470,27 +468,29 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
     }
 
     if (HasFeature(Feature::TextureCompressionBC)) {
-        ASSERT(ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.textureCompressionBC ==
-               VK_TRUE);
+        DAWN_ASSERT(ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.textureCompressionBC ==
+                    VK_TRUE);
         usedKnobs.features.textureCompressionBC = VK_TRUE;
     }
 
     if (HasFeature(Feature::TextureCompressionETC2)) {
-        ASSERT(ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.textureCompressionETC2 ==
-               VK_TRUE);
+        DAWN_ASSERT(
+            ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.textureCompressionETC2 ==
+            VK_TRUE);
         usedKnobs.features.textureCompressionETC2 = VK_TRUE;
     }
 
     if (HasFeature(Feature::TextureCompressionASTC)) {
-        ASSERT(
+        DAWN_ASSERT(
             ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.textureCompressionASTC_LDR ==
             VK_TRUE);
         usedKnobs.features.textureCompressionASTC_LDR = VK_TRUE;
     }
 
     if (HasFeature(Feature::PipelineStatisticsQuery)) {
-        ASSERT(ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.pipelineStatisticsQuery ==
-               VK_TRUE);
+        DAWN_ASSERT(
+            ToBackend(GetPhysicalDevice())->GetDeviceInfo().features.pipelineStatisticsQuery ==
+            VK_TRUE);
         usedKnobs.features.pipelineStatisticsQuery = VK_TRUE;
     }
 
@@ -502,12 +502,12 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
     // output if necessary, relax the requirement of storageInputOutput16.
     if (HasFeature(Feature::ShaderF16)) {
         const VulkanDeviceInfo& deviceInfo = ToBackend(GetPhysicalDevice())->GetDeviceInfo();
-        ASSERT(deviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
-               deviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
-               deviceInfo.HasExt(DeviceExt::_16BitStorage) &&
-               deviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE &&
-               deviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE &&
-               deviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess == VK_TRUE);
+        DAWN_ASSERT(deviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
+                    deviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
+                    deviceInfo.HasExt(DeviceExt::_16BitStorage) &&
+                    deviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE &&
+                    deviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE &&
+                    deviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess == VK_TRUE);
 
         usedKnobs.shaderFloat16Int8Features.shaderFloat16 = VK_TRUE;
         usedKnobs._16BitStorageFeatures.storageBuffer16BitAccess = VK_TRUE;
@@ -520,11 +520,26 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES);
     }
 
-    if (mDeviceInfo.HasExt(DeviceExt::Robustness2)) {
-        ASSERT(usedKnobs.HasExt(DeviceExt::Robustness2));
+    if (HasFeature(Feature::DualSourceBlending)) {
+        usedKnobs.features.dualSrcBlend = VK_TRUE;
+    }
+
+    if (IsRobustnessEnabled() && mDeviceInfo.HasExt(DeviceExt::Robustness2)) {
+        DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::Robustness2));
 
         usedKnobs.robustness2Features = mDeviceInfo.robustness2Features;
         featuresChain.Add(&usedKnobs.robustness2Features);
+    }
+
+    if (HasFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow)) {
+        DAWN_ASSERT(
+            usedKnobs.HasExt(DeviceExt::ShaderSubgroupUniformControlFlow) &&
+            mDeviceInfo.shaderSubgroupUniformControlFlowFeatures.shaderSubgroupUniformControlFlow ==
+                VK_TRUE);
+
+        usedKnobs.shaderSubgroupUniformControlFlowFeatures =
+            mDeviceInfo.shaderSubgroupUniformControlFlowFeatures;
+        featuresChain.Add(&usedKnobs.shaderSubgroupUniformControlFlowFeatures);
     }
 
     // Find a universal queue family
@@ -578,7 +593,7 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         createInfo.pNext = &features2;
         createInfo.pEnabledFeatures = nullptr;
     } else {
-        ASSERT(features2.pNext == nullptr);
+        DAWN_ASSERT(features2.pNext == nullptr);
         createInfo.pEnabledFeatures = &usedKnobs.features;
     }
     auto xrConfig = ToBackend(GetPhysicalDevice())->GetOpenXRConfig();
@@ -644,16 +659,16 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 
         mUnusedFences.push_back(fence);
 
-        ASSERT(fenceSerial > GetCompletedCommandSerial());
+        DAWN_ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
         mFencesInFlight.pop();
     }
     return fenceSerial;
 }
 
 MaybeError Device::PrepareRecordingContext() {
-    ASSERT(!mRecordingContext.needsSubmit);
-    ASSERT(mRecordingContext.commandBuffer == VK_NULL_HANDLE);
-    ASSERT(mRecordingContext.commandPool == VK_NULL_HANDLE);
+    DAWN_ASSERT(!mRecordingContext.needsSubmit);
+    DAWN_ASSERT(mRecordingContext.commandBuffer == VK_NULL_HANDLE);
+    DAWN_ASSERT(mRecordingContext.commandPool == VK_NULL_HANDLE);
 
     CommandPoolAndBuffer commands;
     DAWN_TRY_ASSIGN(commands, BeginVkCommandBuffer());
@@ -670,7 +685,7 @@ MaybeError Device::PrepareRecordingContext() {
 // This should not be necessary in most cases, and is provided only to work around driver issues
 // on some hardware.
 MaybeError Device::SplitRecordingContext(CommandRecordingContext* recordingContext) {
-    ASSERT(recordingContext->used);
+    DAWN_ASSERT(recordingContext->used);
 
     DAWN_TRY(
         CheckVkSuccess(fn.EndCommandBuffer(recordingContext->commandBuffer), "vkEndCommandBuffer"));
@@ -735,11 +750,11 @@ ResultOrError<CommandPoolAndBuffer> Device::BeginVkCommandBuffer() {
     return commands;
 }
 
-void Device::RecycleCompletedCommands() {
-    for (auto& commands : mCommandsInFlight.IterateUpTo(GetCompletedCommandSerial())) {
+void Device::RecycleCompletedCommands(ExecutionSerial completedSerial) {
+    for (auto& commands : mCommandsInFlight.IterateUpTo(completedSerial)) {
         mUnusedCommands.push_back(commands);
     }
-    mCommandsInFlight.ClearUpTo(GetCompletedCommandSerial());
+    mCommandsInFlight.ClearUpTo(completedSerial);
 }
 
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
@@ -749,7 +764,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t size) {
     // It is a validation error to do a 0-sized copy in Vulkan, check it is skipped prior to
     // calling this function.
-    ASSERT(size != 0);
+    DAWN_ASSERT(size != 0);
 
     CommandRecordingContext* recordingContext =
         GetPendingRecordingContext(DeviceBase::SubmitMode::Passive);
@@ -792,7 +807,8 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 
     SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
 
-    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copySizePixels, subresource.mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copySizePixels, subresource.mipLevel,
+                                      dst.aspect)) {
         // Since texture has been overwritten, it has been "initialized"
         dst.texture->SetIsSubresourceContentInitialized(true, range);
     } else {
@@ -983,7 +999,7 @@ void Device::CheckDebugMessagesAfterDestruction() const {
     }
 
     // Crash in debug
-    ASSERT(false);
+    DAWN_ASSERT(false);
 }
 
 MaybeError Device::WaitForIdleForDestruction() {
@@ -1007,7 +1023,7 @@ MaybeError Device::WaitForIdleForDestruction() {
     while (!mFencesInFlight.empty()) {
         VkFence fence = mFencesInFlight.front().first;
         ExecutionSerial fenceSerial = mFencesInFlight.front().second;
-        ASSERT(fenceSerial > GetCompletedCommandSerial());
+        DAWN_ASSERT(fenceSerial > GetQueue()->GetCompletedCommandSerial());
 
         VkResult result = VkResult::WrapUnsafe(VK_TIMEOUT);
         do {
@@ -1036,13 +1052,21 @@ MaybeError Device::WaitForIdleForDestruction() {
 }
 
 void Device::DestroyImpl() {
-    ASSERT(GetState() == State::Disconnected);
+    DAWN_ASSERT(GetState() == State::Disconnected);
 
     // We failed during initialization so early that we don't even have a VkDevice. There is
     // nothing to do.
     if (mVkDevice == VK_NULL_HANDLE) {
         return;
     }
+
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the device is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the device.
+    // - It may be called when the last ref to the device is dropped and the device
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the device since there are no other live refs.
 
     // The deleter is the second thing we initialize. If it is not present, it means that
     // only the VkDevice was created and nothing else. Destroy the device and do nothing else
@@ -1074,8 +1098,8 @@ void Device::DestroyImpl() {
 
     // Some commands might still be marked as in-flight if we shut down because of a device
     // loss. Recycle them as unused so that we free them below.
-    RecycleCompletedCommands();
-    ASSERT(mCommandsInFlight.Empty());
+    RecycleCompletedCommands(kMaxExecutionSerial);
+    DAWN_ASSERT(mCommandsInFlight.Empty());
 
     for (const CommandPoolAndBuffer& commands : mUnusedCommands) {
         DestroyCommandPoolAndBuffer(fn, mVkDevice, commands);
@@ -1094,36 +1118,32 @@ void Device::DestroyImpl() {
     }
     mUnusedFences.clear();
 
-    ExecutionSerial completedSerial = GetCompletedCommandSerial();
     for (Ref<DescriptorSetAllocator>& allocator :
-         mDescriptorAllocatorsPendingDeallocation.IterateUpTo(completedSerial)) {
-        allocator->FinishDeallocation(completedSerial);
+         mDescriptorAllocatorsPendingDeallocation.IterateUpTo(kMaxExecutionSerial)) {
+        allocator->FinishDeallocation(kMaxExecutionSerial);
     }
 
     // Releasing the uploader enqueues buffers to be released.
     // Call Tick() again to clear them before releasing the deleter.
-    mResourceMemoryAllocator->Tick(completedSerial);
-    mDeleter->Tick(completedSerial);
-    mDescriptorAllocatorsPendingDeallocation.ClearUpTo(completedSerial);
+    GetResourceMemoryAllocator()->Tick(kMaxExecutionSerial);
+    mDescriptorAllocatorsPendingDeallocation.ClearUpTo(kMaxExecutionSerial);
 
     // Allow recycled memory to be deleted.
-    mResourceMemoryAllocator->DestroyPool();
+    GetResourceMemoryAllocator()->DestroyPool();
 
     // The VkRenderPasses in the cache can be destroyed immediately since all commands referring
     // to them are guaranteed to be finished executing.
     mRenderPassCache = nullptr;
 
-    // We need handle deleting all child objects by calling Tick() again with a large serial to
-    // force all operations to look as if they were completed, and delete all objects before
-    // destroying the Deleter and vkDevice.
-    ASSERT(mDeleter != nullptr);
-    mDeleter->Tick(kMaxExecutionSerial);
+    // Delete all the remaining VkDevice child objects immediately since the GPU timeline is
+    // finished.
+    GetFencedDeleter()->Tick(kMaxExecutionSerial);
     mDeleter = nullptr;
 
     // VkQueues are destroyed when the VkDevice is destroyed
     // The VkDevice is needed to destroy child objects, so it must be destroyed last after all
     // child objects have been deleted.
-    ASSERT(mVkDevice != VK_NULL_HANDLE);
+    DAWN_ASSERT(mVkDevice != VK_NULL_HANDLE);
     fn.DestroyDevice(mVkDevice, nullptr);
     mVkDevice = VK_NULL_HANDLE;
 

@@ -12,22 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 TEST_F(SpirvWriterTest, Discard) {
     auto* buffer = b.Var("buffer", ty.ptr<storage, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
-    front_facing->SetBuiltin(ir::FunctionParam::Builtin::kFrontFacing);
-    auto* ep = b.Function("ep", ty.f32(), ir::Function::PipelineStage::kFragment);
+    front_facing->SetBuiltin(core::ir::FunctionParam::Builtin::kFrontFacing);
+    auto* ep = b.Function("ep", ty.f32(), core::ir::Function::PipelineStage::kFragment);
     ep->SetParams({front_facing});
     ep->SetReturnLocation(0_u, {});
 
@@ -43,29 +43,30 @@ TEST_F(SpirvWriterTest, Discard) {
 
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST(R"(
-   %ep_inner = OpFunction %float None %18
+   %ep_inner = OpFunction %float None %16
 %front_facing = OpFunctionParameter %bool
+         %17 = OpLabel
+               OpSelectionMerge %18 None
+               OpBranchConditional %front_facing %19 %18
          %19 = OpLabel
-               OpSelectionMerge %20 None
-               OpBranchConditional %front_facing %21 %20
-         %21 = OpLabel
                OpStore %continue_execution %false
-               OpBranch %20
-         %20 = OpLabel
-         %23 = OpAccessChain %_ptr_StorageBuffer_int %1 %uint_0
-         %27 = OpLoad %bool %continue_execution
-               OpSelectionMerge %28 None
-               OpBranchConditional %27 %29 %28
-         %29 = OpLabel
-               OpStore %23 %int_42
-               OpBranch %28
-         %28 = OpLabel
-         %31 = OpLoad %bool %continue_execution
-               OpSelectionMerge %32 None
-               OpBranchConditional %31 %33 %32
-         %33 = OpLabel
-               OpKill
+               OpBranch %18
+         %18 = OpLabel
+         %21 = OpAccessChain %_ptr_StorageBuffer_int %1 %uint_0
+         %25 = OpLoad %bool %continue_execution
+               OpSelectionMerge %26 None
+               OpBranchConditional %25 %27 %26
+         %27 = OpLabel
+               OpStore %21 %int_42
+               OpBranch %26
+         %26 = OpLabel
+         %29 = OpLoad %bool %continue_execution
+         %30 = OpLogicalEqual %bool %29 %false
+               OpSelectionMerge %31 None
+               OpBranchConditional %30 %32 %31
          %32 = OpLabel
+               OpKill
+         %31 = OpLabel
                OpReturnValue %float_0_5
                OpFunctionEnd
 )");

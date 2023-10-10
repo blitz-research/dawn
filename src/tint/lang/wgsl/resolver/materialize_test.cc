@@ -14,9 +14,10 @@
 
 #include "src/tint/lang/wgsl/sem/materialize.h"
 
-#include "src/tint/lang/core/type/test_helper.h"
+#include "src/tint/lang/core/type/helper_test.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
+#include "src/tint/lang/wgsl/sem/array.h"
 #include "src/tint/utils/rtti/switch.h"
 
 #include "gmock/gmock.h"
@@ -24,8 +25,8 @@
 namespace tint::resolver {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using AFloatV = vec3<AFloat>;
 using AFloatM = mat3x2<AFloat>;
@@ -77,7 +78,7 @@ template <typename CASE>
 class MaterializeTest : public resolver::ResolverTestWithParam<CASE> {
   protected:
     void CheckTypesAndValues(const sem::ValueExpression* expr,
-                             const tint::type::Type* expected_sem_ty,
+                             const tint::core::type::Type* expected_sem_ty,
                              const std::variant<AInt, AFloat>& expected_value) {
         std::visit([&](auto v) { CheckTypesAndValuesImpl(expr, expected_sem_ty, v); },
                    expected_value);
@@ -86,7 +87,7 @@ class MaterializeTest : public resolver::ResolverTestWithParam<CASE> {
   private:
     template <typename T>
     void CheckTypesAndValuesImpl(const sem::ValueExpression* expr,
-                                 const tint::type::Type* expected_sem_ty,
+                                 const tint::core::type::Type* expected_sem_ty,
                                  T expected_value) {
         EXPECT_TYPE(expr->Type(), expected_sem_ty);
 
@@ -96,7 +97,7 @@ class MaterializeTest : public resolver::ResolverTestWithParam<CASE> {
 
         tint::Switch(
             expected_sem_ty,  //
-            [&](const type::Vector* v) {
+            [&](const core::type::Vector* v) {
                 for (uint32_t i = 0; i < v->Width(); i++) {
                     auto* el = value->Index(i);
                     ASSERT_NE(el, nullptr);
@@ -104,7 +105,7 @@ class MaterializeTest : public resolver::ResolverTestWithParam<CASE> {
                     EXPECT_EQ(el->ValueAs<T>(), expected_value);
                 }
             },
-            [&](const type::Matrix* m) {
+            [&](const core::type::Matrix* m) {
                 for (uint32_t c = 0; c < m->columns(); c++) {
                     auto* column = value->Index(c);
                     ASSERT_NE(column, nullptr);
@@ -117,7 +118,7 @@ class MaterializeTest : public resolver::ResolverTestWithParam<CASE> {
                     }
                 }
             },
-            [&](const type::Array* a) {
+            [&](const sem::Array* a) {
                 auto count = a->ConstantCount();
                 ASSERT_NE(count, 0u);
                 for (uint32_t i = 0; i < count; i++) {
@@ -318,7 +319,7 @@ using MaterializeAbstractNumericToConcreteType =
     MaterializeTest<std::tuple<Expectation, Method, Data>>;
 
 TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     const auto& param = GetParam();
     const auto& expectation = std::get<0>(param);
@@ -401,7 +402,7 @@ TEST_P(MaterializeAbstractNumericToConcreteType, Test) {
         }
         case Method::kCompoundAssign:
             WrapInFunction(Decl(Var("a", target_ty())),
-                           CompoundAssign("a", abstract_expr, ast::BinaryOp::kAdd));
+                           CompoundAssign("a", abstract_expr, core::BinaryOp::kAdd));
             break;
     }
 
@@ -943,7 +944,7 @@ TEST_P(MaterializeAbstractNumericToDefaultType, Test) {
             break;
         }
         case Method::kIndex: {
-            GlobalVar("arr", ty.array<i32, 4>(), builtin::AddressSpace::kPrivate);
+            GlobalVar("arr", ty.array<i32, 4>(), core::AddressSpace::kPrivate);
             WrapInFunction(IndexAccessor("arr", abstract_expr()));
             break;
         }
@@ -953,7 +954,7 @@ TEST_P(MaterializeAbstractNumericToDefaultType, Test) {
             break;
         }
         case Method::kTintMaterializeBuiltin: {
-            auto* call = Call(builtin::str(builtin::Function::kTintMaterialize), abstract_expr());
+            auto* call = Call(wgsl::BuiltinFn::kTintMaterialize, abstract_expr());
             WrapInFunction(Decl(Const("c", call)));
             break;
         }
@@ -1266,12 +1267,12 @@ TEST_F(MaterializeAbstractStructure, Modf_Scalar_DefaultType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
-    auto* concrete_str = materialize->Type()->As<type::Struct>();
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::F32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
-    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::AbstractFloat>());
+    ASSERT_TRUE(materialize->Type()->Is<core::type::Struct>());
+    auto* concrete_str = materialize->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<core::type::F32>());
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<core::type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<core::type::AbstractFloat>());
 }
 
 TEST_F(MaterializeAbstractStructure, Modf_Vector_DefaultType) {
@@ -1282,21 +1283,28 @@ TEST_F(MaterializeAbstractStructure, Modf_Vector_DefaultType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
-    auto* concrete_str = materialize->Type()->As<type::Struct>();
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::F32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
-    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(
-        abstract_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::AbstractFloat>());
+    ASSERT_TRUE(materialize->Type()->Is<core::type::Struct>());
+    auto* concrete_str = materialize->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(concrete_str->Members()[0]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::F32>());
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<core::type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(abstract_str->Members()[0]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::AbstractFloat>());
 }
 
 TEST_F(MaterializeAbstractStructure, Modf_Scalar_ExplicitType) {
     // var v = modf(1_h); // v is __modf_result_f16
     // v = modf(1);       // __modf_result_f16 <- __modf_result_abstract
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
     auto* call = Call("modf", 1_a);
     WrapInFunction(Decl(Var("v", Call("modf", 1_h))),  //
                    Assign("v", call));
@@ -1304,33 +1312,40 @@ TEST_F(MaterializeAbstractStructure, Modf_Scalar_ExplicitType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
-    auto* concrete_str = materialize->Type()->As<type::Struct>();
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::F16>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
-    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::AbstractFloat>());
+    ASSERT_TRUE(materialize->Type()->Is<core::type::Struct>());
+    auto* concrete_str = materialize->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<core::type::F16>());
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<core::type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<core::type::AbstractFloat>());
 }
 
 TEST_F(MaterializeAbstractStructure, Modf_Vector_ExplicitType) {
     // var v = modf(vec2(1_h)); // v is __modf_result_vec2_f16
     // v = modf(vec2(1));       // __modf_result_vec2_f16 <- __modf_result_vec2_abstract
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
     auto* call = Call("modf", Call<vec2<Infer>>(1_a));
     WrapInFunction(Decl(Var("v", Call("modf", Call<vec2<Infer>>(1_h)))), Assign("v", call));
     ASSERT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
-    auto* concrete_str = materialize->Type()->As<type::Struct>();
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::F16>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
-    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(
-        abstract_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::AbstractFloat>());
+    ASSERT_TRUE(materialize->Type()->Is<core::type::Struct>());
+    auto* concrete_str = materialize->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(concrete_str->Members()[0]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::F16>());
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<core::type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(abstract_str->Members()[0]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::AbstractFloat>());
 }
 
 TEST_F(MaterializeAbstractStructure, Frexp_Scalar_DefaultType) {
@@ -1341,14 +1356,14 @@ TEST_F(MaterializeAbstractStructure, Frexp_Scalar_DefaultType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
-    auto* concrete_str = materialize->Type()->As<type::Struct>();
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::F32>());
-    ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<type::I32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
-    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::AbstractFloat>());
-    ASSERT_TRUE(abstract_str->Members()[1]->Type()->Is<type::AbstractInt>());
+    ASSERT_TRUE(materialize->Type()->Is<core::type::Struct>());
+    auto* concrete_str = materialize->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<core::type::F32>());
+    ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<core::type::I32>());
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<core::type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<core::type::AbstractFloat>());
+    ASSERT_TRUE(abstract_str->Members()[1]->Type()->Is<core::type::AbstractInt>());
 }
 
 TEST_F(MaterializeAbstractStructure, Frexp_Vector_DefaultType) {
@@ -1359,25 +1374,39 @@ TEST_F(MaterializeAbstractStructure, Frexp_Vector_DefaultType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
-    auto* concrete_str = materialize->Type()->As<type::Struct>();
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::F32>());
-    ASSERT_TRUE(concrete_str->Members()[1]->Type()->As<type::Vector>()->type()->Is<type::I32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
-    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(
-        abstract_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::AbstractFloat>());
-    ASSERT_TRUE(
-        abstract_str->Members()[1]->Type()->As<type::Vector>()->type()->Is<type::AbstractInt>());
+    ASSERT_TRUE(materialize->Type()->Is<core::type::Struct>());
+    auto* concrete_str = materialize->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(concrete_str->Members()[0]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::F32>());
+    ASSERT_TRUE(concrete_str->Members()[1]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::I32>());
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<core::type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(abstract_str->Members()[0]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::AbstractFloat>());
+    ASSERT_TRUE(abstract_str->Members()[1]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::AbstractInt>());
 }
 
 TEST_F(MaterializeAbstractStructure, Frexp_Scalar_ExplicitType) {
     // var v = frexp(1_h); // v is __frexp_result_f16
     // v = frexp(1);       // __frexp_result_f16 <- __frexp_result_abstract
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
     auto* call = Call("frexp", 1_a);
     WrapInFunction(Decl(Var("v", Call("frexp", 1_h))),  //
                    Assign("v", call));
@@ -1385,39 +1414,53 @@ TEST_F(MaterializeAbstractStructure, Frexp_Scalar_ExplicitType) {
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
-    auto* concrete_str = materialize->Type()->As<type::Struct>();
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::F16>());
-    ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<type::I32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
-    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::AbstractFloat>());
-    ASSERT_TRUE(abstract_str->Members()[1]->Type()->Is<type::AbstractInt>());
+    ASSERT_TRUE(materialize->Type()->Is<core::type::Struct>());
+    auto* concrete_str = materialize->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<core::type::F16>());
+    ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<core::type::I32>());
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<core::type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<core::type::AbstractFloat>());
+    ASSERT_TRUE(abstract_str->Members()[1]->Type()->Is<core::type::AbstractInt>());
 }
 
 TEST_F(MaterializeAbstractStructure, Frexp_Vector_ExplicitType) {
     // var v = frexp(vec2(1_h)); // v is __frexp_result_vec2_f16
     // v = frexp(vec2(1));       // __frexp_result_vec2_f16 <- __frexp_result_vec2_abstract
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
     auto* call = Call("frexp", Call<vec2<Infer>>(1_a));
     WrapInFunction(Decl(Var("v", Call("frexp", Call<vec2<Infer>>(1_h)))), Assign("v", call));
     ASSERT_TRUE(r()->Resolve()) << r()->error();
     auto* sem = Sem().Get(call);
     ASSERT_TRUE(sem->Is<sem::Materialize>());
     auto* materialize = sem->As<sem::Materialize>();
-    ASSERT_TRUE(materialize->Type()->Is<type::Struct>());
-    auto* concrete_str = materialize->Type()->As<type::Struct>();
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(concrete_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::F16>());
-    ASSERT_TRUE(concrete_str->Members()[1]->Type()->As<type::Vector>()->type()->Is<type::I32>());
-    ASSERT_TRUE(materialize->Expr()->Type()->Is<type::Struct>());
-    auto* abstract_str = materialize->Expr()->Type()->As<type::Struct>();
-    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<type::Vector>());
-    ASSERT_TRUE(
-        abstract_str->Members()[0]->Type()->As<type::Vector>()->type()->Is<type::AbstractFloat>());
-    ASSERT_TRUE(
-        abstract_str->Members()[1]->Type()->As<type::Vector>()->type()->Is<type::AbstractInt>());
+    ASSERT_TRUE(materialize->Type()->Is<core::type::Struct>());
+    auto* concrete_str = materialize->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(concrete_str->Members()[0]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(concrete_str->Members()[1]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(concrete_str->Members()[0]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::F16>());
+    ASSERT_TRUE(concrete_str->Members()[1]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::I32>());
+    ASSERT_TRUE(materialize->Expr()->Type()->Is<core::type::Struct>());
+    auto* abstract_str = materialize->Expr()->Type()->As<core::type::Struct>();
+    ASSERT_TRUE(abstract_str->Members()[0]->Type()->Is<core::type::Vector>());
+    ASSERT_TRUE(abstract_str->Members()[0]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::AbstractFloat>());
+    ASSERT_TRUE(abstract_str->Members()[1]
+                    ->Type()
+                    ->As<core::type::Vector>()
+                    ->type()
+                    ->Is<core::type::AbstractInt>());
 }
 
 }  // namespace materialize_abstract_structure

@@ -14,6 +14,7 @@
 
 #include "src/tint/lang/wgsl/resolver/sem_helper.h"
 
+#include "src/tint/lang/wgsl/resolver/unresolved_identifier.h"
 #include "src/tint/lang/wgsl/sem/builtin_enum_expression.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/function_expression.h"
@@ -27,17 +28,17 @@ SemHelper::SemHelper(ProgramBuilder* builder) : builder_(builder) {}
 
 SemHelper::~SemHelper() = default;
 
-std::string SemHelper::TypeNameOf(const type::Type* ty) const {
+std::string SemHelper::TypeNameOf(const core::type::Type* ty) const {
     return RawTypeNameOf(ty->UnwrapRef());
 }
 
-std::string SemHelper::RawTypeNameOf(const type::Type* ty) const {
+std::string SemHelper::RawTypeNameOf(const core::type::Type* ty) const {
     return ty->FriendlyName();
 }
 
-type::Type* SemHelper::TypeOf(const ast::Expression* expr) const {
+core::type::Type* SemHelper::TypeOf(const ast::Expression* expr) const {
     auto* sem = GetVal(expr);
-    return sem ? const_cast<type::Type*>(sem->Type()) : nullptr;
+    return sem ? const_cast<core::type::Type*>(sem->Type()) : nullptr;
 }
 
 std::string SemHelper::Describe(const sem::Expression* expr) const {
@@ -69,23 +70,30 @@ std::string SemHelper::Describe(const sem::Expression* expr) const {
             auto name = fn->name->symbol.Name();
             return "function '" + name + "'";
         },
-        [&](const sem::BuiltinEnumExpression<builtin::Access>* access) {
+        [&](const sem::BuiltinEnumExpression<wgsl::BuiltinFn>* fn) {
+            return "builtin function '" + tint::ToString(fn->Value()) + "'";
+        },
+        [&](const sem::BuiltinEnumExpression<core::Access>* access) {
             return "access '" + tint::ToString(access->Value()) + "'";
         },
-        [&](const sem::BuiltinEnumExpression<builtin::AddressSpace>* addr) {
+        [&](const sem::BuiltinEnumExpression<core::AddressSpace>* addr) {
             return "address space '" + tint::ToString(addr->Value()) + "'";
         },
-        [&](const sem::BuiltinEnumExpression<builtin::BuiltinValue>* builtin) {
+        [&](const sem::BuiltinEnumExpression<core::BuiltinValue>* builtin) {
             return "builtin value '" + tint::ToString(builtin->Value()) + "'";
         },
-        [&](const sem::BuiltinEnumExpression<builtin::InterpolationSampling>* fmt) {
+        [&](const sem::BuiltinEnumExpression<core::InterpolationSampling>* fmt) {
             return "interpolation sampling '" + tint::ToString(fmt->Value()) + "'";
         },
-        [&](const sem::BuiltinEnumExpression<builtin::InterpolationType>* fmt) {
+        [&](const sem::BuiltinEnumExpression<core::InterpolationType>* fmt) {
             return "interpolation type '" + tint::ToString(fmt->Value()) + "'";
         },
-        [&](const sem::BuiltinEnumExpression<builtin::TexelFormat>* fmt) {
+        [&](const sem::BuiltinEnumExpression<core::TexelFormat>* fmt) {
             return "texel format '" + tint::ToString(fmt->Value()) + "'";
+        },
+        [&](const UnresolvedIdentifier* ui) {
+            auto name = ui->Identifier()->identifier->symbol.Name();
+            return "unresolved identifier '" + name + "'";
         },
         [&](Default) -> std::string {
             TINT_ICE() << "unhandled sem::Expression type: "
@@ -94,8 +102,29 @@ std::string SemHelper::Describe(const sem::Expression* expr) const {
         });
 }
 
-void SemHelper::ErrorUnexpectedExprKind(const sem::Expression* expr,
-                                        std::string_view wanted) const {
+void SemHelper::ErrorUnexpectedExprKind(
+    const sem::Expression* expr,
+    std::string_view wanted,
+    tint::Slice<char const* const> suggestions /* = Empty */) const {
+    if (auto* ui = expr->As<UnresolvedIdentifier>()) {
+        auto* ident = ui->Identifier();
+        auto name = ident->identifier->symbol.Name();
+        AddError("unresolved " + std::string(wanted) + " '" + name + "'", ident->source);
+        if (!suggestions.IsEmpty()) {
+            // Filter out suggestions that have a leading underscore.
+            Vector<const char*, 8> filtered;
+            for (auto* str : suggestions) {
+                if (str[0] != '_') {
+                    filtered.Push(str);
+                }
+            }
+            StringStream msg;
+            tint::SuggestAlternatives(name, filtered.Slice().Reinterpret<char const* const>(), msg);
+            AddNote(msg.str(), ident->source);
+        }
+        return;
+    }
+
     AddError("cannot use " + Describe(expr) + " as " + std::string(wanted),
              expr->Declaration()->source);
     NoteDeclarationSource(expr->Declaration());
@@ -103,9 +132,10 @@ void SemHelper::ErrorUnexpectedExprKind(const sem::Expression* expr,
 
 void SemHelper::ErrorExpectedValueExpr(const sem::Expression* expr) const {
     ErrorUnexpectedExprKind(expr, "value");
-    if (auto* ty_expr = expr->As<sem::TypeExpression>()) {
-        if (auto* ident = ty_expr->Declaration()->As<ast::IdentifierExpression>()) {
-            AddNote("are you missing '()' for value constructor?", ident->source.End());
+    if (auto* ident = expr->Declaration()->As<ast::IdentifierExpression>()) {
+        if (expr->IsAnyOf<sem::FunctionExpression, sem::TypeExpression,
+                          sem::BuiltinEnumExpression<wgsl::BuiltinFn>>()) {
+            AddNote("are you missing '()'?", ident->source.End());
         }
     }
 }

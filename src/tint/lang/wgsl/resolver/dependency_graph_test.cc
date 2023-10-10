@@ -17,18 +17,18 @@
 #include <utility>
 
 #include "gmock/gmock.h"
-#include "src/tint/lang/core/builtin/address_space.h"
+#include "src/tint/lang/core/address_space.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/resolver/dependency_graph.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 #include "src/tint/utils/containers/transform.h"
 
 namespace tint::resolver {
 namespace {
 
 using ::testing::ElementsAre;
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 template <typename T>
 class ResolverDependencyGraphTestWithParam : public ResolverTestWithParam<T> {
@@ -37,7 +37,7 @@ class ResolverDependencyGraphTestWithParam : public ResolverTestWithParam<T> {
         DependencyGraph graph;
         auto result = DependencyGraph::Build(this->AST(), this->Diagnostics(), graph);
         if (expected_error.empty()) {
-            EXPECT_TRUE(result) << this->Diagnostics().str();
+            EXPECT_TRUE(result) << this->Diagnostics();
         } else {
             EXPECT_FALSE(result);
             EXPECT_EQ(expected_error, this->Diagnostics().str());
@@ -419,7 +419,7 @@ const ast::Node* SymbolTestHelper::Add(SymbolDeclKind kind, Symbol symbol, Sourc
     auto& b = *builder;
     switch (kind) {
         case SymbolDeclKind::GlobalVar:
-            return b.GlobalVar(source, symbol, b.ty.i32(), builtin::AddressSpace::kPrivate);
+            return b.GlobalVar(source, symbol, b.ty.i32(), core::AddressSpace::kPrivate);
         case SymbolDeclKind::GlobalConst:
             return b.GlobalConst(source, symbol, b.ty.i32(), b.Expr(1_i));
         case SymbolDeclKind::Alias:
@@ -464,42 +464,43 @@ const ast::Identifier* SymbolTestHelper::Add(SymbolUseKind kind,
     switch (kind) {
         case SymbolUseKind::GlobalVarType: {
             auto node = b.ty(source, symbol);
-            b.GlobalVar(b.Sym(), node, builtin::AddressSpace::kPrivate);
+            b.GlobalVar(b.Sym(), node, core::AddressSpace::kPrivate);
             return node->identifier;
         }
         case SymbolUseKind::GlobalVarArrayElemType: {
             auto node = b.ty(source, symbol);
-            b.GlobalVar(b.Sym(), b.ty.array(node, 4_i), builtin::AddressSpace::kPrivate);
+            b.GlobalVar(b.Sym(), b.ty.array(node, 4_i), core::AddressSpace::kPrivate);
             return node->identifier;
         }
         case SymbolUseKind::GlobalVarArraySizeValue: {
             auto* node = b.Expr(source, symbol);
-            b.GlobalVar(b.Sym(), b.ty.array(b.ty.i32(), node), builtin::AddressSpace::kPrivate);
+            b.GlobalVar(b.Sym(), b.ty.array(b.ty.i32(), node), core::AddressSpace::kPrivate);
             return node->identifier;
         }
         case SymbolUseKind::GlobalVarVectorElemType: {
             auto node = b.ty(source, symbol);
-            b.GlobalVar(b.Sym(), b.ty.vec3(node), builtin::AddressSpace::kPrivate);
+            b.GlobalVar(b.Sym(), b.ty.vec3(node), core::AddressSpace::kPrivate);
             return node->identifier;
         }
         case SymbolUseKind::GlobalVarMatrixElemType: {
             ast::Type node = b.ty(source, symbol);
-            b.GlobalVar(b.Sym(), b.ty.mat3x4(node), builtin::AddressSpace::kPrivate);
+            b.GlobalVar(b.Sym(), b.ty.mat3x4(node), core::AddressSpace::kPrivate);
             return node->identifier;
         }
         case SymbolUseKind::GlobalVarSampledTexElemType: {
             ast::Type node = b.ty(source, symbol);
-            b.GlobalVar(b.Sym(), b.ty.sampled_texture(type::TextureDimension::k2d, node));
+            b.GlobalVar(b.Sym(), b.ty.sampled_texture(core::type::TextureDimension::k2d, node));
             return node->identifier;
         }
         case SymbolUseKind::GlobalVarMultisampledTexElemType: {
             ast::Type node = b.ty(source, symbol);
-            b.GlobalVar(b.Sym(), b.ty.multisampled_texture(type::TextureDimension::k2d, node));
+            b.GlobalVar(b.Sym(),
+                        b.ty.multisampled_texture(core::type::TextureDimension::k2d, node));
             return node->identifier;
         }
         case SymbolUseKind::GlobalVarValue: {
             auto* node = b.Expr(source, symbol);
-            b.GlobalVar(b.Sym(), b.ty.i32(), builtin::AddressSpace::kPrivate, node);
+            b.GlobalVar(b.Sym(), b.ty.i32(), core::AddressSpace::kPrivate, node);
             return node->identifier;
         }
         case SymbolUseKind::GlobalConstType: {
@@ -717,7 +718,7 @@ TEST_F(ResolverDependencyGraphUsedBeforeDeclTest, VarUsed) {
              Block(Assign(Expr(Source{{12, 34}}, "G"), 3.14_f)),
          });
 
-    GlobalVar(Source{{56, 78}}, "G", ty.f32(), builtin::AddressSpace::kPrivate, Expr(2.1_f));
+    GlobalVar(Source{{56, 78}}, "G", ty.f32(), core::AddressSpace::kPrivate, Expr(2.1_f));
 
     Build();
 }
@@ -1105,9 +1106,9 @@ TEST_F(ResolverDependencyGraphOrderedGlobalsTest, DirectiveFirst) {
     // a transform may produce such a AST tree that has some declarations before directive nodes.
     // DependencyGraph should deal with these cases.
     auto* var_1 = GlobalVar("SYMBOL1", ty.i32());
-    auto* enable = Enable(builtin::Extension::kF16);
+    auto* enable = Enable(wgsl::Extension::kF16);
     auto* var_2 = GlobalVar("SYMBOL2", ty.f32());
-    auto* diagnostic = DiagnosticDirective(builtin::DiagnosticSeverity::kWarning, "foo");
+    auto* diagnostic = DiagnosticDirective(wgsl::DiagnosticSeverity::kWarning, "foo");
 
     EXPECT_THAT(AST().GlobalDeclarations(), ElementsAre(var_1, enable, var_2, diagnostic));
     EXPECT_THAT(Build().ordered_globals, ElementsAre(enable, diagnostic, var_1, var_2));
@@ -1176,10 +1177,10 @@ INSTANTIATE_TEST_SUITE_P(Functions,
 ////////////////////////////////////////////////////////////////////////////////
 namespace resolve_to_builtin_func {
 
-using ResolverDependencyGraphResolveToBuiltinFunc =
-    ResolverDependencyGraphTestWithParam<std::tuple<SymbolUseKind, builtin::Function>>;
+using ResolverDependencyGraphResolveToBuiltinFn =
+    ResolverDependencyGraphTestWithParam<std::tuple<SymbolUseKind, wgsl::BuiltinFn>>;
 
-TEST_P(ResolverDependencyGraphResolveToBuiltinFunc, Resolve) {
+TEST_P(ResolverDependencyGraphResolveToBuiltinFn, Resolve) {
     const auto use = std::get<0>(GetParam());
     const auto builtin = std::get<1>(GetParam());
     const auto symbol = Symbols().New(tint::ToString(builtin));
@@ -1190,23 +1191,23 @@ TEST_P(ResolverDependencyGraphResolveToBuiltinFunc, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->BuiltinFunction(), builtin) << resolved->String();
+    EXPECT_EQ(resolved->BuiltinFn(), builtin) << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
-                         ResolverDependencyGraphResolveToBuiltinFunc,
+                         ResolverDependencyGraphResolveToBuiltinFn,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(builtin::kFunctions)));
+                                          testing::ValuesIn(wgsl::kBuiltinFns)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
-                         ResolverDependencyGraphResolveToBuiltinFunc,
+                         ResolverDependencyGraphResolveToBuiltinFn,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(builtin::kFunctions)));
+                                          testing::ValuesIn(wgsl::kBuiltinFns)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
-                         ResolverDependencyGraphResolveToBuiltinFunc,
+                         ResolverDependencyGraphResolveToBuiltinFn,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(builtin::kFunctions)));
+                                          testing::ValuesIn(wgsl::kBuiltinFns)));
 
 }  // namespace resolve_to_builtin_func
 
@@ -1229,28 +1230,28 @@ TEST_P(ResolverDependencyGraphResolveToBuiltinType, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->BuiltinType(), builtin::ParseBuiltin(name)) << resolved->String();
+    EXPECT_EQ(resolved->BuiltinType(), core::ParseBuiltinType(name)) << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
                          ResolverDependencyGraphResolveToBuiltinType,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(builtin::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
                          ResolverDependencyGraphResolveToBuiltinType,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(builtin::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
                          ResolverDependencyGraphResolveToBuiltinType,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(builtin::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
 }  // namespace resolve_to_builtin_type
 
 ////////////////////////////////////////////////////////////////////////////////
-// Resolve to builtin::Access tests
+// Resolve to core::Access tests
 ////////////////////////////////////////////////////////////////////////////////
 namespace resolve_to_access {
 
@@ -1268,28 +1269,28 @@ TEST_P(ResolverDependencyGraphResolveToAccess, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->Access(), builtin::ParseAccess(name)) << resolved->String();
+    EXPECT_EQ(resolved->Access(), core::ParseAccess(name)) << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
                          ResolverDependencyGraphResolveToAccess,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(builtin::kAccessStrings)));
+                                          testing::ValuesIn(core::kAccessStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
                          ResolverDependencyGraphResolveToAccess,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(builtin::kAccessStrings)));
+                                          testing::ValuesIn(core::kAccessStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
                          ResolverDependencyGraphResolveToAccess,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(builtin::kAccessStrings)));
+                                          testing::ValuesIn(core::kAccessStrings)));
 
 }  // namespace resolve_to_access
 
 ////////////////////////////////////////////////////////////////////////////////
-// Resolve to builtin::AddressSpace tests
+// Resolve to core::AddressSpace tests
 ////////////////////////////////////////////////////////////////////////////////
 namespace resolve_to_address_space {
 
@@ -1307,28 +1308,28 @@ TEST_P(ResolverDependencyGraphResolveToAddressSpace, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->AddressSpace(), builtin::ParseAddressSpace(name)) << resolved->String();
+    EXPECT_EQ(resolved->AddressSpace(), core::ParseAddressSpace(name)) << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
                          ResolverDependencyGraphResolveToAddressSpace,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(builtin::kAddressSpaceStrings)));
+                                          testing::ValuesIn(core::kAddressSpaceStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
                          ResolverDependencyGraphResolveToAddressSpace,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(builtin::kAddressSpaceStrings)));
+                                          testing::ValuesIn(core::kAddressSpaceStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
                          ResolverDependencyGraphResolveToAddressSpace,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(builtin::kAddressSpaceStrings)));
+                                          testing::ValuesIn(core::kAddressSpaceStrings)));
 
 }  // namespace resolve_to_address_space
 
 ////////////////////////////////////////////////////////////////////////////////
-// Resolve to builtin::BuiltinValue tests
+// Resolve to core::BuiltinValue tests
 ////////////////////////////////////////////////////////////////////////////////
 namespace resolve_to_builtin_value {
 
@@ -1346,28 +1347,28 @@ TEST_P(ResolverDependencyGraphResolveToBuiltinValue, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->BuiltinValue(), builtin::ParseBuiltinValue(name)) << resolved->String();
+    EXPECT_EQ(resolved->BuiltinValue(), core::ParseBuiltinValue(name)) << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
                          ResolverDependencyGraphResolveToBuiltinValue,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(builtin::kBuiltinValueStrings)));
+                                          testing::ValuesIn(core::kBuiltinValueStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
                          ResolverDependencyGraphResolveToBuiltinValue,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(builtin::kBuiltinValueStrings)));
+                                          testing::ValuesIn(core::kBuiltinValueStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
                          ResolverDependencyGraphResolveToBuiltinValue,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(builtin::kBuiltinValueStrings)));
+                                          testing::ValuesIn(core::kBuiltinValueStrings)));
 
 }  // namespace resolve_to_builtin_value
 
 ////////////////////////////////////////////////////////////////////////////////
-// Resolve to builtin::InterpolationSampling tests
+// Resolve to core::InterpolationSampling tests
 ////////////////////////////////////////////////////////////////////////////////
 namespace resolve_to_interpolation_sampling {
 
@@ -1385,29 +1386,29 @@ TEST_P(ResolverDependencyGraphResolveToInterpolationSampling, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->InterpolationSampling(), builtin::ParseInterpolationSampling(name))
+    EXPECT_EQ(resolved->InterpolationSampling(), core::ParseInterpolationSampling(name))
         << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
                          ResolverDependencyGraphResolveToInterpolationSampling,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(builtin::kInterpolationTypeStrings)));
+                                          testing::ValuesIn(core::kInterpolationTypeStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
                          ResolverDependencyGraphResolveToInterpolationSampling,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(builtin::kInterpolationTypeStrings)));
+                                          testing::ValuesIn(core::kInterpolationTypeStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
                          ResolverDependencyGraphResolveToInterpolationSampling,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(builtin::kInterpolationTypeStrings)));
+                                          testing::ValuesIn(core::kInterpolationTypeStrings)));
 
 }  // namespace resolve_to_interpolation_sampling
 
 ////////////////////////////////////////////////////////////////////////////////
-// Resolve to builtin::InterpolationType tests
+// Resolve to core::InterpolationType tests
 ////////////////////////////////////////////////////////////////////////////////
 namespace resolve_to_interpolation_sampling {
 
@@ -1425,32 +1426,29 @@ TEST_P(ResolverDependencyGraphResolveToInterpolationType, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->InterpolationType(), builtin::ParseInterpolationType(name))
+    EXPECT_EQ(resolved->InterpolationType(), core::ParseInterpolationType(name))
         << resolved->String();
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Types,
-    ResolverDependencyGraphResolveToInterpolationType,
-    testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                     testing::ValuesIn(builtin::kInterpolationSamplingStrings)));
+INSTANTIATE_TEST_SUITE_P(Types,
+                         ResolverDependencyGraphResolveToInterpolationType,
+                         testing::Combine(testing::ValuesIn(kTypeUseKinds),
+                                          testing::ValuesIn(core::kInterpolationSamplingStrings)));
 
-INSTANTIATE_TEST_SUITE_P(
-    Values,
-    ResolverDependencyGraphResolveToInterpolationType,
-    testing::Combine(testing::ValuesIn(kValueUseKinds),
-                     testing::ValuesIn(builtin::kInterpolationSamplingStrings)));
+INSTANTIATE_TEST_SUITE_P(Values,
+                         ResolverDependencyGraphResolveToInterpolationType,
+                         testing::Combine(testing::ValuesIn(kValueUseKinds),
+                                          testing::ValuesIn(core::kInterpolationSamplingStrings)));
 
-INSTANTIATE_TEST_SUITE_P(
-    Functions,
-    ResolverDependencyGraphResolveToInterpolationType,
-    testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                     testing::ValuesIn(builtin::kInterpolationSamplingStrings)));
+INSTANTIATE_TEST_SUITE_P(Functions,
+                         ResolverDependencyGraphResolveToInterpolationType,
+                         testing::Combine(testing::ValuesIn(kFuncUseKinds),
+                                          testing::ValuesIn(core::kInterpolationSamplingStrings)));
 
 }  // namespace resolve_to_interpolation_sampling
 
 ////////////////////////////////////////////////////////////////////////////////
-// Resolve to builtin::TexelFormat tests
+// Resolve to core::TexelFormat tests
 ////////////////////////////////////////////////////////////////////////////////
 namespace resolve_to_texel_format {
 
@@ -1468,23 +1466,23 @@ TEST_P(ResolverDependencyGraphResolveToTexelFormat, Resolve) {
 
     auto resolved = Build().resolved_identifiers.Get(ident);
     ASSERT_TRUE(resolved);
-    EXPECT_EQ(resolved->TexelFormat(), builtin::ParseTexelFormat(name)) << resolved->String();
+    EXPECT_EQ(resolved->TexelFormat(), core::ParseTexelFormat(name)) << resolved->String();
 }
 
 INSTANTIATE_TEST_SUITE_P(Types,
                          ResolverDependencyGraphResolveToTexelFormat,
                          testing::Combine(testing::ValuesIn(kTypeUseKinds),
-                                          testing::ValuesIn(builtin::kTexelFormatStrings)));
+                                          testing::ValuesIn(core::kTexelFormatStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Values,
                          ResolverDependencyGraphResolveToTexelFormat,
                          testing::Combine(testing::ValuesIn(kValueUseKinds),
-                                          testing::ValuesIn(builtin::kTexelFormatStrings)));
+                                          testing::ValuesIn(core::kTexelFormatStrings)));
 
 INSTANTIATE_TEST_SUITE_P(Functions,
                          ResolverDependencyGraphResolveToTexelFormat,
                          testing::Combine(testing::ValuesIn(kFuncUseKinds),
-                                          testing::ValuesIn(builtin::kTexelFormatStrings)));
+                                          testing::ValuesIn(core::kTexelFormatStrings)));
 
 }  // namespace resolve_to_texel_format
 
@@ -1543,7 +1541,7 @@ TEST_P(ResolverDependencyGraphShadowKindTest, ShadowedByGlobalVar) {
     auto* decl = GlobalVar(
         symbol,  //
         name == "i32" ? ty.u32() : ty.i32(),
-        name == "private" ? builtin::AddressSpace::kWorkgroup : builtin::AddressSpace::kPrivate);
+        name == "private" ? core::AddressSpace::kWorkgroup : core::AddressSpace::kPrivate);
     auto* ident = helper.Add(use, symbol);
     helper.Build();
 
@@ -1587,38 +1585,37 @@ TEST_P(ResolverDependencyGraphShadowKindTest, ShadowedByFunc) {
 INSTANTIATE_TEST_SUITE_P(Access,
                          ResolverDependencyGraphShadowKindTest,
                          testing::Combine(testing::ValuesIn(kAllUseKinds),
-                                          testing::ValuesIn(builtin::kAccessStrings)));
+                                          testing::ValuesIn(core::kAccessStrings)));
 
 INSTANTIATE_TEST_SUITE_P(AddressSpace,
                          ResolverDependencyGraphShadowKindTest,
                          testing::Combine(testing::ValuesIn(kAllUseKinds),
-                                          testing::ValuesIn(builtin::kAddressSpaceStrings)));
+                                          testing::ValuesIn(core::kAddressSpaceStrings)));
 
 INSTANTIATE_TEST_SUITE_P(BuiltinType,
                          ResolverDependencyGraphShadowKindTest,
                          testing::Combine(testing::ValuesIn(kAllUseKinds),
-                                          testing::ValuesIn(builtin::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
-INSTANTIATE_TEST_SUITE_P(BuiltinFunction,
+INSTANTIATE_TEST_SUITE_P(BuiltinFn,
                          ResolverDependencyGraphShadowKindTest,
                          testing::Combine(testing::ValuesIn(kAllUseKinds),
-                                          testing::ValuesIn(builtin::kBuiltinStrings)));
+                                          testing::ValuesIn(core::kBuiltinTypeStrings)));
 
-INSTANTIATE_TEST_SUITE_P(
-    InterpolationSampling,
-    ResolverDependencyGraphShadowKindTest,
-    testing::Combine(testing::ValuesIn(kAllUseKinds),
-                     testing::ValuesIn(builtin::kInterpolationSamplingStrings)));
+INSTANTIATE_TEST_SUITE_P(InterpolationSampling,
+                         ResolverDependencyGraphShadowKindTest,
+                         testing::Combine(testing::ValuesIn(kAllUseKinds),
+                                          testing::ValuesIn(core::kInterpolationSamplingStrings)));
 
 INSTANTIATE_TEST_SUITE_P(InterpolationType,
                          ResolverDependencyGraphShadowKindTest,
                          testing::Combine(testing::ValuesIn(kAllUseKinds),
-                                          testing::ValuesIn(builtin::kInterpolationTypeStrings)));
+                                          testing::ValuesIn(core::kInterpolationTypeStrings)));
 
 INSTANTIATE_TEST_SUITE_P(TexelFormat,
                          ResolverDependencyGraphShadowKindTest,
                          testing::Combine(testing::ValuesIn(kAllUseKinds),
-                                          testing::ValuesIn(builtin::kTexelFormatStrings)));
+                                          testing::ValuesIn(core::kTexelFormatStrings)));
 
 }  // namespace shadowing
 
@@ -1642,7 +1639,7 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
     const auto type_sym = Sym("TYPE");
     const auto func_sym = Sym("FUNC");
 
-    const auto* value_decl = GlobalVar(value_sym, ty.i32(), builtin::AddressSpace::kPrivate);
+    const auto* value_decl = GlobalVar(value_sym, ty.i32(), core::AddressSpace::kPrivate);
     const auto* type_decl = Alias(type_sym, ty.i32());
     const auto* func_decl = Func(func_sym, tint::Empty, ty.void_(), tint::Empty);
 
@@ -1726,14 +1723,14 @@ TEST_F(ResolverDependencyGraphTraversalTest, SymbolsReached) {
     GlobalVar(Sym(), ty.vec3(T));
     GlobalVar(Sym(), ty.mat3x2(T));
     GlobalVar(Sym(), ty.ptr<private_>(T));
-    GlobalVar(Sym(), ty.sampled_texture(type::TextureDimension::k2d, T));
-    GlobalVar(Sym(), ty.depth_texture(type::TextureDimension::k2d));
-    GlobalVar(Sym(), ty.depth_multisampled_texture(type::TextureDimension::k2d));
+    GlobalVar(Sym(), ty.sampled_texture(core::type::TextureDimension::k2d, T));
+    GlobalVar(Sym(), ty.depth_texture(core::type::TextureDimension::k2d));
+    GlobalVar(Sym(), ty.depth_multisampled_texture(core::type::TextureDimension::k2d));
     GlobalVar(Sym(), ty.external_texture());
-    GlobalVar(Sym(), ty.multisampled_texture(type::TextureDimension::k2d, T));
-    GlobalVar(Sym(), ty.storage_texture(type::TextureDimension::k2d,
-                                        builtin::TexelFormat::kR32Float, builtin::Access::kRead));
-    GlobalVar(Sym(), ty.sampler(type::SamplerKind::kSampler));
+    GlobalVar(Sym(), ty.multisampled_texture(core::type::TextureDimension::k2d, T));
+    GlobalVar(Sym(), ty.storage_texture(core::type::TextureDimension::k2d,
+                                        core::TexelFormat::kR32Float, core::Access::kRead));
+    GlobalVar(Sym(), ty.sampler(core::type::SamplerKind::kSampler));
 
     GlobalVar(Sym(), ty.i32(), Vector{Binding(V), Group(V)});
     GlobalVar(Sym(), ty.i32(), Vector{Location(V)});

@@ -32,7 +32,7 @@ ResultOrError<Ref<QuerySet>> QuerySet::Create(Device* device,
 }
 
 MaybeError QuerySet::Initialize() {
-    ASSERT(GetQueryType() == wgpu::QueryType::Occlusion);
+    DAWN_ASSERT(GetQueryType() == wgpu::QueryType::Occlusion);
     D3D11_QUERY_DESC queryDesc = {};
     queryDesc.Query = D3D11_QUERY_OCCLUSION_PREDICATE;
 
@@ -48,6 +48,13 @@ MaybeError QuerySet::Initialize() {
 }
 
 void QuerySet::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the query set is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the query set.
+    // - It may be called when the last ref to the query set is dropped and it
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the query set since there are no other live refs.
     QuerySetBase::DestroyImpl();
     mPredicates.clear();
 }

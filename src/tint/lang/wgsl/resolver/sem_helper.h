@@ -17,9 +17,9 @@
 
 #include <string>
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
-#include "src/tint/lang/core/builtin/interpolation_sampling.h"
-#include "src/tint/lang/core/builtin/interpolation_type.h"
+#include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/core/interpolation_sampling.h"
+#include "src/tint/lang/core/interpolation_type.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/dependency_graph.h"
 #include "src/tint/lang/wgsl/sem/builtin_enum_expression.h"
@@ -55,8 +55,8 @@ class SemHelper {
         return const_cast<T*>(As<T>(sem));
     }
 
-    /// GetVal is a helper for obtaining the semantic sem::ValueExpression for the given AST node.
-    /// Raises an error diagnostic and returns `nullptr` if the semantic node is not a
+    /// GetVal is a helper for obtaining the semantic sem::ValueExpression for the given AST
+    /// expression. Raises an error diagnostic and returns `nullptr` if the semantic node is not a
     /// sem::ValueExpression.
     /// @param ast the ast node to get the sem for
     /// @returns the sem node for @p ast
@@ -91,6 +91,19 @@ class SemHelper {
         return nullptr;
     }
 
+    /// GetType is a helper for obtaining the semantic type for the given AST expression.
+    /// Raises an error diagnostic and returns `nullptr` if the semantic node is not a
+    /// sem::TypeExpression
+    /// @param ast the ast node to get the sem for
+    /// @returns the sem node for @p ast
+    const core::type::Type* GetType(const ast::Expression* ast) const {
+        auto* expr = AsTypeExpression(Get(ast));
+        if (TINT_LIKELY(expr)) {
+            return expr->Type();
+        }
+        return nullptr;
+    }
+
     /// @param expr the semantic node
     /// @returns nullptr if @p expr is nullptr, or @p expr cast to sem::Function if the cast is
     /// successful, otherwise an error diagnostic is raised.
@@ -107,108 +120,147 @@ class SemHelper {
 
     /// @param expr the semantic node
     /// @returns nullptr if @p expr is nullptr, or @p expr cast to
-    /// sem::BuiltinEnumExpression<builtin::AddressSpace> if the cast is successful, otherwise an
+    /// sem::BuiltinEnumExpression<core::AddressSpace> if the cast is successful, otherwise an
     /// error diagnostic is raised.
-    sem::BuiltinEnumExpression<builtin::AddressSpace>* AsAddressSpace(sem::Expression* expr) const {
+    sem::BuiltinEnumExpression<core::AddressSpace>* AsAddressSpace(sem::Expression* expr) const {
         if (TINT_LIKELY(expr)) {
-            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<builtin::AddressSpace>>();
+            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<core::AddressSpace>>();
             if (TINT_LIKELY(enum_expr)) {
                 return enum_expr;
             }
-            ErrorUnexpectedExprKind(expr, "address space");
+            ErrorUnexpectedExprKind(expr, "address space", core::kAddressSpaceStrings);
         }
         return nullptr;
     }
 
+    /// GetAddressSpace is a helper for obtaining the address space for the given AST expression.
+    /// Raises an error diagnostic and returns core::AddressSpace::kUndefined if the semantic node
+    /// is not a sem::BuiltinEnumExpression<core::AddressSpace>
+    /// @param ast the ast node to get the address space
+    /// @returns the sem node for @p ast
+    core::AddressSpace GetAddressSpace(const ast::Expression* ast) const {
+        auto* expr = AsAddressSpace(Get(ast));
+        if (TINT_LIKELY(expr)) {
+            return expr->Value();
+        }
+        return core::AddressSpace::kUndefined;
+    }
+
     /// @param expr the semantic node
     /// @returns nullptr if @p expr is nullptr, or @p expr cast to
-    /// sem::BuiltinEnumExpression<builtin::BuiltinValue> if the cast is successful, otherwise an
+    /// sem::BuiltinEnumExpression<core::BuiltinValue> if the cast is successful, otherwise an
     /// error diagnostic is raised.
-    sem::BuiltinEnumExpression<builtin::BuiltinValue>* AsBuiltinValue(sem::Expression* expr) const {
+    sem::BuiltinEnumExpression<core::BuiltinValue>* AsBuiltinValue(sem::Expression* expr) const {
         if (TINT_LIKELY(expr)) {
-            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<builtin::BuiltinValue>>();
+            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<core::BuiltinValue>>();
             if (TINT_LIKELY(enum_expr)) {
                 return enum_expr;
             }
-            ErrorUnexpectedExprKind(expr, "builtin value");
+            ErrorUnexpectedExprKind(expr, "builtin value", core::kBuiltinValueStrings);
         }
         return nullptr;
     }
 
     /// @param expr the semantic node
     /// @returns nullptr if @p expr is nullptr, or @p expr cast to
-    /// sem::BuiltinEnumExpression<type::TexelFormat> if the cast is successful, otherwise an error
+    /// sem::BuiltinEnumExpression<core::type::TexelFormat> if the cast is successful, otherwise an
+    /// error diagnostic is raised.
+    sem::BuiltinEnumExpression<core::TexelFormat>* AsTexelFormat(sem::Expression* expr) const {
+        if (TINT_LIKELY(expr)) {
+            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<core::TexelFormat>>();
+            if (TINT_LIKELY(enum_expr)) {
+                return enum_expr;
+            }
+            ErrorUnexpectedExprKind(expr, "texel format", core::kTexelFormatStrings);
+        }
+        return nullptr;
+    }
+
+    /// GetTexelFormat is a helper for obtaining the texel format for the given AST expression.
+    /// Raises an error diagnostic and returns core::TexelFormat::kUndefined if the semantic node
+    /// is not a sem::BuiltinEnumExpression<core::TexelFormat>
+    /// @param ast the ast node to get the texel format
+    /// @returns the sem node for @p ast
+    core::TexelFormat GetTexelFormat(const ast::Expression* ast) const {
+        auto* expr = AsTexelFormat(Get(ast));
+        if (TINT_LIKELY(expr)) {
+            return expr->Value();
+        }
+        return core::TexelFormat::kUndefined;
+    }
+
+    /// @param expr the semantic node
+    /// @returns nullptr if @p expr is nullptr, or @p expr cast to
+    /// sem::BuiltinEnumExpression<core::Access> if the cast is successful, otherwise an error
     /// diagnostic is raised.
-    sem::BuiltinEnumExpression<builtin::TexelFormat>* AsTexelFormat(sem::Expression* expr) const {
+    sem::BuiltinEnumExpression<core::Access>* AsAccess(sem::Expression* expr) const {
         if (TINT_LIKELY(expr)) {
-            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<builtin::TexelFormat>>();
+            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<core::Access>>();
             if (TINT_LIKELY(enum_expr)) {
                 return enum_expr;
             }
-            ErrorUnexpectedExprKind(expr, "texel format");
+            ErrorUnexpectedExprKind(expr, "access", core::kAccessStrings);
         }
         return nullptr;
     }
 
-    /// @param expr the semantic node
-    /// @returns nullptr if @p expr is nullptr, or @p expr cast to
-    /// sem::BuiltinEnumExpression<builtin::Access> if the cast is successful, otherwise an error
-    /// diagnostic is raised.
-    sem::BuiltinEnumExpression<builtin::Access>* AsAccess(sem::Expression* expr) const {
+    /// GetAccess is a helper for obtaining the access mode for the given AST expression.
+    /// Raises an error diagnostic and returns core::Access::kUndefined if the semantic node
+    /// is not a sem::BuiltinEnumExpression<core::Access>
+    /// @param ast the ast node to get the access mode
+    /// @returns the sem node for @p ast
+    core::Access GetAccess(const ast::Expression* ast) const {
+        auto* expr = AsAccess(Get(ast));
         if (TINT_LIKELY(expr)) {
-            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<builtin::Access>>();
-            if (TINT_LIKELY(enum_expr)) {
-                return enum_expr;
-            }
-            ErrorUnexpectedExprKind(expr, "access");
+            return expr->Value();
         }
-        return nullptr;
+        return core::Access::kUndefined;
     }
 
     /// @param expr the semantic node
     /// @returns nullptr if @p expr is nullptr, or @p expr cast to
-    /// sem::BuiltinEnumExpression<builtin::InterpolationSampling> if the cast is successful,
+    /// sem::BuiltinEnumExpression<core::InterpolationSampling> if the cast is successful,
     /// otherwise an error diagnostic is raised.
-    sem::BuiltinEnumExpression<builtin::InterpolationSampling>* AsInterpolationSampling(
+    sem::BuiltinEnumExpression<core::InterpolationSampling>* AsInterpolationSampling(
         sem::Expression* expr) const {
         if (TINT_LIKELY(expr)) {
-            auto* enum_expr =
-                expr->As<sem::BuiltinEnumExpression<builtin::InterpolationSampling>>();
+            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<core::InterpolationSampling>>();
             if (TINT_LIKELY(enum_expr)) {
                 return enum_expr;
             }
-            ErrorUnexpectedExprKind(expr, "interpolation sampling");
+            ErrorUnexpectedExprKind(expr, "interpolation sampling",
+                                    core::kInterpolationSamplingStrings);
         }
         return nullptr;
     }
 
     /// @param expr the semantic node
     /// @returns nullptr if @p expr is nullptr, or @p expr cast to
-    /// sem::BuiltinEnumExpression<builtin::InterpolationType> if the cast is successful, otherwise
+    /// sem::BuiltinEnumExpression<core::InterpolationType> if the cast is successful, otherwise
     /// an error diagnostic is raised.
-    sem::BuiltinEnumExpression<builtin::InterpolationType>* AsInterpolationType(
+    sem::BuiltinEnumExpression<core::InterpolationType>* AsInterpolationType(
         sem::Expression* expr) const {
         if (TINT_LIKELY(expr)) {
-            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<builtin::InterpolationType>>();
+            auto* enum_expr = expr->As<sem::BuiltinEnumExpression<core::InterpolationType>>();
             if (TINT_LIKELY(enum_expr)) {
                 return enum_expr;
             }
-            ErrorUnexpectedExprKind(expr, "interpolation type");
+            ErrorUnexpectedExprKind(expr, "interpolation type", core::kInterpolationTypeStrings);
         }
         return nullptr;
     }
 
     /// @returns the resolved type of the ast::Expression @p expr
     /// @param expr the expression
-    type::Type* TypeOf(const ast::Expression* expr) const;
+    core::type::Type* TypeOf(const ast::Expression* expr) const;
 
     /// @returns the type name of the given semantic type, unwrapping references.
     /// @param ty the type to look up
-    std::string TypeNameOf(const type::Type* ty) const;
+    std::string TypeNameOf(const core::type::Type* ty) const;
 
     /// @returns the type name of the given semantic type, without unwrapping references.
     /// @param ty the type to look up
-    std::string RawTypeNameOf(const type::Type* ty) const;
+    std::string RawTypeNameOf(const core::type::Type* ty) const;
 
     /// Raises an error diagnostic that the expression @p got was expected to be a
     /// sem::ValueExpression, but the expression evaluated to something different.
@@ -218,7 +270,10 @@ class SemHelper {
     /// Raises an error diagnostic that the expression @p got was not of the kind @p wanted.
     /// @param expr the expression
     /// @param wanted the expected expression kind
-    void ErrorUnexpectedExprKind(const sem::Expression* expr, std::string_view wanted) const;
+    /// @param suggestions suggested valid identifiers
+    void ErrorUnexpectedExprKind(const sem::Expression* expr,
+                                 std::string_view wanted,
+                                 tint::Slice<char const* const> suggestions = Empty) const;
 
     /// If @p node is a module-scope type, variable or function declaration, then appends a note
     /// diagnostic where this declaration was declared, otherwise the function does nothing.

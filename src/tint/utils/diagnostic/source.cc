@@ -18,6 +18,7 @@
 #include <string_view>
 #include <utility>
 
+#include "src/tint/utils/text/string_stream.h"
 #include "src/tint/utils/text/unicode.h"
 
 namespace tint {
@@ -112,7 +113,7 @@ std::vector<std::string_view> CopyRelativeStringViews(const std::vector<std::str
 
 }  // namespace
 
-Source::FileContent::FileContent(const std::string& body) : data(body), lines(SplitLines(data)) {}
+Source::FileContent::FileContent(std::string_view body) : data(body), lines(SplitLines(data)) {}
 
 Source::FileContent::FileContent(const FileContent& rhs)
     : data(rhs.data), lines(CopyRelativeStringViews(rhs.lines, rhs.data, data)) {}
@@ -121,7 +122,9 @@ Source::FileContent::~FileContent() = default;
 
 Source::File::~File() = default;
 
-StringStream& operator<<(StringStream& out, const Source& source) {
+std::string ToString(const Source& source) {
+    StringStream out;
+
     auto rng = source.range;
 
     if (source.file) {
@@ -171,7 +174,7 @@ StringStream& operator<<(StringStream& out, const Source& source) {
             }
         }
     }
-    return out;
+    return out.str();
 }
 
 }  // namespace tint

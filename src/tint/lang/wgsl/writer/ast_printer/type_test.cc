@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/core/type/depth_texture.h"
 #include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
-#include "src/tint/lang/wgsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/wgsl/writer/ast_printer/helper_test.h"
 #include "src/tint/utils/text/string_stream.h"
 
 #include "gmock/gmock.h"
@@ -25,8 +25,8 @@
 namespace tint::wgsl::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using WgslASTPrinterTest = TestHelper;
 
@@ -98,7 +98,7 @@ TEST_F(WgslASTPrinterTest, EmitType_F32) {
 }
 
 TEST_F(WgslASTPrinterTest, EmitType_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto type = Alias("make_type_reachable", ty.f16())->type;
 
@@ -133,7 +133,7 @@ TEST_F(WgslASTPrinterTest, EmitType_Matrix_F32) {
 }
 
 TEST_F(WgslASTPrinterTest, EmitType_Matrix_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto type = Alias("make_type_reachable", ty.mat2x3<f16>())->type;
 
@@ -201,6 +201,67 @@ TEST_F(WgslASTPrinterTest, EmitType_StructOffsetDecl) {
   padding_1 : u32,
   /* @offset(16) */
   b : f32,
+}
+)");
+}
+
+TEST_F(WgslASTPrinterTest, EmitType_StructOffsetDecl_ExceedStaticVectorSize) {
+    auto* s = Structure("S", Vector{
+                                 Member("a", ty.i32(), Vector{MemberOffset(i32(8 * 0))}),
+                                 Member("b", ty.i32(), Vector{MemberOffset(i32(8 * 1))}),
+                                 Member("c", ty.i32(), Vector{MemberOffset(i32(8 * 2))}),
+                                 Member("d", ty.i32(), Vector{MemberOffset(i32(8 * 3))}),
+                                 Member("e", ty.i32(), Vector{MemberOffset(i32(8 * 4))}),
+                                 Member("f", ty.i32(), Vector{MemberOffset(i32(8 * 5))}),
+                                 Member("g", ty.i32(), Vector{MemberOffset(i32(8 * 6))}),
+                                 Member("h", ty.i32(), Vector{MemberOffset(i32(8 * 7))}),
+                                 Member("i", ty.i32(), Vector{MemberOffset(i32(8 * 8))}),
+                                 Member("j", ty.i32(), Vector{MemberOffset(i32(8 * 9))}),
+                             });
+
+    ASTPrinter& gen = Build();
+
+    gen.EmitStructType(s);
+    EXPECT_THAT(gen.Diagnostics(), testing::IsEmpty());
+    EXPECT_EQ(gen.Result(), R"(struct S {
+  /* @offset(0i) */
+  a : i32,
+  @size(4)
+  padding_0 : u32,
+  /* @offset(8i) */
+  b : i32,
+  @size(4)
+  padding_1 : u32,
+  /* @offset(16i) */
+  c : i32,
+  @size(4)
+  padding_2 : u32,
+  /* @offset(24i) */
+  d : i32,
+  @size(4)
+  padding_3 : u32,
+  /* @offset(32i) */
+  e : i32,
+  @size(4)
+  padding_4 : u32,
+  /* @offset(40i) */
+  f : i32,
+  @size(4)
+  padding_5 : u32,
+  /* @offset(48i) */
+  g : i32,
+  @size(4)
+  padding_6 : u32,
+  /* @offset(56i) */
+  h : i32,
+  @size(4)
+  padding_7 : u32,
+  /* @offset(64i) */
+  i : i32,
+  @size(4)
+  padding_8 : u32,
+  /* @offset(72i) */
+  j : i32,
 }
 )");
 }
@@ -285,11 +346,11 @@ TEST_F(WgslASTPrinterTest, EmitType_Struct_WithAttribute) {
 }
 
 TEST_F(WgslASTPrinterTest, EmitType_Struct_WithEntryPointAttributes) {
-    auto* s = Structure(
-        "S", Vector{
-                 Member("a", ty.u32(), Vector{Builtin(builtin::BuiltinValue::kVertexIndex)}),
-                 Member("b", ty.f32(), Vector{Location(2_a)}),
-             });
+    auto* s =
+        Structure("S", Vector{
+                           Member("a", ty.u32(), Vector{Builtin(core::BuiltinValue::kVertexIndex)}),
+                           Member("b", ty.f32(), Vector{Location(2_a)}),
+                       });
 
     ASTPrinter& gen = Build();
 
@@ -327,7 +388,7 @@ TEST_F(WgslASTPrinterTest, EmitType_Vector_F32) {
 }
 
 TEST_F(WgslASTPrinterTest, EmitType_Vector_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto type = Alias("make_type_reachable", ty.vec3<f16>())->type;
 
@@ -340,7 +401,7 @@ TEST_F(WgslASTPrinterTest, EmitType_Vector_F16) {
 }
 
 struct TextureData {
-    type::TextureDimension dim;
+    core::type::TextureDimension dim;
     const char* name;
 };
 inline std::ostream& operator<<(std::ostream& out, TextureData data) {
@@ -364,10 +425,11 @@ TEST_P(WgslGenerator_DepthTextureTest, EmitType_DepthTexture) {
 INSTANTIATE_TEST_SUITE_P(
     WgslASTPrinterTest,
     WgslGenerator_DepthTextureTest,
-    testing::Values(TextureData{type::TextureDimension::k2d, "texture_depth_2d"},
-                    TextureData{type::TextureDimension::k2dArray, "texture_depth_2d_array"},
-                    TextureData{type::TextureDimension::kCube, "texture_depth_cube"},
-                    TextureData{type::TextureDimension::kCubeArray, "texture_depth_cube_array"}));
+    testing::Values(TextureData{core::type::TextureDimension::k2d, "texture_depth_2d"},
+                    TextureData{core::type::TextureDimension::k2dArray, "texture_depth_2d_array"},
+                    TextureData{core::type::TextureDimension::kCube, "texture_depth_cube"},
+                    TextureData{core::type::TextureDimension::kCubeArray,
+                                "texture_depth_cube_array"}));
 
 using WgslGenerator_SampledTextureTest = TestParamHelper<TextureData>;
 TEST_P(WgslGenerator_SampledTextureTest, EmitType_SampledTexture_F32) {
@@ -414,12 +476,12 @@ TEST_P(WgslGenerator_SampledTextureTest, EmitType_SampledTexture_U32) {
 INSTANTIATE_TEST_SUITE_P(
     WgslASTPrinterTest,
     WgslGenerator_SampledTextureTest,
-    testing::Values(TextureData{type::TextureDimension::k1d, "texture_1d"},
-                    TextureData{type::TextureDimension::k2d, "texture_2d"},
-                    TextureData{type::TextureDimension::k2dArray, "texture_2d_array"},
-                    TextureData{type::TextureDimension::k3d, "texture_3d"},
-                    TextureData{type::TextureDimension::kCube, "texture_cube"},
-                    TextureData{type::TextureDimension::kCubeArray, "texture_cube_array"}));
+    testing::Values(TextureData{core::type::TextureDimension::k1d, "texture_1d"},
+                    TextureData{core::type::TextureDimension::k2d, "texture_2d"},
+                    TextureData{core::type::TextureDimension::k2dArray, "texture_2d_array"},
+                    TextureData{core::type::TextureDimension::k3d, "texture_3d"},
+                    TextureData{core::type::TextureDimension::kCube, "texture_cube"},
+                    TextureData{core::type::TextureDimension::kCubeArray, "texture_cube_array"}));
 
 using WgslGenerator_MultiampledTextureTest = TestParamHelper<TextureData>;
 TEST_P(WgslGenerator_MultiampledTextureTest, EmitType_MultisampledTexture_F32) {
@@ -465,13 +527,13 @@ TEST_P(WgslGenerator_MultiampledTextureTest, EmitType_MultisampledTexture_U32) {
 }
 INSTANTIATE_TEST_SUITE_P(WgslASTPrinterTest,
                          WgslGenerator_MultiampledTextureTest,
-                         testing::Values(TextureData{type::TextureDimension::k2d,
+                         testing::Values(TextureData{core::type::TextureDimension::k2d,
                                                      "texture_multisampled_2d"}));
 
 struct StorageTextureData {
-    builtin::TexelFormat fmt;
-    type::TextureDimension dim;
-    builtin::Access access;
+    core::TexelFormat fmt;
+    core::type::TextureDimension dim;
+    core::Access access;
     const char* name;
 };
 inline std::ostream& operator<<(std::ostream& out, StorageTextureData data) {
@@ -496,17 +558,17 @@ INSTANTIATE_TEST_SUITE_P(
     WgslASTPrinterTest,
     WgslGenerator_StorageTextureTest,
     testing::Values(
-        StorageTextureData{builtin::TexelFormat::kRgba8Sint, type::TextureDimension::k1d,
-                           builtin::Access::kWrite, "texture_storage_1d<rgba8sint, write>"},
-        StorageTextureData{builtin::TexelFormat::kRgba8Sint, type::TextureDimension::k2d,
-                           builtin::Access::kWrite, "texture_storage_2d<rgba8sint, write>"},
-        StorageTextureData{builtin::TexelFormat::kRgba8Sint, type::TextureDimension::k2dArray,
-                           builtin::Access::kWrite, "texture_storage_2d_array<rgba8sint, write>"},
-        StorageTextureData{builtin::TexelFormat::kRgba8Sint, type::TextureDimension::k3d,
-                           builtin::Access::kWrite, "texture_storage_3d<rgba8sint, write>"}));
+        StorageTextureData{core::TexelFormat::kRgba8Sint, core::type::TextureDimension::k1d,
+                           core::Access::kWrite, "texture_storage_1d<rgba8sint, write>"},
+        StorageTextureData{core::TexelFormat::kRgba8Sint, core::type::TextureDimension::k2d,
+                           core::Access::kWrite, "texture_storage_2d<rgba8sint, write>"},
+        StorageTextureData{core::TexelFormat::kRgba8Sint, core::type::TextureDimension::k2dArray,
+                           core::Access::kWrite, "texture_storage_2d_array<rgba8sint, write>"},
+        StorageTextureData{core::TexelFormat::kRgba8Sint, core::type::TextureDimension::k3d,
+                           core::Access::kWrite, "texture_storage_3d<rgba8sint, write>"}));
 
 struct ImageFormatData {
-    builtin::TexelFormat fmt;
+    core::TexelFormat fmt;
     const char* name;
 };
 inline std::ostream& operator<<(std::ostream& out, ImageFormatData data) {
@@ -528,25 +590,25 @@ TEST_P(WgslGenerator_ImageFormatTest, EmitType_StorageTexture_ImageFormat) {
 INSTANTIATE_TEST_SUITE_P(
     WgslASTPrinterTest,
     WgslGenerator_ImageFormatTest,
-    testing::Values(ImageFormatData{builtin::TexelFormat::kR32Uint, "r32uint"},
-                    ImageFormatData{builtin::TexelFormat::kR32Sint, "r32sint"},
-                    ImageFormatData{builtin::TexelFormat::kR32Float, "r32float"},
-                    ImageFormatData{builtin::TexelFormat::kRgba8Unorm, "rgba8unorm"},
-                    ImageFormatData{builtin::TexelFormat::kRgba8Snorm, "rgba8snorm"},
-                    ImageFormatData{builtin::TexelFormat::kRgba8Uint, "rgba8uint"},
-                    ImageFormatData{builtin::TexelFormat::kRgba8Sint, "rgba8sint"},
-                    ImageFormatData{builtin::TexelFormat::kRg32Uint, "rg32uint"},
-                    ImageFormatData{builtin::TexelFormat::kRg32Sint, "rg32sint"},
-                    ImageFormatData{builtin::TexelFormat::kRg32Float, "rg32float"},
-                    ImageFormatData{builtin::TexelFormat::kRgba16Uint, "rgba16uint"},
-                    ImageFormatData{builtin::TexelFormat::kRgba16Sint, "rgba16sint"},
-                    ImageFormatData{builtin::TexelFormat::kRgba16Float, "rgba16float"},
-                    ImageFormatData{builtin::TexelFormat::kRgba32Uint, "rgba32uint"},
-                    ImageFormatData{builtin::TexelFormat::kRgba32Sint, "rgba32sint"},
-                    ImageFormatData{builtin::TexelFormat::kRgba32Float, "rgba32float"}));
+    testing::Values(ImageFormatData{core::TexelFormat::kR32Uint, "r32uint"},
+                    ImageFormatData{core::TexelFormat::kR32Sint, "r32sint"},
+                    ImageFormatData{core::TexelFormat::kR32Float, "r32float"},
+                    ImageFormatData{core::TexelFormat::kRgba8Unorm, "rgba8unorm"},
+                    ImageFormatData{core::TexelFormat::kRgba8Snorm, "rgba8snorm"},
+                    ImageFormatData{core::TexelFormat::kRgba8Uint, "rgba8uint"},
+                    ImageFormatData{core::TexelFormat::kRgba8Sint, "rgba8sint"},
+                    ImageFormatData{core::TexelFormat::kRg32Uint, "rg32uint"},
+                    ImageFormatData{core::TexelFormat::kRg32Sint, "rg32sint"},
+                    ImageFormatData{core::TexelFormat::kRg32Float, "rg32float"},
+                    ImageFormatData{core::TexelFormat::kRgba16Uint, "rgba16uint"},
+                    ImageFormatData{core::TexelFormat::kRgba16Sint, "rgba16sint"},
+                    ImageFormatData{core::TexelFormat::kRgba16Float, "rgba16float"},
+                    ImageFormatData{core::TexelFormat::kRgba32Uint, "rgba32uint"},
+                    ImageFormatData{core::TexelFormat::kRgba32Sint, "rgba32sint"},
+                    ImageFormatData{core::TexelFormat::kRgba32Float, "rgba32float"}));
 
 TEST_F(WgslASTPrinterTest, EmitType_Sampler) {
-    auto sampler = ty.sampler(type::SamplerKind::kSampler);
+    auto sampler = ty.sampler(core::type::SamplerKind::kSampler);
     auto type = Alias("make_type_reachable", sampler)->type;
 
     ASTPrinter& gen = Build();
@@ -558,7 +620,7 @@ TEST_F(WgslASTPrinterTest, EmitType_Sampler) {
 }
 
 TEST_F(WgslASTPrinterTest, EmitType_SamplerComparison) {
-    auto sampler = ty.sampler(type::SamplerKind::kComparisonSampler);
+    auto sampler = ty.sampler(core::type::SamplerKind::kComparisonSampler);
     auto type = Alias("make_type_reachable", sampler)->type;
 
     ASTPrinter& gen = Build();

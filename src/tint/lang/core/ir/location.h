@@ -17,18 +17,18 @@
 
 #include <optional>
 
-#include "src/tint/lang/core/builtin/interpolation.h"
+#include "src/tint/lang/core/interpolation.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A function parameter in the IR.
 struct Location {
     /// The location value
     uint32_t value = 0;
     /// The interpolation settings
-    std::optional<builtin::Interpolation> interpolation;
+    std::optional<core::Interpolation> interpolation;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_LOCATION_H_

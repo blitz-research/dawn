@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/ast/test_helper.h"
-#include "src/tint/lang/wgsl/reader/parser/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
+#include "src/tint/lang/wgsl/reader/parser/helper_test.h"
 
 namespace tint::wgsl::reader {
 namespace {
@@ -164,7 +164,7 @@ TEST_F(WGSLParserTest, VariableStmt_Let_ComplexExpression) {
 
     ASSERT_TRUE(decl->variable->initializer->Is<ast::BinaryExpression>());
     auto* expr = decl->variable->initializer->As<ast::BinaryExpression>();
-    EXPECT_EQ(expr->op, ast::BinaryOp::kAdd);
+    EXPECT_EQ(expr->op, core::BinaryOp::kAdd);
 
     ASSERT_TRUE(expr->lhs->Is<ast::IdentifierExpression>());
     auto* ident_expr = expr->lhs->As<ast::IdentifierExpression>();

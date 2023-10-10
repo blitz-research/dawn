@@ -14,9 +14,12 @@
 
 #include "src/tint/lang/core/ir/bitcast.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Bitcast);
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 
-namespace tint::ir {
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Bitcast);
+
+namespace tint::core::ir {
 
 Bitcast::Bitcast(InstructionResult* result, Value* val) {
     AddOperand(Bitcast::kValueOperandOffset, val);
@@ -25,4 +28,10 @@ Bitcast::Bitcast(InstructionResult* result, Value* val) {
 
 Bitcast::~Bitcast() = default;
 
-}  // namespace tint::ir
+Bitcast* Bitcast::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto* val = ctx.Remap(Val());
+    return ctx.ir.instructions.Create<Bitcast>(new_result, val);
+}
+
+}  // namespace tint::core::ir

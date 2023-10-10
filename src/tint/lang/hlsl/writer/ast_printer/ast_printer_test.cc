@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/hlsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/hlsl/writer/ast_printer/helper_test.h"
 
 #include "src/tint/lang/hlsl/writer/writer.h"
 
@@ -24,14 +24,15 @@ using HlslASTPrinterTest = TestHelper;
 TEST_F(HlslASTPrinterTest, InvalidProgram) {
     Diagnostics().add_error(diag::System::Writer, "make the program invalid");
     ASSERT_FALSE(IsValid());
-    auto program = std::make_unique<Program>(resolver::Resolve(*this));
-    ASSERT_FALSE(program->IsValid());
-    auto result = Generate(program.get(), Options{});
-    EXPECT_EQ(result.error, "input program is not valid");
+    auto program = resolver::Resolve(*this);
+    ASSERT_FALSE(program.IsValid());
+    auto result = Generate(program, Options{});
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.Failure().reason.str(), "error: make the program invalid");
 }
 
 TEST_F(HlslASTPrinterTest, UnsupportedExtension) {
-    Enable(Source{{12, 34}}, builtin::Extension::kUndefined);
+    Enable(Source{{12, 34}}, wgsl::Extension::kUndefined);
 
     ASTPrinter& gen = Build();
 
@@ -52,7 +53,7 @@ TEST_F(HlslASTPrinterTest, Generate) {
 }
 
 struct HlslBuiltinData {
-    builtin::BuiltinValue builtin;
+    core::BuiltinValue builtin;
     const char* attribute_name;
 };
 inline std::ostream& operator<<(std::ostream& out, HlslBuiltinData data) {
@@ -71,18 +72,17 @@ TEST_P(HlslBuiltinConversionTest, Emit) {
 INSTANTIATE_TEST_SUITE_P(
     HlslASTPrinterTest,
     HlslBuiltinConversionTest,
-    testing::Values(HlslBuiltinData{builtin::BuiltinValue::kPosition, "SV_Position"},
-                    HlslBuiltinData{builtin::BuiltinValue::kVertexIndex, "SV_VertexID"},
-                    HlslBuiltinData{builtin::BuiltinValue::kInstanceIndex, "SV_InstanceID"},
-                    HlslBuiltinData{builtin::BuiltinValue::kFrontFacing, "SV_IsFrontFace"},
-                    HlslBuiltinData{builtin::BuiltinValue::kFragDepth, "SV_Depth"},
-                    HlslBuiltinData{builtin::BuiltinValue::kLocalInvocationId, "SV_GroupThreadID"},
-                    HlslBuiltinData{builtin::BuiltinValue::kLocalInvocationIndex, "SV_GroupIndex"},
-                    HlslBuiltinData{builtin::BuiltinValue::kGlobalInvocationId,
-                                    "SV_DispatchThreadID"},
-                    HlslBuiltinData{builtin::BuiltinValue::kWorkgroupId, "SV_GroupID"},
-                    HlslBuiltinData{builtin::BuiltinValue::kSampleIndex, "SV_SampleIndex"},
-                    HlslBuiltinData{builtin::BuiltinValue::kSampleMask, "SV_Coverage"}));
+    testing::Values(HlslBuiltinData{core::BuiltinValue::kPosition, "SV_Position"},
+                    HlslBuiltinData{core::BuiltinValue::kVertexIndex, "SV_VertexID"},
+                    HlslBuiltinData{core::BuiltinValue::kInstanceIndex, "SV_InstanceID"},
+                    HlslBuiltinData{core::BuiltinValue::kFrontFacing, "SV_IsFrontFace"},
+                    HlslBuiltinData{core::BuiltinValue::kFragDepth, "SV_Depth"},
+                    HlslBuiltinData{core::BuiltinValue::kLocalInvocationId, "SV_GroupThreadID"},
+                    HlslBuiltinData{core::BuiltinValue::kLocalInvocationIndex, "SV_GroupIndex"},
+                    HlslBuiltinData{core::BuiltinValue::kGlobalInvocationId, "SV_DispatchThreadID"},
+                    HlslBuiltinData{core::BuiltinValue::kWorkgroupId, "SV_GroupID"},
+                    HlslBuiltinData{core::BuiltinValue::kSampleIndex, "SV_SampleIndex"},
+                    HlslBuiltinData{core::BuiltinValue::kSampleMask, "SV_Coverage"}));
 
 }  // namespace
 }  // namespace tint::hlsl::writer

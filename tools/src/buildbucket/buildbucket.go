@@ -18,6 +18,7 @@ package buildbucket
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 
 	"dawn.googlesource.com/dawn/tools/src/gerrit"
@@ -201,6 +202,7 @@ func (r *Buildbucket) StartBuild(
 	ctx context.Context,
 	ps gerrit.Patchset,
 	builder Builder,
+	parentSwarmingRunID string,
 	forceBuild bool) (Build, error) {
 
 	id := ""
@@ -208,14 +210,27 @@ func (r *Buildbucket) StartBuild(
 		id = utils.Hash(ps, builder)
 	}
 
-	build, err := r.client.ScheduleBuild(ctx, &bbpb.ScheduleBuildRequest{
+	req := &bbpb.ScheduleBuildRequest{
 		RequestId:     id,
 		Builder:       builder.pb(),
 		GerritChanges: []*bbpb.GerritChange{gerritChange(ps)},
-	})
+	}
+	if parentSwarmingRunID != "" {
+		req.Swarming = &bbpb.ScheduleBuildRequest_Swarming{
+			ParentRunId: parentSwarmingRunID,
+		}
+	}
+
+	build, err := r.client.ScheduleBuild(ctx, req)
 	if err != nil {
 		return Build{}, fmt.Errorf("failed to start build for patchset %+v on builder %+v: %w", ps, builder, err)
 	}
+
+	if status := toBuildStatus(build.Status); !forceBuild && !status.Running() {
+		log.Printf("ScheduleBuild() returned with %v, attempting to force a retry...\n", status)
+		return r.StartBuild(ctx, ps, builder, parentSwarmingRunID, true)
+	}
+
 	return toBuild(build), nil
 }
 

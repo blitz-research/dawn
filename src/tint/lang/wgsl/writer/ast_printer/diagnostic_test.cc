@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/wgsl/writer/ast_printer/helper_test.h"
 
 #include "gmock/gmock.h"
 
@@ -22,7 +22,7 @@ namespace {
 using WgslASTPrinterTest = TestHelper;
 
 TEST_F(WgslASTPrinterTest, Emit_DiagnosticDirective) {
-    DiagnosticDirective(builtin::DiagnosticSeverity::kError, "chromium", "unreachable_code");
+    DiagnosticDirective(wgsl::DiagnosticSeverity::kError, "chromium", "unreachable_code");
 
     ASTPrinter& gen = Build();
     gen.Generate();
@@ -34,7 +34,7 @@ TEST_F(WgslASTPrinterTest, Emit_DiagnosticDirective) {
 
 TEST_F(WgslASTPrinterTest, Emit_DiagnosticAttribute) {
     auto* attr =
-        DiagnosticAttribute(builtin::DiagnosticSeverity::kError, "chromium", "unreachable_code");
+        DiagnosticAttribute(wgsl::DiagnosticSeverity::kError, "chromium", "unreachable_code");
     Func("foo", {}, ty.void_(), {}, Vector{attr});
 
     ASTPrinter& gen = Build();

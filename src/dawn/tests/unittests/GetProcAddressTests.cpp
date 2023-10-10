@@ -46,7 +46,7 @@ std::ostream& operator<<(std::ostream& stream, DawnFlavor flavor) {
             break;
 
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
     return stream;
@@ -56,7 +56,7 @@ class GetProcAddressTests : public testing::TestWithParam<DawnFlavor> {
   public:
     GetProcAddressTests()
         : testing::TestWithParam<DawnFlavor>(),
-          mNativeInstance(native::InstanceBase::Create()),
+          mNativeInstance(native::APICreateInstance(nullptr)),
           mAdapterBase(AcquireRef(new native::null::PhysicalDevice(mNativeInstance.Get())),
                        native::FeatureLevel::Core,
                        native::TogglesState(native::ToggleStage::Adapter),
@@ -84,7 +84,7 @@ class GetProcAddressTests : public testing::TestWithParam<DawnFlavor> {
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
 

@@ -15,14 +15,16 @@
 #ifndef SRC_TINT_LANG_CORE_IR_USER_CALL_H_
 #define SRC_TINT_LANG_CORE_IR_USER_CALL_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/call.h"
 #include "src/tint/lang/core/ir/function.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A user call instruction in the IR.
-class UserCall : public Castable<UserCall, Call> {
+class UserCall final : public Castable<UserCall, Call> {
   public:
     /// The offset in Operands() for the function being called
     static constexpr size_t kFunctionOperandOffset = 0;
@@ -37,16 +39,27 @@ class UserCall : public Castable<UserCall, Call> {
     UserCall(InstructionResult* result, Function* func, VectorRef<Value*> args);
     ~UserCall() override;
 
+    /// @copydoc Instruction::Clone()
+    UserCall* Clone(CloneContext& ctx) override;
+
     /// @returns the call arguments
     tint::Slice<Value*> Args() override { return operands_.Slice().Offset(kArgsOperandOffset); }
 
-    /// @returns the called function name
-    Function* Func() { return operands_[kFunctionOperandOffset]->As<ir::Function>(); }
+    /// Replaces the call arguments to @p arguments
+    /// @param arguments the new call arguments
+    void SetArgs(VectorRef<Value*> arguments);
+
+    /// @returns the called function
+    Function* Target() { return operands_[kFunctionOperandOffset]->As<ir::Function>(); }
+
+    /// Sets called function
+    /// @param target the new target of the call
+    void SetTarget(Function* target) { SetOperand(kFunctionOperandOffset, target); }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "user-call"; }
+    std::string FriendlyName() override { return "call"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_USER_CALL_H_

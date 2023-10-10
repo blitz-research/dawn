@@ -22,11 +22,11 @@
 #include "src/tint/utils/containers/vector.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class ControlInstruction;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A block of statements. The instructions in the block are a linear list of instructions to
 /// execute. The block will terminate with a Terminator instruction at the end.
@@ -35,6 +35,15 @@ class Block : public Castable<Block> {
     /// Constructor
     Block();
     ~Block() override;
+
+    /// @param ctx the CloneContext used to clone this block
+    /// @returns a clone of this block
+    virtual Block* Clone(CloneContext& ctx);
+
+    /// Clones the block contents into the given block
+    /// @param ctx the CloneContext used to clone
+    /// @param out the block to clone into
+    virtual void CloneInto(CloneContext& ctx, Block* out);
 
     /// @returns true if this is block has a terminator instruction
     bool HasTerminator() {
@@ -133,6 +142,9 @@ class Block : public Castable<Block> {
     /// @param parent the parent instruction that owns this block
     void SetParent(ControlInstruction* parent) { parent_ = parent; }
 
+    /// Destroys the block and all of its instructions.
+    void Destroy();
+
   private:
     struct {
         Instruction* first = nullptr;
@@ -143,6 +155,6 @@ class Block : public Castable<Block> {
     ControlInstruction* parent_ = nullptr;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_BLOCK_H_

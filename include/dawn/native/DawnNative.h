@@ -15,23 +15,15 @@
 #ifndef INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_
 #define INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_
 
-#include <string>
 #include <vector>
 
 #include "dawn/dawn_proc_table.h"
 #include "dawn/native/dawn_native_export.h"
-#include "dawn/webgpu.h"
-#include "dawn/webgpu_cpp_chained_struct.h"
+#include "dawn/webgpu_cpp.h"
 
 namespace dawn::platform {
 class Platform;
 }  // namespace dawn::platform
-
-namespace wgpu {
-struct AdapterProperties;
-struct DeviceDescriptor;
-struct RequestAdapterOptions;
-}  // namespace wgpu
 
 namespace dawn::native {
 
@@ -86,7 +78,6 @@ class DAWN_NATIVE_EXPORT Adapter {
     void GetProperties(wgpu::AdapterProperties* properties) const;
     void GetProperties(WGPUAdapterProperties* properties) const;
 
-    std::vector<const char*> GetSupportedExtensions() const;
     std::vector<const char*> GetSupportedFeatures() const;
     bool GetLimits(WGPUSupportedLimits* limits) const;
 
@@ -142,9 +133,7 @@ enum BackendValidationLevel { Full, Partial, Disabled };
 // Can be chained in InstanceDescriptor
 struct DAWN_NATIVE_EXPORT DawnInstanceDescriptor : wgpu::ChainedStruct {
     DawnInstanceDescriptor();
-    static constexpr size_t kFirstMemberAlignment =
-        wgpu::detail::ConstexprMax(alignof(wgpu::ChainedStruct), alignof(uint32_t));
-    alignas(kFirstMemberAlignment) uint32_t additionalRuntimeSearchPathsCount = 0;
+    uint32_t additionalRuntimeSearchPathsCount = 0;
     const char* const* additionalRuntimeSearchPaths;
     dawn::platform::Platform* platform = nullptr;
 
@@ -241,7 +230,7 @@ DAWN_NATIVE_EXPORT std::vector<const char*> GetProcMapNamesForTesting();
 
 DAWN_NATIVE_EXPORT bool DeviceTick(WGPUDevice device);
 
-DAWN_NATIVE_EXPORT bool InstanceProcessEvents(WGPUInstance instance);
+DAWN_NATIVE_EXPORT void InstanceProcessEvents(WGPUInstance instance);
 
 // ErrorInjector functions used for testing only. Defined in dawn_native/ErrorInjector.cpp
 DAWN_NATIVE_EXPORT void EnableErrorInjector();
@@ -258,6 +247,7 @@ enum ExternalImageType {
     DXGISharedHandle,
     D3D11Texture,
     EGLImage,
+    GLTexture,
     AHardwareBuffer,
     Last = AHardwareBuffer,
 };
@@ -294,22 +284,14 @@ DAWN_NATIVE_EXPORT const char* GetObjectLabelForTesting(void* objectHandle);
 
 DAWN_NATIVE_EXPORT uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer);
 
-DAWN_NATIVE_EXPORT bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a,
-                                                               WGPUBindGroupLayout b);
+DAWN_NATIVE_EXPORT std::vector<const ToggleInfo*> AllToggleInfos();
+
+DAWN_NATIVE_EXPORT FeatureInfo GetFeatureInfo(wgpu::FeatureName featureName);
 
 DAWN_NATIVE_EXPORT WGPUAdapter GetWGPUAdapter(WGPUDevice device);
 
 DAWN_NATIVE_EXPORT WGPUBackendType GetWGPUBackendType(WGPUAdapter adapter);
 
 }  // namespace dawn::native
-
-// Alias the DawnInstanceDescriptor up to wgpu.
-// TODO(dawn:1374) Remove this aliasing once the usages are updated.
-namespace wgpu {
-using dawn::native::DawnInstanceDescriptor;
-}  // namespace wgpu
-
-// TODO(dawn:824): Remove once the deprecation period is passed.
-namespace dawn_native = dawn::native;
 
 #endif  // INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_

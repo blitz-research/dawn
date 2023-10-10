@@ -61,7 +61,7 @@ TINT_END_DISABLE_WARNING(NEWLINE_EOF);
 /// familiar to Vulkan SPIR-V developers.  We will tend to use "image"
 /// and "sampler" instead of "handle".
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 
 /// The binary representation of a SPIR-V decoration enum followed by its
 /// operands, if any.
@@ -425,12 +425,12 @@ class ASTParser {
     /// @param address_space the 'var' address space
     /// @returns the access mode for a 'var' declaration with the given storage type and address
     /// space.
-    builtin::Access VarAccess(const Type* storage_type, builtin::AddressSpace address_space);
+    core::Access VarAccess(const Type* storage_type, core::AddressSpace address_space);
 
     /// Creates an AST 'var' node for a SPIR-V ID, including any attached decorations, unless it's
     /// an ignorable builtin variable.
     /// @param id the SPIR-V result ID
-    /// @param address_space the address space, which cannot be builtin::AddressSpace::kUndefined
+    /// @param address_space the address space, which cannot be core::AddressSpace::kUndefined
     /// @param access the access
     /// @param storage_type the storage type of the variable
     /// @param initializer the variable initializer
@@ -438,8 +438,8 @@ class ASTParser {
     /// @returns a new Variable node, or null in the ignorable variable case and
     /// in the error case
     const ast::Var* MakeVar(uint32_t id,
-                            builtin::AddressSpace address_space,
-                            builtin::Access access,
+                            core::AddressSpace address_space,
+                            core::Access access,
                             const Type* storage_type,
                             const ast::Expression* initializer,
                             Attributes attributes);
@@ -672,9 +672,9 @@ class ASTParser {
         /// The AST variable node.
         const ast::Var* var = nullptr;
         /// The address space of the var
-        builtin::AddressSpace address_space = builtin::AddressSpace::kUndefined;
+        core::AddressSpace address_space = core::AddressSpace::kUndefined;
         /// The access mode of the var
-        builtin::Access access = builtin::Access::kUndefined;
+        core::Access access = core::Access::kUndefined;
     };
 
     /// Returns the AST variable for the SPIR-V ID of a module-scope variable,
@@ -690,19 +690,19 @@ class ASTParser {
     /// format.
     /// @param format image texel format
     /// @returns the component type, one of f32, i32, u32
-    const Type* GetComponentTypeForFormat(builtin::TexelFormat format);
+    const Type* GetComponentTypeForFormat(core::TexelFormat format);
 
     /// Returns the number of channels in the given image format.
     /// @param format image texel format
     /// @returns the number of channels in the format
-    unsigned GetChannelCountForFormat(builtin::TexelFormat format);
+    unsigned GetChannelCountForFormat(core::TexelFormat format);
 
     /// Returns the texel type corresponding to the given image format.
     /// This the WGSL type used for the texel parameter to textureStore.
     /// It's always a 4-element vector.
     /// @param format image texel format
     /// @returns the texel format
-    const Type* GetTexelTypeForFormat(builtin::TexelFormat format);
+    const Type* GetTexelTypeForFormat(core::TexelFormat format);
 
     /// Returns the SPIR-V instruction with the given ID, or nullptr.
     /// @param id the SPIR-V result ID
@@ -737,6 +737,14 @@ class ASTParser {
 
     /// @returns the SPIR-V binary.
     const std::vector<uint32_t>& spv_binary() { return spv_binary_; }
+
+    /// Enable a WGSL extension, if not already enabled.
+    /// @param extension the extension to enable
+    void Enable(wgsl::Extension extension) {
+        if (enabled_extensions_.Add(extension)) {
+            builder_.Enable(extension);
+        }
+    }
 
   private:
     /// Converts a specific SPIR-V type to a Tint type. Integer case
@@ -925,8 +933,11 @@ class ASTParser {
     /// field will be 0. Sadly, in SPIR-V right now, there's only one workgroup
     /// size object in the module.
     WorkgroupSizeInfo workgroup_size_builtin_;
+
+    /// Set of WGSL extensions that have been enabled.
+    Hashset<wgsl::Extension, 4> enabled_extensions_;
 };
 
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser
 
 #endif  // SRC_TINT_LANG_SPIRV_READER_AST_PARSER_AST_PARSER_H_

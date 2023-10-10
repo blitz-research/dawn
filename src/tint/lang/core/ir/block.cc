@@ -13,15 +13,43 @@
 // limitations under the License.
 
 #include "src/tint/lang/core/ir/block.h"
+
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/control_instruction.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Block);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Block);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 Block::Block() : Base() {}
 
 Block::~Block() = default;
+
+Block* Block::Clone(CloneContext&) {
+    TINT_UNREACHABLE() << "blocks must be cloned with CloneInto";
+    return nullptr;
+}
+
+void Block::CloneInto(CloneContext& ctx, Block* out) {
+    // Note, the `parent_` is not cloned here. Doing so can end up in infinite loops as we try to
+    // clone a control instruction and the blocks inside of it. The `parent_` pointer should be set
+    // by the control instructions constructor.
+
+    for (auto* inst_in : *this) {
+        auto* inst_out = inst_in->Clone(ctx);
+        auto results_out = inst_out->Results();
+        auto results_in = inst_in->Results();
+        TINT_ASSERT(results_out.Length() == results_in.Length());
+
+        size_t len = results_out.Length();
+        for (size_t i = 0; i < len; ++i) {
+            ctx.Replace(results_in[i], results_out[i]);
+        }
+        out->Append(inst_out);
+    }
+}
 
 Instruction* Block::Prepend(Instruction* inst) {
     TINT_ASSERT_OR_RETURN_VALUE(inst, inst);
@@ -158,4 +186,10 @@ void Block::Remove(Instruction* inst) {
     inst->next = nullptr;
 }
 
-}  // namespace tint::ir
+void Block::Destroy() {
+    while (instructions_.first) {
+        instructions_.first->Destroy();
+    }
+}
+
+}  // namespace tint::core::ir

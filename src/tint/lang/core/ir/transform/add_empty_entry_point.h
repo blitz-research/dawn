@@ -15,22 +15,22 @@
 #ifndef SRC_TINT_LANG_CORE_IR_TRANSFORM_ADD_EMPTY_ENTRY_POINT_H_
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_ADD_EMPTY_ENTRY_POINT_H_
 
-#include "src/tint/lang/core/ir/transform/transform.h"
+#include <string>
 
-namespace tint::ir::transform {
+#include "src/tint/utils/result/result.h"
+
+// Forward declarations.
+namespace tint::core::ir {
+class Module;
+}
+
+namespace tint::core::ir::transform {
 
 /// Add an empty entry point to the module, if no other entry points exist.
-class AddEmptyEntryPoint final : public Castable<AddEmptyEntryPoint, Transform> {
-  public:
-    /// Constructor
-    AddEmptyEntryPoint();
-    /// Destructor
-    ~AddEmptyEntryPoint() override;
+/// @param module the module to transform
+/// @returns success or failure
+Result<SuccessType> AddEmptyEntryPoint(Module& module);
 
-    /// @copydoc Transform::Run
-    void Run(ir::Module* module) const override;
-};
-
-}  // namespace tint::ir::transform
+}  // namespace tint::core::ir::transform
 
 #endif  // SRC_TINT_LANG_CORE_IR_TRANSFORM_ADD_EMPTY_ENTRY_POINT_H_

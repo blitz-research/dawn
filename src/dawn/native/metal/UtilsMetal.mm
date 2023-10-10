@@ -172,7 +172,7 @@ Aspect GetDepthStencilAspects(MTLPixelFormat format) {
             return Aspect::Stencil;
 
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -196,7 +196,7 @@ MTLCompareFunction ToMetalCompareFunction(wgpu::CompareFunction compareFunction)
             return MTLCompareFunctionAlways;
 
         case wgpu::CompareFunction::Undefined:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -262,7 +262,7 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
     // clamped to the edge of the texture if the block extends outside the bounds of a
     // texture.
     const Extent3D clampedCopyExtent =
-        texture->ClampToMipLevelVirtualSize(mipLevel, origin, copyExtent);
+        texture->ClampToMipLevelVirtualSize(mipLevel, aspect, origin, copyExtent);
 
     // Note: all current GPUs have a 3D texture size limit of 2048 and otherwise 16348
     // for non-3D textures except for Apple2 GPUs (iPhone6) which has a non-3D texture
@@ -283,8 +283,8 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
         // try to have it make sense, pass correct or max valid value
         const uint32_t localBytesPerRow = std::min(bytesPerRow, maxBytesPerRow);
         const uint32_t localBytesPerImage = 0;  // workaround case 3
-        ASSERT(copyExtent.height % blockInfo.height == 0);
-        ASSERT(copyExtent.width % blockInfo.width == 0);
+        DAWN_ASSERT(copyExtent.height % blockInfo.height == 0);
+        DAWN_ASSERT(copyExtent.width % blockInfo.width == 0);
         const uint32_t blockRows = copyExtent.height / blockInfo.height;
         for (uint32_t slice = 0; slice < copyExtent.depthOrArrayLayers; ++slice) {
             for (uint32_t blockRow = 0; blockRow < blockRows; ++blockRow) {
@@ -328,8 +328,8 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
     // Doing all the copy in last image except the last row.
     uint32_t copyBlockRowCount = copyExtent.height / blockInfo.height;
     if (copyBlockRowCount > 1) {
-        ASSERT(copyExtent.height - blockInfo.height <
-               texture->GetMipLevelSingleSubresourceVirtualSize(mipLevel).height);
+        DAWN_ASSERT(copyExtent.height - blockInfo.height <
+                    texture->GetMipLevelSingleSubresourceVirtualSize(mipLevel, aspect).height);
         const uint32_t localBytesPerImage = 0;  // workaround case 3
         copy.push_back(TextureBufferCopySplit::CopyInfo(
             currentOffset, bytesPerRow, localBytesPerImage,
@@ -346,7 +346,7 @@ TextureBufferCopySplit ComputeTextureBufferCopySplit(const Texture* texture,
     uint32_t lastImageDataSize = 0;  // workaround case 3
     uint32_t lastRowCopyExtentHeight =
         blockInfo.height + clampedCopyExtent.height - copyExtent.height;
-    ASSERT(lastRowCopyExtentHeight <= blockInfo.height);
+    DAWN_ASSERT(lastRowCopyExtentHeight <= blockInfo.height);
 
     copy.push_back(
         TextureBufferCopySplit::CopyInfo(currentOffset, lastRowDataSize, lastImageDataSize,
@@ -361,9 +361,9 @@ MaybeError EnsureDestinationTextureInitialized(CommandRecordingContext* commandC
                                                Texture* texture,
                                                const TextureCopy& dst,
                                                const Extent3D& size) {
-    ASSERT(texture == dst.texture.Get());
+    DAWN_ASSERT(texture == dst.texture.Get());
     SubresourceRange range = GetSubresourcesAffectedByCopy(dst, size);
-    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), size, dst.mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), size, dst.mipLevel, dst.aspect)) {
         texture->SetIsSubresourceContentInitialized(true, range);
     } else {
         DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));

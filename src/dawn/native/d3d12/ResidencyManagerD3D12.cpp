@@ -22,6 +22,7 @@
 #include "dawn/native/d3d12/Forward.h"
 #include "dawn/native/d3d12/HeapD3D12.h"
 #include "dawn/native/d3d12/PhysicalDeviceD3D12.h"
+#include "dawn/native/d3d12/QueueD3D12.h"
 
 namespace dawn::native::d3d12 {
 
@@ -63,8 +64,8 @@ void ResidencyManager::UnlockAllocation(Pageable* pageable) {
         return;
     }
 
-    ASSERT(pageable->IsResidencyLocked());
-    ASSERT(!pageable->IsInResidencyLRUCache());
+    DAWN_ASSERT(pageable->IsResidencyLocked());
+    DAWN_ASSERT(!pageable->IsInResidencyLRUCache());
     pageable->DecrementResidencyLock();
 
     // If another lock still exists on the heap, nothing further should be done.
@@ -84,10 +85,10 @@ ResidencyManager::MemorySegmentInfo* ResidencyManager::GetMemorySegmentInfo(
         case MemorySegment::Local:
             return &mVideoMemoryInfo.local;
         case MemorySegment::NonLocal:
-            ASSERT(!mDevice->GetDeviceInfo().isUMA);
+            DAWN_ASSERT(!mDevice->GetDeviceInfo().isUMA);
             return &mVideoMemoryInfo.nonLocal;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -169,7 +170,7 @@ ResultOrError<Pageable*> ResidencyManager::RemoveSingleEntryFromLRU(
 
     // We must ensure that any previous use of a resource has completed before the resource can
     // be evicted.
-    if (lastSubmissionSerial > mDevice->GetCompletedCommandSerial()) {
+    if (lastSubmissionSerial > mDevice->GetQueue()->GetCompletedCommandSerial()) {
         DAWN_TRY(mDevice->WaitForSerial(lastSubmissionSerial));
     }
 
@@ -196,7 +197,7 @@ MaybeError ResidencyManager::EnsureCanAllocate(uint64_t allocationSize,
 // memory, we should evict until there is. Returns the number of bytes evicted.
 ResultOrError<uint64_t> ResidencyManager::EnsureCanMakeResident(uint64_t sizeToMakeResident,
                                                                 MemorySegmentInfo* memorySegment) {
-    ASSERT(mResidencyManagementEnabled);
+    DAWN_ASSERT(mResidencyManagementEnabled);
 
     UpdateMemorySegmentInfo(memorySegment);
 
@@ -285,7 +286,7 @@ MaybeError ResidencyManager::EnsureHeapsAreResident(Heap** heaps, size_t heapCou
     }
 
     if (nonLocalSizeToMakeResident > 0) {
-        ASSERT(!mDevice->GetDeviceInfo().isUMA);
+        DAWN_ASSERT(!mDevice->GetDeviceInfo().isUMA);
         return MakeAllocationsResident(&mVideoMemoryInfo.nonLocal, nonLocalSizeToMakeResident,
                                        nonLocalHeapsToMakeResident.size(),
                                        nonLocalHeapsToMakeResident.data());
@@ -344,15 +345,15 @@ void ResidencyManager::TrackResidentAllocation(Pageable* pageable) {
         return;
     }
 
-    ASSERT(pageable->IsInList() == false);
+    DAWN_ASSERT(pageable->IsInList() == false);
     GetMemorySegmentInfo(pageable->GetMemorySegment())->lruCache.Append(pageable);
 }
 
 // Places an artifical cap on Dawn's budget so we can test in a predictable manner. If used,
 // this function must be called before any resources have been created.
 void ResidencyManager::RestrictBudgetForTesting(uint64_t artificialBudgetCap) {
-    ASSERT(mVideoMemoryInfo.nonLocal.lruCache.empty());
-    ASSERT(!mRestrictBudgetForTesting);
+    DAWN_ASSERT(mVideoMemoryInfo.nonLocal.lruCache.empty());
+    DAWN_ASSERT(!mRestrictBudgetForTesting);
 
     mRestrictBudgetForTesting = true;
     UpdateVideoMemoryInfo();

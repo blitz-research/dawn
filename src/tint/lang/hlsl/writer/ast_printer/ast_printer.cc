@@ -24,6 +24,7 @@
 
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/constant/value.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
@@ -32,6 +33,12 @@
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
+#include "src/tint/lang/hlsl/writer/ast_raise/calculate_array_length.h"
+#include "src/tint/lang/hlsl/writer/ast_raise/decompose_memory_access.h"
+#include "src/tint/lang/hlsl/writer/ast_raise/localize_struct_array_assignment.h"
+#include "src/tint/lang/hlsl/writer/ast_raise/num_workgroups_from_uniform.h"
+#include "src/tint/lang/hlsl/writer/ast_raise/remove_continue_in_switch.h"
+#include "src/tint/lang/hlsl/writer/ast_raise/truncate_interstage_variables.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
 #include "src/tint/lang/wgsl/ast/id_attribute.h"
 #include "src/tint/lang/wgsl/ast/internal_attribute.h"
@@ -40,24 +47,18 @@
 #include "src/tint/lang/wgsl/ast/transform/array_length_from_uniform.h"
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
 #include "src/tint/lang/wgsl/ast/transform/builtin_polyfill.h"
-#include "src/tint/lang/wgsl/ast/transform/calculate_array_length.h"
 #include "src/tint/lang/wgsl/ast/transform/canonicalize_entry_point_io.h"
-#include "src/tint/lang/wgsl/ast/transform/decompose_memory_access.h"
 #include "src/tint/lang/wgsl/ast/transform/demote_to_helper.h"
 #include "src/tint/lang/wgsl/ast/transform/direct_variable_access.h"
 #include "src/tint/lang/wgsl/ast/transform/disable_uniformity_analysis.h"
 #include "src/tint/lang/wgsl/ast/transform/expand_compound_assignment.h"
-#include "src/tint/lang/wgsl/ast/transform/localize_struct_array_assignment.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
 #include "src/tint/lang/wgsl/ast/transform/multiplanar_external_texture.h"
-#include "src/tint/lang/wgsl/ast/transform/num_workgroups_from_uniform.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_initializers_to_let.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_side_effects_to_decl.h"
-#include "src/tint/lang/wgsl/ast/transform/remove_continue_in_switch.h"
 #include "src/tint/lang/wgsl/ast/transform/remove_phonies.h"
 #include "src/tint/lang/wgsl/ast/transform/robustness.h"
 #include "src/tint/lang/wgsl/ast/transform/simplify_pointers.h"
-#include "src/tint/lang/wgsl/ast/transform/truncate_interstage_variables.h"
 #include "src/tint/lang/wgsl/ast/transform/unshadow.h"
 #include "src/tint/lang/wgsl/ast/transform/vectorize_scalar_matrix_initializers.h"
 #include "src/tint/lang/wgsl/ast/transform/zero_init_workgroup_memory.h"
@@ -81,38 +82,39 @@
 #include "src/tint/utils/macros/defer.h"
 #include "src/tint/utils/macros/scoped_assignment.h"
 #include "src/tint/utils/rtti/switch.h"
-#include "src/tint/utils/text/float_to_string.h"
+#include "src/tint/utils/strconv/float_to_string.h"
 #include "src/tint/utils/text/string.h"
 #include "src/tint/utils/text/string_stream.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::hlsl::writer {
 namespace {
 
 const char kTempNamePrefix[] = "tint_tmp";
 
-const char* image_format_to_rwtexture_type(builtin::TexelFormat image_format) {
+const char* image_format_to_rwtexture_type(core::TexelFormat image_format) {
     switch (image_format) {
-        case builtin::TexelFormat::kBgra8Unorm:
-        case builtin::TexelFormat::kRgba8Unorm:
-        case builtin::TexelFormat::kRgba8Snorm:
-        case builtin::TexelFormat::kRgba16Float:
-        case builtin::TexelFormat::kR32Float:
-        case builtin::TexelFormat::kRg32Float:
-        case builtin::TexelFormat::kRgba32Float:
+        case core::TexelFormat::kBgra8Unorm:
+        case core::TexelFormat::kRgba8Unorm:
+        case core::TexelFormat::kRgba8Snorm:
+        case core::TexelFormat::kRgba16Float:
+        case core::TexelFormat::kR32Float:
+        case core::TexelFormat::kRg32Float:
+        case core::TexelFormat::kRgba32Float:
             return "float4";
-        case builtin::TexelFormat::kRgba8Uint:
-        case builtin::TexelFormat::kRgba16Uint:
-        case builtin::TexelFormat::kR32Uint:
-        case builtin::TexelFormat::kRg32Uint:
-        case builtin::TexelFormat::kRgba32Uint:
+        case core::TexelFormat::kRgba8Uint:
+        case core::TexelFormat::kRgba16Uint:
+        case core::TexelFormat::kR32Uint:
+        case core::TexelFormat::kRg32Uint:
+        case core::TexelFormat::kRgba32Uint:
             return "uint4";
-        case builtin::TexelFormat::kRgba8Sint:
-        case builtin::TexelFormat::kRgba16Sint:
-        case builtin::TexelFormat::kR32Sint:
-        case builtin::TexelFormat::kRg32Sint:
-        case builtin::TexelFormat::kRgba32Sint:
+        case core::TexelFormat::kRgba8Sint:
+        case core::TexelFormat::kRgba16Sint:
+        case core::TexelFormat::kR32Sint:
+        case core::TexelFormat::kRg32Sint:
+        case core::TexelFormat::kRgba32Sint:
             return "int4";
         default:
             return nullptr;
@@ -166,7 +168,7 @@ SanitizedResult::SanitizedResult() = default;
 SanitizedResult::~SanitizedResult() = default;
 SanitizedResult::SanitizedResult(SanitizedResult&&) = default;
 
-SanitizedResult Sanitize(const Program* in, const Options& options) {
+SanitizedResult Sanitize(const Program& in, const Options& options) {
     ast::transform::Manager manager;
     ast::transform::DataMap data;
 
@@ -184,7 +186,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     // SimplifyPointers transform. Can't do it right now because
     // LocalizeStructArrayAssignment introduces pointers.
     manager.Add<ast::transform::SimplifyPointers>();
-    manager.Add<ast::transform::LocalizeStructArrayAssignment>();
+    manager.Add<LocalizeStructArrayAssignment>();
 
     manager.Add<ast::transform::PromoteSideEffectsToDecl>();
 
@@ -214,10 +216,13 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
 
     // BindingRemapper must come after MultiplanarExternalTexture
     manager.Add<ast::transform::BindingRemapper>();
+
+    // D3D11 and 12 registers like `t3` and `c3` have the same bindingOffset number in
+    // the remapping but should not be considered a collision because they have
+    // different types.
     data.Add<ast::transform::BindingRemapper::Remappings>(
-        options.binding_remapper_options.binding_points,
-        options.binding_remapper_options.access_controls,
-        options.binding_remapper_options.allow_collisions);
+        options.binding_remapper_options.binding_points, options.access_controls,
+        /* allow_collisions */ true);
 
     {  // Builtin polyfills
         ast::transform::BuiltinPolyfill::Builtins polyfills;
@@ -265,18 +270,17 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
         // with the current stage output.
 
         // Build the config for internal TruncateInterstageVariables transform.
-        ast::transform::TruncateInterstageVariables::Config truncate_interstage_variables_cfg;
+        TruncateInterstageVariables::Config truncate_interstage_variables_cfg;
         truncate_interstage_variables_cfg.interstage_locations =
             std::move(options.interstage_locations);
-        manager.Add<ast::transform::TruncateInterstageVariables>();
-        data.Add<ast::transform::TruncateInterstageVariables::Config>(
-            std::move(truncate_interstage_variables_cfg));
+        manager.Add<TruncateInterstageVariables>();
+        data.Add<TruncateInterstageVariables::Config>(std::move(truncate_interstage_variables_cfg));
     }
 
     // NumWorkgroupsFromUniform must come after CanonicalizeEntryPointIO, as it
     // assumes that num_workgroups builtins only appear as struct members and are
     // only accessed directly via member accessors.
-    manager.Add<ast::transform::NumWorkgroupsFromUniform>();
+    manager.Add<NumWorkgroupsFromUniform>();
     manager.Add<ast::transform::VectorizeScalarMatrixInitializers>();
     manager.Add<ast::transform::SimplifyPointers>();
     manager.Add<ast::transform::RemovePhonies>();
@@ -304,20 +308,20 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     //   of `*(&(intrinsic_load()))` expressions.
     // * RemovePhonies, as phonies can be assigned a pointer to a
     //   non-constructible buffer, or dynamic array, which DMA cannot cope with.
-    manager.Add<ast::transform::DecomposeMemoryAccess>();
+    manager.Add<DecomposeMemoryAccess>();
     // CalculateArrayLength must come after DecomposeMemoryAccess, as
     // DecomposeMemoryAccess special-cases the arrayLength() intrinsic, which
     // will be transformed by CalculateArrayLength
-    manager.Add<ast::transform::CalculateArrayLength>();
+    manager.Add<CalculateArrayLength>();
     manager.Add<ast::transform::PromoteInitializersToLet>();
 
-    manager.Add<ast::transform::RemoveContinueInSwitch>();
+    manager.Add<RemoveContinueInSwitch>();
 
     manager.Add<ast::transform::AddEmptyEntryPoint>();
 
     data.Add<ast::transform::CanonicalizeEntryPointIO::Config>(
         ast::transform::CanonicalizeEntryPointIO::ShaderStyle::kHlsl);
-    data.Add<ast::transform::NumWorkgroupsFromUniform::Config>(options.root_constant_binding_point);
+    data.Add<NumWorkgroupsFromUniform::Config>(options.root_constant_binding_point);
 
     SanitizedResult result;
     ast::transform::DataMap outputs;
@@ -328,7 +332,7 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     return result;
 }
 
-ASTPrinter::ASTPrinter(const Program* program) : builder_(ProgramBuilder::Wrap(program)) {}
+ASTPrinter::ASTPrinter(const Program& program) : builder_(ProgramBuilder::Wrap(program)) {}
 
 ASTPrinter::~ASTPrinter() = default;
 
@@ -336,12 +340,14 @@ bool ASTPrinter::Generate() {
     if (!tint::writer::CheckSupportedExtensions(
             "HLSL", builder_.AST(), diagnostics_,
             Vector{
-                builtin::Extension::kChromiumDisableUniformityAnalysis,
-                builtin::Extension::kChromiumExperimentalDp4A,
-                builtin::Extension::kChromiumExperimentalFullPtrParameters,
-                builtin::Extension::kChromiumExperimentalPushConstant,
-                builtin::Extension::kF16,
-                builtin::Extension::kChromiumInternalDualSourceBlending,
+                wgsl::Extension::kChromiumDisableUniformityAnalysis,
+                wgsl::Extension::kChromiumExperimentalDp4A,
+                wgsl::Extension::kChromiumExperimentalFullPtrParameters,
+                wgsl::Extension::kChromiumExperimentalPushConstant,
+                wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture,
+                wgsl::Extension::kChromiumExperimentalSubgroups,
+                wgsl::Extension::kF16,
+                wgsl::Extension::kChromiumInternalDualSourceBlending,
             })) {
         return false;
     }
@@ -375,8 +381,8 @@ bool ASTPrinter::Generate() {
                 auto* ty = builder_.Sem().Get(str);
                 auto address_space_uses = ty->AddressSpaceUsage();
                 if (address_space_uses.size() !=
-                    (address_space_uses.count(builtin::AddressSpace::kStorage) +
-                     address_space_uses.count(builtin::AddressSpace::kUniform))) {
+                    (address_space_uses.count(core::AddressSpace::kStorage) +
+                     address_space_uses.count(core::AddressSpace::kUniform))) {
                     // The structure is used as something other than a storage buffer or
                     // uniform buffer, so it needs to be emitted.
                     // Storage buffer are read and written to via a ByteAddressBuffer
@@ -411,13 +417,13 @@ bool ASTPrinter::Generate() {
 }
 
 bool ASTPrinter::EmitDynamicVectorAssignment(const ast::AssignmentStatement* stmt,
-                                             const type::Vector* vec) {
+                                             const core::type::Vector* vec) {
     auto name = tint::GetOrCreate(dynamic_vector_write_, vec, [&]() -> std::string {
         std::string fn;
         {
             StringStream ss;
-            if (!EmitType(ss, vec, tint::builtin::AddressSpace::kUndefined,
-                          builtin::Access::kUndefined, "")) {
+            if (!EmitType(ss, vec, tint::core::AddressSpace::kUndefined, core::Access::kUndefined,
+                          "")) {
                 return "";
             }
             fn = UniqueIdentifier("set_" + ss.str());
@@ -425,13 +431,13 @@ bool ASTPrinter::EmitDynamicVectorAssignment(const ast::AssignmentStatement* stm
         {
             auto out = Line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, vec, builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, "vec")) {
+            if (!EmitTypeAndName(out, vec, core::AddressSpace::kUndefined, core::Access::kUndefined,
+                                 "vec")) {
                 return "";
             }
             out << ", int idx, ";
-            if (!EmitTypeAndName(out, vec->type(), builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, "val")) {
+            if (!EmitTypeAndName(out, vec->type(), core::AddressSpace::kUndefined,
+                                 core::Access::kUndefined, "val")) {
                 return "";
             }
             out << ") {";
@@ -484,13 +490,13 @@ bool ASTPrinter::EmitDynamicVectorAssignment(const ast::AssignmentStatement* stm
 }
 
 bool ASTPrinter::EmitDynamicMatrixVectorAssignment(const ast::AssignmentStatement* stmt,
-                                                   const type::Matrix* mat) {
+                                                   const core::type::Matrix* mat) {
     auto name = tint::GetOrCreate(dynamic_matrix_vector_write_, mat, [&]() -> std::string {
         std::string fn;
         {
             StringStream ss;
-            if (!EmitType(ss, mat, tint::builtin::AddressSpace::kUndefined,
-                          builtin::Access::kUndefined, "")) {
+            if (!EmitType(ss, mat, tint::core::AddressSpace::kUndefined, core::Access::kUndefined,
+                          "")) {
                 return "";
             }
             fn = UniqueIdentifier("set_vector_" + ss.str());
@@ -498,13 +504,13 @@ bool ASTPrinter::EmitDynamicMatrixVectorAssignment(const ast::AssignmentStatemen
         {
             auto out = Line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, mat, builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, "mat")) {
+            if (!EmitTypeAndName(out, mat, core::AddressSpace::kUndefined, core::Access::kUndefined,
+                                 "mat")) {
                 return "";
             }
             out << ", int col, ";
-            if (!EmitTypeAndName(out, mat->ColumnType(), builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, "val")) {
+            if (!EmitTypeAndName(out, mat->ColumnType(), core::AddressSpace::kUndefined,
+                                 core::Access::kUndefined, "val")) {
                 return "";
             }
             out << ") {";
@@ -550,7 +556,7 @@ bool ASTPrinter::EmitDynamicMatrixVectorAssignment(const ast::AssignmentStatemen
 }
 
 bool ASTPrinter::EmitDynamicMatrixScalarAssignment(const ast::AssignmentStatement* stmt,
-                                                   const type::Matrix* mat) {
+                                                   const core::type::Matrix* mat) {
     auto* lhs_row_access = stmt->lhs->As<ast::IndexAccessorExpression>();
     auto* lhs_col_access = lhs_row_access->object->As<ast::IndexAccessorExpression>();
 
@@ -558,8 +564,8 @@ bool ASTPrinter::EmitDynamicMatrixScalarAssignment(const ast::AssignmentStatemen
         std::string fn;
         {
             StringStream ss;
-            if (!EmitType(ss, mat, tint::builtin::AddressSpace::kUndefined,
-                          builtin::Access::kUndefined, "")) {
+            if (!EmitType(ss, mat, tint::core::AddressSpace::kUndefined, core::Access::kUndefined,
+                          "")) {
                 return "";
             }
             fn = UniqueIdentifier("set_scalar_" + ss.str());
@@ -567,13 +573,13 @@ bool ASTPrinter::EmitDynamicMatrixScalarAssignment(const ast::AssignmentStatemen
         {
             auto out = Line(&helpers_);
             out << "void " << fn << "(inout ";
-            if (!EmitTypeAndName(out, mat, builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, "mat")) {
+            if (!EmitTypeAndName(out, mat, core::AddressSpace::kUndefined, core::Access::kUndefined,
+                                 "mat")) {
                 return "";
             }
             out << ", int col, int row, ";
-            if (!EmitTypeAndName(out, mat->type(), builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, "val")) {
+            if (!EmitTypeAndName(out, mat->type(), core::AddressSpace::kUndefined,
+                                 core::Access::kUndefined, "val")) {
                 return "";
             }
             out << ") {";
@@ -609,7 +615,7 @@ bool ASTPrinter::EmitDynamicMatrixScalarAssignment(const ast::AssignmentStatemen
                                 default: {
                                     auto* vec = TypeOf(lhs_row_access->object)
                                                     ->UnwrapRef()
-                                                    ->As<type::Vector>();
+                                                    ->As<core::type::Vector>();
                                     TINT_UNREACHABLE() << "invalid vector size " << vec->Width();
                                     break;
                                 }
@@ -685,12 +691,12 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
     }
 
     // Handle the f16 types using polyfill functions
-    if (src_el_type->Is<type::F16>() || dst_el_type->Is<type::F16>()) {
+    if (src_el_type->Is<core::type::F16>() || dst_el_type->Is<core::type::F16>()) {
         auto f16_bitcast_polyfill = [&]() {
-            if (src_el_type->Is<type::F16>()) {
+            if (src_el_type->Is<core::type::F16>()) {
                 // Source type must be vec2<f16> or vec4<f16>, since type f16 and vec3<f16> can only
                 // have identity bitcast.
-                auto* src_vec = src_type->As<type::Vector>();
+                auto* src_vec = src_type->As<core::type::Vector>();
                 TINT_ASSERT(src_vec);
                 TINT_ASSERT(((src_vec->Width() == 2u) || (src_vec->Width() == 4u)));
 
@@ -706,15 +712,14 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
                         auto fn_name = UniqueIdentifier(std::string("tint_bitcast_from_f16"));
                         {
                             auto decl = Line(&b);
-                            if (!EmitTypeAndName(decl, dst_type, builtin::AddressSpace::kUndefined,
-                                                 builtin::Access::kUndefined, fn_name)) {
+                            if (!EmitTypeAndName(decl, dst_type, core::AddressSpace::kUndefined,
+                                                 core::Access::kUndefined, fn_name)) {
                                 return "";
                             }
                             {
                                 ScopedParen sp(decl);
-                                if (!EmitTypeAndName(decl, src_type,
-                                                     builtin::AddressSpace::kUndefined,
-                                                     builtin::Access::kUndefined, "src")) {
+                                if (!EmitTypeAndName(decl, src_type, core::AddressSpace::kUndefined,
+                                                     core::Access::kUndefined, "src")) {
                                     return "";
                                 }
                             }
@@ -729,8 +734,8 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
                                 {
                                     auto s = Line(&b);
                                     s << "return as";
-                                    if (!EmitType(s, dst_el_type, builtin::AddressSpace::kUndefined,
-                                                  builtin::Access::kReadWrite, "")) {
+                                    if (!EmitType(s, dst_el_type, core::AddressSpace::kUndefined,
+                                                  core::Access::kReadWrite, "")) {
                                         return "";
                                     }
                                     s << "(";
@@ -755,14 +760,15 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
                     });
             } else {
                 // Destination type must be vec2<f16> or vec4<f16>.
-                auto* dst_vec = dst_type->As<type::Vector>();
+                auto* dst_vec = dst_type->As<core::type::Vector>();
                 TINT_ASSERT((dst_vec && ((dst_vec->Width() == 2u) || (dst_vec->Width() == 4u)) &&
-                             dst_el_type->Is<type::F16>()));
+                             dst_el_type->Is<core::type::F16>()));
                 // Source type must be f32/i32/u32 or vec2<f32/i32/u32>.
-                auto* src_vec = src_type->As<type::Vector>();
-                TINT_ASSERT((src_type->IsAnyOf<type::I32, type::U32, type::F32>() ||
-                             (src_vec && src_vec->Width() == 2u &&
-                              src_el_type->IsAnyOf<type::I32, type::U32, type::F32>())));
+                auto* src_vec = src_type->As<core::type::Vector>();
+                TINT_ASSERT(
+                    (src_type->IsAnyOf<core::type::I32, core::type::U32, core::type::F32>() ||
+                     (src_vec && src_vec->Width() == 2u &&
+                      src_el_type->IsAnyOf<core::type::I32, core::type::U32, core::type::F32>())));
                 std::string src_type_suffix = (src_vec ? "2" : "");
 
                 // Bitcast other types to f16 types by reinterpreting their bits as f16 using
@@ -778,15 +784,14 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
                         auto fn_name = UniqueIdentifier(std::string("tint_bitcast_to_f16"));
                         {
                             auto decl = Line(&b);
-                            if (!EmitTypeAndName(decl, dst_type, builtin::AddressSpace::kUndefined,
-                                                 builtin::Access::kUndefined, fn_name)) {
+                            if (!EmitTypeAndName(decl, dst_type, core::AddressSpace::kUndefined,
+                                                 core::Access::kUndefined, fn_name)) {
                                 return "";
                             }
                             {
                                 ScopedParen sp(decl);
-                                if (!EmitTypeAndName(decl, src_type,
-                                                     builtin::AddressSpace::kUndefined,
-                                                     builtin::Access::kUndefined, "src")) {
+                                if (!EmitTypeAndName(decl, src_type, core::AddressSpace::kUndefined,
+                                                     core::Access::kUndefined, "src")) {
                                     return "";
                                 }
                             }
@@ -806,8 +811,8 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
                                 {
                                     auto s = Line(&b);
                                     s << "return ";
-                                    if (!EmitType(s, dst_type, builtin::AddressSpace::kUndefined,
-                                                  builtin::Access::kReadWrite, "")) {
+                                    if (!EmitType(s, dst_type, core::AddressSpace::kUndefined,
+                                                  core::Access::kReadWrite, "")) {
                                         return "";
                                     }
                                     s << "(";
@@ -850,10 +855,9 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
     }
 
     // Otherwise, bitcasting between non-f16 types.
-    TINT_ASSERT((!src_el_type->Is<type::F16>() && !dst_el_type->Is<type::F16>()));
+    TINT_ASSERT((!src_el_type->Is<core::type::F16>() && !dst_el_type->Is<core::type::F16>()));
     out << "as";
-    if (!EmitType(out, dst_el_type, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
-                  "")) {
+    if (!EmitType(out, dst_el_type, core::AddressSpace::kUndefined, core::Access::kReadWrite, "")) {
         return false;
     }
     out << "(";
@@ -869,7 +873,7 @@ bool ASTPrinter::EmitAssign(const ast::AssignmentStatement* stmt) {
         // BUG(crbug.com/tint/1333): work around assignment of scalar to matrices
         // with at least one dynamic index
         if (auto* lhs_sub_access = lhs_access->object->As<ast::IndexAccessorExpression>()) {
-            if (auto* mat = TypeOf(lhs_sub_access->object)->UnwrapRef()->As<type::Matrix>()) {
+            if (auto* mat = TypeOf(lhs_sub_access->object)->UnwrapRef()->As<core::type::Matrix>()) {
                 auto* rhs_row_idx_sem = builder_.Sem().GetVal(lhs_access->index);
                 auto* rhs_col_idx_sem = builder_.Sem().GetVal(lhs_sub_access->index);
                 if (!rhs_row_idx_sem->ConstantValue() || !rhs_col_idx_sem->ConstantValue()) {
@@ -880,7 +884,7 @@ bool ASTPrinter::EmitAssign(const ast::AssignmentStatement* stmt) {
         // BUG(crbug.com/tint/1333): work around assignment of vector to matrices
         // with dynamic indices
         const auto* lhs_access_type = TypeOf(lhs_access->object)->UnwrapRef();
-        if (auto* mat = lhs_access_type->As<type::Matrix>()) {
+        if (auto* mat = lhs_access_type->As<core::type::Matrix>()) {
             auto* lhs_index_sem = builder_.Sem().GetVal(lhs_access->index);
             if (!lhs_index_sem->ConstantValue()) {
                 return EmitDynamicMatrixVectorAssignment(stmt, mat);
@@ -888,7 +892,7 @@ bool ASTPrinter::EmitAssign(const ast::AssignmentStatement* stmt) {
         }
         // BUG(crbug.com/tint/534): work around assignment to vectors with dynamic
         // indices
-        if (auto* vec = lhs_access_type->As<type::Vector>()) {
+        if (auto* vec = lhs_access_type->As<core::type::Vector>()) {
             auto* rhs_sem = builder_.Sem().GetVal(lhs_access->index);
             if (!rhs_sem->ConstantValue()) {
                 return EmitDynamicVectorAssignment(stmt, vec);
@@ -909,7 +913,7 @@ bool ASTPrinter::EmitAssign(const ast::AssignmentStatement* stmt) {
 }
 
 bool ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr) {
-    if (expr->op == ast::BinaryOp::kLogicalAnd || expr->op == ast::BinaryOp::kLogicalOr) {
+    if (expr->op == core::BinaryOp::kLogicalAnd || expr->op == core::BinaryOp::kLogicalOr) {
         auto name = UniqueIdentifier(kTempNamePrefix);
 
         {
@@ -921,7 +925,7 @@ bool ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr
             pre << ";";
         }
 
-        if (expr->op == ast::BinaryOp::kLogicalOr) {
+        if (expr->op == core::BinaryOp::kLogicalOr) {
             Line() << "if (!" << name << ") {";
         } else {
             Line() << "if (" << name << ") {";
@@ -947,10 +951,10 @@ bool ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr
     auto* rhs_type = TypeOf(expr->rhs)->UnwrapRef();
     // Multiplying by a matrix requires the use of `mul` in order to get the
     // type of multiply we desire.
-    if (expr->op == ast::BinaryOp::kMultiply &&
-        ((lhs_type->Is<type::Vector>() && rhs_type->Is<type::Matrix>()) ||
-         (lhs_type->Is<type::Matrix>() && rhs_type->Is<type::Vector>()) ||
-         (lhs_type->Is<type::Matrix>() && rhs_type->Is<type::Matrix>()))) {
+    if (expr->op == core::BinaryOp::kMultiply &&
+        ((lhs_type->Is<core::type::Vector>() && rhs_type->Is<core::type::Matrix>()) ||
+         (lhs_type->Is<core::type::Matrix>() && rhs_type->Is<core::type::Vector>()) ||
+         (lhs_type->Is<core::type::Matrix>() && rhs_type->Is<core::type::Matrix>()))) {
         // Matrices are transposed, so swap LHS and RHS.
         out << "mul(";
         if (!EmitExpression(out, expr->rhs)) {
@@ -973,43 +977,43 @@ bool ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr
     out << " ";
 
     switch (expr->op) {
-        case ast::BinaryOp::kAnd:
+        case core::BinaryOp::kAnd:
             out << "&";
             break;
-        case ast::BinaryOp::kOr:
+        case core::BinaryOp::kOr:
             out << "|";
             break;
-        case ast::BinaryOp::kXor:
+        case core::BinaryOp::kXor:
             out << "^";
             break;
-        case ast::BinaryOp::kLogicalAnd:
-        case ast::BinaryOp::kLogicalOr: {
+        case core::BinaryOp::kLogicalAnd:
+        case core::BinaryOp::kLogicalOr: {
             // These are both handled above.
             TINT_UNREACHABLE();
             return false;
         }
-        case ast::BinaryOp::kEqual:
+        case core::BinaryOp::kEqual:
             out << "==";
             break;
-        case ast::BinaryOp::kNotEqual:
+        case core::BinaryOp::kNotEqual:
             out << "!=";
             break;
-        case ast::BinaryOp::kLessThan:
+        case core::BinaryOp::kLessThan:
             out << "<";
             break;
-        case ast::BinaryOp::kGreaterThan:
+        case core::BinaryOp::kGreaterThan:
             out << ">";
             break;
-        case ast::BinaryOp::kLessThanEqual:
+        case core::BinaryOp::kLessThanEqual:
             out << "<=";
             break;
-        case ast::BinaryOp::kGreaterThanEqual:
+        case core::BinaryOp::kGreaterThanEqual:
             out << ">=";
             break;
-        case ast::BinaryOp::kShiftLeft:
+        case core::BinaryOp::kShiftLeft:
             out << "<<";
             break;
-        case ast::BinaryOp::kShiftRight:
+        case core::BinaryOp::kShiftRight:
             // TODO(dsinclair): MSL is based on C++14, and >> in C++14 has
             // implementation-defined behaviour for negative LHS.  We may have to
             // generate extra code to implement WGSL-specified behaviour for negative
@@ -1017,24 +1021,21 @@ bool ASTPrinter::EmitBinary(StringStream& out, const ast::BinaryExpression* expr
             out << R"(>>)";
             break;
 
-        case ast::BinaryOp::kAdd:
+        case core::BinaryOp::kAdd:
             out << "+";
             break;
-        case ast::BinaryOp::kSubtract:
+        case core::BinaryOp::kSubtract:
             out << "-";
             break;
-        case ast::BinaryOp::kMultiply:
+        case core::BinaryOp::kMultiply:
             out << "*";
             break;
-        case ast::BinaryOp::kDivide:
+        case core::BinaryOp::kDivide:
             out << "/";
             break;
-        case ast::BinaryOp::kModulo:
+        case core::BinaryOp::kModulo:
             out << "%";
             break;
-        case ast::BinaryOp::kNone:
-            diagnostics_.add_error(diag::System::Writer, "missing binary operation type");
-            return false;
     }
     out << " ";
 
@@ -1089,7 +1090,7 @@ bool ASTPrinter::EmitCall(StringStream& out, const ast::CallExpression* expr) {
     return Switch(
         target,  //
         [&](const sem::Function* func) { return EmitFunctionCall(out, call, func); },
-        [&](const sem::Builtin* builtin) { return EmitBuiltinCall(out, call, builtin); },
+        [&](const sem::BuiltinFn* builtin) { return EmitBuiltinCall(out, call, builtin); },
         [&](const sem::ValueConversion* conv) { return EmitValueConversion(out, call, conv); },
         [&](const sem::ValueConstructor* ctor) { return EmitValueConstructor(out, call, ctor); },
         [&](Default) {
@@ -1103,7 +1104,7 @@ bool ASTPrinter::EmitFunctionCall(StringStream& out,
                                   const sem::Function* func) {
     auto* expr = call->Declaration();
 
-    if (ast::HasAttribute<ast::transform::CalculateArrayLength::BufferSizeIntrinsic>(
+    if (ast::HasAttribute<CalculateArrayLength::BufferSizeIntrinsic>(
             func->Declaration()->attributes)) {
         // Special function generated by the CalculateArrayLength transform for
         // calling X.GetDimensions(Y)
@@ -1118,12 +1119,12 @@ bool ASTPrinter::EmitFunctionCall(StringStream& out,
         return true;
     }
 
-    if (auto* intrinsic = ast::GetAttribute<ast::transform::DecomposeMemoryAccess::Intrinsic>(
-            func->Declaration()->attributes)) {
+    if (auto* intrinsic =
+            ast::GetAttribute<DecomposeMemoryAccess::Intrinsic>(func->Declaration()->attributes)) {
         switch (intrinsic->address_space) {
-            case builtin::AddressSpace::kUniform:
+            case core::AddressSpace::kUniform:
                 return EmitUniformBufferAccess(out, expr, intrinsic);
-            case builtin::AddressSpace::kStorage:
+            case core::AddressSpace::kStorage:
                 if (!intrinsic->IsAtomic()) {
                     return EmitStorageBufferAccess(out, expr, intrinsic);
                 }
@@ -1132,6 +1133,19 @@ bool ASTPrinter::EmitFunctionCall(StringStream& out,
                 TINT_UNREACHABLE() << "unsupported DecomposeMemoryAccess::Intrinsic address space:"
                                    << intrinsic->address_space;
                 return false;
+        }
+    }
+
+    if (auto* wave_intrinsic =
+            ast::GetAttribute<ast::transform::CanonicalizeEntryPointIO::HLSLWaveIntrinsic>(
+                func->Declaration()->attributes)) {
+        switch (wave_intrinsic->op) {
+            case ast::transform::CanonicalizeEntryPointIO::HLSLWaveIntrinsic::Op::kWaveGetLaneCount:
+                out << "WaveGetLaneCount()";
+                return true;
+            case ast::transform::CanonicalizeEntryPointIO::HLSLWaveIntrinsic::Op::kWaveGetLaneIndex:
+                out << "WaveGetLaneIndex()";
+                return true;
         }
     }
 
@@ -1155,35 +1169,35 @@ bool ASTPrinter::EmitFunctionCall(StringStream& out,
 
 bool ASTPrinter::EmitBuiltinCall(StringStream& out,
                                  const sem::Call* call,
-                                 const sem::Builtin* builtin) {
-    const auto type = builtin->Type();
+                                 const sem::BuiltinFn* builtin) {
+    const auto type = builtin->Fn();
 
     auto* expr = call->Declaration();
     if (builtin->IsTexture()) {
         return EmitTextureCall(out, call, builtin);
     }
-    if (type == builtin::Function::kSelect) {
+    if (type == wgsl::BuiltinFn::kSelect) {
         return EmitSelectCall(out, expr);
     }
-    if (type == builtin::Function::kModf) {
+    if (type == wgsl::BuiltinFn::kModf) {
         return EmitModfCall(out, expr, builtin);
     }
-    if (type == builtin::Function::kFrexp) {
+    if (type == wgsl::BuiltinFn::kFrexp) {
         return EmitFrexpCall(out, expr, builtin);
     }
-    if (type == builtin::Function::kDegrees) {
+    if (type == wgsl::BuiltinFn::kDegrees) {
         return EmitDegreesCall(out, expr, builtin);
     }
-    if (type == builtin::Function::kRadians) {
+    if (type == wgsl::BuiltinFn::kRadians) {
         return EmitRadiansCall(out, expr, builtin);
     }
-    if (type == builtin::Function::kSign) {
+    if (type == wgsl::BuiltinFn::kSign) {
         return EmitSignCall(out, call, builtin);
     }
-    if (type == builtin::Function::kQuantizeToF16) {
+    if (type == wgsl::BuiltinFn::kQuantizeToF16) {
         return EmitQuantizeToF16Call(out, expr, builtin);
     }
-    if (type == builtin::Function::kTrunc) {
+    if (type == wgsl::BuiltinFn::kTrunc) {
         return EmitTruncCall(out, expr, builtin);
     }
     if (builtin->IsDataPacking()) {
@@ -1201,6 +1215,13 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
     if (builtin->IsDP4a()) {
         return EmitDP4aCall(out, expr, builtin);
     }
+    if (builtin->IsSubgroup()) {
+        if (builtin->Fn() == wgsl::BuiltinFn::kSubgroupBroadcast) {
+            // Fall through the regular path.
+        } else {
+            return EmitSubgroupCall(out, expr, builtin);
+        }
+    }
 
     auto name = generate_builtin_name(builtin);
     if (name.empty()) {
@@ -1210,7 +1231,7 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
     // Handle single argument builtins that only accept and return uint (not int overload). We need
     // to explicitly cast the return value (we also cast the arg for good measure). See
     // crbug.com/tint/1550
-    if (type == builtin::Function::kCountOneBits || type == builtin::Function::kReverseBits) {
+    if (type == wgsl::BuiltinFn::kCountOneBits || type == wgsl::BuiltinFn::kReverseBits) {
         auto* arg = call->Arguments()[0];
         if (arg->Type()->UnwrapRef()->is_signed_integer_scalar_or_vector()) {
             out << "asint(" << name << "(asuint(";
@@ -1244,8 +1265,8 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
 bool ASTPrinter::EmitValueConversion(StringStream& out,
                                      const sem::Call* call,
                                      const sem::ValueConversion* conv) {
-    if (!EmitType(out, conv->Target(), builtin::AddressSpace::kUndefined,
-                  builtin::Access::kReadWrite, "")) {
+    if (!EmitType(out, conv->Target(), core::AddressSpace::kUndefined, core::Access::kReadWrite,
+                  "")) {
         return false;
     }
     out << "(";
@@ -1271,7 +1292,7 @@ bool ASTPrinter::EmitValueConstructor(StringStream& out,
 
     // Single parameter matrix initializers must be identity initializer.
     // It could also be conversions between f16 and f32 matrix when f16 is properly supported.
-    if (type->Is<type::Matrix>() && call->Arguments().Length() == 1) {
+    if (type->Is<core::type::Matrix>() && call->Arguments().Length() == 1) {
         if (!ctor->Parameters()[0]->Type()->UnwrapRef()->is_float_matrix()) {
             TINT_UNREACHABLE()
                 << "found a single-parameter matrix initializer that is not identity initializer";
@@ -1279,19 +1300,18 @@ bool ASTPrinter::EmitValueConstructor(StringStream& out,
         }
     }
 
-    bool brackets = type->IsAnyOf<type::Array, type::Struct>();
+    bool brackets = type->IsAnyOf<core::type::Array, core::type::Struct>();
 
     // For single-value vector initializers, swizzle the scalar to the right
     // vector dimension using .x
-    const bool is_single_value_vector_init = type->is_scalar_vector() &&
-                                             call->Arguments().Length() == 1 &&
-                                             ctor->Parameters()[0]->Type()->Is<type::Scalar>();
+    const bool is_single_value_vector_init =
+        type->is_scalar_vector() && call->Arguments().Length() == 1 &&
+        ctor->Parameters()[0]->Type()->Is<core::type::Scalar>();
 
     if (brackets) {
         out << "{";
     } else {
-        if (!EmitType(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
-                      "")) {
+        if (!EmitType(out, type, core::AddressSpace::kUndefined, core::Access::kReadWrite, "")) {
             return false;
         }
         out << "(";
@@ -1314,17 +1334,16 @@ bool ASTPrinter::EmitValueConstructor(StringStream& out,
     }
 
     if (is_single_value_vector_init) {
-        out << ")." << std::string(type->As<type::Vector>()->Width(), 'x');
+        out << ")." << std::string(type->As<core::type::Vector>()->Width(), 'x');
     }
 
     out << (brackets ? "}" : ")");
     return true;
 }
 
-bool ASTPrinter::EmitUniformBufferAccess(
-    StringStream& out,
-    const ast::CallExpression* expr,
-    const ast::transform::DecomposeMemoryAccess::Intrinsic* intrinsic) {
+bool ASTPrinter::EmitUniformBufferAccess(StringStream& out,
+                                         const ast::CallExpression* expr,
+                                         const DecomposeMemoryAccess::Intrinsic* intrinsic) {
     auto const buffer = intrinsic->Buffer()->identifier->symbol.Name();
     auto* const offset = expr->args[0];
 
@@ -1343,7 +1362,7 @@ bool ASTPrinter::EmitUniformBufferAccess(
     bool scalar_offset_constant = false;
 
     if (auto* val = builder_.Sem().GetVal(offset)->ConstantValue()) {
-        TINT_ASSERT(val->Type()->Is<type::U32>());
+        TINT_ASSERT(val->Type()->Is<core::type::U32>());
         scalar_offset_bytes = static_cast<uint32_t>(val->ValueAs<AInt>());
         scalar_offset_index = scalar_offset_bytes / 4;  // bytes -> scalar index
         scalar_offset_constant = true;
@@ -1353,7 +1372,7 @@ bool ASTPrinter::EmitUniformBufferAccess(
     // scalar_offset_index or scalar_offset_index_unified_expr. Currently only loading f16 scalar
     // require using offset in bytes.
     const bool need_offset_in_bytes =
-        intrinsic->type == ast::transform::DecomposeMemoryAccess::Intrinsic::DataType::kF16;
+        intrinsic->type == DecomposeMemoryAccess::Intrinsic::DataType::kF16;
 
     if (!scalar_offset_constant) {
         // UBO offset not compile-time known.
@@ -1384,8 +1403,8 @@ bool ASTPrinter::EmitUniformBufferAccess(
 
     const char swizzle[] = {'x', 'y', 'z', 'w'};
 
-    using Op = ast::transform::DecomposeMemoryAccess::Intrinsic::Op;
-    using DataType = ast::transform::DecomposeMemoryAccess::Intrinsic::DataType;
+    using Op = DecomposeMemoryAccess::Intrinsic::Op;
+    using DataType = DecomposeMemoryAccess::Intrinsic::DataType;
     switch (intrinsic->op) {
         case Op::kLoad: {
             auto cast = [&](const char* to, auto&& load) {
@@ -1608,16 +1627,15 @@ bool ASTPrinter::EmitUniformBufferAccess(
     return false;
 }
 
-bool ASTPrinter::EmitStorageBufferAccess(
-    StringStream& out,
-    const ast::CallExpression* expr,
-    const ast::transform::DecomposeMemoryAccess::Intrinsic* intrinsic) {
+bool ASTPrinter::EmitStorageBufferAccess(StringStream& out,
+                                         const ast::CallExpression* expr,
+                                         const DecomposeMemoryAccess::Intrinsic* intrinsic) {
     auto const buffer = intrinsic->Buffer()->identifier->symbol.Name();
     auto* const offset = expr->args[0];
     auto* const value = expr->args.Length() > 1 ? expr->args[1] : nullptr;
 
-    using Op = ast::transform::DecomposeMemoryAccess::Intrinsic::Op;
-    using DataType = ast::transform::DecomposeMemoryAccess::Intrinsic::DataType;
+    using Op = DecomposeMemoryAccess::Intrinsic::Op;
+    using DataType = DecomposeMemoryAccess::Intrinsic::DataType;
     switch (intrinsic->op) {
         case Op::kLoad: {
             auto load = [&](const char* cast, int n) {
@@ -1699,7 +1717,7 @@ bool ASTPrinter::EmitStorageBufferAccess(
                 }
                 out << ", asuint";
                 ScopedParen sp2(out);
-                if (!EmitExpression(out, value)) {
+                if (!EmitTextureOrStorageBufferCallArgExpression(out, value)) {
                     return false;
                 }
                 return true;
@@ -1768,10 +1786,9 @@ bool ASTPrinter::EmitStorageBufferAccess(
     return false;
 }
 
-bool ASTPrinter::EmitStorageAtomicIntrinsic(
-    const ast::Function* func,
-    const ast::transform::DecomposeMemoryAccess::Intrinsic* intrinsic) {
-    using Op = ast::transform::DecomposeMemoryAccess::Intrinsic::Op;
+bool ASTPrinter::EmitStorageAtomicIntrinsic(const ast::Function* func,
+                                            const DecomposeMemoryAccess::Intrinsic* intrinsic) {
+    using Op = DecomposeMemoryAccess::Intrinsic::Op;
 
     const sem::Function* sem_func = builder_.Sem().Get(func);
     auto* result_ty = sem_func->ReturnType();
@@ -1783,13 +1800,13 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
     auto rmw = [&](const char* hlsl) -> bool {
         {
             auto fn = Line(&buf);
-            if (!EmitTypeAndName(fn, result_ty, builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, name)) {
+            if (!EmitTypeAndName(fn, result_ty, core::AddressSpace::kUndefined,
+                                 core::Access::kUndefined, name)) {
                 return false;
             }
             fn << "(uint offset, ";
-            if (!EmitTypeAndName(fn, result_ty, builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, "value")) {
+            if (!EmitTypeAndName(fn, result_ty, core::AddressSpace::kUndefined,
+                                 core::Access::kUndefined, "value")) {
                 return false;
             }
             fn << ") {";
@@ -1804,8 +1821,8 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
 
         {
             auto l = Line(&buf);
-            if (!EmitTypeAndName(l, result_ty, builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, "original_value")) {
+            if (!EmitTypeAndName(l, result_ty, core::AddressSpace::kUndefined,
+                                 core::Access::kUndefined, "original_value")) {
                 return false;
             }
             l << " = 0;";
@@ -1853,8 +1870,8 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
             // InterlockedOr using 0 as the OR value
             {
                 auto fn = Line(&buf);
-                if (!EmitTypeAndName(fn, result_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, name)) {
+                if (!EmitTypeAndName(fn, result_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, name)) {
                     return false;
                 }
                 fn << "(uint offset) {";
@@ -1869,8 +1886,8 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
 
             {
                 auto l = Line(&buf);
-                if (!EmitTypeAndName(l, result_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, "value")) {
+                if (!EmitTypeAndName(l, result_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, "value")) {
                     return false;
                 }
                 l << " = 0;";
@@ -1887,8 +1904,8 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
             {
                 auto fn = Line(&buf);
                 fn << "void " << name << "(uint offset, ";
-                if (!EmitTypeAndName(fn, value_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, "value")) {
+                if (!EmitTypeAndName(fn, value_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, "value")) {
                     return false;
                 }
                 fn << ") {";
@@ -1903,8 +1920,8 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
 
             {
                 auto l = Line(&buf);
-                if (!EmitTypeAndName(l, value_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, "ignored")) {
+                if (!EmitTypeAndName(l, value_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, "ignored")) {
                     return false;
                 }
                 l << ";";
@@ -1913,7 +1930,7 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
             return true;
         }
         case Op::kAtomicCompareExchangeWeak: {
-            if (!EmitStructType(&helpers_, result_ty->As<type::Struct>())) {
+            if (!EmitStructType(&helpers_, result_ty->As<core::type::Struct>())) {
                 return false;
             }
 
@@ -1922,18 +1939,18 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
             // already added it to the AST, and it should have already been emitted by now.
             {
                 auto fn = Line(&buf);
-                if (!EmitTypeAndName(fn, result_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, name)) {
+                if (!EmitTypeAndName(fn, result_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, name)) {
                     return false;
                 }
                 fn << "(uint offset, ";
-                if (!EmitTypeAndName(fn, value_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, "compare")) {
+                if (!EmitTypeAndName(fn, value_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, "compare")) {
                     return false;
                 }
                 fn << ", ";
-                if (!EmitTypeAndName(fn, value_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, "value")) {
+                if (!EmitTypeAndName(fn, value_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, "value")) {
                     return false;
                 }
                 fn << ") {";
@@ -1948,8 +1965,8 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
 
             {  // T result = {0};
                 auto l = Line(&buf);
-                if (!EmitTypeAndName(l, result_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, "result")) {
+                if (!EmitTypeAndName(l, result_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, "result")) {
                     return false;
                 }
                 l << "=";
@@ -1977,13 +1994,13 @@ bool ASTPrinter::EmitStorageAtomicIntrinsic(
 
 bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
                                          const ast::CallExpression* expr,
-                                         const sem::Builtin* builtin) {
+                                         const sem::BuiltinFn* builtin) {
     std::string result = UniqueIdentifier("atomic_result");
 
-    if (!builtin->ReturnType()->Is<type::Void>()) {
+    if (!builtin->ReturnType()->Is<core::type::Void>()) {
         auto pre = Line();
-        if (!EmitTypeAndName(pre, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
-                             builtin::Access::kUndefined, result)) {
+        if (!EmitTypeAndName(pre, builtin->ReturnType(), core::AddressSpace::kUndefined,
+                             core::Access::kUndefined, result)) {
             return false;
         }
         pre << " = ";
@@ -2004,7 +2021,7 @@ bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
                 if (i > 0) {
                     pre << ", ";
                 }
-                if (i == 1 && builtin->Type() == builtin::Function::kAtomicSub) {
+                if (i == 1 && builtin->Fn() == wgsl::BuiltinFn::kAtomicSub) {
                     // Sub uses InterlockedAdd with the operand negated.
                     pre << "-";
                 }
@@ -2022,8 +2039,8 @@ bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
         return true;
     };
 
-    switch (builtin->Type()) {
-        case builtin::Function::kAtomicLoad: {
+    switch (builtin->Fn()) {
+        case wgsl::BuiltinFn::kAtomicLoad: {
             // HLSL does not have an InterlockedLoad, so we emulate it with
             // InterlockedOr using 0 as the OR value
             auto pre = Line();
@@ -2040,14 +2057,14 @@ bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
             out << result;
             return true;
         }
-        case builtin::Function::kAtomicStore: {
+        case wgsl::BuiltinFn::kAtomicStore: {
             // HLSL does not have an InterlockedStore, so we emulate it with
             // InterlockedExchange and discard the returned value
             {  // T result = 0;
                 auto pre = Line();
                 auto* value_ty = builtin->Parameters()[1]->Type()->UnwrapRef();
-                if (!EmitTypeAndName(pre, value_ty, builtin::AddressSpace::kUndefined,
-                                     builtin::Access::kUndefined, result)) {
+                if (!EmitTypeAndName(pre, value_ty, core::AddressSpace::kUndefined,
+                                     core::Access::kUndefined, result)) {
                     return false;
                 }
                 pre << " = ";
@@ -2071,8 +2088,8 @@ bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
             }
             return true;
         }
-        case builtin::Function::kAtomicCompareExchangeWeak: {
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
+        case wgsl::BuiltinFn::kAtomicCompareExchangeWeak: {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<core::type::Struct>())) {
                 return false;
             }
 
@@ -2085,7 +2102,7 @@ bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
             {  // T compare_value = <compare_value>;
                 auto pre = Line();
                 if (!EmitTypeAndName(pre, TypeOf(compare_value)->UnwrapRef(),
-                                     builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
+                                     core::AddressSpace::kUndefined, core::Access::kUndefined,
                                      compare)) {
                     return false;
                 }
@@ -2120,33 +2137,33 @@ bool ASTPrinter::EmitWorkgroupAtomicCall(StringStream& out,
             return true;
         }
 
-        case builtin::Function::kAtomicAdd:
-        case builtin::Function::kAtomicSub:
+        case wgsl::BuiltinFn::kAtomicAdd:
+        case wgsl::BuiltinFn::kAtomicSub:
             return call("InterlockedAdd");
 
-        case builtin::Function::kAtomicMax:
+        case wgsl::BuiltinFn::kAtomicMax:
             return call("InterlockedMax");
 
-        case builtin::Function::kAtomicMin:
+        case wgsl::BuiltinFn::kAtomicMin:
             return call("InterlockedMin");
 
-        case builtin::Function::kAtomicAnd:
+        case wgsl::BuiltinFn::kAtomicAnd:
             return call("InterlockedAnd");
 
-        case builtin::Function::kAtomicOr:
+        case wgsl::BuiltinFn::kAtomicOr:
             return call("InterlockedOr");
 
-        case builtin::Function::kAtomicXor:
+        case wgsl::BuiltinFn::kAtomicXor:
             return call("InterlockedXor");
 
-        case builtin::Function::kAtomicExchange:
+        case wgsl::BuiltinFn::kAtomicExchange:
             return call("InterlockedExchange");
 
         default:
             break;
     }
 
-    TINT_UNREACHABLE() << "unsupported atomic builtin: " << builtin->Type();
+    TINT_UNREACHABLE() << "unsupported atomic builtin: " << builtin->Fn();
     return false;
 }
 
@@ -2176,27 +2193,27 @@ bool ASTPrinter::EmitSelectCall(StringStream& out, const ast::CallExpression* ex
 
 bool ASTPrinter::EmitModfCall(StringStream& out,
                               const ast::CallExpression* expr,
-                              const sem::Builtin* builtin) {
+                              const sem::BuiltinFn* builtin) {
     return CallBuiltinHelper(
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
             auto* ty = builtin->Parameters()[0]->Type();
             auto in = params[0];
 
             std::string width;
-            if (auto* vec = ty->As<type::Vector>()) {
+            if (auto* vec = ty->As<core::type::Vector>()) {
                 width = std::to_string(vec->Width());
             }
 
             // Emit the builtin return type unique to this overload. This does not
             // exist in the AST, so it will not be generated in Generate().
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<core::type::Struct>())) {
                 return false;
             }
 
             {
                 auto l = Line(b);
-                if (!EmitType(l, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
-                              builtin::Access::kUndefined, "")) {
+                if (!EmitType(l, builtin->ReturnType(), core::AddressSpace::kUndefined,
+                              core::Access::kUndefined, "")) {
                     return false;
                 }
                 l << " result;";
@@ -2209,25 +2226,25 @@ bool ASTPrinter::EmitModfCall(StringStream& out,
 
 bool ASTPrinter::EmitFrexpCall(StringStream& out,
                                const ast::CallExpression* expr,
-                               const sem::Builtin* builtin) {
+                               const sem::BuiltinFn* builtin) {
     return CallBuiltinHelper(
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
             auto* ty = builtin->Parameters()[0]->Type();
             auto in = params[0];
 
             std::string width;
-            if (auto* vec = ty->As<type::Vector>()) {
+            if (auto* vec = ty->As<core::type::Vector>()) {
                 width = std::to_string(vec->Width());
             }
 
             // Emit the builtin return type unique to this overload. This does not
             // exist in the AST, so it will not be generated in Generate().
-            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<type::Struct>())) {
+            if (!EmitStructType(&helpers_, builtin->ReturnType()->As<core::type::Struct>())) {
                 return false;
             }
 
             std::string member_type;
-            if (Is<type::F16>(ty->DeepestElement())) {
+            if (Is<core::type::F16>(ty->DeepestElement())) {
                 member_type = width.empty() ? "float16_t" : ("vector<float16_t, " + width + ">");
             } else {
                 member_type = "float" + width;
@@ -2237,8 +2254,8 @@ bool ASTPrinter::EmitFrexpCall(StringStream& out,
             Line(b) << member_type << " fract = sign(" << in << ") * frexp(" << in << ", exp);";
             {
                 auto l = Line(b);
-                if (!EmitType(l, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
-                              builtin::Access::kUndefined, "")) {
+                if (!EmitType(l, builtin->ReturnType(), core::AddressSpace::kUndefined,
+                              core::Access::kUndefined, "")) {
                     return false;
                 }
                 l << " result = {fract, int" << width << "(exp)};";
@@ -2250,7 +2267,7 @@ bool ASTPrinter::EmitFrexpCall(StringStream& out,
 
 bool ASTPrinter::EmitDegreesCall(StringStream& out,
                                  const ast::CallExpression* expr,
-                                 const sem::Builtin* builtin) {
+                                 const sem::BuiltinFn* builtin) {
     return CallBuiltinHelper(out, expr, builtin,
                              [&](TextBuffer* b, const std::vector<std::string>& params) {
                                  Line(b) << "return " << params[0] << " * " << std::setprecision(20)
@@ -2261,7 +2278,7 @@ bool ASTPrinter::EmitDegreesCall(StringStream& out,
 
 bool ASTPrinter::EmitRadiansCall(StringStream& out,
                                  const ast::CallExpression* expr,
-                                 const sem::Builtin* builtin) {
+                                 const sem::BuiltinFn* builtin) {
     return CallBuiltinHelper(out, expr, builtin,
                              [&](TextBuffer* b, const std::vector<std::string>& params) {
                                  Line(b) << "return " << params[0] << " * " << std::setprecision(20)
@@ -2273,10 +2290,9 @@ bool ASTPrinter::EmitRadiansCall(StringStream& out,
 // The HLSL `sign` method always returns an `int` result (scalar or vector). In WGSL the result is
 // expected to be the same type as the argument. This injects a cast to the expected WGSL result
 // type after the call to `sign`.
-bool ASTPrinter::EmitSignCall(StringStream& out, const sem::Call* call, const sem::Builtin*) {
+bool ASTPrinter::EmitSignCall(StringStream& out, const sem::Call* call, const sem::BuiltinFn*) {
     auto* arg = call->Arguments()[0];
-    if (!EmitType(out, arg->Type(), builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
-                  "")) {
+    if (!EmitType(out, arg->Type(), core::AddressSpace::kUndefined, core::Access::kReadWrite, "")) {
         return false;
     }
     out << "(sign(";
@@ -2289,10 +2305,10 @@ bool ASTPrinter::EmitSignCall(StringStream& out, const sem::Call* call, const se
 
 bool ASTPrinter::EmitQuantizeToF16Call(StringStream& out,
                                        const ast::CallExpression* expr,
-                                       const sem::Builtin* builtin) {
+                                       const sem::BuiltinFn* builtin) {
     // Cast to f16 and back
     std::string width;
-    if (auto* vec = builtin->ReturnType()->As<type::Vector>()) {
+    if (auto* vec = builtin->ReturnType()->As<core::type::Vector>()) {
         width = std::to_string(vec->Width());
     }
     out << "f16tof32(f32tof16"
@@ -2306,7 +2322,7 @@ bool ASTPrinter::EmitQuantizeToF16Call(StringStream& out,
 
 bool ASTPrinter::EmitTruncCall(StringStream& out,
                                const ast::CallExpression* expr,
-                               const sem::Builtin* builtin) {
+                               const sem::BuiltinFn* builtin) {
     // HLSL's trunc is broken for very large/small float values.
     // See crbug.com/tint/1883
     return CallBuiltinHelper(  //
@@ -2320,27 +2336,27 @@ bool ASTPrinter::EmitTruncCall(StringStream& out,
 
 bool ASTPrinter::EmitDataPackingCall(StringStream& out,
                                      const ast::CallExpression* expr,
-                                     const sem::Builtin* builtin) {
+                                     const sem::BuiltinFn* builtin) {
     return CallBuiltinHelper(
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
             uint32_t dims = 2;
             bool is_signed = false;
             uint32_t scale = 65535;
-            if (builtin->Type() == builtin::Function::kPack4X8Snorm ||
-                builtin->Type() == builtin::Function::kPack4X8Unorm) {
+            if (builtin->Fn() == wgsl::BuiltinFn::kPack4X8Snorm ||
+                builtin->Fn() == wgsl::BuiltinFn::kPack4X8Unorm) {
                 dims = 4;
                 scale = 255;
             }
-            if (builtin->Type() == builtin::Function::kPack4X8Snorm ||
-                builtin->Type() == builtin::Function::kPack2X16Snorm) {
+            if (builtin->Fn() == wgsl::BuiltinFn::kPack4X8Snorm ||
+                builtin->Fn() == wgsl::BuiltinFn::kPack2X16Snorm) {
                 is_signed = true;
                 scale = (scale - 1) / 2;
             }
-            switch (builtin->Type()) {
-                case builtin::Function::kPack4X8Snorm:
-                case builtin::Function::kPack4X8Unorm:
-                case builtin::Function::kPack2X16Snorm:
-                case builtin::Function::kPack2X16Unorm: {
+            switch (builtin->Fn()) {
+                case wgsl::BuiltinFn::kPack4X8Snorm:
+                case wgsl::BuiltinFn::kPack4X8Unorm:
+                case wgsl::BuiltinFn::kPack2X16Snorm:
+                case wgsl::BuiltinFn::kPack2X16Unorm: {
                     {
                         auto l = Line(b);
                         l << (is_signed ? "" : "u") << "int" << dims
@@ -2366,7 +2382,7 @@ bool ASTPrinter::EmitDataPackingCall(StringStream& out,
                     }
                     break;
                 }
-                case builtin::Function::kPack2X16Float: {
+                case wgsl::BuiltinFn::kPack2X16Float: {
                     Line(b) << "uint2 i = f32tof16(" << params[0] << ");";
                     Line(b) << "return i.x | (i.y << 16);";
                     break;
@@ -2383,25 +2399,25 @@ bool ASTPrinter::EmitDataPackingCall(StringStream& out,
 
 bool ASTPrinter::EmitDataUnpackingCall(StringStream& out,
                                        const ast::CallExpression* expr,
-                                       const sem::Builtin* builtin) {
+                                       const sem::BuiltinFn* builtin) {
     return CallBuiltinHelper(
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
             uint32_t dims = 2;
             bool is_signed = false;
             uint32_t scale = 65535;
-            if (builtin->Type() == builtin::Function::kUnpack4X8Snorm ||
-                builtin->Type() == builtin::Function::kUnpack4X8Unorm) {
+            if (builtin->Fn() == wgsl::BuiltinFn::kUnpack4X8Snorm ||
+                builtin->Fn() == wgsl::BuiltinFn::kUnpack4X8Unorm) {
                 dims = 4;
                 scale = 255;
             }
-            if (builtin->Type() == builtin::Function::kUnpack4X8Snorm ||
-                builtin->Type() == builtin::Function::kUnpack2X16Snorm) {
+            if (builtin->Fn() == wgsl::BuiltinFn::kUnpack4X8Snorm ||
+                builtin->Fn() == wgsl::BuiltinFn::kUnpack2X16Snorm) {
                 is_signed = true;
                 scale = (scale - 1) / 2;
             }
-            switch (builtin->Type()) {
-                case builtin::Function::kUnpack4X8Snorm:
-                case builtin::Function::kUnpack2X16Snorm: {
+            switch (builtin->Fn()) {
+                case wgsl::BuiltinFn::kUnpack4X8Snorm:
+                case wgsl::BuiltinFn::kUnpack2X16Snorm: {
                     Line(b) << "int j = int(" << params[0] << ");";
                     {  // Perform sign extension on the converted values.
                         auto l = Line(b);
@@ -2417,8 +2433,8 @@ bool ASTPrinter::EmitDataUnpackingCall(StringStream& out,
                             << (is_signed ? "-1.0" : "0.0") << ", 1.0);";
                     break;
                 }
-                case builtin::Function::kUnpack4X8Unorm:
-                case builtin::Function::kUnpack2X16Unorm: {
+                case wgsl::BuiltinFn::kUnpack4X8Unorm:
+                case wgsl::BuiltinFn::kUnpack2X16Unorm: {
                     Line(b) << "uint j = " << params[0] << ";";
                     {
                         auto l = Line(b);
@@ -2434,7 +2450,7 @@ bool ASTPrinter::EmitDataUnpackingCall(StringStream& out,
                     Line(b) << "return float" << dims << "(i) / " << scale << ".0;";
                     break;
                 }
-                case builtin::Function::kUnpack2X16Float:
+                case wgsl::BuiltinFn::kUnpack2X16Float:
                     Line(b) << "uint i = " << params[0] << ";";
                     Line(b) << "return f16tof32(uint2(i & 0xffff, i >> 16));";
                     break;
@@ -2450,17 +2466,17 @@ bool ASTPrinter::EmitDataUnpackingCall(StringStream& out,
 
 bool ASTPrinter::EmitDP4aCall(StringStream& out,
                               const ast::CallExpression* expr,
-                              const sem::Builtin* builtin) {
+                              const sem::BuiltinFn* builtin) {
     // TODO(crbug.com/tint/1497): support the polyfill version of DP4a functions.
     return CallBuiltinHelper(
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
             std::string functionName;
-            switch (builtin->Type()) {
-                case builtin::Function::kDot4I8Packed:
+            switch (builtin->Fn()) {
+                case wgsl::BuiltinFn::kDot4I8Packed:
                     Line(b) << "int accumulator = 0;";
                     functionName = "dot4add_i8packed";
                     break;
-                case builtin::Function::kDot4U8Packed:
+                case wgsl::BuiltinFn::kDot4U8Packed:
                     Line(b) << "uint accumulator = 0u;";
                     functionName = "dot4add_u8packed";
                     break;
@@ -2476,24 +2492,70 @@ bool ASTPrinter::EmitDP4aCall(StringStream& out,
         });
 }
 
-bool ASTPrinter::EmitBarrierCall(StringStream& out, const sem::Builtin* builtin) {
+bool ASTPrinter::EmitBarrierCall(StringStream& out, const sem::BuiltinFn* builtin) {
     // TODO(crbug.com/tint/661): Combine sequential barriers to a single
     // instruction.
-    if (builtin->Type() == builtin::Function::kWorkgroupBarrier) {
+    if (builtin->Fn() == wgsl::BuiltinFn::kWorkgroupBarrier) {
         out << "GroupMemoryBarrierWithGroupSync()";
-    } else if (builtin->Type() == builtin::Function::kStorageBarrier) {
+    } else if (builtin->Fn() == wgsl::BuiltinFn::kStorageBarrier) {
+        out << "DeviceMemoryBarrierWithGroupSync()";
+    } else if (builtin->Fn() == wgsl::BuiltinFn::kTextureBarrier) {
         out << "DeviceMemoryBarrierWithGroupSync()";
     } else {
-        TINT_UNREACHABLE() << "unexpected barrier builtin type " << builtin::str(builtin->Type());
+        TINT_UNREACHABLE() << "unexpected barrier builtin type " << builtin->Fn();
         return false;
+    }
+    return true;
+}
+
+bool ASTPrinter::EmitSubgroupCall(StringStream& out,
+                                  [[maybe_unused]] const ast::CallExpression* expr,
+                                  const sem::BuiltinFn* builtin) {
+    if (builtin->Fn() == wgsl::BuiltinFn::kSubgroupBallot) {
+        out << "WaveActiveBallot(true)";
+    } else {
+        // subgroupBroadcast is already handled in the regular builtin flow.
+        TINT_UNREACHABLE() << "unexpected subgroup builtin type " << builtin->Fn();
+        return false;
+    }
+    return true;
+}
+
+bool ASTPrinter::EmitTextureOrStorageBufferCallArgExpression(StringStream& out,
+                                                             const ast::Expression* expr) {
+    // TODO(crbug.com/tint/1976): Workaround DXC bug that fails to compile texture/storage function
+    // calls with signed integer splatted constants. DXC fails to convert the coord arg, for e.g.
+    // `0.xxx`, from a vector of 64-bit ints to a vector of 32-bit ints to match the texture load
+    // parameter type. We work around this for now by explicitly casting the splatted constant to
+    // the right type, for e.g. `int3(0.xxx)`.
+    bool emitted_cast = false;
+    if (auto* sem = builder_.Sem().GetVal(expr)) {
+        if (auto* constant = sem->ConstantValue()) {
+            if (auto* splat = constant->As<core::constant::Splat>()) {
+                if (splat->Type()->is_signed_integer_vector()) {
+                    if (!EmitType(out, constant->Type(), core::AddressSpace::kUndefined,
+                                  core::Access::kUndefined, "")) {
+                        return false;
+                    }
+                    out << "(";
+                    emitted_cast = true;
+                }
+            }
+        }
+    }
+    if (!EmitExpression(out, expr)) {
+        return false;
+    }
+    if (emitted_cast) {
+        out << ")";
     }
     return true;
 }
 
 bool ASTPrinter::EmitTextureCall(StringStream& out,
                                  const sem::Call* call,
-                                 const sem::Builtin* builtin) {
-    using Usage = sem::ParameterUsage;
+                                 const sem::BuiltinFn* builtin) {
+    using Usage = core::ParameterUsage;
 
     auto& signature = builtin->Signature();
     auto* expr = call->Declaration();
@@ -2511,95 +2573,95 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
         return false;
     }
 
-    auto* texture_type = TypeOf(texture)->UnwrapRef()->As<type::Texture>();
+    auto* texture_type = TypeOf(texture)->UnwrapRef()->As<core::type::Texture>();
 
-    switch (builtin->Type()) {
-        case builtin::Function::kTextureDimensions:
-        case builtin::Function::kTextureNumLayers:
-        case builtin::Function::kTextureNumLevels:
-        case builtin::Function::kTextureNumSamples: {
+    switch (builtin->Fn()) {
+        case wgsl::BuiltinFn::kTextureDimensions:
+        case wgsl::BuiltinFn::kTextureNumLayers:
+        case wgsl::BuiltinFn::kTextureNumLevels:
+        case wgsl::BuiltinFn::kTextureNumSamples: {
             // All of these builtins use the GetDimensions() method on the texture
-            bool is_ms =
-                texture_type->IsAnyOf<type::MultisampledTexture, type::DepthMultisampledTexture>();
+            bool is_ms = texture_type->IsAnyOf<core::type::MultisampledTexture,
+                                               core::type::DepthMultisampledTexture>();
             int num_dimensions = 0;
             std::string swizzle;
 
-            switch (builtin->Type()) {
-                case builtin::Function::kTextureDimensions:
+            switch (builtin->Fn()) {
+                case wgsl::BuiltinFn::kTextureDimensions:
                     switch (texture_type->dim()) {
-                        case type::TextureDimension::kNone:
+                        case core::type::TextureDimension::kNone:
                             TINT_ICE() << "texture dimension is kNone";
                             return false;
-                        case type::TextureDimension::k1d:
+                        case core::type::TextureDimension::k1d:
                             num_dimensions = 1;
                             break;
-                        case type::TextureDimension::k2d:
+                        case core::type::TextureDimension::k2d:
                             num_dimensions = is_ms ? 3 : 2;
                             swizzle = is_ms ? ".xy" : "";
                             break;
-                        case type::TextureDimension::k2dArray:
+                        case core::type::TextureDimension::k2dArray:
                             num_dimensions = is_ms ? 4 : 3;
                             swizzle = ".xy";
                             break;
-                        case type::TextureDimension::k3d:
+                        case core::type::TextureDimension::k3d:
                             num_dimensions = 3;
                             break;
-                        case type::TextureDimension::kCube:
+                        case core::type::TextureDimension::kCube:
                             num_dimensions = 2;
                             break;
-                        case type::TextureDimension::kCubeArray:
+                        case core::type::TextureDimension::kCubeArray:
                             num_dimensions = 3;
                             swizzle = ".xy";
                             break;
                     }
                     break;
-                case builtin::Function::kTextureNumLayers:
+                case wgsl::BuiltinFn::kTextureNumLayers:
                     switch (texture_type->dim()) {
                         default:
                             TINT_ICE() << "texture dimension is not arrayed";
                             return false;
-                        case type::TextureDimension::k2dArray:
+                        case core::type::TextureDimension::k2dArray:
                             num_dimensions = is_ms ? 4 : 3;
                             swizzle = ".z";
                             break;
-                        case type::TextureDimension::kCubeArray:
+                        case core::type::TextureDimension::kCubeArray:
                             num_dimensions = 3;
                             swizzle = ".z";
                             break;
                     }
                     break;
-                case builtin::Function::kTextureNumLevels:
+                case wgsl::BuiltinFn::kTextureNumLevels:
                     switch (texture_type->dim()) {
                         default:
                             TINT_ICE() << "texture dimension does not support mips";
                             return false;
-                        case type::TextureDimension::k1d:
+                        case core::type::TextureDimension::k1d:
                             num_dimensions = 2;
                             swizzle = ".y";
                             break;
-                        case type::TextureDimension::k2d:
-                        case type::TextureDimension::kCube:
+                        case core::type::TextureDimension::k2d:
+                        case core::type::TextureDimension::kCube:
                             num_dimensions = 3;
                             swizzle = ".z";
                             break;
-                        case type::TextureDimension::k2dArray:
-                        case type::TextureDimension::k3d:
-                        case type::TextureDimension::kCubeArray:
+                        case core::type::TextureDimension::k2dArray:
+                        case core::type::TextureDimension::k3d:
+                        case core::type::TextureDimension::kCubeArray:
                             num_dimensions = 4;
                             swizzle = ".w";
                             break;
                     }
                     break;
-                case builtin::Function::kTextureNumSamples:
+                case wgsl::BuiltinFn::kTextureNumSamples:
                     switch (texture_type->dim()) {
                         default:
                             TINT_ICE() << "texture dimension does not support multisampling";
                             return false;
-                        case type::TextureDimension::k2d:
+                        case core::type::TextureDimension::k2d:
                             num_dimensions = 3;
                             swizzle = ".z";
                             break;
-                        case type::TextureDimension::k2dArray:
+                        case core::type::TextureDimension::k2dArray:
                             num_dimensions = 4;
                             swizzle = ".w";
                             break;
@@ -2653,7 +2715,7 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
                         return false;
                     }
                     pre << ", ";
-                } else if (builtin->Type() == builtin::Function::kTextureNumLevels) {
+                } else if (builtin->Fn() == wgsl::BuiltinFn::kTextureNumLevels) {
                     pre << "0, ";
                 }
 
@@ -2698,37 +2760,37 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
 
     uint32_t hlsl_ret_width = 4u;
 
-    switch (builtin->Type()) {
-        case builtin::Function::kTextureSample:
+    switch (builtin->Fn()) {
+        case wgsl::BuiltinFn::kTextureSample:
             out << ".Sample(";
             break;
-        case builtin::Function::kTextureSampleBias:
+        case wgsl::BuiltinFn::kTextureSampleBias:
             out << ".SampleBias(";
             break;
-        case builtin::Function::kTextureSampleLevel:
+        case wgsl::BuiltinFn::kTextureSampleLevel:
             out << ".SampleLevel(";
             break;
-        case builtin::Function::kTextureSampleGrad:
+        case wgsl::BuiltinFn::kTextureSampleGrad:
             out << ".SampleGrad(";
             break;
-        case builtin::Function::kTextureSampleCompare:
+        case wgsl::BuiltinFn::kTextureSampleCompare:
             out << ".SampleCmp(";
             hlsl_ret_width = 1;
             break;
-        case builtin::Function::kTextureSampleCompareLevel:
+        case wgsl::BuiltinFn::kTextureSampleCompareLevel:
             out << ".SampleCmpLevelZero(";
             hlsl_ret_width = 1;
             break;
-        case builtin::Function::kTextureLoad:
+        case wgsl::BuiltinFn::kTextureLoad:
             out << ".Load(";
             // Multisampled textures do not support mip-levels.
-            if (!texture_type->Is<type::MultisampledTexture>()) {
+            if (!texture_type->Is<core::type::MultisampledTexture>()) {
                 pack_level_in_coords = true;
             }
             break;
-        case builtin::Function::kTextureGather:
+        case wgsl::BuiltinFn::kTextureGather:
             out << ".Gather";
-            if (builtin->Parameters()[0]->Usage() == sem::ParameterUsage::kComponent) {
+            if (builtin->Parameters()[0]->Usage() == core::ParameterUsage::kComponent) {
                 switch (call->Arguments()[0]->ConstantValue()->ValueAs<AInt>()) {
                     case 0:
                         out << "Red";
@@ -2746,10 +2808,10 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
             }
             out << "(";
             break;
-        case builtin::Function::kTextureGatherCompare:
+        case wgsl::BuiltinFn::kTextureGatherCompare:
             out << ".GatherCmp(";
             break;
-        case builtin::Function::kTextureStore:
+        case wgsl::BuiltinFn::kTextureStore:
             out << "[";
             break;
         default:
@@ -2773,11 +2835,11 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
     }
 
     auto emit_vector_appended_with_i32_zero = [&](const ast::Expression* vector) {
-        auto* i32 = builder_.create<type::I32>();
+        auto* i32 = builder_.create<core::type::I32>();
         auto* zero = builder_.Expr(0_i);
         auto* stmt = builder_.Sem().Get(vector)->Stmt();
         builder_.Sem().Add(zero, builder_.create<sem::ValueExpression>(
-                                     zero, i32, sem::EvaluationStage::kRuntime, stmt,
+                                     zero, i32, core::EvaluationStage::kRuntime, stmt,
                                      /* constant_value */ nullptr,
                                      /* has_side_effects */ false));
         auto* packed = tint::writer::AppendVector(&builder_, vector, zero);
@@ -2810,10 +2872,13 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
         if (!emit_vector_appended_with_level(param_coords)) {
             return false;
         }
-    } else {
+    } else if (builtin->Fn() == wgsl::BuiltinFn::kTextureStore) {
+        // param_coords is an index expression, not a function arg
         if (!EmitExpression(out, param_coords)) {
             return false;
         }
+    } else if (!EmitTextureOrStorageBufferCallArgExpression(out, param_coords)) {
+        return false;
     }
 
     for (auto usage : {Usage::kDepthRef, Usage::kBias, Usage::kLevel, Usage::kDdx, Usage::kDdy,
@@ -2823,13 +2888,13 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
         }
         if (auto* e = arg(usage)) {
             out << ", ";
-            if (!EmitExpression(out, e)) {
+            if (!EmitTextureOrStorageBufferCallArgExpression(out, e)) {
                 return false;
             }
         }
     }
 
-    if (builtin->Type() == builtin::Function::kTextureStore) {
+    if (builtin->Fn() == wgsl::BuiltinFn::kTextureStore) {
         out << "] = ";
         if (!EmitExpression(out, arg(Usage::kValue))) {
             return false;
@@ -2841,7 +2906,7 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
         // HLSL builtin, we need to swizzle the expression to generate the correct
         // number of components.
         uint32_t wgsl_ret_width = 1;
-        if (auto* vec = builtin->ReturnType()->As<type::Vector>()) {
+        if (auto* vec = builtin->ReturnType()->As<core::type::Vector>()) {
             wgsl_ret_width = vec->Width();
         }
         if (wgsl_ret_width < hlsl_ret_width) {
@@ -2853,7 +2918,7 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
         if (TINT_UNLIKELY(wgsl_ret_width > hlsl_ret_width)) {
             TINT_ICE() << "WGSL return width (" << wgsl_ret_width
                        << ") is wider than HLSL return width (" << hlsl_ret_width << ") for "
-                       << builtin->Type();
+                       << builtin->Fn();
             return false;
         }
     }
@@ -2861,80 +2926,82 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
     return true;
 }
 
-std::string ASTPrinter::generate_builtin_name(const sem::Builtin* builtin) {
-    switch (builtin->Type()) {
-        case builtin::Function::kAbs:
-        case builtin::Function::kAcos:
-        case builtin::Function::kAll:
-        case builtin::Function::kAny:
-        case builtin::Function::kAsin:
-        case builtin::Function::kAtan:
-        case builtin::Function::kAtan2:
-        case builtin::Function::kCeil:
-        case builtin::Function::kClamp:
-        case builtin::Function::kCos:
-        case builtin::Function::kCosh:
-        case builtin::Function::kCross:
-        case builtin::Function::kDeterminant:
-        case builtin::Function::kDistance:
-        case builtin::Function::kDot:
-        case builtin::Function::kExp:
-        case builtin::Function::kExp2:
-        case builtin::Function::kFloor:
-        case builtin::Function::kFrexp:
-        case builtin::Function::kLdexp:
-        case builtin::Function::kLength:
-        case builtin::Function::kLog:
-        case builtin::Function::kLog2:
-        case builtin::Function::kMax:
-        case builtin::Function::kMin:
-        case builtin::Function::kModf:
-        case builtin::Function::kNormalize:
-        case builtin::Function::kPow:
-        case builtin::Function::kReflect:
-        case builtin::Function::kRefract:
-        case builtin::Function::kRound:
-        case builtin::Function::kSaturate:
-        case builtin::Function::kSin:
-        case builtin::Function::kSinh:
-        case builtin::Function::kSqrt:
-        case builtin::Function::kStep:
-        case builtin::Function::kTan:
-        case builtin::Function::kTanh:
-        case builtin::Function::kTranspose:
+std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
+    switch (builtin->Fn()) {
+        case wgsl::BuiltinFn::kAbs:
+        case wgsl::BuiltinFn::kAcos:
+        case wgsl::BuiltinFn::kAll:
+        case wgsl::BuiltinFn::kAny:
+        case wgsl::BuiltinFn::kAsin:
+        case wgsl::BuiltinFn::kAtan:
+        case wgsl::BuiltinFn::kAtan2:
+        case wgsl::BuiltinFn::kCeil:
+        case wgsl::BuiltinFn::kClamp:
+        case wgsl::BuiltinFn::kCos:
+        case wgsl::BuiltinFn::kCosh:
+        case wgsl::BuiltinFn::kCross:
+        case wgsl::BuiltinFn::kDeterminant:
+        case wgsl::BuiltinFn::kDistance:
+        case wgsl::BuiltinFn::kDot:
+        case wgsl::BuiltinFn::kExp:
+        case wgsl::BuiltinFn::kExp2:
+        case wgsl::BuiltinFn::kFloor:
+        case wgsl::BuiltinFn::kFrexp:
+        case wgsl::BuiltinFn::kLdexp:
+        case wgsl::BuiltinFn::kLength:
+        case wgsl::BuiltinFn::kLog:
+        case wgsl::BuiltinFn::kLog2:
+        case wgsl::BuiltinFn::kMax:
+        case wgsl::BuiltinFn::kMin:
+        case wgsl::BuiltinFn::kModf:
+        case wgsl::BuiltinFn::kNormalize:
+        case wgsl::BuiltinFn::kPow:
+        case wgsl::BuiltinFn::kReflect:
+        case wgsl::BuiltinFn::kRefract:
+        case wgsl::BuiltinFn::kRound:
+        case wgsl::BuiltinFn::kSaturate:
+        case wgsl::BuiltinFn::kSin:
+        case wgsl::BuiltinFn::kSinh:
+        case wgsl::BuiltinFn::kSqrt:
+        case wgsl::BuiltinFn::kStep:
+        case wgsl::BuiltinFn::kTan:
+        case wgsl::BuiltinFn::kTanh:
+        case wgsl::BuiltinFn::kTranspose:
             return builtin->str();
-        case builtin::Function::kCountOneBits:  // uint
+        case wgsl::BuiltinFn::kCountOneBits:  // uint
             return "countbits";
-        case builtin::Function::kDpdx:
+        case wgsl::BuiltinFn::kDpdx:
             return "ddx";
-        case builtin::Function::kDpdxCoarse:
+        case wgsl::BuiltinFn::kDpdxCoarse:
             return "ddx_coarse";
-        case builtin::Function::kDpdxFine:
+        case wgsl::BuiltinFn::kDpdxFine:
             return "ddx_fine";
-        case builtin::Function::kDpdy:
+        case wgsl::BuiltinFn::kDpdy:
             return "ddy";
-        case builtin::Function::kDpdyCoarse:
+        case wgsl::BuiltinFn::kDpdyCoarse:
             return "ddy_coarse";
-        case builtin::Function::kDpdyFine:
+        case wgsl::BuiltinFn::kDpdyFine:
             return "ddy_fine";
-        case builtin::Function::kFaceForward:
+        case wgsl::BuiltinFn::kFaceForward:
             return "faceforward";
-        case builtin::Function::kFract:
+        case wgsl::BuiltinFn::kFract:
             return "frac";
-        case builtin::Function::kFma:
+        case wgsl::BuiltinFn::kFma:
             return "mad";
-        case builtin::Function::kFwidth:
-        case builtin::Function::kFwidthCoarse:
-        case builtin::Function::kFwidthFine:
+        case wgsl::BuiltinFn::kFwidth:
+        case wgsl::BuiltinFn::kFwidthCoarse:
+        case wgsl::BuiltinFn::kFwidthFine:
             return "fwidth";
-        case builtin::Function::kInverseSqrt:
+        case wgsl::BuiltinFn::kInverseSqrt:
             return "rsqrt";
-        case builtin::Function::kMix:
+        case wgsl::BuiltinFn::kMix:
             return "lerp";
-        case builtin::Function::kReverseBits:  // uint
+        case wgsl::BuiltinFn::kReverseBits:  // uint
             return "reversebits";
-        case builtin::Function::kSmoothstep:
+        case wgsl::BuiltinFn::kSmoothstep:
             return "smoothstep";
+        case wgsl::BuiltinFn::kSubgroupBroadcast:
+            return "WaveReadLaneAt";
         default:
             diagnostics_.add_error(diag::System::Writer,
                                    "Unknown builtin method: " + std::string(builtin->str()));
@@ -3064,9 +3131,8 @@ bool ASTPrinter::EmitFunction(const ast::Function* func) {
     auto* sem = builder_.Sem().Get(func);
 
     // Emit storage atomic helpers
-    if (auto* intrinsic =
-            ast::GetAttribute<ast::transform::DecomposeMemoryAccess::Intrinsic>(func->attributes)) {
-        if (intrinsic->address_space == builtin::AddressSpace::kStorage && intrinsic->IsAtomic()) {
+    if (auto* intrinsic = ast::GetAttribute<DecomposeMemoryAccess::Intrinsic>(func->attributes)) {
+        if (intrinsic->address_space == core::AddressSpace::kStorage && intrinsic->IsAtomic()) {
             if (!EmitStorageAtomicIntrinsic(func, intrinsic)) {
                 return false;
             }
@@ -3084,19 +3150,19 @@ bool ASTPrinter::EmitFunction(const ast::Function* func) {
         auto name = func->name->symbol.Name();
         // If the function returns an array, then we need to declare a typedef for
         // this.
-        if (sem->ReturnType()->Is<type::Array>()) {
+        if (sem->ReturnType()->Is<core::type::Array>()) {
             auto typedef_name = UniqueIdentifier(name + "_ret");
             auto pre = Line();
             pre << "typedef ";
-            if (!EmitTypeAndName(pre, sem->ReturnType(), builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kReadWrite, typedef_name)) {
+            if (!EmitTypeAndName(pre, sem->ReturnType(), core::AddressSpace::kUndefined,
+                                 core::Access::kReadWrite, typedef_name)) {
                 return false;
             }
             pre << ";";
             out << typedef_name;
         } else {
-            if (!EmitType(out, sem->ReturnType(), builtin::AddressSpace::kUndefined,
-                          builtin::Access::kReadWrite, "")) {
+            if (!EmitType(out, sem->ReturnType(), core::AddressSpace::kUndefined,
+                          core::Access::kReadWrite, "")) {
                 return false;
             }
         }
@@ -3112,14 +3178,14 @@ bool ASTPrinter::EmitFunction(const ast::Function* func) {
             first = false;
 
             auto const* type = v->Type();
-            auto address_space = builtin::AddressSpace::kUndefined;
-            auto access = builtin::Access::kUndefined;
+            auto address_space = core::AddressSpace::kUndefined;
+            auto access = core::Access::kUndefined;
 
-            if (auto* ptr = type->As<type::Pointer>()) {
+            if (auto* ptr = type->As<core::type::Pointer>()) {
                 type = ptr->StoreType();
                 switch (ptr->AddressSpace()) {
-                    case builtin::AddressSpace::kStorage:
-                    case builtin::AddressSpace::kUniform:
+                    case core::AddressSpace::kStorage:
+                    case core::AddressSpace::kUniform:
                         // Not allowed by WGSL, but is used by certain transforms (e.g. DMA) to pass
                         // storage buffers and uniform buffers down into transform-generated
                         // functions. In this situation we want to generate the parameter without an
@@ -3147,7 +3213,7 @@ bool ASTPrinter::EmitFunction(const ast::Function* func) {
         out << ") {";
     }
 
-    if (sem->DiscardStatement() && !sem->ReturnType()->Is<type::Void>()) {
+    if (sem->DiscardStatement() && !sem->ReturnType()->Is<core::type::Void>()) {
         // BUG(crbug.com/tint/1081): work around non-void functions with discard
         // failing compilation sometimes
         if (!EmitFunctionBodyWithDiscard(func)) {
@@ -3171,7 +3237,7 @@ bool ASTPrinter::EmitFunctionBodyWithDiscard(const ast::Function* func) {
     // there is always an (unused) return statement.
 
     auto* sem = builder_.Sem().Get(func);
-    TINT_ASSERT(sem->DiscardStatement() && !sem->ReturnType()->Is<type::Void>());
+    TINT_ASSERT(sem->DiscardStatement() && !sem->ReturnType()->Is<core::type::Void>());
 
     ScopedIndent si(this);
     Line() << "if (true) {";
@@ -3186,8 +3252,8 @@ bool ASTPrinter::EmitFunctionBodyWithDiscard(const ast::Function* func) {
     auto name = builder_.Symbols().New("unused").Name();
     {
         auto out = Line();
-        if (!EmitTypeAndName(out, sem->ReturnType(), builtin::AddressSpace::kUndefined,
-                             builtin::Access::kReadWrite, name)) {
+        if (!EmitTypeAndName(out, sem->ReturnType(), core::AddressSpace::kUndefined,
+                             core::Access::kReadWrite, name)) {
             return false;
         }
         out << ";";
@@ -3203,17 +3269,17 @@ bool ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
         [&](const ast::Var* var) {
             auto* sem = builder_.Sem().Get(global);
             switch (sem->AddressSpace()) {
-                case builtin::AddressSpace::kUniform:
+                case core::AddressSpace::kUniform:
                     return EmitUniformVariable(var, sem);
-                case builtin::AddressSpace::kStorage:
+                case core::AddressSpace::kStorage:
                     return EmitStorageVariable(var, sem);
-                case builtin::AddressSpace::kHandle:
+                case core::AddressSpace::kHandle:
                     return EmitHandleVariable(var, sem);
-                case builtin::AddressSpace::kPrivate:
+                case core::AddressSpace::kPrivate:
                     return EmitPrivateVariable(sem);
-                case builtin::AddressSpace::kWorkgroup:
+                case core::AddressSpace::kWorkgroup:
                     return EmitWorkgroupVariable(sem);
-                case builtin::AddressSpace::kPushConstant:
+                case core::AddressSpace::kPushConstant:
                     diagnostics_.add_error(
                         diag::System::Writer,
                         "unhandled address space " + tint::ToString(sem->AddressSpace()));
@@ -3250,7 +3316,7 @@ bool ASTPrinter::EmitUniformVariable(const ast::Var* var, const sem::Variable* s
     {
         ScopedIndent si(this);
         auto out = Line();
-        if (!EmitTypeAndName(out, type, builtin::AddressSpace::kUniform, sem->Access(), name)) {
+        if (!EmitTypeAndName(out, type, core::AddressSpace::kUniform, sem->Access(), name)) {
             return false;
         }
         out << ";";
@@ -3264,13 +3330,13 @@ bool ASTPrinter::EmitUniformVariable(const ast::Var* var, const sem::Variable* s
 bool ASTPrinter::EmitStorageVariable(const ast::Var* var, const sem::Variable* sem) {
     auto* type = sem->Type()->UnwrapRef();
     auto out = Line();
-    if (!EmitTypeAndName(out, type, builtin::AddressSpace::kStorage, sem->Access(),
+    if (!EmitTypeAndName(out, type, core::AddressSpace::kStorage, sem->Access(),
                          var->name->symbol.Name())) {
         return false;
     }
 
     auto* global_sem = sem->As<sem::GlobalVariable>();
-    out << RegisterAndSpace(sem->Access() == builtin::Access::kRead ? 't' : 'u',
+    out << RegisterAndSpace(sem->Access() == core::Access::kRead ? 't' : 'u',
                             *global_sem->BindingPoint())
         << ";";
 
@@ -3289,12 +3355,13 @@ bool ASTPrinter::EmitHandleVariable(const ast::Var* var, const sem::Variable* se
 
     const char* register_space = nullptr;
 
-    if (unwrapped_type->Is<type::Texture>()) {
+    if (unwrapped_type->Is<core::type::Texture>()) {
         register_space = "t";
-        if (unwrapped_type->Is<type::StorageTexture>()) {
+        if (auto* st = unwrapped_type->As<core::type::StorageTexture>();
+            st && st->access() != core::Access::kRead) {
             register_space = "u";
         }
-    } else if (unwrapped_type->Is<type::Sampler>()) {
+    } else if (unwrapped_type->Is<core::type::Sampler>()) {
         register_space = "s";
     }
 
@@ -3365,29 +3432,29 @@ bool ASTPrinter::EmitWorkgroupVariable(const sem::Variable* var) {
     return true;
 }
 
-std::string ASTPrinter::builtin_to_attribute(builtin::BuiltinValue builtin) const {
+std::string ASTPrinter::builtin_to_attribute(core::BuiltinValue builtin) const {
     switch (builtin) {
-        case builtin::BuiltinValue::kPosition:
+        case core::BuiltinValue::kPosition:
             return "SV_Position";
-        case builtin::BuiltinValue::kVertexIndex:
+        case core::BuiltinValue::kVertexIndex:
             return "SV_VertexID";
-        case builtin::BuiltinValue::kInstanceIndex:
+        case core::BuiltinValue::kInstanceIndex:
             return "SV_InstanceID";
-        case builtin::BuiltinValue::kFrontFacing:
+        case core::BuiltinValue::kFrontFacing:
             return "SV_IsFrontFace";
-        case builtin::BuiltinValue::kFragDepth:
+        case core::BuiltinValue::kFragDepth:
             return "SV_Depth";
-        case builtin::BuiltinValue::kLocalInvocationId:
+        case core::BuiltinValue::kLocalInvocationId:
             return "SV_GroupThreadID";
-        case builtin::BuiltinValue::kLocalInvocationIndex:
+        case core::BuiltinValue::kLocalInvocationIndex:
             return "SV_GroupIndex";
-        case builtin::BuiltinValue::kGlobalInvocationId:
+        case core::BuiltinValue::kGlobalInvocationId:
             return "SV_DispatchThreadID";
-        case builtin::BuiltinValue::kWorkgroupId:
+        case core::BuiltinValue::kWorkgroupId:
             return "SV_GroupID";
-        case builtin::BuiltinValue::kSampleIndex:
+        case core::BuiltinValue::kSampleIndex:
             return "SV_SampleIndex";
-        case builtin::BuiltinValue::kSampleMask:
+        case core::BuiltinValue::kSampleMask:
             return "SV_Coverage";
         default:
             break;
@@ -3395,31 +3462,31 @@ std::string ASTPrinter::builtin_to_attribute(builtin::BuiltinValue builtin) cons
     return "";
 }
 
-std::string ASTPrinter::interpolation_to_modifiers(builtin::InterpolationType type,
-                                                   builtin::InterpolationSampling sampling) const {
+std::string ASTPrinter::interpolation_to_modifiers(core::InterpolationType type,
+                                                   core::InterpolationSampling sampling) const {
     std::string modifiers;
     switch (type) {
-        case builtin::InterpolationType::kPerspective:
+        case core::InterpolationType::kPerspective:
             modifiers += "linear ";
             break;
-        case builtin::InterpolationType::kLinear:
+        case core::InterpolationType::kLinear:
             modifiers += "noperspective ";
             break;
-        case builtin::InterpolationType::kFlat:
+        case core::InterpolationType::kFlat:
             modifiers += "nointerpolation ";
             break;
-        case builtin::InterpolationType::kUndefined:
+        case core::InterpolationType::kUndefined:
             break;
     }
     switch (sampling) {
-        case builtin::InterpolationSampling::kCentroid:
+        case core::InterpolationSampling::kCentroid:
             modifiers += "centroid ";
             break;
-        case builtin::InterpolationSampling::kSample:
+        case core::InterpolationSampling::kSample:
             modifiers += "sample ";
             break;
-        case builtin::InterpolationSampling::kCenter:
-        case builtin::InterpolationSampling::kUndefined:
+        case core::InterpolationSampling::kCenter:
+        case core::InterpolationSampling::kUndefined:
             break;
     }
     return modifiers;
@@ -3450,8 +3517,8 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
             out << ")]" << std::endl;
         }
 
-        if (!EmitTypeAndName(out, func_sem->ReturnType(), builtin::AddressSpace::kUndefined,
-                             builtin::Access::kUndefined, func->name->symbol.Name())) {
+        if (!EmitTypeAndName(out, func_sem->ReturnType(), core::AddressSpace::kUndefined,
+                             core::Access::kUndefined, func->name->symbol.Name())) {
             return false;
         }
         out << "(";
@@ -3462,7 +3529,7 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
         for (auto* var : func->params) {
             auto* sem = builder_.Sem().Get(var);
             auto* type = sem->Type();
-            if (TINT_UNLIKELY(!type->Is<type::Struct>())) {
+            if (TINT_UNLIKELY(!type->Is<core::type::Struct>())) {
                 // ICE likely indicates that the CanonicalizeEntryPointIO transform was
                 // not run, or a builtin parameter was added after it was run.
                 TINT_ICE() << "Unsupported non-struct entry point parameter";
@@ -3503,35 +3570,35 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
 }
 
 bool ASTPrinter::EmitConstant(StringStream& out,
-                              const constant::Value* constant,
+                              const core::constant::Value* constant,
                               bool is_variable_initializer) {
     return Switch(
         constant->Type(),  //
-        [&](const type::Bool*) {
+        [&](const core::type::Bool*) {
             out << (constant->ValueAs<AInt>() ? "true" : "false");
             return true;
         },
-        [&](const type::F32*) {
+        [&](const core::type::F32*) {
             PrintF32(out, constant->ValueAs<f32>());
             return true;
         },
-        [&](const type::F16*) {
+        [&](const core::type::F16*) {
             // emit a f16 scalar with explicit float16_t type declaration.
             out << "float16_t(";
             PrintF16(out, constant->ValueAs<f16>());
             out << ")";
             return true;
         },
-        [&](const type::I32*) {
+        [&](const core::type::I32*) {
             out << constant->ValueAs<AInt>();
             return true;
         },
-        [&](const type::U32*) {
+        [&](const core::type::U32*) {
             out << constant->ValueAs<AInt>() << "u";
             return true;
         },
-        [&](const type::Vector* v) {
-            if (auto* splat = constant->As<constant::Splat>()) {
+        [&](const core::type::Vector* v) {
+            if (auto* splat = constant->As<core::constant::Splat>()) {
                 {
                     ScopedParen sp(out);
                     if (!EmitConstant(out, splat->el, is_variable_initializer)) {
@@ -3545,8 +3612,7 @@ bool ASTPrinter::EmitConstant(StringStream& out,
                 return true;
             }
 
-            if (!EmitType(out, v, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
-                          "")) {
+            if (!EmitType(out, v, core::AddressSpace::kUndefined, core::Access::kUndefined, "")) {
                 return false;
             }
 
@@ -3562,9 +3628,8 @@ bool ASTPrinter::EmitConstant(StringStream& out,
             }
             return true;
         },
-        [&](const type::Matrix* m) {
-            if (!EmitType(out, m, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
-                          "")) {
+        [&](const core::type::Matrix* m) {
+            if (!EmitType(out, m, core::AddressSpace::kUndefined, core::Access::kUndefined, "")) {
                 return false;
             }
 
@@ -3580,11 +3645,11 @@ bool ASTPrinter::EmitConstant(StringStream& out,
             }
             return true;
         },
-        [&](const type::Array* a) {
+        [&](const core::type::Array* a) {
             if (constant->AllZero()) {
                 out << "(";
-                if (!EmitType(out, a, builtin::AddressSpace::kUndefined,
-                              builtin::Access::kUndefined, "")) {
+                if (!EmitType(out, a, core::AddressSpace::kUndefined, core::Access::kUndefined,
+                              "")) {
                     return false;
                 }
                 out << ")0";
@@ -3597,7 +3662,7 @@ bool ASTPrinter::EmitConstant(StringStream& out,
             auto count = a->ConstantCount();
             if (!count) {
                 diagnostics_.add_error(diag::System::Writer,
-                                       type::Array::kErrExpectedConstantCount);
+                                       core::type::Array::kErrExpectedConstantCount);
                 return false;
             }
 
@@ -3612,7 +3677,7 @@ bool ASTPrinter::EmitConstant(StringStream& out,
 
             return true;
         },
-        [&](const type::Struct* s) {
+        [&](const core::type::Struct* s) {
             if (!EmitStructType(&helpers_, s)) {
                 return false;
             }
@@ -3699,31 +3764,31 @@ bool ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
         });
 }
 
-bool ASTPrinter::EmitValue(StringStream& out, const type::Type* type, int value) {
+bool ASTPrinter::EmitValue(StringStream& out, const core::type::Type* type, int value) {
     return Switch(
         type,
-        [&](const type::Bool*) {
+        [&](const core::type::Bool*) {
             out << (value == 0 ? "false" : "true");
             return true;
         },
-        [&](const type::F32*) {
+        [&](const core::type::F32*) {
             out << value << ".0f";
             return true;
         },
-        [&](const type::F16*) {
+        [&](const core::type::F16*) {
             out << "float16_t(" << value << ".0h)";
             return true;
         },
-        [&](const type::I32*) {
+        [&](const core::type::I32*) {
             out << value;
             return true;
         },
-        [&](const type::U32*) {
+        [&](const core::type::U32*) {
             out << value << "u";
             return true;
         },
-        [&](const type::Vector* vec) {
-            if (!EmitType(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
+        [&](const core::type::Vector* vec) {
+            if (!EmitType(out, type, core::AddressSpace::kUndefined, core::Access::kReadWrite,
                           "")) {
                 return false;
             }
@@ -3738,8 +3803,8 @@ bool ASTPrinter::EmitValue(StringStream& out, const type::Type* type, int value)
             }
             return true;
         },
-        [&](const type::Matrix* mat) {
-            if (!EmitType(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kReadWrite,
+        [&](const core::type::Matrix* mat) {
+            if (!EmitType(out, type, core::AddressSpace::kUndefined, core::Access::kReadWrite,
                           "")) {
                 return false;
             }
@@ -3754,17 +3819,17 @@ bool ASTPrinter::EmitValue(StringStream& out, const type::Type* type, int value)
             }
             return true;
         },
-        [&](const type::Struct*) {
+        [&](const core::type::Struct*) {
             out << "(";
             TINT_DEFER(out << ")" << value);
-            return EmitType(out, type, builtin::AddressSpace::kUndefined,
-                            builtin::Access::kUndefined, "");
+            return EmitType(out, type, core::AddressSpace::kUndefined, core::Access::kUndefined,
+                            "");
         },
-        [&](const type::Array*) {
+        [&](const core::type::Array*) {
             out << "(";
             TINT_DEFER(out << ")" << value);
-            return EmitType(out, type, builtin::AddressSpace::kUndefined,
-                            builtin::Access::kUndefined, "");
+            return EmitType(out, type, core::AddressSpace::kUndefined, core::Access::kUndefined,
+                            "");
         },
         [&](Default) {
             diagnostics_.add_error(diag::System::Writer,
@@ -3773,7 +3838,7 @@ bool ASTPrinter::EmitValue(StringStream& out, const type::Type* type, int value)
         });
 }
 
-bool ASTPrinter::EmitZeroValue(StringStream& out, const type::Type* type) {
+bool ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) {
     return EmitValue(out, type, 0);
 }
 
@@ -4133,22 +4198,22 @@ bool ASTPrinter::EmitSwitch(const ast::SwitchStatement* stmt) {
 }
 
 bool ASTPrinter::EmitType(StringStream& out,
-                          const type::Type* type,
-                          builtin::AddressSpace address_space,
-                          builtin::Access access,
+                          const core::type::Type* type,
+                          core::AddressSpace address_space,
+                          core::Access access,
                           const std::string& name,
                           bool* name_printed /* = nullptr */) {
     if (name_printed) {
         *name_printed = false;
     }
     switch (address_space) {
-        case builtin::AddressSpace::kStorage:
-            if (access != builtin::Access::kRead) {
+        case core::AddressSpace::kStorage:
+            if (access != core::Access::kRead) {
                 out << "RW";
             }
             out << "ByteAddressBuffer";
             return true;
-        case builtin::AddressSpace::kUniform: {
+        case core::AddressSpace::kUniform: {
             auto array_length = (type->Size() + 15) / 16;
             out << "uint4 " << name << "[" << array_length << "]";
             if (name_printed) {
@@ -4162,11 +4227,11 @@ bool ASTPrinter::EmitType(StringStream& out,
 
     return Switch(
         type,
-        [&](const type::Array* ary) {
-            const type::Type* base_type = ary;
+        [&](const core::type::Array* ary) {
+            const core::type::Type* base_type = ary;
             std::vector<uint32_t> sizes;
-            while (auto* arr = base_type->As<type::Array>()) {
-                if (TINT_UNLIKELY(arr->Count()->Is<type::RuntimeArrayCount>())) {
+            while (auto* arr = base_type->As<core::type::Array>()) {
+                if (TINT_UNLIKELY(arr->Count()->Is<core::type::RuntimeArrayCount>())) {
                     TINT_ICE()
                         << "runtime arrays may only exist in storage buffers, which should have "
                            "been transformed into a ByteAddressBuffer";
@@ -4175,7 +4240,7 @@ bool ASTPrinter::EmitType(StringStream& out,
                 const auto count = arr->ConstantCount();
                 if (!count) {
                     diagnostics_.add_error(diag::System::Writer,
-                                           type::Array::kErrExpectedConstantCount);
+                                           core::type::Array::kErrExpectedConstantCount);
                     return false;
                 }
 
@@ -4196,24 +4261,24 @@ bool ASTPrinter::EmitType(StringStream& out,
             }
             return true;
         },
-        [&](const type::Bool*) {
+        [&](const core::type::Bool*) {
             out << "bool";
             return true;
         },
-        [&](const type::F32*) {
+        [&](const core::type::F32*) {
             out << "float";
             return true;
         },
-        [&](const type::F16*) {
+        [&](const core::type::F16*) {
             out << "float16_t";
             return true;
         },
-        [&](const type::I32*) {
+        [&](const core::type::I32*) {
             out << "int";
             return true;
         },
-        [&](const type::Matrix* mat) {
-            if (mat->type()->Is<type::F16>()) {
+        [&](const core::type::Matrix* mat) {
+            if (mat->type()->Is<core::type::F16>()) {
                 // Use matrix<type, N, M> for f16 matrix
                 out << "matrix<";
                 if (!EmitType(out, mat->type(), address_space, access, "")) {
@@ -4235,12 +4300,12 @@ bool ASTPrinter::EmitType(StringStream& out,
             out << mat->columns() << "x" << mat->rows();
             return true;
         },
-        [&](const type::Pointer*) {
+        [&](const core::type::Pointer*) {
             TINT_ICE() << "Attempting to emit pointer type. These should have "
                           "been removed with the SimplifyPointers transform";
             return false;
         },
-        [&](const type::Sampler* sampler) {
+        [&](const core::type::Sampler* sampler) {
             out << "Sampler";
             if (sampler->IsComparison()) {
                 out << "Comparison";
@@ -4248,43 +4313,43 @@ bool ASTPrinter::EmitType(StringStream& out,
             out << "State";
             return true;
         },
-        [&](const type::Struct* str) {
+        [&](const core::type::Struct* str) {
             out << StructName(str);
             return true;
         },
-        [&](const type::Texture* tex) {
-            if (TINT_UNLIKELY(tex->Is<type::ExternalTexture>())) {
+        [&](const core::type::Texture* tex) {
+            if (TINT_UNLIKELY(tex->Is<core::type::ExternalTexture>())) {
                 TINT_ICE() << "Multiplanar external texture transform was not run.";
                 return false;
             }
 
-            auto* storage = tex->As<type::StorageTexture>();
-            auto* ms = tex->As<type::MultisampledTexture>();
-            auto* depth_ms = tex->As<type::DepthMultisampledTexture>();
-            auto* sampled = tex->As<type::SampledTexture>();
+            auto* storage = tex->As<core::type::StorageTexture>();
+            auto* ms = tex->As<core::type::MultisampledTexture>();
+            auto* depth_ms = tex->As<core::type::DepthMultisampledTexture>();
+            auto* sampled = tex->As<core::type::SampledTexture>();
 
-            if (storage && storage->access() != builtin::Access::kRead) {
+            if (storage && storage->access() != core::Access::kRead) {
                 out << "RW";
             }
             out << "Texture";
 
             switch (tex->dim()) {
-                case type::TextureDimension::k1d:
+                case core::type::TextureDimension::k1d:
                     out << "1D";
                     break;
-                case type::TextureDimension::k2d:
+                case core::type::TextureDimension::k2d:
                     out << ((ms || depth_ms) ? "2DMS" : "2D");
                     break;
-                case type::TextureDimension::k2dArray:
+                case core::type::TextureDimension::k2dArray:
                     out << ((ms || depth_ms) ? "2DMSArray" : "2DArray");
                     break;
-                case type::TextureDimension::k3d:
+                case core::type::TextureDimension::k3d:
                     out << "3D";
                     break;
-                case type::TextureDimension::kCube:
+                case core::type::TextureDimension::kCube:
                     out << "Cube";
                     break;
-                case type::TextureDimension::kCubeArray:
+                case core::type::TextureDimension::kCubeArray:
                     out << "CubeArray";
                     break;
                 default:
@@ -4305,11 +4370,11 @@ bool ASTPrinter::EmitType(StringStream& out,
             } else if (sampled || ms) {
                 auto* subtype = sampled ? sampled->type() : ms->type();
                 out << "<";
-                if (subtype->Is<type::F32>()) {
+                if (subtype->Is<core::type::F32>()) {
                     out << "float4";
-                } else if (subtype->Is<type::I32>()) {
+                } else if (subtype->Is<core::type::I32>()) {
                     out << "int4";
-                } else if (TINT_LIKELY(subtype->Is<type::U32>())) {
+                } else if (TINT_LIKELY(subtype->Is<core::type::U32>())) {
                     out << "uint4";
                 } else {
                     TINT_ICE() << "Unsupported multisampled texture type";
@@ -4319,19 +4384,19 @@ bool ASTPrinter::EmitType(StringStream& out,
             }
             return true;
         },
-        [&](const type::U32*) {
+        [&](const core::type::U32*) {
             out << "uint";
             return true;
         },
-        [&](const type::Vector* vec) {
+        [&](const core::type::Vector* vec) {
             auto width = vec->Width();
-            if (vec->type()->Is<type::F32>() && width >= 1 && width <= 4) {
+            if (vec->type()->Is<core::type::F32>() && width >= 1 && width <= 4) {
                 out << "float" << width;
-            } else if (vec->type()->Is<type::I32>() && width >= 1 && width <= 4) {
+            } else if (vec->type()->Is<core::type::I32>() && width >= 1 && width <= 4) {
                 out << "int" << width;
-            } else if (vec->type()->Is<type::U32>() && width >= 1 && width <= 4) {
+            } else if (vec->type()->Is<core::type::U32>() && width >= 1 && width <= 4) {
                 out << "uint" << width;
-            } else if (vec->type()->Is<type::Bool>() && width >= 1 && width <= 4) {
+            } else if (vec->type()->Is<core::type::Bool>() && width >= 1 && width <= 4) {
                 out << "bool" << width;
             } else {
                 // For example, use "vector<float16_t, N>" for f16 vector.
@@ -4343,10 +4408,10 @@ bool ASTPrinter::EmitType(StringStream& out,
             }
             return true;
         },
-        [&](const type::Atomic* atomic) {
+        [&](const core::type::Atomic* atomic) {
             return EmitType(out, atomic->Type(), address_space, access, name);
         },
-        [&](const type::Void*) {
+        [&](const core::type::Void*) {
             out << "void";
             return true;
         },
@@ -4357,9 +4422,9 @@ bool ASTPrinter::EmitType(StringStream& out,
 }
 
 bool ASTPrinter::EmitTypeAndName(StringStream& out,
-                                 const type::Type* type,
-                                 builtin::AddressSpace address_space,
-                                 builtin::Access access,
+                                 const core::type::Type* type,
+                                 core::AddressSpace address_space,
+                                 core::Access access,
                                  const std::string& name) {
     bool name_printed = false;
     if (!EmitType(out, type, address_space, access, name, &name_printed)) {
@@ -4371,7 +4436,7 @@ bool ASTPrinter::EmitTypeAndName(StringStream& out,
     return true;
 }
 
-bool ASTPrinter::EmitStructType(TextBuffer* b, const type::Struct* str) {
+bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
     auto it = emitted_structs_.emplace(str);
     if (!it.second) {
         return true;
@@ -4393,14 +4458,16 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const type::Struct* str) {
                 if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
                     TINT_ICE() << "invalid entry point IO struct uses";
                 }
-                if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexInput)) {
+                if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexInput)) {
                     post += " : TEXCOORD" + std::to_string(location.value());
-                } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kVertexOutput)) {
+                } else if (pipeline_stage_uses.count(
+                               core::type::PipelineStageUsage::kVertexOutput)) {
                     post += " : TEXCOORD" + std::to_string(location.value());
-                } else if (pipeline_stage_uses.count(type::PipelineStageUsage::kFragmentInput)) {
+                } else if (pipeline_stage_uses.count(
+                               core::type::PipelineStageUsage::kFragmentInput)) {
                     post += " : TEXCOORD" + std::to_string(location.value());
                 } else if (TINT_LIKELY(pipeline_stage_uses.count(
-                               type::PipelineStageUsage::kFragmentOutput))) {
+                               core::type::PipelineStageUsage::kFragmentOutput))) {
                     if (auto index = attributes.index) {
                         post += " : SV_Target" + std::to_string(location.value() + index.value());
                     } else {
@@ -4435,8 +4502,8 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const type::Struct* str) {
             }
 
             out << pre;
-            if (!EmitTypeAndName(out, ty, builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kReadWrite, mem_name)) {
+            if (!EmitTypeAndName(out, ty, core::AddressSpace::kUndefined, core::Access::kReadWrite,
+                                 mem_name)) {
                 return false;
             }
             out << post << ";";
@@ -4449,16 +4516,16 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const type::Struct* str) {
 
 bool ASTPrinter::EmitUnaryOp(StringStream& out, const ast::UnaryOpExpression* expr) {
     switch (expr->op) {
-        case ast::UnaryOp::kIndirection:
-        case ast::UnaryOp::kAddressOf:
+        case core::UnaryOp::kIndirection:
+        case core::UnaryOp::kAddressOf:
             return EmitExpression(out, expr->expr);
-        case ast::UnaryOp::kComplement:
+        case core::UnaryOp::kComplement:
             out << "~";
             break;
-        case ast::UnaryOp::kNot:
+        case core::UnaryOp::kNot:
             out << "!";
             break;
-        case ast::UnaryOp::kNegation:
+        case core::UnaryOp::kNegation:
             out << "-";
             break;
     }
@@ -4504,7 +4571,7 @@ bool ASTPrinter::EmitLet(const ast::Let* let) {
 
     auto out = Line();
     out << "const ";
-    if (!EmitTypeAndName(out, type, builtin::AddressSpace::kUndefined, builtin::Access::kUndefined,
+    if (!EmitTypeAndName(out, type, core::AddressSpace::kUndefined, core::Access::kUndefined,
                          let->name->symbol.Name())) {
         return false;
     }
@@ -4520,19 +4587,19 @@ bool ASTPrinter::EmitLet(const ast::Let* let) {
 template <typename F>
 bool ASTPrinter::CallBuiltinHelper(StringStream& out,
                                    const ast::CallExpression* call,
-                                   const sem::Builtin* builtin,
+                                   const sem::BuiltinFn* builtin,
                                    F&& build) {
     // Generate the helper function if it hasn't been created already
     auto fn = tint::GetOrCreate(builtins_, builtin, [&]() -> std::string {
         TextBuffer b;
         TINT_DEFER(helpers_.Append(b));
 
-        auto fn_name = UniqueIdentifier(std::string("tint_") + builtin::str(builtin->Type()));
+        auto fn_name = UniqueIdentifier(std::string("tint_") + wgsl::str(builtin->Fn()));
         std::vector<std::string> parameter_names;
         {
             auto decl = Line(&b);
-            if (!EmitTypeAndName(decl, builtin->ReturnType(), builtin::AddressSpace::kUndefined,
-                                 builtin::Access::kUndefined, fn_name)) {
+            if (!EmitTypeAndName(decl, builtin->ReturnType(), core::AddressSpace::kUndefined,
+                                 core::Access::kUndefined, fn_name)) {
                 return "";
             }
             {
@@ -4543,12 +4610,12 @@ bool ASTPrinter::CallBuiltinHelper(StringStream& out,
                     }
                     auto param_name = "param_" + std::to_string(parameter_names.size());
                     const auto* ty = param->Type();
-                    if (auto* ptr = ty->As<type::Pointer>()) {
+                    if (auto* ptr = ty->As<core::type::Pointer>()) {
                         decl << "inout ";
                         ty = ptr->StoreType();
                     }
-                    if (!EmitTypeAndName(decl, ty, builtin::AddressSpace::kUndefined,
-                                         builtin::Access::kUndefined, param_name)) {
+                    if (!EmitTypeAndName(decl, ty, core::AddressSpace::kUndefined,
+                                         core::Access::kUndefined, param_name)) {
                         return "";
                     }
                     parameter_names.emplace_back(std::move(param_name));
@@ -4587,6 +4654,15 @@ bool ASTPrinter::CallBuiltinHelper(StringStream& out,
         }
     }
     return true;
+}
+
+std::string ASTPrinter::StructName(const core::type::Struct* s) {
+    auto name = s->Name().Name();
+    if (HasPrefix(name, "__")) {
+        name = tint::GetOrCreate(builtin_struct_names_, s,
+                                 [&] { return UniqueIdentifier(name.substr(2)); });
+    }
+    return name;
 }
 
 std::string ASTPrinter::UniqueIdentifier(const std::string& prefix /* = "" */) {

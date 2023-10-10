@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/ast_printer/test_helper.h"
-#include "src/tint/lang/spirv/writer/spv_dump.h"
+#include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::spirv::writer {
 namespace {
@@ -23,7 +25,7 @@ namespace {
 using SpirvASTPrinterTest = TestHelper;
 
 TEST_F(SpirvASTPrinterTest, UnaryOp_Negation_Integer) {
-    auto* expr = create<ast::UnaryOpExpression>(ast::UnaryOp::kNegation, Expr(1_i));
+    auto* expr = create<ast::UnaryOpExpression>(core::UnaryOp::kNegation, Expr(1_i));
     WrapInFunction(expr);
 
     Builder& b = Build();
@@ -39,7 +41,7 @@ TEST_F(SpirvASTPrinterTest, UnaryOp_Negation_Integer) {
 }
 
 TEST_F(SpirvASTPrinterTest, UnaryOp_Negation_Float) {
-    auto* expr = create<ast::UnaryOpExpression>(ast::UnaryOp::kNegation, Expr(1_f));
+    auto* expr = create<ast::UnaryOpExpression>(core::UnaryOp::kNegation, Expr(1_f));
     WrapInFunction(expr);
 
     Builder& b = Build();
@@ -55,7 +57,7 @@ TEST_F(SpirvASTPrinterTest, UnaryOp_Negation_Float) {
 }
 
 TEST_F(SpirvASTPrinterTest, UnaryOp_Complement) {
-    auto* expr = create<ast::UnaryOpExpression>(ast::UnaryOp::kComplement, Expr(1_i));
+    auto* expr = create<ast::UnaryOpExpression>(core::UnaryOp::kComplement, Expr(1_i));
     WrapInFunction(expr);
 
     Builder& b = Build();
@@ -71,7 +73,7 @@ TEST_F(SpirvASTPrinterTest, UnaryOp_Complement) {
 }
 
 TEST_F(SpirvASTPrinterTest, UnaryOp_Not) {
-    auto* expr = create<ast::UnaryOpExpression>(ast::UnaryOp::kNot, Expr(false));
+    auto* expr = create<ast::UnaryOpExpression>(core::UnaryOp::kNot, Expr(false));
     WrapInFunction(expr);
 
     Builder& b = Build();
@@ -89,7 +91,7 @@ TEST_F(SpirvASTPrinterTest, UnaryOp_Not) {
 TEST_F(SpirvASTPrinterTest, UnaryOp_LoadRequired) {
     auto* var = Var("param", ty.vec3<f32>());
 
-    auto* expr = create<ast::UnaryOpExpression>(ast::UnaryOp::kNegation, Expr("param"));
+    auto* expr = create<ast::UnaryOpExpression>(core::UnaryOp::kNegation, Expr("param"));
     WrapInFunction(var, expr);
 
     Builder& b = Build();

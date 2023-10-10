@@ -38,11 +38,11 @@ using testing::StrEq;
 class DeviceCreationTest : public testing::Test {
   protected:
     void SetUp() override {
-        dawnProcSetProcs(&dawn::native::GetProcs());
+        dawnProcSetProcs(&GetProcs());
 
         // Create an instance with default toggles and create an adapter from it.
         WGPUInstanceDescriptor safeInstanceDesc = {};
-        instance = std::make_unique<dawn::native::Instance>(&safeInstanceDesc);
+        instance = std::make_unique<Instance>(&safeInstanceDesc);
 
         wgpu::RequestAdapterOptions options = {};
         options.backendType = wgpu::BackendType::Null;
@@ -55,12 +55,12 @@ class DeviceCreationTest : public testing::Test {
         const char* allowUnsafeApisToggle = "allow_unsafe_apis";
         WGPUDawnTogglesDescriptor unsafeInstanceTogglesDesc = {};
         unsafeInstanceTogglesDesc.chain.sType = WGPUSType::WGPUSType_DawnTogglesDescriptor;
-        unsafeInstanceTogglesDesc.enabledTogglesCount = 1;
+        unsafeInstanceTogglesDesc.enabledToggleCount = 1;
         unsafeInstanceTogglesDesc.enabledToggles = &allowUnsafeApisToggle;
         WGPUInstanceDescriptor unsafeInstanceDesc = {};
         unsafeInstanceDesc.nextInChain = &unsafeInstanceTogglesDesc.chain;
 
-        unsafeInstance = std::make_unique<dawn::native::Instance>(&unsafeInstanceDesc);
+        unsafeInstance = std::make_unique<Instance>(&unsafeInstanceDesc);
         unsafeAdapter = unsafeInstance->EnumerateAdapters(&options)[0];
 
         ASSERT_NE(adapter.Get(), nullptr);
@@ -75,14 +75,12 @@ class DeviceCreationTest : public testing::Test {
         dawnProcSetProcs(nullptr);
     }
 
-    static constexpr size_t kTotalFeaturesCount =
-        static_cast<size_t>(dawn::native::Feature::EnumCount);
+    static constexpr size_t kTotalFeaturesCount = static_cast<size_t>(kEnumCount<Feature>);
 
-    std::unique_ptr<dawn::native::Instance> instance;
-    std::unique_ptr<dawn::native::Instance> unsafeInstance;
-    dawn::native::Adapter adapter;
-    dawn::native::Adapter unsafeAdapter;
-    dawn::native::FeaturesInfo featuresInfo;
+    std::unique_ptr<Instance> instance;
+    std::unique_ptr<Instance> unsafeInstance;
+    Adapter adapter;
+    Adapter unsafeAdapter;
 };
 
 // Test successful call to CreateDevice with no descriptor
@@ -106,12 +104,12 @@ TEST_F(DeviceCreationTest, CreateDeviceWithTogglesSuccess) {
 
     const char* toggle = "skip_validation";
     deviceTogglesDesc.enabledToggles = &toggle;
-    deviceTogglesDesc.enabledTogglesCount = 1;
+    deviceTogglesDesc.enabledToggleCount = 1;
 
     wgpu::Device device = adapter.CreateDevice(&desc);
     EXPECT_NE(device, nullptr);
 
-    auto toggles = dawn::native::GetTogglesUsed(device.Get());
+    auto toggles = GetTogglesUsed(device.Get());
     EXPECT_THAT(toggles, Contains(StrEq(toggle)));
 }
 
@@ -119,27 +117,22 @@ TEST_F(DeviceCreationTest, CreateDeviceWithTogglesSuccess) {
 // instance but can be overriden by device toggles.
 TEST_F(DeviceCreationTest, CreateDeviceRequiringExperimentalFeatures) {
     // Ensure that unsafe apis are disallowed on safe adapter.
-    ASSERT_FALSE(dawn::native::FromAPI(adapter.Get())
-                     ->GetTogglesState()
-                     .IsEnabled(dawn::native::Toggle::AllowUnsafeAPIs));
+    ASSERT_FALSE(FromAPI(adapter.Get())->GetTogglesState().IsEnabled(Toggle::AllowUnsafeAPIs));
     // Ensure that unsafe apis are allowed unsafe adapter(s).
-    ASSERT_TRUE(dawn::native::FromAPI(unsafeAdapter.Get())
-                    ->GetTogglesState()
-                    .IsEnabled(dawn::native::Toggle::AllowUnsafeAPIs));
+    ASSERT_TRUE(FromAPI(unsafeAdapter.Get())->GetTogglesState().IsEnabled(Toggle::AllowUnsafeAPIs));
 
     for (size_t i = 0; i < kTotalFeaturesCount; i++) {
-        dawn::native::Feature feature = static_cast<dawn::native::Feature>(i);
-        wgpu::FeatureName featureName = dawn::native::FeatureEnumToAPIFeature(feature);
+        Feature feature = static_cast<Feature>(i);
+        wgpu::FeatureName featureName = ToAPI(feature);
 
         // Only test experimental features.
-        if (featuresInfo.GetFeatureInfo(featureName)->featureState ==
-            dawn::native::FeatureInfo::FeatureState::Stable) {
+        if (kFeatureNameAndInfoList[feature].featureState == FeatureInfo::FeatureState::Stable) {
             continue;
         }
 
         wgpu::DeviceDescriptor deviceDescriptor;
         deviceDescriptor.requiredFeatures = &featureName;
-        deviceDescriptor.requiredFeaturesCount = 1;
+        deviceDescriptor.requiredFeatureCount = 1;
 
         // Test creating device on default adapter would fail.
         {
@@ -166,7 +159,7 @@ TEST_F(DeviceCreationTest, CreateDeviceRequiringExperimentalFeatures) {
             const char* const enableToggles[] = {"allow_unsafe_apis"};
             wgpu::DawnTogglesDescriptor deviceTogglesDesc;
             deviceTogglesDesc.enabledToggles = enableToggles;
-            deviceTogglesDesc.enabledTogglesCount = 1;
+            deviceTogglesDesc.enabledToggleCount = 1;
             deviceDescriptor.nextInChain = &deviceTogglesDesc;
 
             // Test on adapter with AllowUnsafeApis disabled.
@@ -198,7 +191,7 @@ TEST_F(DeviceCreationTest, CreateDeviceRequiringExperimentalFeatures) {
             const char* const disableToggles[] = {"allow_unsafe_apis"};
             wgpu::DawnTogglesDescriptor deviceToggleDesc;
             deviceToggleDesc.disabledToggles = disableToggles;
-            deviceToggleDesc.disabledTogglesCount = 1;
+            deviceToggleDesc.disabledToggleCount = 1;
             deviceDescriptor.nextInChain = &deviceToggleDesc;
 
             // Test on adapter with DisallowUnsafeApis enabled.
@@ -228,8 +221,7 @@ TEST_F(DeviceCreationTest, CreateDeviceWithCacheSuccess) {
         desc.nextInChain = &cacheDesc;
         wgpu::Device device2 = adapter.CreateDevice(&desc);
 
-        EXPECT_EQ(dawn::native::FromAPI(device1.Get())->GetCacheKey(),
-                  dawn::native::FromAPI(device2.Get())->GetCacheKey());
+        EXPECT_EQ(FromAPI(device1.Get())->GetCacheKey(), FromAPI(device2.Get())->GetCacheKey());
     }
     // Default device descriptor should not have the same cache key as a device descriptor with
     // a non-default cache descriptor.
@@ -245,8 +237,7 @@ TEST_F(DeviceCreationTest, CreateDeviceWithCacheSuccess) {
         wgpu::Device device2 = adapter.CreateDevice(&desc);
         EXPECT_NE(device2, nullptr);
 
-        EXPECT_NE(dawn::native::FromAPI(device1.Get())->GetCacheKey(),
-                  dawn::native::FromAPI(device2.Get())->GetCacheKey());
+        EXPECT_NE(FromAPI(device1.Get())->GetCacheKey(), FromAPI(device2.Get())->GetCacheKey());
     }
     // Two non-default cache descriptors should not have the same cache key.
     {
@@ -264,8 +255,7 @@ TEST_F(DeviceCreationTest, CreateDeviceWithCacheSuccess) {
         wgpu::Device device2 = adapter.CreateDevice(&desc);
         EXPECT_NE(device2, nullptr);
 
-        EXPECT_NE(dawn::native::FromAPI(device1.Get())->GetCacheKey(),
-                  dawn::native::FromAPI(device2.Get())->GetCacheKey());
+        EXPECT_NE(FromAPI(device1.Get())->GetCacheKey(), FromAPI(device2.Get())->GetCacheKey());
     }
 }
 
@@ -308,7 +298,7 @@ TEST_F(DeviceCreationTest, RequestDeviceFailure) {
     wgpu::DeviceDescriptor desc = {};
     wgpu::FeatureName invalidFeature = static_cast<wgpu::FeatureName>(WGPUFeatureName_Force32);
     desc.requiredFeatures = &invalidFeature;
-    desc.requiredFeaturesCount = 1;
+    desc.requiredFeatureCount = 1;
 
     adapter.RequestDevice(&desc, cb.Callback(), cb.MakeUserdata(this));
 }

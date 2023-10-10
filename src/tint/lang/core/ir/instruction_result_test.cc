@@ -14,12 +14,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
 
-using namespace tint::number_suffixes;        // NOLINT
-using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
 using IR_InstructionResultTest = IRTestHelper;
@@ -35,5 +35,14 @@ TEST_F(IR_InstructionResultTest, Destroy_HasSource) {
         "");
 }
 
+TEST_F(IR_InstructionResultTest, Clone) {
+    auto* val = b.Add(mod.Types().i32(), 1_i, 2_i)->Result();
+    auto* new_res = clone_ctx.Clone(val);
+
+    EXPECT_NE(val, new_res);
+    EXPECT_EQ(nullptr, new_res->Source());
+    EXPECT_EQ(mod.Types().i32(), new_res->Type());
+}
+
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

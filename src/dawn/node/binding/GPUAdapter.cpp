@@ -99,6 +99,12 @@ bool GPUAdapter::getIsFallbackAdapter(Napi::Env) {
     return adapterProperties.adapterType == WGPUAdapterType_CPU;
 }
 
+bool GPUAdapter::getIsCompatibilityMode(Napi::Env) {
+    WGPUAdapterProperties adapterProperties = {};
+    adapter_.GetProperties(&adapterProperties);
+    return adapterProperties.compatibilityMode;
+}
+
 interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevice(
     Napi::Env env,
     interop::GPUDeviceDescriptor descriptor) {
@@ -119,6 +125,10 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
 
         requiredFeatures.emplace_back(feature);
     }
+    if (!conv(desc.label, descriptor.label)) {
+        Napi::Error::New(env, "invalid value for label").ThrowAsJavaScriptException();
+        return promise;
+    }
 
     wgpu::RequiredLimits limits;
 #define COPY_LIMIT(LIMIT)                                        \
@@ -134,7 +144,7 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
         return promise;
     }
 
-    desc.requiredFeaturesCount = requiredFeatures.size();
+    desc.requiredFeatureCount = requiredFeatures.size();
     desc.requiredFeatures = requiredFeatures.data();
     desc.requiredLimits = &limits;
 
@@ -153,8 +163,7 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
 }
 
 interop::Promise<interop::Interface<interop::GPUAdapterInfo>> GPUAdapter::requestAdapterInfo(
-    Napi::Env env,
-    std::vector<std::string> unmaskHints) {
+    Napi::Env env) {
     interop::Promise<interop::Interface<interop::GPUAdapterInfo>> promise(env, PROMISE_INFO);
 
     WGPUAdapterProperties adapterProperties = {};

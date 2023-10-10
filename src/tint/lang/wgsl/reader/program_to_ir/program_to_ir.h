@@ -18,6 +18,7 @@
 #include <string>
 
 #include "src/tint/lang/core/ir/module.h"
+#include "src/tint/utils/diagnostic/diagnostic.h"
 #include "src/tint/utils/result/result.h"
 
 // Forward Declarations
@@ -27,15 +28,14 @@ class Program;
 
 namespace tint::wgsl::reader {
 
-/// Builds an ir::Module from the given Program
+/// Builds a WGSL-dialect core::ir::Module from the given Program
 /// @param program the Program to use.
-/// @returns the `utiils::Result` of generating the IR. The result will contain the `ir::Module` on
-/// success, otherwise the `std::string` error.
+/// @returns the WGSL-dialect IR module.
 ///
 /// @note this assumes the `program.IsValid()`, and has had const-eval done so
 /// any abstract values have been calculated and converted into the relevant
 /// concrete types.
-tint::Result<ir::Module, std::string> ProgramToIR(const Program* program);
+tint::Result<core::ir::Module> ProgramToIR(const Program& program);
 
 }  // namespace tint::wgsl::reader
 

@@ -16,9 +16,12 @@
 
 #include <utility>
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Convert);
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 
-namespace tint::ir {
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Convert);
+
+namespace tint::core::ir {
 
 Convert::Convert(InstructionResult* result, Value* value) {
     AddOperand(Convert::kValueOperandOffset, value);
@@ -27,4 +30,10 @@ Convert::Convert(InstructionResult* result, Value* value) {
 
 Convert::~Convert() = default;
 
-}  // namespace tint::ir
+Convert* Convert::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto* val = ctx.Remap(Args()[0]);
+    return ctx.ir.instructions.Create<Convert>(new_result, val);
+}
+
+}  // namespace tint::core::ir

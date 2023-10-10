@@ -14,12 +14,12 @@
 
 #include "src/tint/lang/wgsl/sem/struct.h"
 #include "src/tint/lang/core/type/texture.h"
-#include "src/tint/lang/wgsl/sem/test_helper.h"
+#include "src/tint/lang/wgsl/sem/helper_test.h"
 
 namespace tint::sem {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using SemStructTest = TestHelper;
 
 TEST_F(SemStructTest, Creation) {
@@ -44,7 +44,7 @@ TEST_F(SemStructTest, Equals) {
 
     EXPECT_TRUE(a->Equals(*a));
     EXPECT_FALSE(a->Equals(*b));
-    EXPECT_FALSE(a->Equals(type::Void{}));
+    EXPECT_FALSE(a->Equals(core::type::Void{}));
 }
 
 TEST_F(SemStructTest, FriendlyName) {

@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/test_helper.h"
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/binary.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::spirv::writer {
 namespace {
@@ -26,7 +28,7 @@ struct BinaryTestCase {
     /// The element type to test.
     TestElementType type;
     /// The binary operation.
-    enum ir::Binary::Kind kind;
+    enum core::ir::Binary::Kind kind;
     /// The expected SPIR-V instruction.
     std::string spirv_inst;
     /// The expected SPIR-V result type name.
@@ -67,52 +69,49 @@ TEST_P(Arithmetic_Bitwise, Vector) {
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_I32,
     Arithmetic_Bitwise,
-    testing::Values(BinaryTestCase{kI32, ir::Binary::Kind::kAdd, "OpIAdd", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kSubtract, "OpISub", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kMultiply, "OpIMul", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kDivide, "OpSDiv", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kModulo, "OpSRem", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kAnd, "OpBitwiseAnd", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kOr, "OpBitwiseOr", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kXor, "OpBitwiseXor", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kShiftLeft, "OpShiftLeftLogical", "int"},
-                    BinaryTestCase{kI32, ir::Binary::Kind::kShiftRight, "OpShiftRightArithmetic",
-                                   "int"}));
+    testing::Values(BinaryTestCase{kI32, core::ir::Binary::Kind::kAdd, "OpIAdd", "int"},
+                    BinaryTestCase{kI32, core::ir::Binary::Kind::kSubtract, "OpISub", "int"},
+                    BinaryTestCase{kI32, core::ir::Binary::Kind::kMultiply, "OpIMul", "int"},
+                    BinaryTestCase{kI32, core::ir::Binary::Kind::kAnd, "OpBitwiseAnd", "int"},
+                    BinaryTestCase{kI32, core::ir::Binary::Kind::kOr, "OpBitwiseOr", "int"},
+                    BinaryTestCase{kI32, core::ir::Binary::Kind::kXor, "OpBitwiseXor", "int"},
+                    BinaryTestCase{kI32, core::ir::Binary::Kind::kShiftLeft, "OpShiftLeftLogical",
+                                   "int"},
+                    BinaryTestCase{kI32, core::ir::Binary::Kind::kShiftRight,
+                                   "OpShiftRightArithmetic", "int"}));
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_U32,
     Arithmetic_Bitwise,
     testing::Values(
-        BinaryTestCase{kU32, ir::Binary::Kind::kAdd, "OpIAdd", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kSubtract, "OpISub", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kMultiply, "OpIMul", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kDivide, "OpUDiv", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kModulo, "OpUMod", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kAnd, "OpBitwiseAnd", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kOr, "OpBitwiseOr", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kXor, "OpBitwiseXor", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kShiftLeft, "OpShiftLeftLogical", "uint"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kShiftRight, "OpShiftRightLogical", "uint"}));
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kAdd, "OpIAdd", "uint"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kSubtract, "OpISub", "uint"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kMultiply, "OpIMul", "uint"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kAnd, "OpBitwiseAnd", "uint"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kOr, "OpBitwiseOr", "uint"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kXor, "OpBitwiseXor", "uint"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kShiftLeft, "OpShiftLeftLogical", "uint"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kShiftRight, "OpShiftRightLogical", "uint"}));
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_F32,
     Arithmetic_Bitwise,
-    testing::Values(BinaryTestCase{kF32, ir::Binary::Kind::kAdd, "OpFAdd", "float"},
-                    BinaryTestCase{kF32, ir::Binary::Kind::kSubtract, "OpFSub", "float"},
-                    BinaryTestCase{kF32, ir::Binary::Kind::kMultiply, "OpFMul", "float"},
-                    BinaryTestCase{kF32, ir::Binary::Kind::kDivide, "OpFDiv", "float"},
-                    BinaryTestCase{kF32, ir::Binary::Kind::kModulo, "OpFRem", "float"}));
+    testing::Values(BinaryTestCase{kF32, core::ir::Binary::Kind::kAdd, "OpFAdd", "float"},
+                    BinaryTestCase{kF32, core::ir::Binary::Kind::kSubtract, "OpFSub", "float"},
+                    BinaryTestCase{kF32, core::ir::Binary::Kind::kMultiply, "OpFMul", "float"},
+                    BinaryTestCase{kF32, core::ir::Binary::Kind::kDivide, "OpFDiv", "float"},
+                    BinaryTestCase{kF32, core::ir::Binary::Kind::kModulo, "OpFRem", "float"}));
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_F16,
     Arithmetic_Bitwise,
-    testing::Values(BinaryTestCase{kF16, ir::Binary::Kind::kAdd, "OpFAdd", "half"},
-                    BinaryTestCase{kF16, ir::Binary::Kind::kSubtract, "OpFSub", "half"},
-                    BinaryTestCase{kF16, ir::Binary::Kind::kMultiply, "OpFMul", "half"},
-                    BinaryTestCase{kF16, ir::Binary::Kind::kDivide, "OpFDiv", "half"},
-                    BinaryTestCase{kF16, ir::Binary::Kind::kModulo, "OpFRem", "half"}));
+    testing::Values(BinaryTestCase{kF16, core::ir::Binary::Kind::kAdd, "OpFAdd", "half"},
+                    BinaryTestCase{kF16, core::ir::Binary::Kind::kSubtract, "OpFSub", "half"},
+                    BinaryTestCase{kF16, core::ir::Binary::Kind::kMultiply, "OpFMul", "half"},
+                    BinaryTestCase{kF16, core::ir::Binary::Kind::kDivide, "OpFDiv", "half"},
+                    BinaryTestCase{kF16, core::ir::Binary::Kind::kModulo, "OpFRem", "half"}));
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_Bool,
     Arithmetic_Bitwise,
-    testing::Values(BinaryTestCase{kBool, ir::Binary::Kind::kAnd, "OpLogicalAnd", "bool"},
-                    BinaryTestCase{kBool, ir::Binary::Kind::kOr, "OpLogicalOr", "bool"}));
+    testing::Values(BinaryTestCase{kBool, core::ir::Binary::Kind::kAnd, "OpLogicalAnd", "bool"},
+                    BinaryTestCase{kBool, core::ir::Binary::Kind::kOr, "OpLogicalOr", "bool"}));
 
 TEST_F(SpirvWriterTest, Binary_ScalarTimesVector_F32) {
     auto* scalar = b.FunctionParam("scalar", ty.f32());
@@ -255,47 +254,53 @@ INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_I32,
     Comparison,
     testing::Values(
-        BinaryTestCase{kI32, ir::Binary::Kind::kEqual, "OpIEqual", "bool"},
-        BinaryTestCase{kI32, ir::Binary::Kind::kNotEqual, "OpINotEqual", "bool"},
-        BinaryTestCase{kI32, ir::Binary::Kind::kGreaterThan, "OpSGreaterThan", "bool"},
-        BinaryTestCase{kI32, ir::Binary::Kind::kGreaterThanEqual, "OpSGreaterThanEqual", "bool"},
-        BinaryTestCase{kI32, ir::Binary::Kind::kLessThan, "OpSLessThan", "bool"},
-        BinaryTestCase{kI32, ir::Binary::Kind::kLessThanEqual, "OpSLessThanEqual", "bool"}));
+        BinaryTestCase{kI32, core::ir::Binary::Kind::kEqual, "OpIEqual", "bool"},
+        BinaryTestCase{kI32, core::ir::Binary::Kind::kNotEqual, "OpINotEqual", "bool"},
+        BinaryTestCase{kI32, core::ir::Binary::Kind::kGreaterThan, "OpSGreaterThan", "bool"},
+        BinaryTestCase{kI32, core::ir::Binary::Kind::kGreaterThanEqual, "OpSGreaterThanEqual",
+                       "bool"},
+        BinaryTestCase{kI32, core::ir::Binary::Kind::kLessThan, "OpSLessThan", "bool"},
+        BinaryTestCase{kI32, core::ir::Binary::Kind::kLessThanEqual, "OpSLessThanEqual", "bool"}));
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_U32,
     Comparison,
     testing::Values(
-        BinaryTestCase{kU32, ir::Binary::Kind::kEqual, "OpIEqual", "bool"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kNotEqual, "OpINotEqual", "bool"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kGreaterThan, "OpUGreaterThan", "bool"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kGreaterThanEqual, "OpUGreaterThanEqual", "bool"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kLessThan, "OpULessThan", "bool"},
-        BinaryTestCase{kU32, ir::Binary::Kind::kLessThanEqual, "OpULessThanEqual", "bool"}));
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kEqual, "OpIEqual", "bool"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kNotEqual, "OpINotEqual", "bool"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kGreaterThan, "OpUGreaterThan", "bool"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kGreaterThanEqual, "OpUGreaterThanEqual",
+                       "bool"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kLessThan, "OpULessThan", "bool"},
+        BinaryTestCase{kU32, core::ir::Binary::Kind::kLessThanEqual, "OpULessThanEqual", "bool"}));
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_F32,
     Comparison,
     testing::Values(
-        BinaryTestCase{kF32, ir::Binary::Kind::kEqual, "OpFOrdEqual", "bool"},
-        BinaryTestCase{kF32, ir::Binary::Kind::kNotEqual, "OpFOrdNotEqual", "bool"},
-        BinaryTestCase{kF32, ir::Binary::Kind::kGreaterThan, "OpFOrdGreaterThan", "bool"},
-        BinaryTestCase{kF32, ir::Binary::Kind::kGreaterThanEqual, "OpFOrdGreaterThanEqual", "bool"},
-        BinaryTestCase{kF32, ir::Binary::Kind::kLessThan, "OpFOrdLessThan", "bool"},
-        BinaryTestCase{kF32, ir::Binary::Kind::kLessThanEqual, "OpFOrdLessThanEqual", "bool"}));
+        BinaryTestCase{kF32, core::ir::Binary::Kind::kEqual, "OpFOrdEqual", "bool"},
+        BinaryTestCase{kF32, core::ir::Binary::Kind::kNotEqual, "OpFOrdNotEqual", "bool"},
+        BinaryTestCase{kF32, core::ir::Binary::Kind::kGreaterThan, "OpFOrdGreaterThan", "bool"},
+        BinaryTestCase{kF32, core::ir::Binary::Kind::kGreaterThanEqual, "OpFOrdGreaterThanEqual",
+                       "bool"},
+        BinaryTestCase{kF32, core::ir::Binary::Kind::kLessThan, "OpFOrdLessThan", "bool"},
+        BinaryTestCase{kF32, core::ir::Binary::Kind::kLessThanEqual, "OpFOrdLessThanEqual",
+                       "bool"}));
 INSTANTIATE_TEST_SUITE_P(
     SpirvWriterTest_Binary_F16,
     Comparison,
     testing::Values(
-        BinaryTestCase{kF16, ir::Binary::Kind::kEqual, "OpFOrdEqual", "bool"},
-        BinaryTestCase{kF16, ir::Binary::Kind::kNotEqual, "OpFOrdNotEqual", "bool"},
-        BinaryTestCase{kF16, ir::Binary::Kind::kGreaterThan, "OpFOrdGreaterThan", "bool"},
-        BinaryTestCase{kF16, ir::Binary::Kind::kGreaterThanEqual, "OpFOrdGreaterThanEqual", "bool"},
-        BinaryTestCase{kF16, ir::Binary::Kind::kLessThan, "OpFOrdLessThan", "bool"},
-        BinaryTestCase{kF16, ir::Binary::Kind::kLessThanEqual, "OpFOrdLessThanEqual", "bool"}));
+        BinaryTestCase{kF16, core::ir::Binary::Kind::kEqual, "OpFOrdEqual", "bool"},
+        BinaryTestCase{kF16, core::ir::Binary::Kind::kNotEqual, "OpFOrdNotEqual", "bool"},
+        BinaryTestCase{kF16, core::ir::Binary::Kind::kGreaterThan, "OpFOrdGreaterThan", "bool"},
+        BinaryTestCase{kF16, core::ir::Binary::Kind::kGreaterThanEqual, "OpFOrdGreaterThanEqual",
+                       "bool"},
+        BinaryTestCase{kF16, core::ir::Binary::Kind::kLessThan, "OpFOrdLessThan", "bool"},
+        BinaryTestCase{kF16, core::ir::Binary::Kind::kLessThanEqual, "OpFOrdLessThanEqual",
+                       "bool"}));
 INSTANTIATE_TEST_SUITE_P(SpirvWriterTest_Binary_Bool,
                          Comparison,
-                         testing::Values(BinaryTestCase{kBool, ir::Binary::Kind::kEqual,
+                         testing::Values(BinaryTestCase{kBool, core::ir::Binary::Kind::kEqual,
                                                         "OpLogicalEqual", "bool"},
-                                         BinaryTestCase{kBool, ir::Binary::Kind::kNotEqual,
+                                         BinaryTestCase{kBool, core::ir::Binary::Kind::kNotEqual,
                                                         "OpLogicalNotEqual", "bool"}));
 
 TEST_F(SpirvWriterTest, Binary_Chain) {
@@ -312,6 +317,334 @@ TEST_F(SpirvWriterTest, Binary_Chain) {
     ASSERT_TRUE(Generate()) << Error() << output_;
     EXPECT_INST("%sub = OpISub %int %int_1 %int_2");
     EXPECT_INST("%add = OpIAdd %int %sub %sub");
+}
+
+TEST_F(SpirvWriterTest, Divide_u32_u32) {
+    Vector<core::ir::FunctionParam*, 4> args;
+    args.Push(b.FunctionParam("lhs", ty.u32()));
+    args.Push(b.FunctionParam("rhs", ty.u32()));
+    auto* func = b.Function("foo", ty.u32());
+    func->SetParams(args);
+    b.Append(func->Block(), [&] {
+        auto* result = b.Binary(core::ir::Binary::Kind::kDivide, ty.u32(), args[0], args[1]);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(R"(
+               ; Function foo
+        %foo = OpFunction %uint None %5
+        %lhs = OpFunctionParameter %uint
+        %rhs = OpFunctionParameter %uint
+          %6 = OpLabel
+     %result = OpFunctionCall %uint %tint_div_u32 %lhs %rhs
+               OpReturnValue %result
+               OpFunctionEnd
+
+               ; Function tint_div_u32
+%tint_div_u32 = OpFunction %uint None %5
+      %lhs_0 = OpFunctionParameter %uint
+      %rhs_0 = OpFunctionParameter %uint
+         %11 = OpLabel
+         %12 = OpIEqual %bool %rhs_0 %uint_0
+         %15 = OpSelect %uint %12 %uint_1 %rhs_0
+         %17 = OpUDiv %uint %lhs_0 %15
+               OpReturnValue %17
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Divide_i32_i32) {
+    Vector<core::ir::FunctionParam*, 4> args;
+    args.Push(b.FunctionParam("lhs", ty.i32()));
+    args.Push(b.FunctionParam("rhs", ty.i32()));
+    auto* func = b.Function("foo", ty.i32());
+    func->SetParams(args);
+    b.Append(func->Block(), [&] {
+        auto* result = b.Binary(core::ir::Binary::Kind::kDivide, ty.i32(), args[0], args[1]);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(R"(
+               ; Function foo
+        %foo = OpFunction %int None %5
+        %lhs = OpFunctionParameter %int
+        %rhs = OpFunctionParameter %int
+          %6 = OpLabel
+     %result = OpFunctionCall %int %tint_div_i32 %lhs %rhs
+               OpReturnValue %result
+               OpFunctionEnd
+
+               ; Function tint_div_i32
+%tint_div_i32 = OpFunction %int None %5
+      %lhs_0 = OpFunctionParameter %int
+      %rhs_0 = OpFunctionParameter %int
+         %11 = OpLabel
+         %12 = OpIEqual %bool %rhs_0 %int_0
+         %15 = OpIEqual %bool %lhs_0 %int_n2147483648
+         %17 = OpIEqual %bool %rhs_0 %int_n1
+         %19 = OpLogicalAnd %bool %15 %17
+         %20 = OpLogicalOr %bool %12 %19
+         %21 = OpSelect %int %20 %int_1 %rhs_0
+         %23 = OpSDiv %int %lhs_0 %21
+               OpReturnValue %23
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Divide_i32_vec4i) {
+    Vector<core::ir::FunctionParam*, 4> args;
+    args.Push(b.FunctionParam("lhs", ty.i32()));
+    args.Push(b.FunctionParam("rhs", ty.vec4<i32>()));
+    auto* func = b.Function("foo", ty.vec4<i32>());
+    func->SetParams(args);
+    b.Append(func->Block(), [&] {
+        auto* result = b.Binary(core::ir::Binary::Kind::kDivide, ty.vec4<i32>(), args[0], args[1]);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%16 = OpConstantNull %v4int");
+    EXPECT_INST(R"(
+               ; Function foo
+        %foo = OpFunction %v4int None %6
+        %lhs = OpFunctionParameter %int
+        %rhs = OpFunctionParameter %v4int
+          %7 = OpLabel
+          %8 = OpCompositeConstruct %v4int %lhs %lhs %lhs %lhs
+     %result = OpFunctionCall %v4int %tint_div_v4i32 %8 %rhs
+               OpReturnValue %result
+               OpFunctionEnd
+
+               ; Function tint_div_v4i32
+%tint_div_v4i32 = OpFunction %v4int None %13
+      %lhs_0 = OpFunctionParameter %v4int
+      %rhs_0 = OpFunctionParameter %v4int
+         %14 = OpLabel
+         %15 = OpIEqual %v4bool %rhs_0 %16
+         %19 = OpIEqual %v4bool %lhs_0 %20
+         %22 = OpIEqual %v4bool %rhs_0 %23
+         %25 = OpLogicalAnd %v4bool %19 %22
+         %26 = OpLogicalOr %v4bool %15 %25
+         %27 = OpSelect %v4int %26 %28 %rhs_0
+         %30 = OpSDiv %v4int %lhs_0 %27
+               OpReturnValue %30
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Divide_vec4i_i32) {
+    Vector<core::ir::FunctionParam*, 4> args;
+    args.Push(b.FunctionParam("lhs", ty.vec4<i32>()));
+    args.Push(b.FunctionParam("rhs", ty.i32()));
+    auto* func = b.Function("foo", ty.vec4<i32>());
+    func->SetParams(args);
+    b.Append(func->Block(), [&] {
+        auto* result = b.Binary(core::ir::Binary::Kind::kDivide, ty.vec4<i32>(), args[0], args[1]);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%16 = OpConstantNull %v4int");
+    EXPECT_INST(R"(
+               ; Function foo
+        %foo = OpFunction %v4int None %6
+        %lhs = OpFunctionParameter %v4int
+        %rhs = OpFunctionParameter %int
+          %7 = OpLabel
+          %8 = OpCompositeConstruct %v4int %rhs %rhs %rhs %rhs
+     %result = OpFunctionCall %v4int %tint_div_v4i32 %lhs %8
+               OpReturnValue %result
+               OpFunctionEnd
+
+               ; Function tint_div_v4i32
+%tint_div_v4i32 = OpFunction %v4int None %13
+      %lhs_0 = OpFunctionParameter %v4int
+      %rhs_0 = OpFunctionParameter %v4int
+         %14 = OpLabel
+         %15 = OpIEqual %v4bool %rhs_0 %16
+         %19 = OpIEqual %v4bool %lhs_0 %20
+         %22 = OpIEqual %v4bool %rhs_0 %23
+         %25 = OpLogicalAnd %v4bool %19 %22
+         %26 = OpLogicalOr %v4bool %15 %25
+         %27 = OpSelect %v4int %26 %28 %rhs_0
+         %30 = OpSDiv %v4int %lhs_0 %27
+               OpReturnValue %30
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Modulo_u32_u32) {
+    Vector<core::ir::FunctionParam*, 4> args;
+    args.Push(b.FunctionParam("lhs", ty.u32()));
+    args.Push(b.FunctionParam("rhs", ty.u32()));
+    auto* func = b.Function("foo", ty.u32());
+    func->SetParams(args);
+    b.Append(func->Block(), [&] {
+        auto* result = b.Binary(core::ir::Binary::Kind::kModulo, ty.u32(), args[0], args[1]);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(R"(
+               ; Function foo
+        %foo = OpFunction %uint None %5
+        %lhs = OpFunctionParameter %uint
+        %rhs = OpFunctionParameter %uint
+          %6 = OpLabel
+     %result = OpFunctionCall %uint %tint_mod_u32 %lhs %rhs
+               OpReturnValue %result
+               OpFunctionEnd
+
+               ; Function tint_mod_u32
+%tint_mod_u32 = OpFunction %uint None %5
+      %lhs_0 = OpFunctionParameter %uint
+      %rhs_0 = OpFunctionParameter %uint
+         %11 = OpLabel
+         %12 = OpIEqual %bool %rhs_0 %uint_0
+         %15 = OpSelect %uint %12 %uint_1 %rhs_0
+         %17 = OpUDiv %uint %lhs_0 %15
+         %18 = OpIMul %uint %17 %15
+         %19 = OpISub %uint %lhs_0 %18
+               OpReturnValue %19
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Modulo_i32_i32) {
+    Vector<core::ir::FunctionParam*, 4> args;
+    args.Push(b.FunctionParam("lhs", ty.i32()));
+    args.Push(b.FunctionParam("rhs", ty.i32()));
+    auto* func = b.Function("foo", ty.i32());
+    func->SetParams(args);
+    b.Append(func->Block(), [&] {
+        auto* result = b.Binary(core::ir::Binary::Kind::kModulo, ty.i32(), args[0], args[1]);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST(R"(
+               ; Function foo
+        %foo = OpFunction %int None %5
+        %lhs = OpFunctionParameter %int
+        %rhs = OpFunctionParameter %int
+          %6 = OpLabel
+     %result = OpFunctionCall %int %tint_mod_i32 %lhs %rhs
+               OpReturnValue %result
+               OpFunctionEnd
+
+               ; Function tint_mod_i32
+%tint_mod_i32 = OpFunction %int None %5
+      %lhs_0 = OpFunctionParameter %int
+      %rhs_0 = OpFunctionParameter %int
+         %11 = OpLabel
+         %12 = OpIEqual %bool %rhs_0 %int_0
+         %15 = OpIEqual %bool %lhs_0 %int_n2147483648
+         %17 = OpIEqual %bool %rhs_0 %int_n1
+         %19 = OpLogicalAnd %bool %15 %17
+         %20 = OpLogicalOr %bool %12 %19
+         %21 = OpSelect %int %20 %int_1 %rhs_0
+         %23 = OpSDiv %int %lhs_0 %21
+         %24 = OpIMul %int %23 %21
+         %25 = OpISub %int %lhs_0 %24
+               OpReturnValue %25
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Modulo_i32_vec4i) {
+    Vector<core::ir::FunctionParam*, 4> args;
+    args.Push(b.FunctionParam("lhs", ty.i32()));
+    args.Push(b.FunctionParam("rhs", ty.vec4<i32>()));
+    auto* func = b.Function("foo", ty.vec4<i32>());
+    func->SetParams(args);
+    b.Append(func->Block(), [&] {
+        auto* result = b.Binary(core::ir::Binary::Kind::kModulo, ty.vec4<i32>(), args[0], args[1]);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%16 = OpConstantNull %v4int");
+    EXPECT_INST(R"(
+               ; Function foo
+        %foo = OpFunction %v4int None %6
+        %lhs = OpFunctionParameter %int
+        %rhs = OpFunctionParameter %v4int
+          %7 = OpLabel
+          %8 = OpCompositeConstruct %v4int %lhs %lhs %lhs %lhs
+     %result = OpFunctionCall %v4int %tint_mod_v4i32 %8 %rhs
+               OpReturnValue %result
+               OpFunctionEnd
+
+               ; Function tint_mod_v4i32
+%tint_mod_v4i32 = OpFunction %v4int None %13
+      %lhs_0 = OpFunctionParameter %v4int
+      %rhs_0 = OpFunctionParameter %v4int
+         %14 = OpLabel
+         %15 = OpIEqual %v4bool %rhs_0 %16
+         %19 = OpIEqual %v4bool %lhs_0 %20
+         %22 = OpIEqual %v4bool %rhs_0 %23
+         %25 = OpLogicalAnd %v4bool %19 %22
+         %26 = OpLogicalOr %v4bool %15 %25
+         %27 = OpSelect %v4int %26 %28 %rhs_0
+         %30 = OpSDiv %v4int %lhs_0 %27
+         %31 = OpIMul %v4int %30 %27
+         %32 = OpISub %v4int %lhs_0 %31
+               OpReturnValue %32
+               OpFunctionEnd
+)");
+}
+
+TEST_F(SpirvWriterTest, Modulo_vec4i_i32) {
+    Vector<core::ir::FunctionParam*, 4> args;
+    args.Push(b.FunctionParam("lhs", ty.vec4<i32>()));
+    args.Push(b.FunctionParam("rhs", ty.i32()));
+    auto* func = b.Function("foo", ty.vec4<i32>());
+    func->SetParams(args);
+    b.Append(func->Block(), [&] {
+        auto* result = b.Binary(core::ir::Binary::Kind::kModulo, ty.vec4<i32>(), args[0], args[1]);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    ASSERT_TRUE(Generate()) << Error() << output_;
+    EXPECT_INST("%16 = OpConstantNull %v4int");
+    EXPECT_INST(R"(
+               ; Function foo
+        %foo = OpFunction %v4int None %6
+        %lhs = OpFunctionParameter %v4int
+        %rhs = OpFunctionParameter %int
+          %7 = OpLabel
+          %8 = OpCompositeConstruct %v4int %rhs %rhs %rhs %rhs
+     %result = OpFunctionCall %v4int %tint_mod_v4i32 %lhs %8
+               OpReturnValue %result
+               OpFunctionEnd
+
+               ; Function tint_mod_v4i32
+%tint_mod_v4i32 = OpFunction %v4int None %13
+      %lhs_0 = OpFunctionParameter %v4int
+      %rhs_0 = OpFunctionParameter %v4int
+         %14 = OpLabel
+         %15 = OpIEqual %v4bool %rhs_0 %16
+         %19 = OpIEqual %v4bool %lhs_0 %20
+         %22 = OpIEqual %v4bool %rhs_0 %23
+         %25 = OpLogicalAnd %v4bool %19 %22
+         %26 = OpLogicalOr %v4bool %15 %25
+         %27 = OpSelect %v4int %26 %28 %rhs_0
+         %30 = OpSDiv %v4int %lhs_0 %27
+         %31 = OpIMul %v4int %30 %27
+         %32 = OpISub %v4int %lhs_0 %31
+               OpReturnValue %32
+               OpFunctionEnd
+)");
 }
 
 }  // namespace

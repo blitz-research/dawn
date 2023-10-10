@@ -15,14 +15,16 @@
 #ifndef SRC_TINT_LANG_CORE_IR_CONVERT_H_
 #define SRC_TINT_LANG_CORE_IR_CONVERT_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/call.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A value conversion instruction in the IR.
-class Convert : public Castable<Convert, Call> {
+class Convert final : public Castable<Convert, Call> {
   public:
     /// The offset in Operands() for the value
     static constexpr size_t kValueOperandOffset = 0;
@@ -33,10 +35,13 @@ class Convert : public Castable<Convert, Call> {
     Convert(InstructionResult* result, Value* value);
     ~Convert() override;
 
+    /// @copydoc Instruction::Clone()
+    Convert* Clone(CloneContext& ctx) override;
+
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "convert"; }
+    std::string FriendlyName() override { return "convert"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_CONVERT_H_

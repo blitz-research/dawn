@@ -16,7 +16,7 @@
 
 #include "src/tint/utils/text/string_stream.h"
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 
 Usage::Usage() {}
 Usage::Usage(const Usage& other) = default;
@@ -97,11 +97,6 @@ bool Usage::IsValid() const {
             if (is_sampler_) {
                 return false;
             }
-        }
-
-        // Can't be both read and write.  This is a restriction in WebGPU.
-        if (is_storage_read_ && is_storage_write_) {
-            return false;
         }
     }
     return true;
@@ -184,4 +179,4 @@ std::string Usage::to_str() const {
     return ss.str();
 }
 
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser

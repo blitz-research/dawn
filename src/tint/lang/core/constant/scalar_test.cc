@@ -14,12 +14,12 @@
 
 #include "src/tint/lang/core/constant/scalar.h"
 
-#include "src/tint/lang/core/constant/test_helper.h"
+#include "src/tint/lang/core/constant/helper_test.h"
 
-namespace tint::constant {
+namespace tint::core::constant {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using ConstantTest_Scalar = TestHelper;
 
@@ -61,12 +61,12 @@ TEST_F(ConstantTest_Scalar, AllZero) {
     EXPECT_FALSE(u1->AllZero());
 
     EXPECT_TRUE(fPos0->AllZero());
-    EXPECT_FALSE(fNeg0->AllZero());
+    EXPECT_TRUE(fNeg0->AllZero());
     EXPECT_FALSE(fPos1->AllZero());
     EXPECT_FALSE(fNeg1->AllZero());
 
     EXPECT_TRUE(f16Pos0->AllZero());
-    EXPECT_FALSE(f16Neg0->AllZero());
+    EXPECT_TRUE(f16Neg0->AllZero());
     EXPECT_FALSE(f16Pos1->AllZero());
     EXPECT_FALSE(f16Neg1->AllZero());
 
@@ -74,7 +74,7 @@ TEST_F(ConstantTest_Scalar, AllZero) {
     EXPECT_FALSE(bt->AllZero());
 
     EXPECT_TRUE(afPos0->AllZero());
-    EXPECT_FALSE(afNeg0->AllZero());
+    EXPECT_TRUE(afNeg0->AllZero());
     EXPECT_FALSE(afPos1->AllZero());
     EXPECT_FALSE(afNeg1->AllZero());
 
@@ -121,12 +121,12 @@ TEST_F(ConstantTest_Scalar, AnyZero) {
     EXPECT_FALSE(u1->AnyZero());
 
     EXPECT_TRUE(fPos0->AnyZero());
-    EXPECT_FALSE(fNeg0->AnyZero());
+    EXPECT_TRUE(fNeg0->AnyZero());
     EXPECT_FALSE(fPos1->AnyZero());
     EXPECT_FALSE(fNeg1->AnyZero());
 
     EXPECT_TRUE(f16Pos0->AnyZero());
-    EXPECT_FALSE(f16Neg0->AnyZero());
+    EXPECT_TRUE(f16Neg0->AnyZero());
     EXPECT_FALSE(f16Pos1->AnyZero());
     EXPECT_FALSE(f16Neg1->AnyZero());
 
@@ -134,7 +134,7 @@ TEST_F(ConstantTest_Scalar, AnyZero) {
     EXPECT_FALSE(bt->AnyZero());
 
     EXPECT_TRUE(afPos0->AnyZero());
-    EXPECT_FALSE(afNeg0->AnyZero());
+    EXPECT_TRUE(afNeg0->AnyZero());
     EXPECT_FALSE(afPos1->AnyZero());
     EXPECT_FALSE(afNeg1->AnyZero());
 
@@ -167,13 +167,13 @@ TEST_F(ConstantTest_Scalar, Clone) {
     auto* val = constants.Get(12_i);
 
     constant::Manager mgr;
-    constant::CloneContext ctx{type::CloneContext{{nullptr}, {nullptr, &mgr.types}}, mgr};
+    constant::CloneContext ctx{core::type::CloneContext{{nullptr}, {nullptr, &mgr.types}}, mgr};
 
     auto* r = val->Clone(ctx);
     ASSERT_NE(r, nullptr);
-    EXPECT_TRUE(r->type->Is<type::I32>());
+    EXPECT_TRUE(r->type->Is<core::type::I32>());
     EXPECT_EQ(r->value, 12);
 }
 
 }  // namespace
-}  // namespace tint::constant
+}  // namespace tint::core::constant

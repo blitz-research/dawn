@@ -16,23 +16,23 @@
 
 #include <utility>
 
-#include "src/tint/lang/core/ir/transform/test_helper.h"
+#include "src/tint/lang/core/ir/transform/helper_test.h"
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/core/type/f32.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 
-namespace tint::ir::transform {
+namespace tint::core::ir::transform {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using IR_DemoteToHelperTest = TransformTest;
 
 TEST_F(IR_DemoteToHelperTest, NoModify_NoDiscard) {
     auto* buffer = b.Var("buffer", ty.ptr<storage, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* ep = b.Function("ep", ty.f32(), Function::PipelineStage::kFragment);
     ep->SetReturnLocation(0_u, {});
@@ -58,7 +58,7 @@ TEST_F(IR_DemoteToHelperTest, NoModify_NoDiscard) {
 
     auto* expect = src;
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
@@ -66,7 +66,7 @@ TEST_F(IR_DemoteToHelperTest, NoModify_NoDiscard) {
 TEST_F(IR_DemoteToHelperTest, DiscardInEntryPoint_WriteInEntryPoint) {
     auto* buffer = b.Var("buffer", ty.ptr<storage, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
     front_facing->SetBuiltin(FunctionParam::Builtin::kFrontFacing);
@@ -126,7 +126,8 @@ TEST_F(IR_DemoteToHelperTest, DiscardInEntryPoint_WriteInEntryPoint) {
       }
     }
     %6:bool = load %continue_execution
-    if %6 [t: %b5] {  # if_3
+    %7:bool = eq %6, false
+    if %7 [t: %b5] {  # if_3
       %b5 = block {  # true
         terminate_invocation
       }
@@ -136,7 +137,7 @@ TEST_F(IR_DemoteToHelperTest, DiscardInEntryPoint_WriteInEntryPoint) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
@@ -144,7 +145,7 @@ TEST_F(IR_DemoteToHelperTest, DiscardInEntryPoint_WriteInEntryPoint) {
 TEST_F(IR_DemoteToHelperTest, DiscardInEntryPoint_WriteInHelper) {
     auto* buffer = b.Var("buffer", ty.ptr<storage, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* helper = b.Function("foo", ty.void_());
     b.Append(helper->Block(), [&] {
@@ -222,7 +223,8 @@ TEST_F(IR_DemoteToHelperTest, DiscardInEntryPoint_WriteInHelper) {
     }
     %7:void = call %foo
     %8:bool = load %continue_execution
-    if %8 [t: %b6] {  # if_3
+    %9:bool = eq %8, false
+    if %9 [t: %b6] {  # if_3
       %b6 = block {  # true
         terminate_invocation
       }
@@ -232,7 +234,7 @@ TEST_F(IR_DemoteToHelperTest, DiscardInEntryPoint_WriteInHelper) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
@@ -240,7 +242,7 @@ TEST_F(IR_DemoteToHelperTest, DiscardInEntryPoint_WriteInHelper) {
 TEST_F(IR_DemoteToHelperTest, DiscardInHelper_WriteInEntryPoint) {
     auto* buffer = b.Var("buffer", ty.ptr<storage, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* cond = b.FunctionParam("cond", ty.bool_());
     auto* helper = b.Function("foo", ty.void_());
@@ -320,7 +322,8 @@ TEST_F(IR_DemoteToHelperTest, DiscardInHelper_WriteInEntryPoint) {
       }
     }
     %9:bool = load %continue_execution
-    if %9 [t: %b6] {  # if_3
+    %10:bool = eq %9, false
+    if %10 [t: %b6] {  # if_3
       %b6 = block {  # true
         terminate_invocation
       }
@@ -330,7 +333,7 @@ TEST_F(IR_DemoteToHelperTest, DiscardInHelper_WriteInEntryPoint) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
@@ -338,7 +341,7 @@ TEST_F(IR_DemoteToHelperTest, DiscardInHelper_WriteInEntryPoint) {
 TEST_F(IR_DemoteToHelperTest, DiscardInHelper_WriteInHelper) {
     auto* buffer = b.Var("buffer", ty.ptr<storage, i32>());
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* cond = b.FunctionParam("cond", ty.bool_());
     auto* helper = b.Function("foo", ty.void_());
@@ -418,7 +421,8 @@ TEST_F(IR_DemoteToHelperTest, DiscardInHelper_WriteInHelper) {
   %b5 = block {
     %8:void = call %foo, %front_facing
     %9:bool = load %continue_execution
-    if %9 [t: %b6] {  # if_3
+    %10:bool = eq %9, false
+    if %10 [t: %b6] {  # if_3
       %b6 = block {  # true
         terminate_invocation
       }
@@ -428,13 +432,13 @@ TEST_F(IR_DemoteToHelperTest, DiscardInHelper_WriteInHelper) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
 
 TEST_F(IR_DemoteToHelperTest, WriteToInvocationPrivateAddressSpace) {
-    auto* priv = b.RootBlock()->Append(b.Var("priv", ty.ptr<private_, i32>()));
+    auto* priv = mod.root_block->Append(b.Var("priv", ty.ptr<private_, i32>()));
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
     front_facing->SetBuiltin(FunctionParam::Builtin::kFrontFacing);
     auto* ep = b.Function("ep", ty.f32(), Function::PipelineStage::kFragment);
@@ -493,7 +497,8 @@ TEST_F(IR_DemoteToHelperTest, WriteToInvocationPrivateAddressSpace) {
     store %priv, 42i
     store %func, 42i
     %6:bool = load %continue_execution
-    if %6 [t: %b4] {  # if_2
+    %7:bool = eq %6, false
+    if %7 [t: %b4] {  # if_2
       %b4 = block {  # true
         terminate_invocation
       }
@@ -503,20 +508,20 @@ TEST_F(IR_DemoteToHelperTest, WriteToInvocationPrivateAddressSpace) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
 
 TEST_F(IR_DemoteToHelperTest, TextureStore) {
-    auto format = builtin::TexelFormat::kR32Float;
+    auto format = core::TexelFormat::kR32Float;
     auto* texture =
-        b.Var("texture", ty.ptr(builtin::AddressSpace::kHandle,
-                                ty.Get<type::StorageTexture>(
-                                    type::TextureDimension::k2d, format, builtin::Access::kWrite,
-                                    type::StorageTexture::SubtypeFor(format, ty))));
+        b.Var("texture", ty.ptr(core::AddressSpace::kHandle,
+                                ty.Get<core::type::StorageTexture>(
+                                    core::type::TextureDimension::k2d, format, core::Access::kWrite,
+                                    core::type::StorageTexture::SubtypeFor(format, ty))));
     texture->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(texture);
+    mod.root_block->Append(texture);
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
     front_facing->SetBuiltin(FunctionParam::Builtin::kFrontFacing);
@@ -531,7 +536,8 @@ TEST_F(IR_DemoteToHelperTest, TextureStore) {
             b.Discard();
             b.ExitIf(ifelse);
         });
-        b.Call(ty.void_(), builtin::Function::kTextureStore, texture, coord, 0.5_f);
+        b.Call(ty.void_(), core::BuiltinFn::kTextureStore, b.Load(texture), coord,
+               b.Splat(b.ir.Types().vec4<f32>(), 0.5_f, 4));
         b.Return(ep, 0.5_f);
     });
 
@@ -548,7 +554,8 @@ TEST_F(IR_DemoteToHelperTest, TextureStore) {
         exit_if  # if_1
       }
     }
-    %5:void = textureStore %texture, %coord, 0.5f
+    %5:texture_storage_2d<r32float, write> = load %texture
+    %6:void = textureStore %5, %coord, vec4<f32>(0.5f)
     ret 0.5f
   }
 }
@@ -569,15 +576,17 @@ TEST_F(IR_DemoteToHelperTest, TextureStore) {
         exit_if  # if_1
       }
     }
-    %6:bool = load %continue_execution
-    if %6 [t: %b4] {  # if_2
+    %6:texture_storage_2d<r32float, write> = load %texture
+    %7:bool = load %continue_execution
+    if %7 [t: %b4] {  # if_2
       %b4 = block {  # true
-        %7:void = textureStore %texture, %coord, 0.5f
+        %8:void = textureStore %6, %coord, vec4<f32>(0.5f)
         exit_if  # if_2
       }
     }
-    %8:bool = load %continue_execution
-    if %8 [t: %b5] {  # if_3
+    %9:bool = load %continue_execution
+    %10:bool = eq %9, false
+    if %10 [t: %b5] {  # if_3
       %b5 = block {  # true
         terminate_invocation
       }
@@ -587,7 +596,7 @@ TEST_F(IR_DemoteToHelperTest, TextureStore) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
@@ -595,7 +604,7 @@ TEST_F(IR_DemoteToHelperTest, TextureStore) {
 TEST_F(IR_DemoteToHelperTest, AtomicStore) {
     auto* buffer = b.Var("buffer", ty.ptr(storage, ty.atomic<i32>()));
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
     front_facing->SetBuiltin(FunctionParam::Builtin::kFrontFacing);
@@ -609,7 +618,7 @@ TEST_F(IR_DemoteToHelperTest, AtomicStore) {
             b.Discard();
             b.ExitIf(ifelse);
         });
-        b.Call(ty.void_(), builtin::Function::kAtomicStore, buffer, 42_i);
+        b.Call(ty.void_(), core::BuiltinFn::kAtomicStore, buffer, 42_i);
         b.Return(ep, 0.5_f);
     });
 
@@ -655,7 +664,8 @@ TEST_F(IR_DemoteToHelperTest, AtomicStore) {
       }
     }
     %7:bool = load %continue_execution
-    if %7 [t: %b5] {  # if_3
+    %8:bool = eq %7, false
+    if %8 [t: %b5] {  # if_3
       %b5 = block {  # true
         terminate_invocation
       }
@@ -665,7 +675,7 @@ TEST_F(IR_DemoteToHelperTest, AtomicStore) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
@@ -673,7 +683,7 @@ TEST_F(IR_DemoteToHelperTest, AtomicStore) {
 TEST_F(IR_DemoteToHelperTest, AtomicAdd) {
     auto* buffer = b.Var("buffer", ty.ptr(storage, ty.atomic<i32>()));
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
     front_facing->SetBuiltin(FunctionParam::Builtin::kFrontFacing);
@@ -687,7 +697,7 @@ TEST_F(IR_DemoteToHelperTest, AtomicAdd) {
             b.Discard();
             b.ExitIf(ifelse);
         });
-        auto* old = b.Call(ty.i32(), builtin::Function::kAtomicAdd, buffer, 42_i);
+        auto* old = b.Call(ty.i32(), core::BuiltinFn::kAtomicAdd, buffer, 42_i);
         b.Add(ty.i32(), old, 1_i);
         b.Return(ep, 0.5_f);
     });
@@ -737,7 +747,8 @@ TEST_F(IR_DemoteToHelperTest, AtomicAdd) {
     }
     %8:i32 = add %6, 1i
     %9:bool = load %continue_execution
-    if %9 [t: %b5] {  # if_3
+    %10:bool = eq %9, false
+    if %10 [t: %b5] {  # if_3
       %b5 = block {  # true
         terminate_invocation
       }
@@ -747,7 +758,7 @@ TEST_F(IR_DemoteToHelperTest, AtomicAdd) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
@@ -755,7 +766,7 @@ TEST_F(IR_DemoteToHelperTest, AtomicAdd) {
 TEST_F(IR_DemoteToHelperTest, AtomicCompareExchange) {
     auto* buffer = b.Var("buffer", ty.ptr(storage, ty.atomic<i32>()));
     buffer->SetBindingPoint(0, 0);
-    b.RootBlock()->Append(buffer);
+    mod.root_block->Append(buffer);
 
     auto* front_facing = b.FunctionParam("front_facing", ty.bool_());
     front_facing->SetBuiltin(FunctionParam::Builtin::kFrontFacing);
@@ -769,8 +780,9 @@ TEST_F(IR_DemoteToHelperTest, AtomicCompareExchange) {
             b.Discard();
             b.ExitIf(ifelse);
         });
-        auto* result = b.Call(type::CreateAtomicCompareExchangeResult(ty, mod.symbols, ty.i32()),
-                              builtin::Function::kAtomicCompareExchangeWeak, buffer, 0_i, 42_i);
+        auto* result =
+            b.Call(core::type::CreateAtomicCompareExchangeResult(ty, mod.symbols, ty.i32()),
+                   core::BuiltinFn::kAtomicCompareExchangeWeak, buffer, 0_i, 42_i);
         b.Add(ty.i32(), b.Access(ty.i32(), result, 0_i), 1_i);
         b.Return(ep, 0.5_f);
     });
@@ -832,7 +844,8 @@ __atomic_compare_exchange_result_i32 = struct @align(4) {
     %8:i32 = access %6, 0i
     %9:i32 = add %8, 1i
     %10:bool = load %continue_execution
-    if %10 [t: %b5] {  # if_3
+    %11:bool = eq %10, false
+    if %11 [t: %b5] {  # if_3
       %b5 = block {  # true
         terminate_invocation
       }
@@ -842,10 +855,10 @@ __atomic_compare_exchange_result_i32 = struct @align(4) {
 }
 )";
 
-    Run<DemoteToHelper>();
+    Run(DemoteToHelper);
 
     EXPECT_EQ(expect, str());
 }
 
 }  // namespace
-}  // namespace tint::ir::transform
+}  // namespace tint::core::ir::transform

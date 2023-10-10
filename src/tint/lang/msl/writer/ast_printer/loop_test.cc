@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/msl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/msl/writer/ast_printer/helper_test.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::msl::writer {
 namespace {
@@ -90,8 +92,8 @@ TEST_F(MslASTPrinterTest, Emit_LoopWithContinuing_BreakIf) {
 TEST_F(MslASTPrinterTest, Emit_LoopNestedWithContinuing) {
     Func("a_statement", {}, ty.void_(), tint::Empty);
 
-    GlobalVar("lhs", ty.f32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("rhs", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("lhs", ty.f32(), core::AddressSpace::kPrivate);
+    GlobalVar("rhs", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* body = Block(Break());
     auto* continuing = Block(CallStmt(Call("a_statement")));
@@ -135,7 +137,7 @@ TEST_F(MslASTPrinterTest, Emit_LoopWithVarUsedInContinuing) {
     // }
     //
 
-    GlobalVar("rhs", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("rhs", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* body = Block(Decl(Var("lhs", ty.f32(), Expr(2.5_f))),  //
                        Decl(Var("other", ty.f32())),             //
@@ -212,7 +214,7 @@ TEST_F(MslASTPrinterTest, Emit_ForLoopWithMultiStmtInit) {
     Func("f", Vector{Param("i", ty.i32())}, ty.void_(), tint::Empty);
     auto f = [&](auto&& expr) { return CallStmt(Call("f", expr)); };
 
-    GlobalVar("a", ty.atomic<i32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), core::AddressSpace::kWorkgroup);
     auto* multi_stmt = Block(f(1_i), f(2_i));
     auto* loop = For(multi_stmt, nullptr, nullptr,  //
                      Block(Return()));
@@ -288,7 +290,7 @@ TEST_F(MslASTPrinterTest, Emit_ForLoopWithMultiStmtCont) {
     Func("f", Vector{Param("i", ty.i32())}, ty.void_(), tint::Empty);
     auto f = [&](auto&& expr) { return CallStmt(Call("f", expr)); };
 
-    GlobalVar("a", ty.atomic<i32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), core::AddressSpace::kWorkgroup);
     auto* multi_stmt = Block(f(1_i), f(2_i));
     auto* loop = For(nullptr, nullptr, multi_stmt,  //
                      Block(Return()));
@@ -343,7 +345,7 @@ TEST_F(MslASTPrinterTest, Emit_ForLoopWithMultiStmtInitCondCont) {
     Func("f", Vector{Param("i", ty.i32())}, ty.void_(), tint::Empty);
     auto f = [&](auto&& expr) { return CallStmt(Call("f", expr)); };
 
-    GlobalVar("a", ty.atomic<i32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), core::AddressSpace::kWorkgroup);
     auto* multi_stmt_a = Block(f(1_i), f(2_i));
     auto* multi_stmt_b = Block(f(3_i), f(4_i));
     auto* loop = For(multi_stmt_a, Expr(true), multi_stmt_b,  //
@@ -417,7 +419,7 @@ TEST_F(MslASTPrinterTest, Emit_WhileWithMultiCond) {
 
     auto* t = Let("t", Expr(true));
     auto* multi_stmt = LogicalAnd(t, false);
-    // create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(t), Expr(false));
+    // create<ast::BinaryExpression>(core::BinaryOp::kLogicalAnd, Expr(t), Expr(false));
     auto* f = While(multi_stmt, Block(Return()));
     WrapInFunction(t, f);
 

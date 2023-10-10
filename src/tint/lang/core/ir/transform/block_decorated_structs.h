@@ -15,26 +15,24 @@
 #ifndef SRC_TINT_LANG_CORE_IR_TRANSFORM_BLOCK_DECORATED_STRUCTS_H_
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_BLOCK_DECORATED_STRUCTS_H_
 
-#include "src/tint/lang/core/ir/transform/transform.h"
+#include <string>
 
-#include "src/tint/lang/core/type/struct.h"
+#include "src/tint/utils/result/result.h"
 
-namespace tint::ir::transform {
+// Forward declarations.
+namespace tint::core::ir {
+class Module;
+}
+
+namespace tint::core::ir::transform {
 
 /// BlockDecoratedStructs is a transform that changes the store type of a buffer to be a special
 /// structure that is recognized as needing a block decoration in SPIR-V, potentially wrapping the
 /// existing store type in a new structure if necessary.
-class BlockDecoratedStructs final : public Castable<BlockDecoratedStructs, Transform> {
-  public:
-    /// Constructor
-    BlockDecoratedStructs();
-    /// Destructor
-    ~BlockDecoratedStructs() override;
+/// @param module the module to transform
+/// @returns success or failure
+Result<SuccessType> BlockDecoratedStructs(Module& module);
 
-    /// @copydoc Transform::Run
-    void Run(ir::Module* module) const override;
-};
-
-}  // namespace tint::ir::transform
+}  // namespace tint::core::ir::transform
 
 #endif  // SRC_TINT_LANG_CORE_IR_TRANSFORM_BLOCK_DECORATED_STRUCTS_H_

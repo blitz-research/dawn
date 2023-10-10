@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_STORE_H_
 #define SRC_TINT_LANG_CORE_IR_STORE_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/operand_instruction.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A store instruction in the IR.
-class Store : public Castable<Store, OperandInstruction<2, 0>> {
+class Store final : public Castable<Store, OperandInstruction<2, 0>> {
   public:
     /// The offset in Operands() for the `to` value
     static constexpr size_t kToOperandOffset = 0;
@@ -35,6 +37,9 @@ class Store : public Castable<Store, OperandInstruction<2, 0>> {
     Store(Value* to, Value* from);
     ~Store() override;
 
+    /// @copydoc Instruction::Clone()
+    Store* Clone(CloneContext& ctx) override;
+
     /// @returns the value being stored too
     Value* To() { return operands_[kToOperandOffset]; }
 
@@ -42,9 +47,9 @@ class Store : public Castable<Store, OperandInstruction<2, 0>> {
     Value* From() { return operands_[kFromOperandOffset]; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "store"; }
+    std::string FriendlyName() override { return "store"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_STORE_H_

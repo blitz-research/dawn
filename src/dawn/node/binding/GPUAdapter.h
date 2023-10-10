@@ -15,12 +15,9 @@
 #ifndef SRC_DAWN_NODE_BINDING_GPUADAPTER_H_
 #define SRC_DAWN_NODE_BINDING_GPUADAPTER_H_
 
-#include <string>
-#include <vector>
-
 #include "dawn/native/DawnNative.h"
 #include "dawn/webgpu_cpp.h"
-#include "src/dawn/node/interop/Napi.h"
+#include "src/dawn/node/interop/NodeAPI.h"
 #include "src/dawn/node/interop/WebGPU.h"
 
 namespace wgpu::binding {
@@ -36,11 +33,11 @@ class GPUAdapter final : public interop::GPUAdapter {
         Napi::Env env,
         interop::GPUDeviceDescriptor descriptor) override;
     interop::Promise<interop::Interface<interop::GPUAdapterInfo>> requestAdapterInfo(
-        Napi::Env,
-        std::vector<std::string> unmaskHints) override;
+        Napi::Env) override;
     interop::Interface<interop::GPUSupportedFeatures> getFeatures(Napi::Env) override;
     interop::Interface<interop::GPUSupportedLimits> getLimits(Napi::Env) override;
     bool getIsFallbackAdapter(Napi::Env) override;
+    bool getIsCompatibilityMode(Napi::Env) override;
 
   private:
     dawn::native::Adapter adapter_;

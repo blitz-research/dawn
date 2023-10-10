@@ -53,16 +53,17 @@ void SyncScopeUsageTracker::TextureViewUsedAs(TextureViewBase* view, wgpu::Textu
     TextureSubresourceUsage& textureUsage = it.first->second;
 
     textureUsage.Update(range, [usage](const SubresourceRange&, wgpu::TextureUsage* storedUsage) {
-        // TODO(crbug.com/dawn/1001): Consider optimizing to have fewer
-        // branches.
-        if ((*storedUsage & wgpu::TextureUsage::RenderAttachment) != 0 &&
-            (usage & wgpu::TextureUsage::RenderAttachment) != 0) {
-            // Using the same subresource as an attachment for two different
-            // render attachments is a write-write hazard. Add this internal
-            // usage so we will fail the check that a subresource with
-            // writable usage is the single usage.
-            *storedUsage |= kAgainAsRenderAttachment;
+        // TODO(crbug.com/dawn/1001): Consider optimizing to have fewer branches.
+
+        // Using the same subresource for two different attachments is a write-write or read-write
+        // hazard. Add the internal kAgainAsAttachment usage to fail the later check that a
+        // subresource with a writable usage has a single usage.
+        constexpr wgpu::TextureUsage kWritableAttachmentUsages =
+            wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::StorageAttachment;
+        if ((usage & kWritableAttachmentUsages) && (*storedUsage & kWritableAttachmentUsages)) {
+            *storedUsage |= kAgainAsAttachment;
         }
+
         *storedUsage |= usage;
     });
 }
@@ -78,12 +79,12 @@ void SyncScopeUsageTracker::AddRenderBundleTextureUsage(
                               texture->GetNumMipLevels(), wgpu::TextureUsage::None));
     TextureSubresourceUsage* passTextureUsage = &it.first->second;
 
-    passTextureUsage->Merge(textureUsage,
-                            [](const SubresourceRange&, wgpu::TextureUsage* storedUsage,
-                               const wgpu::TextureUsage& addedUsage) {
-                                ASSERT((addedUsage & wgpu::TextureUsage::RenderAttachment) == 0);
-                                *storedUsage |= addedUsage;
-                            });
+    passTextureUsage->Merge(
+        textureUsage, [](const SubresourceRange&, wgpu::TextureUsage* storedUsage,
+                         const wgpu::TextureUsage& addedUsage) {
+            DAWN_ASSERT((addedUsage & wgpu::TextureUsage::RenderAttachment) == 0);
+            *storedUsage |= addedUsage;
+        });
 }
 
 void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
@@ -108,7 +109,7 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
                         BufferUsedAs(buffer, kReadOnlyStorageBuffer);
                         break;
                     case wgpu::BufferBindingType::Undefined:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
                 break;
             }
@@ -130,16 +131,22 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
                 TextureViewBase* view = group->GetBindingAsTextureView(bindingIndex);
                 switch (bindingInfo.storageTexture.access) {
                     case wgpu::StorageTextureAccess::WriteOnly:
+                        TextureViewUsedAs(view, kWriteOnlyStorageTexture);
+                        break;
+                    case wgpu::StorageTextureAccess::ReadWrite:
                         TextureViewUsedAs(view, wgpu::TextureUsage::StorageBinding);
                         break;
+                    case wgpu::StorageTextureAccess::ReadOnly:
+                        TextureViewUsedAs(view, kReadOnlyStorageTexture);
+                        break;
                     case wgpu::StorageTextureAccess::Undefined:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
                 break;
             }
 
             case BindingInfoType::ExternalTexture:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
 
             case BindingInfoType::Sampler:
@@ -209,7 +216,7 @@ void ComputePassResourceUsageTracker::AddResourcesReferencedByBindGroup(BindGrou
             }
 
             case BindingInfoType::ExternalTexture:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             case BindingInfoType::StorageTexture:
             case BindingInfoType::Sampler:
                 break;

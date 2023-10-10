@@ -20,6 +20,7 @@
 
 namespace tint::sem {
 
+/// A set of PipelineStage
 using PipelineStageSet = tint::EnumSet<ast::PipelineStage>;
 
 }  // namespace tint::sem

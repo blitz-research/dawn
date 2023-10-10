@@ -35,6 +35,9 @@ class bitset : private ::std::bitset<N> {
     explicit constexpr bitset(const Base& rhs) : Base(rhs) {}
 
   public:
+    const Base& AsBase() const { return static_cast<const Base&>(*this); }
+    Base& AsBase() { return static_cast<Base&>(*this); }
+
     using reference = typename Base::reference;
 
     constexpr bitset() noexcept : Base() {}
@@ -145,7 +148,7 @@ Index GetHighestBitIndexPlusOne(const ityp::bitset<Index, N>& bitset) {
                 return Index(static_cast<I>(N - i));
             }
         }
-        UNREACHABLE();
+        DAWN_UNREACHABLE();
 #endif  // DAWN_PLATFORM_IS(64_BIT)
     } else {
         // NOLINTNEXTLINE(runtime/int)

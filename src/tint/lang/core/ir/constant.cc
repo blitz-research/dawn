@@ -15,14 +15,18 @@
 #include "src/tint/lang/core/ir/constant.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Constant);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Constant);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
-Constant::Constant(const constant::Value* val) : value_(val) {
+Constant::Constant(const core::constant::Value* val) : value_(val) {
     TINT_ASSERT(value_);
 }
 
 Constant::~Constant() = default;
 
-}  // namespace tint::ir
+Constant* Constant::Clone(CloneContext&) {
+    return this;  // Constants are immutable so can just return ourselves.
+}
+
+}  // namespace tint::core::ir

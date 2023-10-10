@@ -73,6 +73,13 @@ class DAWN_PLATFORM_EXPORT WorkerTaskPool {
                                                           void* userdata) = 0;
 };
 
+// These features map to similarly named ones in src/chromium/src/gpu/config/gpu_finch_features.h
+// in `namespace features`.
+enum class Features {
+    kWebGPUUseDXC,
+    kWebGPUUseTintIR,
+};
+
 class DAWN_PLATFORM_EXPORT Platform {
   public:
     Platform();
@@ -122,6 +129,9 @@ class DAWN_PLATFORM_EXPORT Platform {
     virtual CachingInterface* GetCachingInterface();
 
     virtual std::unique_ptr<WorkerTaskPool> CreateWorkerTaskPool();
+
+    // Hook for querying if a Finch feature is enabled.
+    virtual bool IsFeatureEnabled(Features feature);
 
   private:
     Platform(const Platform&) = delete;

@@ -15,18 +15,20 @@
 #ifndef SRC_TINT_LANG_CORE_IR_NEXT_ITERATION_H_
 #define SRC_TINT_LANG_CORE_IR_NEXT_ITERATION_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/terminator.h"
 #include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class Loop;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A next iteration instruction.
-class NextIteration : public Castable<NextIteration, Terminator> {
+class NextIteration final : public Castable<NextIteration, Terminator> {
   public:
     /// The base offset in Operands() for the args
     static constexpr size_t kArgsOperandOffset = 0;
@@ -37,16 +39,19 @@ class NextIteration : public Castable<NextIteration, Terminator> {
     explicit NextIteration(ir::Loop* loop, VectorRef<Value*> args = tint::Empty);
     ~NextIteration() override;
 
+    /// @copydoc Instruction::Clone()
+    NextIteration* Clone(CloneContext& ctx) override;
+
     /// @returns the loop being iterated
     ir::Loop* Loop() { return loop_; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "next-iteration"; }
+    std::string FriendlyName() override { return "next_iteration"; }
 
   private:
     ir::Loop* loop_ = nullptr;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_NEXT_ITERATION_H_

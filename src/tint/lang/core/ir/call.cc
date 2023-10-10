@@ -16,14 +16,12 @@
 
 #include <utility>
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Call);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Call);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
-Call::Call() {
-    flags_.Add(Flag::kSequenced);
-}
+Call::Call() = default;
 
 Call::~Call() = default;
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir

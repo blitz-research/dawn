@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/glsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/glsl/writer/ast_printer/helper_test.h"
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::glsl::writer {
 namespace {
@@ -24,7 +24,7 @@ namespace {
 using GlslASTPrinterTest_Switch = TestHelper;
 
 TEST_F(GlslASTPrinterTest_Switch, Emit_Switch) {
-    GlobalVar("cond", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.i32(), core::AddressSpace::kPrivate);
 
     auto* def_body = Block(create<ast::BreakStatement>());
     auto* def = create<ast::CaseStatement>(Vector{DefaultCaseSelector()}, def_body);
@@ -52,7 +52,7 @@ TEST_F(GlslASTPrinterTest_Switch, Emit_Switch) {
 }
 
 TEST_F(GlslASTPrinterTest_Switch, Emit_Switch_MixedDefault) {
-    GlobalVar("cond", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.i32(), core::AddressSpace::kPrivate);
 
     auto* def_body = Block(create<ast::BreakStatement>());
     auto* def =

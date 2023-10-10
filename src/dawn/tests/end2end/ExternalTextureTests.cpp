@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <vector>
+
 #include "dawn/tests/DawnTest.h"
 #include "dawn/utils/ComboRenderPipelineDescriptor.h"
 #include "dawn/utils/WGPUHelpers.h"
@@ -98,6 +100,17 @@ class ExternalTextureTests : public DawnTest {
         }
     }
 
+    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
+        std::vector<wgpu::FeatureName> requiredFeatures = {};
+        if (SupportsFeatures({wgpu::FeatureName::Norm16TextureFormats})) {
+            mIsNorm16TextureFormatsSupported = true;
+            requiredFeatures.push_back(wgpu::FeatureName::Norm16TextureFormats);
+        }
+        return requiredFeatures;
+    }
+
+    bool IsNorm16TextureFormatsSupported() { return mIsNorm16TextureFormatsSupported; }
+
     static constexpr uint32_t kWidth = 4;
     static constexpr uint32_t kHeight = 4;
     static constexpr wgpu::TextureFormat kFormat = wgpu::TextureFormat::RGBA8Unorm;
@@ -107,6 +120,8 @@ class ExternalTextureTests : public DawnTest {
 
     wgpu::ShaderModule vsModule;
     wgpu::ShaderModule fsSampleExternalTextureModule;
+
+    bool mIsNorm16TextureFormatsSupported = false;
 };
 
 TEST_P(ExternalTextureTests, CreateExternalTextureSuccess) {
@@ -128,10 +143,6 @@ TEST_P(ExternalTextureTests, CreateExternalTextureSuccess) {
 }
 
 TEST_P(ExternalTextureTests, SampleExternalTexture) {
-    // TODO(crbug.com/tint/1774): Tint has an issue compiling shaders that use external textures on
-    // OpenGL/OpenGLES.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     wgpu::Texture sampledTexture =
         Create2DTexture(device, kWidth, kHeight, kFormat,
                         wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment);
@@ -196,10 +207,6 @@ TEST_P(ExternalTextureTests, SampleExternalTexture) {
 }
 
 TEST_P(ExternalTextureTests, SampleMultiplanarExternalTexture) {
-    // TODO(crbug.com/tint/1774): Tint has an issue compiling shaders that use external textures on
-    // OpenGL/OpenGLES.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     wgpu::Texture sampledTexturePlane0 =
         Create2DTexture(device, kWidth, kHeight, wgpu::TextureFormat::R8Unorm,
                         wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment);
@@ -291,14 +298,103 @@ TEST_P(ExternalTextureTests, SampleMultiplanarExternalTexture) {
     }
 }
 
+TEST_P(ExternalTextureTests, SampleMultiplanarExternalTextureNorm16) {
+    DAWN_TEST_UNSUPPORTED_IF(!IsNorm16TextureFormatsSupported());
+
+    wgpu::Texture sampledTexturePlane0 =
+        Create2DTexture(device, kWidth, kHeight, wgpu::TextureFormat::R16Unorm,
+                        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment);
+    wgpu::Texture sampledTexturePlane1 =
+        Create2DTexture(device, kWidth, kHeight, wgpu::TextureFormat::RG16Unorm,
+                        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment);
+
+    wgpu::Texture renderTexture =
+        Create2DTexture(device, kWidth, kHeight, kFormat,
+                        wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::RenderAttachment);
+
+    // Create a texture view for the external texture
+    wgpu::TextureView externalViewPlane0 = sampledTexturePlane0.CreateView();
+    wgpu::TextureView externalViewPlane1 = sampledTexturePlane1.CreateView();
+
+    struct ConversionExpectation {
+        double y;
+        double u;
+        double v;
+        utils::RGBA8 rgba;
+    };
+
+    // Conversion expectations for BT.709 YUV source and sRGB destination.
+    std::array<ConversionExpectation, 7> expectations = {
+        {{0.0, .5, .5, utils::RGBA8::kBlack},
+         {0.2126, 0.4172, 1.0, utils::RGBA8::kRed},
+         {0.7152, 0.1402, 0.0175, utils::RGBA8::kGreen},
+         {0.0722, 1.0, 0.4937, utils::RGBA8::kBlue},
+         {0.6382, 0.3232, 0.6644, {246, 169, 90, 255}},
+         {0.5423, 0.5323, 0.4222, {120, 162, 169, 255}},
+         {0.2345, 0.4383, 0.6342, {125, 53, 32, 255}}}};
+
+    for (const ConversionExpectation& expectation : expectations) {
+        // Initialize the texture planes with YUV data
+        {
+            utils::ComboRenderPassDescriptor renderPass({externalViewPlane0, externalViewPlane1},
+                                                        nullptr);
+            renderPass.cColorAttachments[0].clearValue = {expectation.y, 0.0f, 0.0f, 0.0f};
+            renderPass.cColorAttachments[1].clearValue = {expectation.u, expectation.v, 0.0f, 0.0f};
+            wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+            wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+            pass.End();
+
+            wgpu::CommandBuffer commands = encoder.Finish();
+            queue.Submit(1, &commands);
+        }
+
+        // Pipeline Creation
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsSampleExternalTextureModule;
+        descriptor.cTargets[0].format = kFormat;
+        wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
+
+        // Create an ExternalTextureDescriptor from the texture views
+        wgpu::ExternalTextureDescriptor externalDesc = CreateDefaultExternalTextureDescriptor();
+        externalDesc.plane0 = externalViewPlane0;
+        externalDesc.plane1 = externalViewPlane1;
+        externalDesc.visibleOrigin = {0, 0};
+        externalDesc.visibleSize = {kWidth, kHeight};
+
+        // Import the external texture
+        wgpu::ExternalTexture externalTexture = device.CreateExternalTexture(&externalDesc);
+
+        // Create a sampler and bind group
+        wgpu::Sampler sampler = device.CreateSampler();
+
+        wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
+                                                         {{0, sampler}, {1, externalTexture}});
+
+        // Run the shader, which should sample from the external texture and draw a triangle into
+        // the upper left corner of the render texture.
+        wgpu::TextureView renderView = renderTexture.CreateView();
+        utils::ComboRenderPassDescriptor renderPass({renderView}, nullptr);
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        {
+            pass.SetPipeline(pipeline);
+            pass.SetBindGroup(0, bindGroup);
+            pass.Draw(3);
+            pass.End();
+        }
+
+        wgpu::CommandBuffer commands = encoder.Finish();
+        queue.Submit(1, &commands);
+
+        EXPECT_PIXEL_RGBA8_EQ(expectation.rgba, renderTexture, 0, 0);
+    }
+}
+
 // Test draws a green square in the upper left quadrant, a black square in the upper right, a red
 // square in the lower left and a blue square in the lower right. The image is then sampled as an
 // external texture and rotated 0, 90, 180, and 270 degrees with and without the y-axis flipped.
 TEST_P(ExternalTextureTests, RotateAndOrFlipSinglePlane) {
-    // TODO(crbug.com/tint/1774): Tint has an issue compiling shaders that use external textures on
-    // OpenGL/OpenGLES.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     const wgpu::ShaderModule sourceTextureFsModule = utils::CreateShaderModule(device, R"(
         @fragment fn main(@builtin(position) FragCoord : vec4f)
                                  -> @location(0) vec4f {
@@ -456,10 +552,6 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipSinglePlane) {
 // square in the lower left and a blue square in the lower right. The image is then sampled as an
 // external texture and rotated 0, 90, 180, and 270 degrees with and without the y-axis flipped.
 TEST_P(ExternalTextureTests, RotateAndOrFlipMultiplanar) {
-    // TODO(crbug.com/tint/1774): Tint has an issue compiling shaders that use external textures on
-    // OpenGL/OpenGLES.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     const wgpu::ShaderModule sourceTexturePlane0FsModule = utils::CreateShaderModule(device, R"(
         @fragment fn main(@builtin(position) FragCoord : vec4f)
                                  -> @location(0) vec4f {
@@ -642,10 +734,6 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipMultiplanar) {
 // This test draws a 2x2 multi-colored square surrounded by a 1px black border. We test the external
 // texture crop functionality by cropping to specific ranges inside the texture.
 TEST_P(ExternalTextureTests, CropSinglePlane) {
-    // TODO(crbug.com/tint/1774): Tint has an issue compiling shaders that use external textures on
-    // OpenGL/OpenGLES.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     const wgpu::ShaderModule sourceTextureFsModule = utils::CreateShaderModule(device, R"(
         @fragment fn main(@builtin(position) FragCoord : vec4f)
                                  -> @location(0) vec4f {
@@ -806,10 +894,6 @@ TEST_P(ExternalTextureTests, CropSinglePlane) {
 // This test draws a 2x2 multi-colored square surrounded by a 1px black border. We test the external
 // texture crop functionality by cropping to specific ranges inside the texture.
 TEST_P(ExternalTextureTests, CropMultiplanar) {
-    // TODO(crbug.com/tint/1774): Tint has an issue compiling shaders that use external textures on
-    // OpenGL/OpenGLES.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     const wgpu::ShaderModule sourceTexturePlane0FsModule = utils::CreateShaderModule(device, R"(
         @fragment fn main(@builtin(position) FragCoord : vec4f)
                                  -> @location(0) vec4f {
@@ -993,6 +1077,74 @@ TEST_P(ExternalTextureTests, CropMultiplanar) {
         EXPECT_PIXEL_RGBA8_EQ(exp.lowerLeftColor, renderTexture, 0, 3);
         EXPECT_PIXEL_RGBA8_EQ(exp.lowerRightColor, renderTexture, 3, 3);
     }
+}
+
+// Test that sampling an external texture with non-one alpha preserves the alpha channel.
+TEST_P(ExternalTextureTests, SampleExternalTextureAlpha) {
+    wgpu::Texture sampledTexture =
+        Create2DTexture(device, kWidth, kHeight, kFormat,
+                        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment);
+    wgpu::Texture renderTexture =
+        Create2DTexture(device, kWidth, kHeight, kFormat,
+                        wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::RenderAttachment);
+
+    // Create a texture view for the external texture
+    wgpu::TextureView externalView = sampledTexture.CreateView();
+
+    utils::RGBA8 kColor = {255, 255, 255, 128};
+
+    // Initialize texture with green to ensure it is sampled from later.
+    {
+        utils::ComboRenderPassDescriptor renderPass({externalView}, nullptr);
+        renderPass.cColorAttachments[0].clearValue = {kColor.r / 255.0f, kColor.g / 255.0f,
+                                                      kColor.b / 255.0f, kColor.a / 255.0f};
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.End();
+
+        wgpu::CommandBuffer commands = encoder.Finish();
+        queue.Submit(1, &commands);
+    }
+
+    // Pipeline Creation
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = vsModule;
+    descriptor.cFragment.module = fsSampleExternalTextureModule;
+    descriptor.cTargets[0].format = kFormat;
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
+
+    // Create an ExternalTextureDescriptor from the texture view
+    wgpu::ExternalTextureDescriptor externalDesc = CreateDefaultExternalTextureDescriptor();
+    externalDesc.plane0 = externalView;
+    externalDesc.visibleOrigin = {0, 0};
+    externalDesc.visibleSize = {kWidth, kHeight};
+
+    // Import the external texture
+    wgpu::ExternalTexture externalTexture = device.CreateExternalTexture(&externalDesc);
+
+    // Create a sampler and bind group
+    wgpu::Sampler sampler = device.CreateSampler();
+
+    wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
+                                                     {{0, sampler}, {1, externalTexture}});
+
+    // Run the shader, which should sample from the external texture and draw a triangle into the
+    // upper left corner of the render texture.
+    wgpu::TextureView renderView = renderTexture.CreateView();
+    utils::ComboRenderPassDescriptor renderPass({renderView}, nullptr);
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+    {
+        pass.SetPipeline(pipeline);
+        pass.SetBindGroup(0, bindGroup);
+        pass.Draw(3);
+        pass.End();
+    }
+
+    wgpu::CommandBuffer commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    EXPECT_PIXEL_RGBA8_EQ(kColor, renderTexture, 0, 0);
 }
 
 DAWN_INSTANTIATE_TEST(ExternalTextureTests,

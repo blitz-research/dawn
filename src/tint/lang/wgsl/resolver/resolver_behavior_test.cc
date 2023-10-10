@@ -15,7 +15,7 @@
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 
 #include "gtest/gtest.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 #include "src/tint/lang/wgsl/sem/for_loop_statement.h"
 #include "src/tint/lang/wgsl/sem/if_statement.h"
 #include "src/tint/lang/wgsl/sem/switch_statement.h"
@@ -25,8 +25,8 @@
 namespace tint::resolver {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 class ResolverBehaviorTest : public ResolverTest {
   protected:
@@ -110,8 +110,8 @@ TEST_F(ResolverBehaviorTest, ExprIndex_Idx) {
 }
 
 TEST_F(ResolverBehaviorTest, ExprUnaryOp) {
-    auto* stmt = Decl(Var("lhs", ty.i32(),
-                          create<ast::UnaryOpExpression>(ast::UnaryOp::kComplement, Call("Next"))));
+    auto* stmt = Decl(Var(
+        "lhs", ty.i32(), create<ast::UnaryOpExpression>(core::UnaryOp::kComplement, Call("Next"))));
 
     Func("F", tint::Empty, ty.void_(), Vector{stmt}, Vector{Stage(ast::PipelineStage::kFragment)});
 

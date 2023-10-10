@@ -85,12 +85,10 @@ MaybeError ValidateTimestampQuery(const DeviceBase* device,
                                   Feature requiredFeature) {
     DAWN_TRY(device->ValidateObject(querySet));
 
-    DAWN_INVALID_IF(!device->HasFeature(requiredFeature),
-                    "Timestamp queries used without the %s feature enabled.",
-                    device->GetPhysicalDevice()
-                        ->GetInstance()
-                        ->GetFeatureInfo(FeatureEnumToAPIFeature(requiredFeature))
-                        ->name);
+    DAWN_INVALID_IF(
+        !device->HasFeature(requiredFeature),
+        "Timestamp queries used without the %s feature enabled.",
+        device->GetPhysicalDevice()->GetInstance()->GetFeatureInfo(ToAPI(requiredFeature))->name);
 
     DAWN_INVALID_IF(querySet->GetQueryType() != wgpu::QueryType::Timestamp,
                     "The type of %s is not %s.", querySet, wgpu::QueryType::Timestamp);
@@ -98,6 +96,40 @@ MaybeError ValidateTimestampQuery(const DeviceBase* device,
     DAWN_INVALID_IF(queryIndex >= querySet->GetQueryCount(),
                     "Query index (%u) exceeds the number of queries (%u) in %s.", queryIndex,
                     querySet->GetQueryCount(), querySet);
+
+    return {};
+}
+
+MaybeError ValidatePassTimestampWrites(const DeviceBase* device,
+                                       const QuerySetBase* querySet,
+                                       uint32_t beginningOfPassWriteIndex,
+                                       uint32_t endOfPassWriteIndex) {
+    DAWN_TRY(device->ValidateObject(querySet));
+
+    DAWN_INVALID_IF(!device->HasFeature(Feature::TimestampQuery),
+                    "Timestamp queries used without the timestamp-query feature enabled.");
+
+    DAWN_INVALID_IF(querySet->GetQueryType() != wgpu::QueryType::Timestamp,
+                    "The type of %s is not %s.", querySet, wgpu::QueryType::Timestamp);
+
+    if (beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+        DAWN_INVALID_IF(beginningOfPassWriteIndex >= querySet->GetQueryCount(),
+                        "beginningOfPassWriteIndex (%u) exceeds the number of queries (%u) in %s.",
+                        beginningOfPassWriteIndex, querySet->GetQueryCount(), querySet);
+    }
+    if (endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
+        DAWN_INVALID_IF(endOfPassWriteIndex >= querySet->GetQueryCount(),
+                        "endOfPassWriteIndex (%u) exceeds the number of queries (%u) in %s.",
+                        beginningOfPassWriteIndex, querySet->GetQueryCount(), querySet);
+    }
+
+    DAWN_INVALID_IF(beginningOfPassWriteIndex == wgpu::kQuerySetIndexUndefined &&
+                        endOfPassWriteIndex == wgpu::kQuerySetIndexUndefined,
+                    "Both beginningOfPassWriteIndex and endOfPassWriteIndex are undefined.");
+
+    DAWN_INVALID_IF(beginningOfPassWriteIndex == endOfPassWriteIndex,
+                    "beginningOfPassWriteIndex (%u) is equal to endOfPassWriteIndex (%u).",
+                    beginningOfPassWriteIndex, endOfPassWriteIndex);
 
     return {};
 }
@@ -138,8 +170,8 @@ ResultOrError<uint64_t> ComputeRequiredBytesInCopy(const TexelBlockInfo& blockIn
                                                    const Extent3D& copySize,
                                                    uint32_t bytesPerRow,
                                                    uint32_t rowsPerImage) {
-    ASSERT(copySize.width % blockInfo.width == 0);
-    ASSERT(copySize.height % blockInfo.height == 0);
+    DAWN_ASSERT(copySize.width % blockInfo.width == 0);
+    DAWN_ASSERT(copySize.height % blockInfo.height == 0);
     uint32_t widthInBlocks = copySize.width / blockInfo.width;
     uint32_t heightInBlocks = copySize.height / blockInfo.height;
     uint64_t bytesInLastRow = Safe32x32(widthInBlocks, blockInfo.byteSize);
@@ -163,8 +195,8 @@ ResultOrError<uint64_t> ComputeRequiredBytesInCopy(const TexelBlockInfo& blockIn
     //
     // This means that if the computation of depth * bytesPerImage doesn't overflow, none of the
     // computations for requiredBytesInCopy will. (and it's not a very pessimizing check)
-    ASSERT(copySize.depthOrArrayLayers <= 1 || (bytesPerRow != wgpu::kCopyStrideUndefined &&
-                                                rowsPerImage != wgpu::kCopyStrideUndefined));
+    DAWN_ASSERT(copySize.depthOrArrayLayers <= 1 || (bytesPerRow != wgpu::kCopyStrideUndefined &&
+                                                     rowsPerImage != wgpu::kCopyStrideUndefined));
     uint64_t bytesPerImage = Safe32x32(bytesPerRow, rowsPerImage);
     DAWN_INVALID_IF(
         bytesPerImage > std::numeric_limits<uint64_t>::max() / copySize.depthOrArrayLayers,
@@ -174,7 +206,7 @@ ResultOrError<uint64_t> ComputeRequiredBytesInCopy(const TexelBlockInfo& blockIn
 
     uint64_t requiredBytesInCopy = bytesPerImage * (copySize.depthOrArrayLayers - 1);
     if (heightInBlocks > 0) {
-        ASSERT(heightInBlocks <= 1 || bytesPerRow != wgpu::kCopyStrideUndefined);
+        DAWN_ASSERT(heightInBlocks <= 1 || bytesPerRow != wgpu::kCopyStrideUndefined);
         uint64_t bytesInLastImage = Safe32x32(bytesPerRow, heightInBlocks - 1) + bytesInLastRow;
         requiredBytesInCopy += bytesInLastImage;
     }
@@ -207,20 +239,20 @@ MaybeError ValidateCopySizeFitsInBuffer(const Ref<BufferBase>& buffer,
 void ApplyDefaultTextureDataLayoutOptions(TextureDataLayout* layout,
                                           const TexelBlockInfo& blockInfo,
                                           const Extent3D& copyExtent) {
-    ASSERT(layout != nullptr);
-    ASSERT(copyExtent.height % blockInfo.height == 0);
+    DAWN_ASSERT(layout != nullptr);
+    DAWN_ASSERT(copyExtent.height % blockInfo.height == 0);
     uint32_t heightInBlocks = copyExtent.height / blockInfo.height;
 
     if (layout->bytesPerRow == wgpu::kCopyStrideUndefined) {
-        ASSERT(copyExtent.width % blockInfo.width == 0);
+        DAWN_ASSERT(copyExtent.width % blockInfo.width == 0);
         uint32_t widthInBlocks = copyExtent.width / blockInfo.width;
         uint32_t bytesInLastRow = widthInBlocks * blockInfo.byteSize;
 
-        ASSERT(heightInBlocks <= 1 && copyExtent.depthOrArrayLayers <= 1);
+        DAWN_ASSERT(heightInBlocks <= 1 && copyExtent.depthOrArrayLayers <= 1);
         layout->bytesPerRow = Align(bytesInLastRow, kTextureBytesPerRowAlignment);
     }
     if (layout->rowsPerImage == wgpu::kCopyStrideUndefined) {
-        ASSERT(copyExtent.depthOrArrayLayers <= 1);
+        DAWN_ASSERT(copyExtent.depthOrArrayLayers <= 1);
         layout->rowsPerImage = heightInBlocks;
     }
 }
@@ -229,7 +261,7 @@ MaybeError ValidateLinearTextureData(const TextureDataLayout& layout,
                                      uint64_t byteSize,
                                      const TexelBlockInfo& blockInfo,
                                      const Extent3D& copyExtent) {
-    ASSERT(copyExtent.height % blockInfo.height == 0);
+    DAWN_ASSERT(copyExtent.height % blockInfo.height == 0);
     uint32_t heightInBlocks = copyExtent.height / blockInfo.height;
 
     // TODO(dawn:563): Right now kCopyStrideUndefined will be formatted as a large value in the
@@ -245,9 +277,10 @@ MaybeError ValidateLinearTextureData(const TextureDataLayout& layout,
                     heightInBlocks);
 
     // Validation for other members in layout:
-    ASSERT(copyExtent.width % blockInfo.width == 0);
+    DAWN_ASSERT(copyExtent.width % blockInfo.width == 0);
     uint32_t widthInBlocks = copyExtent.width / blockInfo.width;
-    ASSERT(Safe32x32(widthInBlocks, blockInfo.byteSize) <= std::numeric_limits<uint32_t>::max());
+    DAWN_ASSERT(Safe32x32(widthInBlocks, blockInfo.byteSize) <=
+                std::numeric_limits<uint32_t>::max());
     uint32_t bytesInLastRow = widthInBlocks * blockInfo.byteSize;
 
     // These != wgpu::kCopyStrideUndefined checks are technically redundant with the > checks,
@@ -304,14 +337,16 @@ MaybeError ValidateImageCopyTexture(DeviceBase const* device,
                     textureCopy.mipLevel, texture->GetNumMipLevels(), texture);
 
     DAWN_TRY(ValidateTextureAspect(textureCopy.aspect));
-    DAWN_INVALID_IF(SelectFormatAspects(texture->GetFormat(), textureCopy.aspect) == Aspect::None,
+
+    const auto aspect = SelectFormatAspects(texture->GetFormat(), textureCopy.aspect);
+    DAWN_INVALID_IF(aspect == Aspect::None,
                     "%s format (%s) does not have the selected aspect (%s).", texture,
                     texture->GetFormat().format, textureCopy.aspect);
 
     if (texture->GetSampleCount() > 1 || texture->GetFormat().HasDepthOrStencil()) {
         Extent3D subresourceSize =
-            texture->GetMipLevelSingleSubresourcePhysicalSize(textureCopy.mipLevel);
-        ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
+            texture->GetMipLevelSingleSubresourcePhysicalSize(textureCopy.mipLevel, aspect);
+        DAWN_ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
         DAWN_INVALID_IF(
             textureCopy.origin.x != 0 || textureCopy.origin.y != 0 ||
                 subresourceSize.width != copySize.width ||
@@ -330,9 +365,14 @@ MaybeError ValidateTextureCopyRange(DeviceBase const* device,
                                     const ImageCopyTexture& textureCopy,
                                     const Extent3D& copySize) {
     const TextureBase* texture = textureCopy.texture;
+    const Format& format = textureCopy.texture->GetFormat();
+    const Aspect aspect = ConvertAspect(format, textureCopy.aspect);
+
+    DAWN_ASSERT(!format.IsMultiPlanar() || HasOneBit(aspect));
 
     // Validation for the copy being in-bounds:
-    Extent3D mipSize = texture->GetMipLevelSingleSubresourcePhysicalSize(textureCopy.mipLevel);
+    Extent3D mipSize =
+        texture->GetMipLevelSingleSubresourcePhysicalSize(textureCopy.mipLevel, aspect);
     // For 1D/2D textures, include the array layer as depth so it can be checked with other
     // dimensions.
     if (texture->GetDimension() != wgpu::TextureDimension::e3D) {
@@ -353,7 +393,6 @@ MaybeError ValidateTextureCopyRange(DeviceBase const* device,
         &textureCopy.origin, &copySize, texture, textureCopy.mipLevel, &mipSize);
 
     // Validation for the texel block alignments:
-    const Format& format = textureCopy.texture->GetFormat();
     if (format.isCompressed) {
         const TexelBlockInfo& blockInfo = format.GetAspectInfo(textureCopy.aspect).block;
         DAWN_INVALID_IF(
@@ -396,16 +435,17 @@ ResultOrError<Aspect> SingleAspectUsedByImageCopyTexture(const ImageCopyTexture&
             return single;
         }
         case wgpu::TextureAspect::DepthOnly:
-            ASSERT(format.aspects & Aspect::Depth);
+            DAWN_ASSERT(format.aspects & Aspect::Depth);
             return Aspect::Depth;
         case wgpu::TextureAspect::StencilOnly:
-            ASSERT(format.aspects & Aspect::Stencil);
+            DAWN_ASSERT(format.aspects & Aspect::Stencil);
             return Aspect::Stencil;
         case wgpu::TextureAspect::Plane0Only:
+            return Aspect::Plane0;
         case wgpu::TextureAspect::Plane1Only:
-            break;
+            return Aspect::Plane1;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 MaybeError ValidateLinearToDepthStencilCopyRestrictions(const ImageCopyTexture& dst) {
@@ -453,7 +493,7 @@ MaybeError ValidateTextureToTextureCopyCommonRestrictions(const ImageCopyTexture
     if (src.texture == dst.texture) {
         switch (src.texture->GetDimension()) {
             case wgpu::TextureDimension::e1D:
-                ASSERT(src.mipLevel == 0 && src.origin.z == 0 && dst.origin.z == 0);
+                DAWN_ASSERT(src.mipLevel == 0);
                 return DAWN_VALIDATION_ERROR("Copy is from %s to itself.", src.texture);
 
             case wgpu::TextureDimension::e2D:
@@ -493,7 +533,7 @@ MaybeError ValidateTextureToTextureCopyRestrictions(const ImageCopyTexture& src,
 MaybeError ValidateCanUseAs(const TextureBase* texture,
                             wgpu::TextureUsage usage,
                             UsageValidationMode mode) {
-    ASSERT(wgpu::HasZeroOrOneBits(usage));
+    DAWN_ASSERT(wgpu::HasZeroOrOneBits(usage));
     switch (mode) {
         case UsageValidationMode::Default:
             DAWN_INVALID_IF(!(texture->GetUsage() & usage), "%s usage (%s) doesn't include %s.",
@@ -509,7 +549,7 @@ MaybeError ValidateCanUseAs(const TextureBase* texture,
 }
 
 MaybeError ValidateCanUseAs(const BufferBase* buffer, wgpu::BufferUsage usage) {
-    ASSERT(wgpu::HasZeroOrOneBits(usage));
+    DAWN_ASSERT(wgpu::HasZeroOrOneBits(usage));
     DAWN_INVALID_IF(!(buffer->GetUsageExternalOnly() & usage), "%s usage (%s) doesn't include %s.",
                     buffer, buffer->GetUsageExternalOnly(), usage);
     return {};
@@ -540,6 +580,59 @@ MaybeError ValidateColorAttachmentBytesPerSample(DeviceBase* device,
         totalByteSize > maxColorAttachmentBytesPerSample,
         "Total color attachment bytes per sample (%u) exceeds maximum (%u) with formats (%s).",
         totalByteSize, maxColorAttachmentBytesPerSample, TextureFormatsToString(formats));
+
+    return {};
+}
+
+MaybeError ValidatePLSInfo(
+    const DeviceBase* device,
+    uint64_t totalSize,
+    ityp::span<size_t, StorageAttachmentInfoForValidation> storageAttachments) {
+    DAWN_INVALID_IF(
+        !(device->HasFeature(Feature::PixelLocalStorageCoherent) ||
+          device->HasFeature(Feature::PixelLocalStorageNonCoherent)),
+        "Pixel Local Storage feature used without either of the pixel-local-storage-coherent or "
+        "pixel-local-storage-non-coherent features enabled.");
+
+    // Validate totalPixelLocalStorageSize
+    DAWN_INVALID_IF(totalSize % kPLSSlotByteSize != 0,
+                    "totalPixelLocalStorageSize (%i) is not a multiple of %i.", totalSize,
+                    kPLSSlotByteSize);
+    DAWN_INVALID_IF(totalSize > kMaxPLSSize,
+                    "totalPixelLocalStorageSize (%i) is larger than maxPixelLocalStorageSize (%i).",
+                    totalSize, kMaxPLSSize);
+
+    std::array<size_t, kMaxPLSSlots> indexForSlot;
+    constexpr size_t kSlotNotSet = std::numeric_limits<size_t>::max();
+    indexForSlot.fill(kSlotNotSet);
+    for (size_t i = 0; i < storageAttachments.size(); i++) {
+        const Format& format = device->GetValidInternalFormat(storageAttachments[i].format);
+        DAWN_ASSERT(format.supportsStorageAttachment);
+
+        // Validate the slot's offset.
+        uint64_t offset = storageAttachments[i].offset;
+        DAWN_INVALID_IF(offset % kPLSSlotByteSize != 0,
+                        "storageAttachments[%i].offset (%i) is not a multiple of %i.", i, offset,
+                        kPLSSlotByteSize);
+        DAWN_INVALID_IF(
+            offset > kMaxPLSSize,
+            "storageAttachments[%i].offset (%i) is larger than maxPixelLocalStorageSize (%i).", i,
+            offset, kMaxPLSSize);
+        // This can't overflow because kMaxPLSSize + max texel byte size is way less than 2^32.
+        DAWN_INVALID_IF(
+            offset + format.GetAspectInfo(Aspect::Color).block.byteSize > totalSize,
+            "storageAttachments[%i]'s footprint [%i, %i) does not fit in the total size (%i).", i,
+            offset, format.GetAspectInfo(Aspect::Color).block.byteSize, totalSize);
+
+        // Validate that there are no collisions, each storage attachment takes a single slot so
+        // we don't need to loop over all slots for a storage attachment.
+        DAWN_ASSERT(format.GetAspectInfo(Aspect::Color).block.byteSize == kPLSSlotByteSize);
+        size_t slot = offset / kPLSSlotByteSize;
+        DAWN_INVALID_IF(indexForSlot[slot] != kSlotNotSet,
+                        "storageAttachments[%i] and storageAttachment[%i] conflict.", i,
+                        indexForSlot[slot]);
+        indexForSlot[slot] = i;
+    }
 
     return {};
 }

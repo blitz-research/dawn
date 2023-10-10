@@ -15,18 +15,20 @@
 #ifndef SRC_TINT_LANG_CORE_IR_EXIT_IF_H_
 #define SRC_TINT_LANG_CORE_IR_EXIT_IF_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/exit.h"
 #include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class If;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A exit if instruction.
-class ExitIf : public Castable<ExitIf, Exit> {
+class ExitIf final : public Castable<ExitIf, Exit> {
   public:
     /// The base offset in Operands() for the args
     static constexpr size_t kArgsOperandOffset = 0;
@@ -37,6 +39,9 @@ class ExitIf : public Castable<ExitIf, Exit> {
     explicit ExitIf(ir::If* i, VectorRef<Value*> args = tint::Empty);
     ~ExitIf() override;
 
+    /// @copydoc Instruction::Clone()
+    ExitIf* Clone(CloneContext& ctx) override;
+
     /// Re-associates the exit with the given if instruction
     /// @param i the new If to exit from
     void SetIf(ir::If* i);
@@ -45,9 +50,9 @@ class ExitIf : public Castable<ExitIf, Exit> {
     ir::If* If();
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "exit-if"; }
+    std::string FriendlyName() override { return "exit_if"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_EXIT_IF_H_

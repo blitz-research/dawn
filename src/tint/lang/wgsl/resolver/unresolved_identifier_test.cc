@@ -14,9 +14,11 @@
 
 #include "gmock/gmock.h"
 
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::resolver {
 namespace {
@@ -36,7 +38,7 @@ TEST_F(ResolverUnresolvedIdentifierSuggestions, AddressSpace) {
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(12:34 error: unresolved address space 'privte'
 12:34 note: Did you mean 'private'?
-Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')");
+Possible values: 'function', 'pixel_local', 'private', 'push_constant', 'storage', 'uniform', 'workgroup')");
 }
 
 TEST_F(ResolverUnresolvedIdentifierSuggestions, BuiltinValue) {
@@ -46,7 +48,7 @@ TEST_F(ResolverUnresolvedIdentifierSuggestions, BuiltinValue) {
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(12:34 error: unresolved builtin value 'positon'
 12:34 note: Did you mean 'position'?
-Possible values: 'frag_depth', 'front_facing', 'global_invocation_id', 'instance_index', 'local_invocation_id', 'local_invocation_index', 'num_workgroups', 'position', 'sample_index', 'sample_mask', 'vertex_index', 'workgroup_id')");
+Possible values: 'frag_depth', 'front_facing', 'global_invocation_id', 'instance_index', 'local_invocation_id', 'local_invocation_index', 'num_workgroups', 'position', 'sample_index', 'sample_mask', 'subgroup_invocation_id', 'subgroup_size', 'vertex_index', 'workgroup_id')");
 }
 
 TEST_F(ResolverUnresolvedIdentifierSuggestions, TexelFormat) {
@@ -77,7 +79,7 @@ TEST_F(ResolverUnresolvedIdentifierSuggestions, InterpolationSampling) {
     Structure("s", Vector{
                        Member("m", ty.vec4<f32>(),
                               Vector{
-                                  Interpolate(builtin::InterpolationType::kLinear,
+                                  Interpolate(core::InterpolationType::kLinear,
                                               Expr(Source{{12, 34}}, "centre")),
                               }),
                    });

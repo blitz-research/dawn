@@ -38,7 +38,7 @@ PhysicalDevice::PhysicalDevice(InstanceBase* instance)
     mName = "Null backend";
     mAdapterType = wgpu::AdapterType::CPU;
     MaybeError err = Initialize();
-    ASSERT(err.IsSuccess());
+    DAWN_ASSERT(err.IsSuccess());
 }
 
 PhysicalDevice::~PhysicalDevice() = default;
@@ -57,13 +57,13 @@ MaybeError PhysicalDevice::InitializeImpl() {
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     // Enable all features by default for the convenience of tests.
-    for (uint32_t i = 0; i < static_cast<uint32_t>(Feature::EnumCount); i++) {
+    for (uint32_t i = 0; i < kEnumCount<Feature>; i++) {
         EnableFeature(static_cast<Feature>(i));
     }
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
-    GetDefaultLimits(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
     return {};
 }
 
@@ -149,10 +149,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
     return AcquireRef(new BindGroup(this, descriptor));
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return AcquireRef(new BindGroupLayout(this, descriptor, pipelineCompatibilityToken));
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return AcquireRef(new BindGroupLayout(this, descriptor));
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     DAWN_TRY(IncrementMemoryUsage(descriptor->size));
@@ -196,7 +195,7 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
 ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
-    return AcquireRef(new Texture(this, descriptor, TextureBase::TextureState::OwnedInternal));
+    return AcquireRef(new Texture(this, descriptor));
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
@@ -210,21 +209,23 @@ ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
 }
 
 void Device::DestroyImpl() {
-    ASSERT(GetState() == State::Disconnected);
+    DAWN_ASSERT(GetState() == State::Disconnected);
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the device is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the device.
+    // - It may be called when the last ref to the device is dropped and the device
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the device since there are no other live refs.
 
     // Clear pending operations before checking mMemoryUsage because some operations keep a
     // reference to Buffers.
     mPendingOperations.clear();
-    ASSERT(mMemoryUsage == 0);
+    DAWN_ASSERT(mMemoryUsage == 0);
 }
 
-MaybeError Device::WaitForIdleForDestruction() {
+void Device::ForgetPendingOperations() {
     mPendingOperations.clear();
-    return {};
-}
-
-bool Device::HasPendingCommands() const {
-    return false;
 }
 
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
@@ -265,16 +266,12 @@ MaybeError Device::IncrementMemoryUsage(uint64_t bytes) {
 }
 
 void Device::DecrementMemoryUsage(uint64_t bytes) {
-    ASSERT(mMemoryUsage >= bytes);
+    DAWN_ASSERT(mMemoryUsage >= bytes);
     mMemoryUsage -= bytes;
 }
 
 MaybeError Device::TickImpl() {
     return SubmitPendingOperations();
-}
-
-ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
-    return GetLastSubmittedCommandSerial();
 }
 
 void Device::AddPendingOperation(std::unique_ptr<PendingOperation> operation) {
@@ -287,8 +284,8 @@ MaybeError Device::SubmitPendingOperations() {
     }
     mPendingOperations.clear();
 
-    DAWN_TRY(CheckPassedSerials());
-    IncrementLastSubmittedCommandSerial();
+    DAWN_TRY(GetQueue()->CheckPassedSerials());
+    GetQueue()->IncrementLastSubmittedCommandSerial();
 
     return {};
 }
@@ -307,15 +304,13 @@ BindGroupDataHolder::~BindGroupDataHolder() {
 // BindGroup
 
 BindGroup::BindGroup(DeviceBase* device, const BindGroupDescriptor* descriptor)
-    : BindGroupDataHolder(descriptor->layout->GetBindingDataSize()),
+    : BindGroupDataHolder(descriptor->layout->GetInternalBindGroupLayout()->GetBindingDataSize()),
       BindGroupBase(device, descriptor, mBindingDataAllocation) {}
 
 // BindGroupLayout
 
-BindGroupLayout::BindGroupLayout(DeviceBase* device,
-                                 const BindGroupLayoutDescriptor* descriptor,
-                                 PipelineCompatibilityToken pipelineCompatibilityToken)
-    : BindGroupLayoutBase(device, descriptor, pipelineCompatibilityToken) {}
+BindGroupLayout::BindGroupLayout(DeviceBase* device, const BindGroupLayoutDescriptor* descriptor)
+    : BindGroupLayoutInternalBase(device, descriptor) {}
 
 // Buffer
 
@@ -344,8 +339,8 @@ void Buffer::CopyFromStaging(BufferBase* staging,
 }
 
 void Buffer::DoWriteBuffer(uint64_t bufferOffset, const void* data, size_t size) {
-    ASSERT(bufferOffset + size <= GetSize());
-    ASSERT(mBackingData);
+    DAWN_ASSERT(bufferOffset + size <= GetSize());
+    DAWN_ASSERT(mBackingData);
     memcpy(mBackingData.get() + bufferOffset, data, size);
 }
 
@@ -360,6 +355,13 @@ void* Buffer::GetMappedPointer() {
 void Buffer::UnmapImpl() {}
 
 void Buffer::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the buffer is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the buffer.
+    // - It may be called when the last ref to the buffer is dropped and the buffer
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the buffer since there are no other live refs.
     BufferBase::DestroyImpl();
     ToBackend(GetDevice())->DecrementMemoryUsage(GetSize());
 }
@@ -396,12 +398,26 @@ MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
     return {};
 }
 
+ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {
+    return GetLastSubmittedCommandSerial();
+}
+
+void Queue::ForceEventualFlushOfCommands() {}
+
+bool Queue::HasPendingCommands() const {
+    return false;
+}
+
+MaybeError Queue::WaitForIdleForDestruction() {
+    ToBackend(GetDevice())->ForgetPendingOperations();
+    return {};
+}
+
 // ComputePipeline
 MaybeError ComputePipeline::Initialize() {
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
 
     tint::Program transformedProgram;
-    const tint::Program* program;
     tint::ast::transform::Manager transformManager;
     tint::ast::transform::DataMap transformInputs;
 
@@ -421,13 +437,11 @@ MaybeError ComputePipeline::Initialize() {
                     RunTransforms(&transformManager, computeStage.module->GetTintProgram(),
                                   transformInputs, nullptr, nullptr));
 
-    program = &transformedProgram;
-
     // Do the workgroup size validation as it is actually backend agnostic.
     const CombinedLimits& limits = GetDevice()->GetLimits();
     Extent3D _;
     DAWN_TRY_ASSIGN(
-        _, ValidateComputeStageWorkgroupSize(*program, computeStage.entryPoint.c_str(),
+        _, ValidateComputeStageWorkgroupSize(transformedProgram, computeStage.entryPoint.c_str(),
                                              LimitsForCompilationRequest::Create(limits.v1)));
 
     return {};
@@ -472,8 +486,7 @@ MaybeError SwapChain::PresentImpl() {
 
 ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureImpl() {
     TextureDescriptor textureDesc = GetSwapChainBaseTextureDescriptor(this);
-    mTexture = AcquireRef(
-        new Texture(GetDevice(), &textureDesc, TextureBase::TextureState::OwnedInternal));
+    mTexture = AcquireRef(new Texture(GetDevice(), &textureDesc));
     return mTexture;
 }
 
@@ -507,9 +520,7 @@ bool Device::IsResolveTextureBlitWithDrawSupported() const {
     return true;
 }
 
-void Device::ForceEventualFlushOfCommands() {}
-
-Texture::Texture(DeviceBase* device, const TextureDescriptor* descriptor, TextureState state)
-    : TextureBase(device, descriptor, state) {}
+Texture::Texture(DeviceBase* device, const TextureDescriptor* descriptor)
+    : TextureBase(device, descriptor) {}
 
 }  // namespace dawn::native::null

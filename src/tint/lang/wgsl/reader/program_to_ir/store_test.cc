@@ -21,18 +21,18 @@
 namespace tint::wgsl::reader {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using ProgramToIRStoreTest = helpers::IRProgramTest;
 
 TEST_F(ProgramToIRStoreTest, EmitStatement_Assign) {
-    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", ty.u32(), core::AddressSpace::kPrivate);
 
     auto* expr = Assign("a", 4_u);
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %a:ptr<private, u32, read_write> = var

@@ -20,7 +20,6 @@
 #include <mutex>
 #include <set>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -30,6 +29,7 @@
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BackendConnection.h"
 #include "dawn/native/BlobCache.h"
+#include "dawn/native/EventManager.h"
 #include "dawn/native/Features.h"
 #include "dawn/native/RefCountedWithExternalCount.h"
 #include "dawn/native/Toggles.h"
@@ -44,12 +44,13 @@ namespace dawn::native {
 class CallbackTaskManager;
 class DeviceBase;
 class Surface;
-class XlibXcbFunctions;
+class X11Functions;
 
 using BackendsBitset = ityp::bitset<wgpu::BackendType, kEnumCount<wgpu::BackendType>>;
 using BackendsArray = ityp::
     array<wgpu::BackendType, std::unique_ptr<BackendConnection>, kEnumCount<wgpu::BackendType>>;
 
+wgpu::Bool APIGetInstanceFeatures(InstanceFeatures* features);
 InstanceBase* APICreateInstance(const InstanceDescriptor* descriptor);
 
 // This is called InstanceBase for consistency across the frontend, even if the backends don't
@@ -139,13 +140,17 @@ class InstanceBase final : public RefCountedWithExternalCount {
     const std::vector<std::string>& GetRuntimeSearchPaths() const;
 
     const Ref<CallbackTaskManager>& GetCallbackTaskManager() const;
+    EventManager* GetEventManager();
 
     // Get backend-independent libraries that need to be loaded dynamically.
-    const XlibXcbFunctions* GetOrCreateXlibXcbFunctions();
+    const X11Functions* GetOrLoadX11Functions();
 
     // Dawn API
     Surface* APICreateSurface(const SurfaceDescriptor* descriptor);
-    bool APIProcessEvents();
+    void APIProcessEvents();
+    [[nodiscard]] wgpu::WaitStatus APIWaitAny(size_t count,
+                                              FutureWaitInfo* futures,
+                                              uint64_t timeoutNS);
 
   private:
     explicit InstanceBase(const TogglesState& instanceToggles);
@@ -198,15 +203,14 @@ class InstanceBase final : public RefCountedWithExternalCount {
     bool mDeprecatedDiscoveredDefaultPhysicalDevices = false;
 
     TogglesState mToggles;
-
-    FeaturesInfo mFeaturesInfo;
     TogglesInfo mTogglesInfo;
 
 #if defined(DAWN_USE_X11)
-    std::unique_ptr<XlibXcbFunctions> mXlibXcbFunctions;
+    std::unique_ptr<X11Functions> mX11Functions;
 #endif  // defined(DAWN_USE_X11)
 
     Ref<CallbackTaskManager> mCallbackTaskManager;
+    EventManager mEventManager;
 
     std::set<DeviceBase*> mDevicesList;
     mutable std::mutex mDevicesListMutex;

@@ -14,10 +14,20 @@
 
 function(add_tint_ast_fuzzer NAME)
   add_executable(${NAME} ${NAME}.cc ${AST_FUZZER_SOURCES})
-  target_link_libraries(${NAME} libtint-fuzz libtint_ast_fuzzer)
-  tint_default_compile_options(${NAME})
+  target_link_libraries(${NAME} PRIVATE libtint_ast_fuzzer tint_lang_spirv_writer_helpers)
+  tint_fuzzer_compile_options(${NAME})
+  if(TINT_BUILD_SPV_READER OR TINT_BUILD_SPV_WRITER)
+    tint_spvheaders_compile_options(${NAME})
+    tint_spvtools_compile_options(${NAME})
+  endif()
   target_compile_definitions(${NAME} PRIVATE CUSTOM_MUTATOR)
   target_include_directories(${NAME} PRIVATE ${CMAKE_BINARY_DIR})
+  target_compile_options(${NAME} PRIVATE
+        -Wno-conditional-uninitialized
+        -Wno-covered-switch-default
+        -Wno-shadow-field-in-constructor
+        -Wno-shorten-64-to-32
+        -Wno-undef)
 endfunction()
 
 set(PROTOBUF_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/protobufs/tint_ast_fuzzer.proto)
@@ -86,17 +96,21 @@ set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/protobufs/tint_ast_fuzze
 
 # Add static library target.
 add_library(libtint_ast_fuzzer STATIC ${LIBTINT_AST_FUZZER_SOURCES})
-target_link_libraries(libtint_ast_fuzzer protobuf::libprotobuf libtint)
+target_link_libraries(libtint_ast_fuzzer protobuf::libprotobuf tint_api_sanitize_fuzzer)
 tint_default_compile_options(libtint_ast_fuzzer)
 target_include_directories(libtint_ast_fuzzer PRIVATE ${CMAKE_BINARY_DIR})
+target_compile_options(libtint_ast_fuzzer PRIVATE
+        -Wno-conditional-uninitialized
+        -Wno-covered-switch-default
+        -Wno-shadow-field-in-constructor
+        -Wno-shorten-64-to-32
+        -Wno-undef)
 
 set(AST_FUZZER_SOURCES
         cli.cc
         cli.h
         fuzzer.cc
         override_cli_params.h
-        ../apply_substitute_overrides.cc
-        ../apply_substitute_overrides.h
         ../tint_common_fuzzer.cc
         ../tint_common_fuzzer.h)
 
@@ -131,7 +145,11 @@ if (${TINT_BUILD_TESTS})
     target_compile_options(tint_ast_fuzzer_unittests PRIVATE
             -Wno-global-constructors
             -Wno-weak-vtables
-            -Wno-covered-switch-default)
+            -Wno-conditional-uninitialized
+            -Wno-covered-switch-default
+            -Wno-shadow-field-in-constructor
+            -Wno-shorten-64-to-32
+            -Wno-undef)
 
     target_include_directories(tint_ast_fuzzer_unittests PRIVATE ${CMAKE_BINARY_DIR})
 

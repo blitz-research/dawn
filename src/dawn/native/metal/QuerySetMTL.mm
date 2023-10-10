@@ -43,7 +43,7 @@ ResultOrError<id<MTLCounterSampleBuffer>> CreateCounterSampleBuffer(Device* devi
             break;
         }
     }
-    ASSERT(descriptor.counterSet != nullptr);
+    DAWN_ASSERT(descriptor.counterSet != nullptr);
 
     descriptor.sampleCount = static_cast<NSUInteger>(std::max(count, uint32_t(1u)));
     descriptor.storageMode = MTLStorageModePrivate;
@@ -101,7 +101,7 @@ MaybeError QuerySet::Initialize() {
                     CreateCounterSampleBuffer(device, label.Get(), MTLCommonCounterSetStatistic,
                                               GetQueryCount()));
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
             break;
         case wgpu::QueryType::Timestamp:
@@ -113,11 +113,11 @@ MaybeError QuerySet::Initialize() {
                     CreateCounterSampleBuffer(device, label.Get(), MTLCommonCounterSetTimestamp,
                                               GetQueryCount()));
             } else {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
             }
             break;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
 
@@ -136,6 +136,13 @@ id<MTLCounterSampleBuffer> QuerySet::GetCounterSampleBuffer() const
 QuerySet::~QuerySet() = default;
 
 void QuerySet::DestroyImpl() {
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the query set is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the query set.
+    // - It may be called when the last ref to the query set is dropped andit
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the query set since there are no other live refs.
     QuerySetBase::DestroyImpl();
 
     mVisibilityBuffer = nullptr;

@@ -15,19 +15,24 @@
 #ifndef SRC_TINT_LANG_CORE_IR_UNREACHABLE_H_
 #define SRC_TINT_LANG_CORE_IR_UNREACHABLE_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/terminator.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// An unreachable instruction in the IR.
-class Unreachable : public Castable<Unreachable, Terminator> {
+class Unreachable final : public Castable<Unreachable, Terminator> {
   public:
     ~Unreachable() override;
 
+    /// @copydoc Instruction::Clone()
+    Unreachable* Clone(CloneContext& ctx) override;
+
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "unreachable"; }
+    std::string FriendlyName() override { return "unreachable"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_UNREACHABLE_H_

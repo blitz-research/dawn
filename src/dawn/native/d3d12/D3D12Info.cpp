@@ -90,6 +90,23 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
         }
     }
 
+    // D3D12_HEAP_FLAG_CREATE_NOT_ZEROED is available anytime that ID3D12Device8 is exposed, or a
+    // check for D3D12_FEATURE_D3D12_OPTIONS7 succeeds.
+    D3D12_FEATURE_DATA_D3D12_OPTIONS7 featureOptions7 = {};
+    if (SUCCEEDED(physicalDevice.GetDevice()->CheckFeatureSupport(
+            D3D12_FEATURE_D3D12_OPTIONS7, &featureOptions7, sizeof(featureOptions7)))) {
+        info.supportsHeapFlagCreateNotZeroed = true;
+    }
+
+#if D3D12_SDK_VERSION >= 602
+    D3D12_FEATURE_DATA_D3D12_OPTIONS13 featureOptions13 = {};
+    if (SUCCEEDED(physicalDevice.GetDevice()->CheckFeatureSupport(
+            D3D12_FEATURE_D3D12_OPTIONS13, &featureOptions13, sizeof(featureOptions13)))) {
+        info.supportsTextureCopyBetweenDimensions =
+            featureOptions13.TextureCopyBetweenDimensionsSupported;
+    }
+#endif
+
     info.supportsRootSignatureVersion1_1 = false;
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureDataRootSignature = {};
     featureDataRootSignature.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
@@ -117,12 +134,12 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
     }
 
     // D3D_SHADER_MODEL is encoded as 0xMm with M the major version and m the minor version
-    ASSERT(driverShaderModel <= 0xFF);
+    DAWN_ASSERT(driverShaderModel <= 0xFF);
     uint32_t shaderModelMajor = (driverShaderModel & 0xF0) >> 4;
     uint32_t shaderModelMinor = (driverShaderModel & 0xF);
 
-    ASSERT(shaderModelMajor < 10);
-    ASSERT(shaderModelMinor < 10);
+    DAWN_ASSERT(shaderModelMajor < 10);
+    DAWN_ASSERT(shaderModelMinor < 10);
     info.shaderModel = 10 * shaderModelMajor + shaderModelMinor;
 
     // Profiles are always <stage>s_<minor>_<major> so we build the s_<minor>_major and add
@@ -139,6 +156,21 @@ ResultOrError<D3D12DeviceInfo> GatherDeviceInfo(const PhysicalDevice& physicalDe
         driverShaderModel >= D3D_SHADER_MODEL_6_2 && featureOptions4.Native16BitShaderOpsSupported;
 
     info.supportsDP4a = driverShaderModel >= D3D_SHADER_MODEL_6_4;
+
+    // Device support wave intrinsics if shader model >= SM6.0 and capabilities flag WaveOps is set.
+    // https://github.com/Microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics
+    if (driverShaderModel >= D3D_SHADER_MODEL_6_0) {
+        D3D12_FEATURE_DATA_D3D12_OPTIONS1 featureOptions1 = {};
+        if (SUCCEEDED(physicalDevice.GetDevice()->CheckFeatureSupport(
+                D3D12_FEATURE_D3D12_OPTIONS1, &featureOptions1, sizeof(featureOptions1)))) {
+            info.supportsWaveOps = featureOptions1.WaveOps;
+            info.waveLaneCountMin = featureOptions1.WaveLaneCountMin;
+            // Currently the WaveLaneCountMax queried from D3D12 API is not reliable and the meaning
+            // is unclear. The result is recorded into D3D12DeviceInfo, but is not intended to be
+            // used now.
+            info.waveLaneCountMax = featureOptions1.WaveLaneCountMax;
+        }
+    }
 
     return std::move(info);
 }

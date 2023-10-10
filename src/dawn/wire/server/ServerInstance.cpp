@@ -51,17 +51,16 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
     if (status != WGPURequestAdapterStatus_Success) {
         // Free the ObjectId which will make it unusable.
         AdapterObjects().Free(data->adapterObjectId);
-        ASSERT(adapter == nullptr);
+        DAWN_ASSERT(adapter == nullptr);
         SerializeCommand(cmd);
         return;
     }
 
-    WGPUAdapterProperties properties = {};
-    WGPUSupportedLimits limits = {};
-    std::vector<WGPUFeatureName> features;
-
     // Assign the handle and allocated status if the adapter is created successfully.
     AdapterObjects().FillReservation(data->adapterObjectId, adapter);
+
+    // Query and report the adapter supported features.
+    std::vector<WGPUFeatureName> features;
 
     size_t featuresCount = mProcs.adapterEnumerateFeatures(adapter, nullptr);
     features.resize(featuresCount);
@@ -73,12 +72,23 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
     cmd.featuresCount = std::distance(features.begin(), it);
     cmd.features = features.data();
 
+    // Query and report the adapter properties.
+    WGPUAdapterProperties properties = {};
     mProcs.adapterGetProperties(adapter, &properties);
-    mProcs.adapterGetLimits(adapter, &limits);
     cmd.properties = &properties;
+
+    // Query and report the adapter limits, including DawnExperimentalSubgroupLimits.
+    WGPUSupportedLimits limits = {};
+
+    WGPUDawnExperimentalSubgroupLimits experimentalSubgroupLimits = {};
+    experimentalSubgroupLimits.chain.sType = WGPUSType_DawnExperimentalSubgroupLimits;
+    limits.nextInChain = &experimentalSubgroupLimits.chain;
+
+    mProcs.adapterGetLimits(adapter, &limits);
     cmd.limits = &limits;
 
     SerializeCommand(cmd);
+    mProcs.adapterPropertiesFreeMembers(properties);
 }
 
 }  // namespace dawn::wire::server

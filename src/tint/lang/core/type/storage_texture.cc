@@ -21,14 +21,14 @@
 #include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/text/string_stream.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::type::StorageTexture);
+TINT_INSTANTIATE_TYPEINFO(tint::core::type::StorageTexture);
 
-namespace tint::type {
+namespace tint::core::type {
 
 StorageTexture::StorageTexture(TextureDimension dim,
-                               builtin::TexelFormat format,
-                               builtin::Access access,
-                               Type* subtype)
+                               core::TexelFormat format,
+                               core::Access access,
+                               const Type* subtype)
     : Base(Hash(tint::TypeInfo::Of<StorageTexture>().full_hashcode, dim, format, access), dim),
       texel_format_(format),
       access_(access),
@@ -49,35 +49,35 @@ std::string StorageTexture::FriendlyName() const {
     return out.str();
 }
 
-Type* StorageTexture::SubtypeFor(builtin::TexelFormat format, Manager& type_mgr) {
+Type* StorageTexture::SubtypeFor(core::TexelFormat format, Manager& type_mgr) {
     switch (format) {
-        case builtin::TexelFormat::kR32Uint:
-        case builtin::TexelFormat::kRgba8Uint:
-        case builtin::TexelFormat::kRg32Uint:
-        case builtin::TexelFormat::kRgba16Uint:
-        case builtin::TexelFormat::kRgba32Uint: {
+        case core::TexelFormat::kR32Uint:
+        case core::TexelFormat::kRgba8Uint:
+        case core::TexelFormat::kRg32Uint:
+        case core::TexelFormat::kRgba16Uint:
+        case core::TexelFormat::kRgba32Uint: {
             return type_mgr.Get<U32>();
         }
 
-        case builtin::TexelFormat::kR32Sint:
-        case builtin::TexelFormat::kRgba8Sint:
-        case builtin::TexelFormat::kRg32Sint:
-        case builtin::TexelFormat::kRgba16Sint:
-        case builtin::TexelFormat::kRgba32Sint: {
+        case core::TexelFormat::kR32Sint:
+        case core::TexelFormat::kRgba8Sint:
+        case core::TexelFormat::kRg32Sint:
+        case core::TexelFormat::kRgba16Sint:
+        case core::TexelFormat::kRgba32Sint: {
             return type_mgr.Get<I32>();
         }
 
-        case builtin::TexelFormat::kBgra8Unorm:
-        case builtin::TexelFormat::kRgba8Unorm:
-        case builtin::TexelFormat::kRgba8Snorm:
-        case builtin::TexelFormat::kR32Float:
-        case builtin::TexelFormat::kRg32Float:
-        case builtin::TexelFormat::kRgba16Float:
-        case builtin::TexelFormat::kRgba32Float: {
+        case core::TexelFormat::kBgra8Unorm:
+        case core::TexelFormat::kRgba8Unorm:
+        case core::TexelFormat::kRgba8Snorm:
+        case core::TexelFormat::kR32Float:
+        case core::TexelFormat::kRg32Float:
+        case core::TexelFormat::kRgba16Float:
+        case core::TexelFormat::kRgba32Float: {
             return type_mgr.Get<F32>();
         }
 
-        case builtin::TexelFormat::kUndefined:
+        case core::TexelFormat::kUndefined:
             break;
     }
 
@@ -89,4 +89,4 @@ StorageTexture* StorageTexture::Clone(CloneContext& ctx) const {
     return ctx.dst.mgr->Get<StorageTexture>(dim(), texel_format_, access_, ty);
 }
 
-}  // namespace tint::type
+}  // namespace tint::core::type

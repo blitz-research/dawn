@@ -14,9 +14,12 @@
 
 #include "src/tint/lang/core/ir/binary.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Binary);
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 
-namespace tint::ir {
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Binary);
+
+namespace tint::core::ir {
 
 Binary::Binary(InstructionResult* result, enum Kind kind, Value* lhs, Value* rhs) : kind_(kind) {
     AddOperand(Binary::kLhsOperandOffset, lhs);
@@ -26,4 +29,49 @@ Binary::Binary(InstructionResult* result, enum Kind kind, Value* lhs, Value* rhs
 
 Binary::~Binary() = default;
 
-}  // namespace tint::ir
+Binary* Binary::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto* lhs = ctx.Remap(LHS());
+    auto* rhs = ctx.Remap(RHS());
+    return ctx.ir.instructions.Create<Binary>(new_result, kind_, lhs, rhs);
+}
+
+std::string_view ToString(enum Binary::Kind kind) {
+    switch (kind) {
+        case Binary::Kind::kAdd:
+            return "add";
+        case Binary::Kind::kSubtract:
+            return "subtract";
+        case Binary::Kind::kMultiply:
+            return "multiply";
+        case Binary::Kind::kDivide:
+            return "divide";
+        case Binary::Kind::kModulo:
+            return "modulo";
+        case Binary::Kind::kAnd:
+            return "and";
+        case Binary::Kind::kOr:
+            return "or";
+        case Binary::Kind::kXor:
+            return "xor";
+        case Binary::Kind::kEqual:
+            return "equal";
+        case Binary::Kind::kNotEqual:
+            return "not equal";
+        case Binary::Kind::kLessThan:
+            return "less than";
+        case Binary::Kind::kGreaterThan:
+            return "greater than";
+        case Binary::Kind::kLessThanEqual:
+            return "less than equal";
+        case Binary::Kind::kGreaterThanEqual:
+            return "greater than equal";
+        case Binary::Kind::kShiftLeft:
+            return "shift left";
+        case Binary::Kind::kShiftRight:
+            return "shift right";
+    }
+    return "<unknown>";
+}
+
+}  // namespace tint::core::ir

@@ -18,24 +18,27 @@
 #include "src/tint/lang/core/ir/value.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// An instruction in the IR.
 class BlockParam : public Castable<BlockParam, Value> {
   public:
     /// Constructor
     /// @param type the type of the var
-    explicit BlockParam(const type::Type* type);
+    explicit BlockParam(const core::type::Type* type);
     ~BlockParam() override;
 
     /// @returns the type of the var
-    const type::Type* Type() override { return type_; }
+    const core::type::Type* Type() override { return type_; }
+
+    /// @copydoc Instruction::Clone()
+    BlockParam* Clone(CloneContext& ctx) override;
 
   private:
     /// the result type of the instruction
-    const type::Type* type_ = nullptr;
+    const core::type::Type* type_ = nullptr;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_BLOCK_PARAM_H_

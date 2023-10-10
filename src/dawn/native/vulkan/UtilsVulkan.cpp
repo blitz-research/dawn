@@ -70,7 +70,7 @@ VkCompareOp ToVulkanCompareOp(wgpu::CompareFunction op) {
         case wgpu::CompareFunction::Undefined:
             break;
     }
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 }
 
 // Convert Dawn texture aspects to  Vulkan texture aspect flags
@@ -100,7 +100,7 @@ VkImageAspectFlags VulkanAspectMask(const Aspect& aspects) {
                 break;
 
             case Aspect::None:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
     }
     return flags;
@@ -115,15 +115,15 @@ Extent3D ComputeTextureCopyExtent(const TextureCopy& textureCopy, const Extent3D
     Extent3D validTextureCopyExtent = copySize;
     const TextureBase* texture = textureCopy.texture.Get();
     Extent3D virtualSizeAtLevel =
-        texture->GetMipLevelSingleSubresourceVirtualSize(textureCopy.mipLevel);
-    ASSERT(textureCopy.origin.x <= virtualSizeAtLevel.width);
-    ASSERT(textureCopy.origin.y <= virtualSizeAtLevel.height);
+        texture->GetMipLevelSingleSubresourceVirtualSize(textureCopy.mipLevel, textureCopy.aspect);
+    DAWN_ASSERT(textureCopy.origin.x <= virtualSizeAtLevel.width);
+    DAWN_ASSERT(textureCopy.origin.y <= virtualSizeAtLevel.height);
     if (copySize.width > virtualSizeAtLevel.width - textureCopy.origin.x) {
-        ASSERT(texture->GetFormat().isCompressed);
+        DAWN_ASSERT(texture->GetFormat().isCompressed);
         validTextureCopyExtent.width = virtualSizeAtLevel.width - textureCopy.origin.x;
     }
     if (copySize.height > virtualSizeAtLevel.height - textureCopy.origin.y) {
-        ASSERT(texture->GetFormat().isCompressed);
+        DAWN_ASSERT(texture->GetFormat().isCompressed);
         validTextureCopyExtent.height = virtualSizeAtLevel.height - textureCopy.origin.y;
     }
 
@@ -150,7 +150,7 @@ VkBufferImageCopy ComputeBufferImageCopyRegion(const TextureDataLayout& dataLayo
     region.bufferOffset = dataLayout.offset;
     // In Vulkan the row length is in texels while it is in bytes for Dawn
     const TexelBlockInfo& blockInfo = texture->GetFormat().GetAspectInfo(textureCopy.aspect).block;
-    ASSERT(dataLayout.bytesPerRow % blockInfo.byteSize == 0);
+    DAWN_ASSERT(dataLayout.bytesPerRow % blockInfo.byteSize == 0);
     region.bufferRowLength = dataLayout.bytesPerRow / blockInfo.byteSize * blockInfo.width;
     region.bufferImageHeight = dataLayout.rowsPerImage * blockInfo.height;
 
@@ -159,14 +159,14 @@ VkBufferImageCopy ComputeBufferImageCopyRegion(const TextureDataLayout& dataLayo
 
     switch (textureCopy.texture->GetDimension()) {
         case wgpu::TextureDimension::e1D:
-            ASSERT(textureCopy.origin.z == 0 && copySize.depthOrArrayLayers == 1);
+            DAWN_ASSERT(textureCopy.origin.z == 0 && copySize.depthOrArrayLayers == 1);
             region.imageOffset.x = textureCopy.origin.x;
             region.imageOffset.y = 0;
             region.imageOffset.z = 0;
             region.imageSubresource.baseArrayLayer = 0;
             region.imageSubresource.layerCount = 1;
 
-            ASSERT(!textureCopy.texture->GetFormat().isCompressed);
+            DAWN_ASSERT(!textureCopy.texture->GetFormat().isCompressed);
             region.imageExtent.width = copySize.width;
             region.imageExtent.height = 1;
             region.imageExtent.depth = 1;
@@ -193,7 +193,7 @@ VkBufferImageCopy ComputeBufferImageCopyRegion(const TextureDataLayout& dataLayo
             region.imageSubresource.baseArrayLayer = 0;
             region.imageSubresource.layerCount = 1;
 
-            ASSERT(!textureCopy.texture->GetFormat().isCompressed);
+            DAWN_ASSERT(!textureCopy.texture->GetFormat().isCompressed);
             region.imageExtent.width = copySize.width;
             region.imageExtent.height = copySize.height;
             region.imageExtent.depth = copySize.depthOrArrayLayers;

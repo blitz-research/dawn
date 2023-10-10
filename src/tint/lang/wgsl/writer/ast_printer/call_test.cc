@@ -13,12 +13,12 @@
 // limitations under the License.
 
 #include "src/tint/lang/wgsl/ast/call_statement.h"
-#include "src/tint/lang/wgsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/wgsl/writer/ast_printer/helper_test.h"
 #include "src/tint/utils/text/string_stream.h"
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::wgsl::writer {
 namespace {
@@ -52,8 +52,8 @@ TEST_F(WgslASTPrinterTest, EmitExpression_Call_WithParams) {
          Vector{
              Return(1.23_f),
          });
-    GlobalVar("param1", ty.f32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("param2", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("param1", ty.f32(), core::AddressSpace::kPrivate);
+    GlobalVar("param2", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* call = Call("my_func", "param1", "param2");
     WrapInFunction(call);
@@ -73,8 +73,8 @@ TEST_F(WgslASTPrinterTest, EmitStatement_Call) {
              Param(Sym(), ty.f32()),
          },
          ty.void_(), tint::Empty, tint::Empty);
-    GlobalVar("param1", ty.f32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("param2", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("param1", ty.f32(), core::AddressSpace::kPrivate);
+    GlobalVar("param2", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* call = Call("my_func", "param1", "param2");
     auto* stmt = CallStmt(call);

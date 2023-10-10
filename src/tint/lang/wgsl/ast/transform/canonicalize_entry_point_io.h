@@ -15,6 +15,9 @@
 #ifndef SRC_TINT_LANG_WGSL_AST_TRANSFORM_CANONICALIZE_ENTRY_POINT_IO_H_
 #define SRC_TINT_LANG_WGSL_AST_TRANSFORM_CANONICALIZE_ENTRY_POINT_IO_H_
 
+#include <string>
+
+#include "src/tint/lang/wgsl/ast/internal_attribute.h"
 #include "src/tint/lang/wgsl/ast/transform/transform.h"
 
 namespace tint::ast::transform {
@@ -123,12 +126,42 @@ class CanonicalizeEntryPointIO final : public Castable<CanonicalizeEntryPointIO,
         const bool emit_vertex_point_size;
     };
 
+    /// HLSLWaveIntrinsic is an InternalAttribute that is used to decorate a stub function so that
+    /// the HLSL backend transforms this into calls to Wave* intrinsic functions.
+    class HLSLWaveIntrinsic final : public Castable<HLSLWaveIntrinsic, InternalAttribute> {
+      public:
+        /// Wave intrinsic op
+        enum class Op {
+            kWaveGetLaneIndex,
+            kWaveGetLaneCount,
+        };
+
+        /// Constructor
+        /// @param pid the identifier of the program that owns this node
+        /// @param nid the unique node identifier
+        /// @param o the op of the wave intrinsic
+        HLSLWaveIntrinsic(GenerationID pid, NodeID nid, Op o);
+        /// Destructor
+        ~HLSLWaveIntrinsic() override;
+
+        /// @copydoc InternalAttribute::InternalName
+        std::string InternalName() const override;
+
+        /// Performs a deep clone of this object using the program::CloneContext `ctx`.
+        /// @param ctx the clone context
+        /// @return the newly cloned object
+        const HLSLWaveIntrinsic* Clone(CloneContext& ctx) const override;
+
+        /// The op of the intrinsic
+        const Op op;
+    };
+
     /// Constructor
     CanonicalizeEntryPointIO();
     ~CanonicalizeEntryPointIO() override;
 
     /// @copydoc Transform::Apply
-    ApplyResult Apply(const Program* program,
+    ApplyResult Apply(const Program& program,
                       const DataMap& inputs,
                       DataMap& outputs) const override;
 

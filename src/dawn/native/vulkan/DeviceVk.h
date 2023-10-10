@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "dawn/common/MutexProtected.h"
 #include "dawn/common/SerialQueue.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/Device.h"
@@ -58,11 +59,11 @@ class Device final : public DeviceBase {
     const VulkanGlobalInfo& GetGlobalInfo() const;
     VkDevice GetVkDevice() const;
     uint32_t GetGraphicsQueueFamily() const;
-    VkQueue GetQueue() const;
+    VkQueue GetVkQueue() const;
 
-    FencedDeleter* GetFencedDeleter() const;
+    MutexProtected<FencedDeleter>& GetFencedDeleter() const;
     RenderPassCache* GetRenderPassCache() const;
-    ResourceMemoryAllocator* GetResourceMemoryAllocator() const;
+    MutexProtected<ResourceMemoryAllocator>& GetResourceMemoryAllocator() const;
     external_semaphore::Service* GetExternalSemaphoreService() const;
 
     CommandRecordingContext* GetPendingRecordingContext(
@@ -115,7 +116,11 @@ class Device final : public DeviceBase {
     // Used to associate this device with validation layer messages.
     const char* GetDebugPrefix() { return mDebugPrefix.c_str(); }
 
-    void ForceEventualFlushOfCommands() override;
+    // TODO(dawn:1413) move these methods the vulkan::Queue.
+    void ForceEventualFlushOfCommands();
+    bool HasPendingCommands() const;
+    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials();
+    MaybeError WaitForIdleForDestruction();
 
   private:
     Device(AdapterBase* adapter,
@@ -124,9 +129,8 @@ class Device final : public DeviceBase {
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
-    ResultOrError<Ref<BindGroupLayoutBase>> CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor,
-        PipelineCompatibilityToken pipelineCompatibilityToken) override;
+    ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
+        const BindGroupLayoutDescriptor* descriptor) override;
     ResultOrError<Ref<BufferBase>> CreateBufferImpl(const BufferDescriptor* descriptor) override;
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
         const PipelineLayoutDescriptor* descriptor) override;
@@ -168,8 +172,6 @@ class Device final : public DeviceBase {
     void CheckDebugMessagesAfterDestruction() const;
 
     void DestroyImpl() override;
-    MaybeError WaitForIdleForDestruction() override;
-    bool HasPendingCommands() const override;
 
     // To make it easier to use fn it is a public const member. However
     // the Device is allowed to mutate them through these private methods.
@@ -182,15 +184,14 @@ class Device final : public DeviceBase {
 
     SerialQueue<ExecutionSerial, Ref<DescriptorSetAllocator>>
         mDescriptorAllocatorsPendingDeallocation;
-    std::unique_ptr<FencedDeleter> mDeleter;
-    std::unique_ptr<ResourceMemoryAllocator> mResourceMemoryAllocator;
+    std::unique_ptr<MutexProtected<FencedDeleter>> mDeleter;
+    std::unique_ptr<MutexProtected<ResourceMemoryAllocator>> mResourceMemoryAllocator;
     std::unique_ptr<RenderPassCache> mRenderPassCache;
 
     std::unique_ptr<external_memory::Service> mExternalMemoryService;
     std::unique_ptr<external_semaphore::Service> mExternalSemaphoreService;
 
     ResultOrError<VkFence> GetUnusedFence();
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
 
     // We track which operations are in flight on the GPU with an increasing serial.
     // This works only because we have a single queue. Each submit to a queue is associated
@@ -206,7 +207,7 @@ class Device final : public DeviceBase {
 
     MaybeError PrepareRecordingContext();
     ResultOrError<CommandPoolAndBuffer> BeginVkCommandBuffer();
-    void RecycleCompletedCommands();
+    void RecycleCompletedCommands(ExecutionSerial completedSerial);
 
     SerialQueue<ExecutionSerial, CommandPoolAndBuffer> mCommandsInFlight;
     // Command pools in the unused list haven't been reset yet.

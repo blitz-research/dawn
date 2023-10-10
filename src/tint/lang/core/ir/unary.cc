@@ -14,9 +14,12 @@
 
 #include "src/tint/lang/core/ir/unary.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Unary);
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 
-namespace tint::ir {
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Unary);
+
+namespace tint::core::ir {
 
 Unary::Unary(InstructionResult* result, enum Kind k, Value* val) : kind_(k) {
     AddOperand(Unary::kValueOperandOffset, val);
@@ -25,4 +28,10 @@ Unary::Unary(InstructionResult* result, enum Kind k, Value* val) : kind_(k) {
 
 Unary::~Unary() = default;
 
-}  // namespace tint::ir
+Unary* Unary::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto* val = ctx.Remap(Val());
+    return ctx.ir.instructions.Create<Unary>(new_result, kind_, val);
+}
+
+}  // namespace tint::core::ir

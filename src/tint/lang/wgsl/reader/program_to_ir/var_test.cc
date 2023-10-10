@@ -21,16 +21,16 @@
 namespace tint::wgsl::reader {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using ProgramToIRVarTest = helpers::IRProgramTest;
 
 TEST_F(ProgramToIRVarTest, Emit_GlobalVar_NoInit) {
-    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", ty.u32(), core::AddressSpace::kPrivate);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %a:ptr<private, u32, read_write> = var
@@ -41,10 +41,10 @@ TEST_F(ProgramToIRVarTest, Emit_GlobalVar_NoInit) {
 
 TEST_F(ProgramToIRVarTest, Emit_GlobalVar_Init) {
     auto* expr = Expr(2_u);
-    GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate, expr);
+    GlobalVar("a", ty.u32(), core::AddressSpace::kPrivate, expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %a:ptr<private, u32, read_write> = var, 2u
@@ -54,10 +54,10 @@ TEST_F(ProgramToIRVarTest, Emit_GlobalVar_Init) {
 }
 
 TEST_F(ProgramToIRVarTest, Emit_GlobalVar_GroupBinding) {
-    GlobalVar("a", ty.u32(), builtin::AddressSpace::kStorage, Vector{Group(2_u), Binding(3_u)});
+    GlobalVar("a", ty.u32(), core::AddressSpace::kStorage, Vector{Group(2_u), Binding(3_u)});
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %a:ptr<storage, u32, read> = var @binding_point(2, 3)
@@ -67,11 +67,11 @@ TEST_F(ProgramToIRVarTest, Emit_GlobalVar_GroupBinding) {
 }
 
 TEST_F(ProgramToIRVarTest, Emit_Var_NoInit) {
-    auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction);
+    auto* a = Var("a", ty.u32(), core::AddressSpace::kFunction);
     WrapInFunction(a);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
@@ -85,11 +85,11 @@ TEST_F(ProgramToIRVarTest, Emit_Var_NoInit) {
 
 TEST_F(ProgramToIRVarTest, Emit_Var_Init_Constant) {
     auto* expr = Expr(2_u);
-    auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction, expr);
+    auto* a = Var("a", ty.u32(), core::AddressSpace::kFunction, expr);
     WrapInFunction(a);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
@@ -102,12 +102,12 @@ TEST_F(ProgramToIRVarTest, Emit_Var_Init_Constant) {
 }
 
 TEST_F(ProgramToIRVarTest, Emit_Var_Init_NonConstant) {
-    auto* a = Var("a", ty.u32(), builtin::AddressSpace::kFunction);
-    auto* b = Var("b", ty.u32(), builtin::AddressSpace::kFunction, Add("a", 2_u));
+    auto* a = Var("a", ty.u32(), core::AddressSpace::kFunction);
+    auto* b = Var("b", ty.u32(), core::AddressSpace::kFunction, Add("a", 2_u));
     WrapInFunction(a, b);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
@@ -123,11 +123,11 @@ TEST_F(ProgramToIRVarTest, Emit_Var_Init_NonConstant) {
 }
 
 TEST_F(ProgramToIRVarTest, Emit_Var_Assign_42i) {
-    WrapInFunction(Var("a", ty.i32(), builtin::AddressSpace::kFunction),  //
+    WrapInFunction(Var("a", ty.i32(), core::AddressSpace::kFunction),  //
                    Assign("a", 42_i));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
@@ -160,11 +160,11 @@ TEST_F(ProgramToIRVarTest, Emit_Var_Assign_ArrayOfArray_EvalOrder) {
             Call("f", 6_i));
 
     WrapInFunction(
-        Var("a", ty.array<array<array<i32, 5>, 5>, 5>(), builtin::AddressSpace::kFunction),  //
+        Var("a", ty.array<array<array<i32, 5>, 5>, 5>(), core::AddressSpace::kFunction),  //
         Assign(lhs, rhs));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%f = func(%p:i32):i32 -> %b1 {
@@ -206,11 +206,11 @@ TEST_F(ProgramToIRVarTest, Emit_Var_Assign_ArrayOfVec_EvalOrder) {
                           Call("f", 4_i)),  //
             Call("f", 5_i));
 
-    WrapInFunction(Var("a", ty.array<vec4<f32>, 5>(), builtin::AddressSpace::kFunction),  //
+    WrapInFunction(Var("a", ty.array<vec4<f32>, 5>(), core::AddressSpace::kFunction),  //
                    Assign(lhs, rhs));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%f = func(%p:i32):i32 -> %b1 {
@@ -254,11 +254,11 @@ TEST_F(ProgramToIRVarTest, Emit_Var_Assign_ArrayOfMatrix_EvalOrder) {
                 Call("f", 5_i)),                //
             Call("f", 6_i));
 
-    WrapInFunction(Var("a", ty.array<mat3x4<f32>, 5>(), builtin::AddressSpace::kFunction),  //
+    WrapInFunction(Var("a", ty.array<mat3x4<f32>, 5>(), core::AddressSpace::kFunction),  //
                    Assign(lhs, rhs));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%f = func(%p:i32):i32 -> %b1 {
@@ -286,11 +286,11 @@ TEST_F(ProgramToIRVarTest, Emit_Var_Assign_ArrayOfMatrix_EvalOrder) {
 }
 
 TEST_F(ProgramToIRVarTest, Emit_Var_CompoundAssign_42i) {
-    WrapInFunction(Var("a", ty.i32(), builtin::AddressSpace::kFunction),  //
-                   CompoundAssign("a", 42_i, ast::BinaryOp::kAdd));
+    WrapInFunction(Var("a", ty.i32(), core::AddressSpace::kFunction),  //
+                   CompoundAssign("a", 42_i, core::BinaryOp::kAdd));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b1 {
@@ -325,11 +325,11 @@ TEST_F(ProgramToIRVarTest, Emit_Var_CompoundAssign_ArrayOfArray_EvalOrder) {
             Call("f", 6_i));
 
     WrapInFunction(
-        Var("a", ty.array<array<array<i32, 5>, 5>, 5>(), builtin::AddressSpace::kFunction),  //
-        CompoundAssign(lhs, rhs, ast::BinaryOp::kAdd));
+        Var("a", ty.array<array<array<i32, 5>, 5>, 5>(), core::AddressSpace::kFunction),  //
+        CompoundAssign(lhs, rhs, core::BinaryOp::kAdd));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%f = func(%p:i32):i32 -> %b1 {
@@ -377,11 +377,11 @@ TEST_F(ProgramToIRVarTest, Emit_Var_CompoundAssign_ArrayOfMatrix_EvalOrder) {
                 Call("f", 5_i)),                //
             Call("f", 6_i));
 
-    WrapInFunction(Var("a", ty.array<mat3x4<f32>, 5>(), builtin::AddressSpace::kFunction),  //
-                   CompoundAssign(lhs, rhs, ast::BinaryOp::kAdd));
+    WrapInFunction(Var("a", ty.array<mat3x4<f32>, 5>(), core::AddressSpace::kFunction),  //
+                   CompoundAssign(lhs, rhs, core::BinaryOp::kAdd));
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()),
               R"(%f = func(%p:i32):i32 -> %b1 {

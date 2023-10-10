@@ -16,9 +16,9 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::ast {
 namespace {
@@ -46,8 +46,8 @@ TEST_F(SwitchStatementTest, Creation_WithSource) {
 }
 
 TEST_F(SwitchStatementTest, Creation_WithAttributes) {
-    auto* attr1 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "foo");
+    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "bar");
     auto* ident = Expr("ident");
     auto* stmt =
         create<SwitchStatement>(ident, tint::Empty, tint::Vector{attr1, attr2}, tint::Empty);
@@ -56,8 +56,8 @@ TEST_F(SwitchStatementTest, Creation_WithAttributes) {
 }
 
 TEST_F(SwitchStatementTest, Creation_WithBodyAttributes) {
-    auto* attr1 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "foo");
+    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "bar");
     auto* ident = Expr("ident");
     auto* stmt =
         create<SwitchStatement>(ident, tint::Empty, tint::Empty, tint::Vector{attr1, attr2});

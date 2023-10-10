@@ -15,23 +15,27 @@
 #ifndef SRC_TINT_LANG_SPIRV_WRITER_PRINTER_PRINTER_H_
 #define SRC_TINT_LANG_SPIRV_WRITER_PRINTER_PRINTER_H_
 
+#include <string>
 #include <vector>
 
-#include "src/tint/lang/core/builtin/address_space.h"
-#include "src/tint/lang/core/builtin/builtin_value.h"
-#include "src/tint/lang/core/builtin/texel_format.h"
+#include "src/tint/lang/core/address_space.h"
+#include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/core/constant/value.h"
+#include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/constant.h"
-#include "src/tint/lang/spirv/writer/binary_writer.h"
-#include "src/tint/lang/spirv/writer/function.h"
-#include "src/tint/lang/spirv/writer/module.h"
+#include "src/tint/lang/core/texel_format.h"
+#include "src/tint/lang/spirv/ir/builtin_call.h"
+#include "src/tint/lang/spirv/writer/common/binary_writer.h"
+#include "src/tint/lang/spirv/writer/common/function.h"
+#include "src/tint/lang/spirv/writer/common/module.h"
 #include "src/tint/utils/containers/hashmap.h"
 #include "src/tint/utils/containers/vector.h"
 #include "src/tint/utils/diagnostic/diagnostic.h"
-#include "src/tint/utils/text/symbol.h"
+#include "src/tint/utils/result/result.h"
+#include "src/tint/utils/symbol/symbol.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class Access;
 class Binary;
 class Bitcast;
@@ -46,7 +50,6 @@ class ExitLoop;
 class ExitSwitch;
 class Function;
 class If;
-class IntrinsicCall;
 class Let;
 class Load;
 class LoadVectorElement;
@@ -62,12 +65,12 @@ class Unary;
 class UserCall;
 class Value;
 class Var;
-}  // namespace tint::ir
-namespace tint::type {
+}  // namespace tint::core::ir
+namespace tint::core::type {
 class Struct;
 class Texture;
 class Type;
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 namespace tint::spirv::writer {
 
@@ -78,31 +81,23 @@ class Printer {
     /// @param module the Tint IR module to generate
     /// @param zero_init_workgroup_memory `true` to initialize all the variables in the Workgroup
     ///                                   storage class with OpConstantNull
-    Printer(ir::Module* module, bool zero_init_workgroup_memory);
+    Printer(core::ir::Module& module, bool zero_init_workgroup_memory);
 
-    /// @returns true on successful generation; false otherwise
-    bool Generate();
+    /// @returns the generated SPIR-V binary on success, or failure
+    tint::Result<std::vector<uint32_t>> Generate();
 
     /// @returns the module that this writer has produced
     writer::Module& Module() { return module_; }
 
-    /// @returns the generated SPIR-V binary data
-    const std::vector<uint32_t>& Result() const { return writer_.Result(); }
-
-    /// @returns the list of diagnostics raised by the writer
-    diag::List Diagnostics() const { return diagnostics_; }
-
     /// Get the result ID of the constant `constant`, emitting its instruction if necessary.
     /// @param constant the constant to get the ID for
     /// @returns the result ID of the constant
-    uint32_t Constant(ir::Constant* constant);
+    uint32_t Constant(core::ir::Constant* constant);
 
     /// Get the result ID of the type `ty`, emitting a type declaration instruction if necessary.
     /// @param ty the type to get the ID for
-    /// @param addrspace the optional address space that this type is being used for
     /// @returns the result ID of the type
-    uint32_t Type(const type::Type* ty,
-                  builtin::AddressSpace addrspace = builtin::AddressSpace::kUndefined);
+    uint32_t Type(const core::type::Type* ty);
 
   private:
     /// Convert a builtin to the corresponding SPIR-V enum value, taking into account the target
@@ -110,169 +105,184 @@ class Printer {
     /// @param builtin the builtin to convert
     /// @param addrspace the address space the builtin is being used in
     /// @returns the enum value of the corresponding SPIR-V builtin
-    uint32_t Builtin(builtin::BuiltinValue builtin, builtin::AddressSpace addrspace);
+    uint32_t Builtin(core::BuiltinValue builtin, core::AddressSpace addrspace);
 
     /// Convert a texel format to the corresponding SPIR-V enum value, adding required capabilities.
     /// @param format the format to convert
     /// @returns the enum value of the corresponding SPIR-V texel format
-    uint32_t TexelFormat(const builtin::TexelFormat format);
+    uint32_t TexelFormat(const core::TexelFormat format);
 
     /// Get the result ID of the constant `constant`, emitting its instruction if necessary.
     /// @param constant the constant to get the ID for
     /// @returns the result ID of the constant
-    uint32_t Constant(const constant::Value* constant);
+    uint32_t Constant(const core::constant::Value* constant);
 
     /// Get the result ID of the OpConstantNull instruction for `type`, emitting it if necessary.
     /// @param type the type to get the ID for
     /// @returns the result ID of the OpConstantNull instruction
-    uint32_t ConstantNull(const type::Type* type);
+    uint32_t ConstantNull(const core::type::Type* type);
 
     /// Get the ID of the label for `block`.
     /// @param block the block to get the label ID for
     /// @returns the ID of the block's label
-    uint32_t Label(ir::Block* block);
+    uint32_t Label(core::ir::Block* block);
 
     /// Get the result ID of the value `value`, emitting its instruction if necessary.
     /// @param value the value to get the ID for
     /// @returns the result ID of the value
-    uint32_t Value(ir::Value* value);
+    uint32_t Value(core::ir::Value* value);
 
     /// Get the result ID of the instruction result `value`, emitting its instruction if necessary.
     /// @param inst the instruction to get the ID for
     /// @returns the result ID of the instruction
-    uint32_t Value(ir::Instruction* inst);
+    uint32_t Value(core::ir::Instruction* inst);
 
     /// Get the result ID of the OpUndef instruction with type `ty`, emitting it if necessary.
     /// @param ty the type of the undef value
     /// @returns the result ID of the instruction
-    uint32_t Undef(const type::Type* ty);
+    uint32_t Undef(const core::type::Type* ty);
 
     /// Emit a struct type.
     /// @param id the result ID to use
-    /// @param addrspace the optional address space that this type is being used for
     /// @param str the struct type to emit
-    void EmitStructType(uint32_t id,
-                        const type::Struct* str,
-                        builtin::AddressSpace addrspace = builtin::AddressSpace::kUndefined);
+    void EmitStructType(uint32_t id, const core::type::Struct* str);
 
     /// Emit a texture type.
     /// @param id the result ID to use
     /// @param texture the texture type to emit
-    void EmitTextureType(uint32_t id, const type::Texture* texture);
+    void EmitTextureType(uint32_t id, const core::type::Texture* texture);
 
     /// Emit a function.
     /// @param func the function to emit
-    void EmitFunction(ir::Function* func);
+    void EmitFunction(core::ir::Function* func);
 
     /// Emit entry point declarations for a function.
     /// @param func the function to emit entry point declarations for
     /// @param id the result ID of the function declaration
-    void EmitEntryPoint(ir::Function* func, uint32_t id);
+    void EmitEntryPoint(core::ir::Function* func, uint32_t id);
 
     /// Emit a block, including the initial OpLabel, OpPhis and instructions.
     /// @param block the block to emit
-    void EmitBlock(ir::Block* block);
+    void EmitBlock(core::ir::Block* block);
 
     /// Emit all OpPhi nodes for incoming branches to @p block.
     /// @param block the block to emit the OpPhis for
-    void EmitIncomingPhis(ir::MultiInBlock* block);
+    void EmitIncomingPhis(core::ir::MultiInBlock* block);
 
     /// Emit all instructions of @p block.
     /// @param block the block's instructions to emit
-    void EmitBlockInstructions(ir::Block* block);
+    void EmitBlockInstructions(core::ir::Block* block);
 
     /// Emit the root block.
     /// @param root_block the root block to emit
-    void EmitRootBlock(ir::Block* root_block);
+    void EmitRootBlock(core::ir::Block* root_block);
 
     /// Emit an `if` flow node.
     /// @param i the if node to emit
-    void EmitIf(ir::If* i);
+    void EmitIf(core::ir::If* i);
 
     /// Emit an access instruction
     /// @param access the access instruction to emit
-    void EmitAccess(ir::Access* access);
+    void EmitAccess(core::ir::Access* access);
 
     /// Emit a binary instruction.
     /// @param binary the binary instruction to emit
-    void EmitBinary(ir::Binary* binary);
+    void EmitBinary(core::ir::Binary* binary);
 
     /// Emit a bitcast instruction.
     /// @param bitcast the bitcast instruction to emit
-    void EmitBitcast(ir::Bitcast* bitcast);
+    void EmitBitcast(core::ir::Bitcast* bitcast);
 
     /// Emit a builtin function call instruction.
     /// @param call the builtin call instruction to emit
-    void EmitCoreBuiltinCall(ir::CoreBuiltinCall* call);
+    void EmitSpirvBuiltinCall(spirv::ir::BuiltinCall* call);
+
+    /// Emit a builtin function call instruction.
+    /// @param call the builtin call instruction to emit
+    void EmitCoreBuiltinCall(core::ir::CoreBuiltinCall* call);
 
     /// Emit a construct instruction.
     /// @param construct the construct instruction to emit
-    void EmitConstruct(ir::Construct* construct);
+    void EmitConstruct(core::ir::Construct* construct);
 
     /// Emit a convert instruction.
     /// @param convert the convert instruction to emit
-    void EmitConvert(ir::Convert* convert);
+    void EmitConvert(core::ir::Convert* convert);
 
-    /// Emit an intrinsic call instruction.
-    /// @param call the intrinsic call instruction to emit
-    void EmitIntrinsicCall(ir::IntrinsicCall* call);
+    /// Emit IO attributes.
+    /// @param id the ID of the variable to decorate
+    /// @param attrs the shader IO attrs
+    /// @param addrspace the address of the variable
+    void EmitIOAttributes(uint32_t id,
+                          const core::ir::IOAttributes& attrs,
+                          core::AddressSpace addrspace);
 
     /// Emit a load instruction.
     /// @param load the load instruction to emit
-    void EmitLoad(ir::Load* load);
+    void EmitLoad(core::ir::Load* load);
 
     /// Emit a load vector element instruction.
     /// @param load the load vector element instruction to emit
-    void EmitLoadVectorElement(ir::LoadVectorElement* load);
+    void EmitLoadVectorElement(core::ir::LoadVectorElement* load);
 
     /// Emit a loop instruction.
     /// @param loop the loop instruction to emit
-    void EmitLoop(ir::Loop* loop);
+    void EmitLoop(core::ir::Loop* loop);
 
     /// Emit a store instruction.
     /// @param store the store instruction to emit
-    void EmitStore(ir::Store* store);
+    void EmitStore(core::ir::Store* store);
 
     /// Emit a store vector element instruction.
     /// @param store the store vector element instruction to emit
-    void EmitStoreVectorElement(ir::StoreVectorElement* store);
+    void EmitStoreVectorElement(core::ir::StoreVectorElement* store);
 
     /// Emit a switch instruction.
     /// @param swtch the switch instruction to emit
-    void EmitSwitch(ir::Switch* swtch);
+    void EmitSwitch(core::ir::Switch* swtch);
 
     /// Emit a swizzle instruction.
     /// @param swizzle the swizzle instruction to emit
-    void EmitSwizzle(ir::Swizzle* swizzle);
+    void EmitSwizzle(core::ir::Swizzle* swizzle);
 
     /// Emit a unary instruction.
     /// @param unary the unary instruction to emit
-    void EmitUnary(ir::Unary* unary);
+    void EmitUnary(core::ir::Unary* unary);
 
     /// Emit a user call instruction.
     /// @param call the user call instruction to emit
-    void EmitUserCall(ir::UserCall* call);
+    void EmitUserCall(core::ir::UserCall* call);
 
     /// Emit a var instruction.
     /// @param var the var instruction to emit
-    void EmitVar(ir::Var* var);
+    void EmitVar(core::ir::Var* var);
 
     /// Emit a let instruction.
     /// @param let the let instruction to emit
-    void EmitLet(ir::Let* let);
+    void EmitLet(core::ir::Let* let);
 
     /// Emit a terminator instruction.
     /// @param term the terminator instruction to emit
-    void EmitTerminator(ir::Terminator* term);
+    void EmitTerminator(core::ir::Terminator* term);
 
     /// Emit the OpPhis for the given flow control instruction.
     /// @param inst the flow control instruction
-    void EmitExitPhis(ir::ControlInstruction* inst);
+    void EmitExitPhis(core::ir::ControlInstruction* inst);
 
-    ir::Module* ir_;
+    /// Get the ID of the label of the merge block for a control instruction.
+    /// @param ci the control instruction to get the merge label for
+    /// @returns the label ID
+    uint32_t GetMergeLabel(core::ir::ControlInstruction* ci);
+
+    /// Get the ID of the label of the block that will contain a terminator instruction.
+    /// @param t the terminator instruction to get the block label for
+    /// @returns the label ID
+    uint32_t GetTerminatorBlockLabel(core::ir::Terminator* t);
+
+    core::ir::Module& ir_;
+    core::ir::Builder b_;
     writer::Module module_;
     BinaryWriter writer_;
-    diag::List diagnostics_;
 
     /// A function type used for an OpTypeFunction declaration.
     struct FunctionType {
@@ -300,25 +310,28 @@ class Printer {
     };
 
     /// The map of types to their result IDs.
-    Hashmap<const type::Type*, uint32_t, 8> types_;
+    Hashmap<const core::type::Type*, uint32_t, 8> types_;
 
     /// The map of function types to their result IDs.
     Hashmap<FunctionType, uint32_t, 8, FunctionType::Hasher> function_types_;
 
     /// The map of constants to their result IDs.
-    Hashmap<const constant::Value*, uint32_t, 16> constants_;
+    Hashmap<const core::constant::Value*, uint32_t, 16> constants_;
 
     /// The map of types to the result IDs of their OpConstantNull instructions.
-    Hashmap<const type::Type*, uint32_t, 4> constant_nulls_;
+    Hashmap<const core::type::Type*, uint32_t, 4> constant_nulls_;
 
     /// The map of types to the result IDs of their OpUndef instructions.
-    Hashmap<const type::Type*, uint32_t, 4> undef_values_;
+    Hashmap<const core::type::Type*, uint32_t, 4> undef_values_;
 
     /// The map of non-constant values to their result IDs.
-    Hashmap<ir::Value*, uint32_t, 8> values_;
+    Hashmap<core::ir::Value*, uint32_t, 8> values_;
 
     /// The map of blocks to the IDs of their label instructions.
-    Hashmap<ir::Block*, uint32_t, 8> block_labels_;
+    Hashmap<core::ir::Block*, uint32_t, 8> block_labels_;
+
+    /// The map of control instructions to the IDs of the label of their SPIR-V merge blocks.
+    Hashmap<core::ir::ControlInstruction*, uint32_t, 8> merge_block_labels_;
 
     /// The map of extended instruction set names to their result IDs.
     Hashmap<std::string_view, uint32_t, 2> imports_;

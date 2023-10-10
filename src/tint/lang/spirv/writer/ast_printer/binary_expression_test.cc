@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/ast_printer/test_helper.h"
-#include "src/tint/lang/spirv/writer/spv_dump.h"
+#include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 
 namespace tint::spirv::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using SpirvASTPrinterTest = TestHelper;
 
 struct BinaryData {
-    ast::BinaryOp op;
+    core::BinaryOp op;
     std::string name;
 };
 inline std::ostream& operator<<(std::ostream& out, BinaryData data) {
@@ -62,8 +62,8 @@ TEST_P(BinaryArithSignedIntegerTest, Vector) {
     auto param = GetParam();
 
     // Skip ops that are illegal for this type
-    if (param.op == ast::BinaryOp::kAnd || param.op == ast::BinaryOp::kOr ||
-        param.op == ast::BinaryOp::kXor) {
+    if (param.op == core::BinaryOp::kAnd || param.op == core::BinaryOp::kOr ||
+        param.op == core::BinaryOp::kXor) {
         return;
     }
 
@@ -119,14 +119,14 @@ TEST_P(BinaryArithSignedIntegerTest, Scalar_Loads) {
 INSTANTIATE_TEST_SUITE_P(SpirvASTPrinterTest,
                          BinaryArithSignedIntegerTest,
                          // NOTE: No left and right shift as they require u32 for rhs operand
-                         testing::Values(BinaryData{ast::BinaryOp::kAdd, "OpIAdd"},
-                                         BinaryData{ast::BinaryOp::kAnd, "OpBitwiseAnd"},
-                                         BinaryData{ast::BinaryOp::kDivide, "OpSDiv"},
-                                         BinaryData{ast::BinaryOp::kModulo, "OpSRem"},
-                                         BinaryData{ast::BinaryOp::kMultiply, "OpIMul"},
-                                         BinaryData{ast::BinaryOp::kOr, "OpBitwiseOr"},
-                                         BinaryData{ast::BinaryOp::kSubtract, "OpISub"},
-                                         BinaryData{ast::BinaryOp::kXor, "OpBitwiseXor"}));
+                         testing::Values(BinaryData{core::BinaryOp::kAdd, "OpIAdd"},
+                                         BinaryData{core::BinaryOp::kAnd, "OpBitwiseAnd"},
+                                         BinaryData{core::BinaryOp::kDivide, "OpSDiv"},
+                                         BinaryData{core::BinaryOp::kModulo, "OpSRem"},
+                                         BinaryData{core::BinaryOp::kMultiply, "OpIMul"},
+                                         BinaryData{core::BinaryOp::kOr, "OpBitwiseOr"},
+                                         BinaryData{core::BinaryOp::kSubtract, "OpISub"},
+                                         BinaryData{core::BinaryOp::kXor, "OpBitwiseXor"}));
 
 using BinaryArithUnsignedIntegerTest = TestParamHelper<BinaryData>;
 TEST_P(BinaryArithUnsignedIntegerTest, Scalar) {
@@ -155,8 +155,8 @@ TEST_P(BinaryArithUnsignedIntegerTest, Vector) {
     auto param = GetParam();
 
     // Skip ops that are illegal for this type
-    if (param.op == ast::BinaryOp::kAnd || param.op == ast::BinaryOp::kOr ||
-        param.op == ast::BinaryOp::kXor) {
+    if (param.op == core::BinaryOp::kAnd || param.op == core::BinaryOp::kOr ||
+        param.op == core::BinaryOp::kXor) {
         return;
     }
 
@@ -183,16 +183,16 @@ TEST_P(BinaryArithUnsignedIntegerTest, Vector) {
 INSTANTIATE_TEST_SUITE_P(
     SpirvASTPrinterTest,
     BinaryArithUnsignedIntegerTest,
-    testing::Values(BinaryData{ast::BinaryOp::kAdd, "OpIAdd"},
-                    BinaryData{ast::BinaryOp::kAnd, "OpBitwiseAnd"},
-                    BinaryData{ast::BinaryOp::kDivide, "OpUDiv"},
-                    BinaryData{ast::BinaryOp::kModulo, "OpUMod"},
-                    BinaryData{ast::BinaryOp::kMultiply, "OpIMul"},
-                    BinaryData{ast::BinaryOp::kOr, "OpBitwiseOr"},
-                    BinaryData{ast::BinaryOp::kShiftLeft, "OpShiftLeftLogical"},
-                    BinaryData{ast::BinaryOp::kShiftRight, "OpShiftRightLogical"},
-                    BinaryData{ast::BinaryOp::kSubtract, "OpISub"},
-                    BinaryData{ast::BinaryOp::kXor, "OpBitwiseXor"}));
+    testing::Values(BinaryData{core::BinaryOp::kAdd, "OpIAdd"},
+                    BinaryData{core::BinaryOp::kAnd, "OpBitwiseAnd"},
+                    BinaryData{core::BinaryOp::kDivide, "OpUDiv"},
+                    BinaryData{core::BinaryOp::kModulo, "OpUMod"},
+                    BinaryData{core::BinaryOp::kMultiply, "OpIMul"},
+                    BinaryData{core::BinaryOp::kOr, "OpBitwiseOr"},
+                    BinaryData{core::BinaryOp::kShiftLeft, "OpShiftLeftLogical"},
+                    BinaryData{core::BinaryOp::kShiftRight, "OpShiftRightLogical"},
+                    BinaryData{core::BinaryOp::kSubtract, "OpISub"},
+                    BinaryData{core::BinaryOp::kXor, "OpBitwiseXor"}));
 
 using BinaryArithF32Test = TestParamHelper<BinaryData>;
 TEST_P(BinaryArithF32Test, Scalar) {
@@ -243,15 +243,15 @@ TEST_P(BinaryArithF32Test, Vector) {
 }
 INSTANTIATE_TEST_SUITE_P(SpirvASTPrinterTest,
                          BinaryArithF32Test,
-                         testing::Values(BinaryData{ast::BinaryOp::kAdd, "OpFAdd"},
-                                         BinaryData{ast::BinaryOp::kDivide, "OpFDiv"},
-                                         BinaryData{ast::BinaryOp::kModulo, "OpFRem"},
-                                         BinaryData{ast::BinaryOp::kMultiply, "OpFMul"},
-                                         BinaryData{ast::BinaryOp::kSubtract, "OpFSub"}));
+                         testing::Values(BinaryData{core::BinaryOp::kAdd, "OpFAdd"},
+                                         BinaryData{core::BinaryOp::kDivide, "OpFDiv"},
+                                         BinaryData{core::BinaryOp::kModulo, "OpFRem"},
+                                         BinaryData{core::BinaryOp::kMultiply, "OpFMul"},
+                                         BinaryData{core::BinaryOp::kSubtract, "OpFSub"}));
 
 using BinaryArithF16Test = TestParamHelper<BinaryData>;
 TEST_P(BinaryArithF16Test, Scalar) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto param = GetParam();
 
@@ -276,7 +276,7 @@ TEST_P(BinaryArithF16Test, Scalar) {
 }
 
 TEST_P(BinaryArithF16Test, Vector) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto param = GetParam();
 
@@ -302,11 +302,11 @@ TEST_P(BinaryArithF16Test, Vector) {
 }
 INSTANTIATE_TEST_SUITE_P(SpirvASTPrinterTest,
                          BinaryArithF16Test,
-                         testing::Values(BinaryData{ast::BinaryOp::kAdd, "OpFAdd"},
-                                         BinaryData{ast::BinaryOp::kDivide, "OpFDiv"},
-                                         BinaryData{ast::BinaryOp::kModulo, "OpFRem"},
-                                         BinaryData{ast::BinaryOp::kMultiply, "OpFMul"},
-                                         BinaryData{ast::BinaryOp::kSubtract, "OpFSub"}));
+                         testing::Values(BinaryData{core::BinaryOp::kAdd, "OpFAdd"},
+                                         BinaryData{core::BinaryOp::kDivide, "OpFDiv"},
+                                         BinaryData{core::BinaryOp::kModulo, "OpFRem"},
+                                         BinaryData{core::BinaryOp::kMultiply, "OpFMul"},
+                                         BinaryData{core::BinaryOp::kSubtract, "OpFSub"}));
 
 using BinaryOperatorBoolTest = TestParamHelper<BinaryData>;
 TEST_P(BinaryOperatorBoolTest, Scalar) {
@@ -359,10 +359,10 @@ TEST_P(BinaryOperatorBoolTest, Vector) {
 }
 INSTANTIATE_TEST_SUITE_P(SpirvASTPrinterTest,
                          BinaryOperatorBoolTest,
-                         testing::Values(BinaryData{ast::BinaryOp::kEqual, "OpLogicalEqual"},
-                                         BinaryData{ast::BinaryOp::kNotEqual, "OpLogicalNotEqual"},
-                                         BinaryData{ast::BinaryOp::kAnd, "OpLogicalAnd"},
-                                         BinaryData{ast::BinaryOp::kOr, "OpLogicalOr"}));
+                         testing::Values(BinaryData{core::BinaryOp::kEqual, "OpLogicalEqual"},
+                                         BinaryData{core::BinaryOp::kNotEqual, "OpLogicalNotEqual"},
+                                         BinaryData{core::BinaryOp::kAnd, "OpLogicalAnd"},
+                                         BinaryData{core::BinaryOp::kOr, "OpLogicalOr"}));
 
 using BinaryCompareUnsignedIntegerTest = TestParamHelper<BinaryData>;
 TEST_P(BinaryCompareUnsignedIntegerTest, Scalar) {
@@ -417,12 +417,12 @@ TEST_P(BinaryCompareUnsignedIntegerTest, Vector) {
 INSTANTIATE_TEST_SUITE_P(
     SpirvASTPrinterTest,
     BinaryCompareUnsignedIntegerTest,
-    testing::Values(BinaryData{ast::BinaryOp::kEqual, "OpIEqual"},
-                    BinaryData{ast::BinaryOp::kGreaterThan, "OpUGreaterThan"},
-                    BinaryData{ast::BinaryOp::kGreaterThanEqual, "OpUGreaterThanEqual"},
-                    BinaryData{ast::BinaryOp::kLessThan, "OpULessThan"},
-                    BinaryData{ast::BinaryOp::kLessThanEqual, "OpULessThanEqual"},
-                    BinaryData{ast::BinaryOp::kNotEqual, "OpINotEqual"}));
+    testing::Values(BinaryData{core::BinaryOp::kEqual, "OpIEqual"},
+                    BinaryData{core::BinaryOp::kGreaterThan, "OpUGreaterThan"},
+                    BinaryData{core::BinaryOp::kGreaterThanEqual, "OpUGreaterThanEqual"},
+                    BinaryData{core::BinaryOp::kLessThan, "OpULessThan"},
+                    BinaryData{core::BinaryOp::kLessThanEqual, "OpULessThanEqual"},
+                    BinaryData{core::BinaryOp::kNotEqual, "OpINotEqual"}));
 
 using BinaryCompareSignedIntegerTest = TestParamHelper<BinaryData>;
 TEST_P(BinaryCompareSignedIntegerTest, Scalar) {
@@ -477,12 +477,12 @@ TEST_P(BinaryCompareSignedIntegerTest, Vector) {
 INSTANTIATE_TEST_SUITE_P(
     SpirvASTPrinterTest,
     BinaryCompareSignedIntegerTest,
-    testing::Values(BinaryData{ast::BinaryOp::kEqual, "OpIEqual"},
-                    BinaryData{ast::BinaryOp::kGreaterThan, "OpSGreaterThan"},
-                    BinaryData{ast::BinaryOp::kGreaterThanEqual, "OpSGreaterThanEqual"},
-                    BinaryData{ast::BinaryOp::kLessThan, "OpSLessThan"},
-                    BinaryData{ast::BinaryOp::kLessThanEqual, "OpSLessThanEqual"},
-                    BinaryData{ast::BinaryOp::kNotEqual, "OpINotEqual"}));
+    testing::Values(BinaryData{core::BinaryOp::kEqual, "OpIEqual"},
+                    BinaryData{core::BinaryOp::kGreaterThan, "OpSGreaterThan"},
+                    BinaryData{core::BinaryOp::kGreaterThanEqual, "OpSGreaterThanEqual"},
+                    BinaryData{core::BinaryOp::kLessThan, "OpSLessThan"},
+                    BinaryData{core::BinaryOp::kLessThanEqual, "OpSLessThanEqual"},
+                    BinaryData{core::BinaryOp::kNotEqual, "OpINotEqual"}));
 
 using BinaryCompareF32Test = TestParamHelper<BinaryData>;
 TEST_P(BinaryCompareF32Test, Scalar) {
@@ -537,16 +537,16 @@ TEST_P(BinaryCompareF32Test, Vector) {
 INSTANTIATE_TEST_SUITE_P(
     SpirvASTPrinterTest,
     BinaryCompareF32Test,
-    testing::Values(BinaryData{ast::BinaryOp::kEqual, "OpFOrdEqual"},
-                    BinaryData{ast::BinaryOp::kGreaterThan, "OpFOrdGreaterThan"},
-                    BinaryData{ast::BinaryOp::kGreaterThanEqual, "OpFOrdGreaterThanEqual"},
-                    BinaryData{ast::BinaryOp::kLessThan, "OpFOrdLessThan"},
-                    BinaryData{ast::BinaryOp::kLessThanEqual, "OpFOrdLessThanEqual"},
-                    BinaryData{ast::BinaryOp::kNotEqual, "OpFOrdNotEqual"}));
+    testing::Values(BinaryData{core::BinaryOp::kEqual, "OpFOrdEqual"},
+                    BinaryData{core::BinaryOp::kGreaterThan, "OpFOrdGreaterThan"},
+                    BinaryData{core::BinaryOp::kGreaterThanEqual, "OpFOrdGreaterThanEqual"},
+                    BinaryData{core::BinaryOp::kLessThan, "OpFOrdLessThan"},
+                    BinaryData{core::BinaryOp::kLessThanEqual, "OpFOrdLessThanEqual"},
+                    BinaryData{core::BinaryOp::kNotEqual, "OpFOrdNotEqual"}));
 
 using BinaryCompareF16Test = TestParamHelper<BinaryData>;
 TEST_P(BinaryCompareF16Test, Scalar) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto param = GetParam();
 
@@ -572,7 +572,7 @@ TEST_P(BinaryCompareF16Test, Scalar) {
 }
 
 TEST_P(BinaryCompareF16Test, Vector) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto param = GetParam();
 
@@ -601,18 +601,18 @@ TEST_P(BinaryCompareF16Test, Vector) {
 INSTANTIATE_TEST_SUITE_P(
     SpirvASTPrinterTest,
     BinaryCompareF16Test,
-    testing::Values(BinaryData{ast::BinaryOp::kEqual, "OpFOrdEqual"},
-                    BinaryData{ast::BinaryOp::kGreaterThan, "OpFOrdGreaterThan"},
-                    BinaryData{ast::BinaryOp::kGreaterThanEqual, "OpFOrdGreaterThanEqual"},
-                    BinaryData{ast::BinaryOp::kLessThan, "OpFOrdLessThan"},
-                    BinaryData{ast::BinaryOp::kLessThanEqual, "OpFOrdLessThanEqual"},
-                    BinaryData{ast::BinaryOp::kNotEqual, "OpFOrdNotEqual"}));
+    testing::Values(BinaryData{core::BinaryOp::kEqual, "OpFOrdEqual"},
+                    BinaryData{core::BinaryOp::kGreaterThan, "OpFOrdGreaterThan"},
+                    BinaryData{core::BinaryOp::kGreaterThanEqual, "OpFOrdGreaterThanEqual"},
+                    BinaryData{core::BinaryOp::kLessThan, "OpFOrdLessThan"},
+                    BinaryData{core::BinaryOp::kLessThanEqual, "OpFOrdLessThanEqual"},
+                    BinaryData{core::BinaryOp::kNotEqual, "OpFOrdNotEqual"}));
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_VectorScalar_F32) {
     auto* lhs = Call<vec3<f32>>(1_f, 1_f, 1_f);
     auto* rhs = Expr(1_f);
 
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, rhs);
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, lhs, rhs);
 
     WrapInFunction(expr);
 
@@ -632,12 +632,12 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_VectorScalar_F32) {
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_VectorScalar_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* lhs = Call<vec3<f16>>(1_h, 1_h, 1_h);
     auto* rhs = Expr(1_h);
 
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, rhs);
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, lhs, rhs);
 
     WrapInFunction(expr);
 
@@ -660,7 +660,7 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_ScalarVector_F32) {
     auto* lhs = Expr(1_f);
     auto* rhs = Call<vec3<f32>>(1_f, 1_f, 1_f);
 
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, rhs);
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, lhs, rhs);
 
     WrapInFunction(expr);
 
@@ -680,12 +680,12 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_ScalarVector_F32) {
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_ScalarVector_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* lhs = Expr(1_h);
     auto* rhs = Call<vec3<f16>>(1_h, 1_h, 1_h);
 
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, rhs);
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, lhs, rhs);
 
     WrapInFunction(expr);
 
@@ -706,7 +706,7 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_ScalarVector_F16) {
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixScalar_F32) {
     auto* var = Var("mat", ty.mat3x3<f32>());
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, Expr("mat"), Expr(1_f));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, Expr("mat"), Expr(1_f));
 
     WrapInFunction(var, expr);
 
@@ -731,10 +731,10 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixScalar_F32) {
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixScalar_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* var = Var("mat", ty.mat3x3<f16>());
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, Expr("mat"), Expr(1_h));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, Expr("mat"), Expr(1_h));
 
     WrapInFunction(var, expr);
 
@@ -760,7 +760,7 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixScalar_F16) {
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_ScalarMatrix_F32) {
     auto* var = Var("mat", ty.mat3x3<f32>());
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, Expr(1_f), Expr("mat"));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, Expr(1_f), Expr("mat"));
 
     WrapInFunction(var, expr);
 
@@ -785,10 +785,10 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_ScalarMatrix_F32) {
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_ScalarMatrix_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* var = Var("mat", ty.mat3x3<f16>());
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, Expr(1_h), Expr("mat"));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, Expr(1_h), Expr("mat"));
 
     WrapInFunction(var, expr);
 
@@ -815,7 +815,7 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_ScalarMatrix_F16) {
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixVector_F32) {
     auto* var = Var("mat", ty.mat3x3<f32>());
     auto* rhs = Call<vec3<f32>>(1_f, 1_f, 1_f);
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, Expr("mat"), rhs);
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, Expr("mat"), rhs);
 
     WrapInFunction(var, expr);
 
@@ -841,11 +841,11 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixVector_F32) {
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixVector_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* var = Var("mat", ty.mat3x3<f16>());
     auto* rhs = Call<vec3<f16>>(1_h, 1_h, 1_h);
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, Expr("mat"), rhs);
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, Expr("mat"), rhs);
 
     WrapInFunction(var, expr);
 
@@ -873,7 +873,7 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixVector_F16) {
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_VectorMatrix_F32) {
     auto* var = Var("mat", ty.mat3x3<f32>());
     auto* lhs = Call<vec3<f32>>(1_f, 1_f, 1_f);
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, Expr("mat"));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, lhs, Expr("mat"));
 
     WrapInFunction(var, expr);
 
@@ -899,12 +899,12 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_VectorMatrix_F32) {
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_VectorMatrix_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* var = Var("mat", ty.mat3x3<f16>());
     auto* lhs = Call<vec3<f16>>(1_h, 1_h, 1_h);
 
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, lhs, Expr("mat"));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, lhs, Expr("mat"));
 
     WrapInFunction(var, expr);
 
@@ -931,7 +931,7 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_VectorMatrix_F16) {
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixMatrix_F32) {
     auto* var = Var("mat", ty.mat3x3<f32>());
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, Expr("mat"), Expr("mat"));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, Expr("mat"), Expr("mat"));
 
     WrapInFunction(var, expr);
 
@@ -956,10 +956,10 @@ TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixMatrix_F32) {
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_Multiply_MatrixMatrix_F16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* var = Var("mat", ty.mat3x3<f16>());
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kMultiply, Expr("mat"), Expr("mat"));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kMultiply, Expr("mat"), Expr("mat"));
 
     WrapInFunction(var, expr);
 
@@ -1034,9 +1034,9 @@ OpBranch %17
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_LogicalAnd_WithLoads) {
-    auto* a_var = GlobalVar("a", ty.bool_(), builtin::AddressSpace::kPrivate, Expr(true));
-    auto* b_var = GlobalVar("b", ty.bool_(), builtin::AddressSpace::kPrivate, Expr(false));
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr("a"), Expr("b"));
+    auto* a_var = GlobalVar("a", ty.bool_(), core::AddressSpace::kPrivate, Expr(true));
+    auto* b_var = GlobalVar("b", ty.bool_(), core::AddressSpace::kPrivate, Expr(false));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kLogicalAnd, Expr("a"), Expr("b"));
 
     WrapInFunction(expr);
 
@@ -1078,10 +1078,10 @@ TEST_F(SpirvASTPrinterTest, Binary_logicalOr_Nested_LogicalAnd) {
     auto* f = Let("f", Expr(false));
 
     auto* logical_and_expr =
-        create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(t), Expr(f));
+        create<ast::BinaryExpression>(core::BinaryOp::kLogicalAnd, Expr(t), Expr(f));
 
     auto* expr =
-        create<ast::BinaryExpression>(ast::BinaryOp::kLogicalOr, Expr(t), logical_and_expr);
+        create<ast::BinaryExpression>(core::BinaryOp::kLogicalOr, Expr(t), logical_and_expr);
 
     WrapInFunction(t, f, expr);
 
@@ -1123,10 +1123,10 @@ TEST_F(SpirvASTPrinterTest, Binary_logicalAnd_Nested_LogicalOr) {
     auto* f = Let("f", Expr(false));
 
     auto* logical_or_expr =
-        create<ast::BinaryExpression>(ast::BinaryOp::kLogicalOr, Expr(t), Expr(f));
+        create<ast::BinaryExpression>(core::BinaryOp::kLogicalOr, Expr(t), Expr(f));
 
     auto* expr =
-        create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(t), logical_or_expr);
+        create<ast::BinaryExpression>(core::BinaryOp::kLogicalAnd, Expr(t), logical_or_expr);
 
     WrapInFunction(t, f, expr);
 
@@ -1210,10 +1210,10 @@ OpBranch %17
 }
 
 TEST_F(SpirvASTPrinterTest, Binary_LogicalOr_WithLoads) {
-    auto* a_var = GlobalVar("a", ty.bool_(), builtin::AddressSpace::kPrivate, Expr(true));
-    auto* b_var = GlobalVar("b", ty.bool_(), builtin::AddressSpace::kPrivate, Expr(false));
+    auto* a_var = GlobalVar("a", ty.bool_(), core::AddressSpace::kPrivate, Expr(true));
+    auto* b_var = GlobalVar("b", ty.bool_(), core::AddressSpace::kPrivate, Expr(false));
 
-    auto* expr = create<ast::BinaryExpression>(ast::BinaryOp::kLogicalOr, Expr("a"), Expr("b"));
+    auto* expr = create<ast::BinaryExpression>(core::BinaryOp::kLogicalOr, Expr("a"), Expr("b"));
 
     WrapInFunction(expr);
 
@@ -1255,22 +1255,22 @@ static const ast::Expression* MakeVectorExpr(ProgramBuilder* builder, Type type)
         case Type::f32:
             builder->GlobalVar(name, builder->ty.vec3<f32>(),
                                builder->Call<vec3<f32>>(1_f, 1_f, 1_f),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
         case Type::f16:
             builder->GlobalVar(name, builder->ty.vec3<f16>(),
                                builder->Call<vec3<f16>>(1_h, 1_h, 1_h),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
         case Type::i32:
             builder->GlobalVar(name, builder->ty.vec3<i32>(),
                                builder->Call<vec3<i32>>(1_i, 1_i, 1_i),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
         case Type::u32:
             builder->GlobalVar(name, builder->ty.vec3<u32>(),
                                builder->Call<vec3<u32>>(1_u, 1_u, 1_u),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
     }
     return builder->Expr(name);
@@ -1280,19 +1280,19 @@ static const ast::Expression* MakeScalarExpr(ProgramBuilder* builder, Type type)
     switch (type) {
         case Type::f32:
             builder->GlobalVar(name, builder->ty.f32(), builder->Expr(1_f),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
         case Type::f16:
             builder->GlobalVar(name, builder->ty.f16(), builder->Expr(1_h),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
         case Type::i32:
             builder->GlobalVar(name, builder->ty.i32(), builder->Expr(1_i),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
         case Type::u32:
             builder->GlobalVar(name, builder->ty.u32(), builder->Expr(1_u),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
     }
     return builder->Expr(name);
@@ -1339,7 +1339,7 @@ OpCapability StorageInputOutput16)";
 
 struct Param {
     Type type;
-    ast::BinaryOp op;
+    core::BinaryOp op;
     std::string name;
 };
 
@@ -1348,7 +1348,7 @@ TEST_P(BinaryArithVectorScalarTest, VectorScalar) {
     auto& param = GetParam();
 
     if (param.type == Type::f16) {
-        Enable(builtin::Extension::kF16);
+        Enable(wgsl::Extension::kF16);
     }
 
     const ast::Expression* lhs = MakeVectorExpr(this, param.type);
@@ -1400,7 +1400,7 @@ TEST_P(BinaryArithVectorScalarTest, ScalarVector) {
     auto& param = GetParam();
 
     if (param.type == Type::f16) {
-        Enable(builtin::Extension::kF16);
+        Enable(wgsl::Extension::kF16);
     }
 
     const ast::Expression* lhs = MakeScalarExpr(this, param.type);
@@ -1450,37 +1450,37 @@ OpFunctionEnd
 }
 INSTANTIATE_TEST_SUITE_P(SpirvASTPrinterTest,
                          BinaryArithVectorScalarTest,
-                         testing::Values(Param{Type::f32, ast::BinaryOp::kAdd, "OpFAdd"},
-                                         Param{Type::f32, ast::BinaryOp::kDivide, "OpFDiv"},
+                         testing::Values(Param{Type::f32, core::BinaryOp::kAdd, "OpFAdd"},
+                                         Param{Type::f32, core::BinaryOp::kDivide, "OpFDiv"},
                                          // NOTE: Modulo not allowed on mixed float scalar-vector
-                                         // Param{Type::f32, ast::BinaryOp::kModulo, "OpFMod"},
+                                         // Param{Type::f32, core::BinaryOp::kModulo, "OpFMod"},
                                          // NOTE: We test f32 multiplies separately as we emit
                                          // OpVectorTimesScalar for this case
-                                         // Param{Type::i32, ast::BinaryOp::kMultiply, "OpIMul"},
-                                         Param{Type::f32, ast::BinaryOp::kSubtract, "OpFSub"},
+                                         // Param{Type::i32, core::BinaryOp::kMultiply, "OpIMul"},
+                                         Param{Type::f32, core::BinaryOp::kSubtract, "OpFSub"},
 
-                                         Param{Type::f16, ast::BinaryOp::kAdd, "OpFAdd"},
-                                         Param{Type::f16, ast::BinaryOp::kDivide, "OpFDiv"},
-                                         Param{Type::f16, ast::BinaryOp::kSubtract, "OpFSub"},
+                                         Param{Type::f16, core::BinaryOp::kAdd, "OpFAdd"},
+                                         Param{Type::f16, core::BinaryOp::kDivide, "OpFDiv"},
+                                         Param{Type::f16, core::BinaryOp::kSubtract, "OpFSub"},
 
-                                         Param{Type::i32, ast::BinaryOp::kAdd, "OpIAdd"},
-                                         Param{Type::i32, ast::BinaryOp::kDivide, "OpSDiv"},
-                                         Param{Type::i32, ast::BinaryOp::kModulo, "OpSRem"},
-                                         Param{Type::i32, ast::BinaryOp::kMultiply, "OpIMul"},
-                                         Param{Type::i32, ast::BinaryOp::kSubtract, "OpISub"},
+                                         Param{Type::i32, core::BinaryOp::kAdd, "OpIAdd"},
+                                         Param{Type::i32, core::BinaryOp::kDivide, "OpSDiv"},
+                                         Param{Type::i32, core::BinaryOp::kModulo, "OpSRem"},
+                                         Param{Type::i32, core::BinaryOp::kMultiply, "OpIMul"},
+                                         Param{Type::i32, core::BinaryOp::kSubtract, "OpISub"},
 
-                                         Param{Type::u32, ast::BinaryOp::kAdd, "OpIAdd"},
-                                         Param{Type::u32, ast::BinaryOp::kDivide, "OpUDiv"},
-                                         Param{Type::u32, ast::BinaryOp::kModulo, "OpUMod"},
-                                         Param{Type::u32, ast::BinaryOp::kMultiply, "OpIMul"},
-                                         Param{Type::u32, ast::BinaryOp::kSubtract, "OpISub"}));
+                                         Param{Type::u32, core::BinaryOp::kAdd, "OpIAdd"},
+                                         Param{Type::u32, core::BinaryOp::kDivide, "OpUDiv"},
+                                         Param{Type::u32, core::BinaryOp::kModulo, "OpUMod"},
+                                         Param{Type::u32, core::BinaryOp::kMultiply, "OpIMul"},
+                                         Param{Type::u32, core::BinaryOp::kSubtract, "OpISub"}));
 
 using BinaryArithVectorScalarMultiplyTest = TestParamHelper<Param>;
 TEST_P(BinaryArithVectorScalarMultiplyTest, VectorScalar) {
     auto& param = GetParam();
 
     if (param.type == Type::f16) {
-        Enable(builtin::Extension::kF16);
+        Enable(wgsl::Extension::kF16);
     }
 
     const ast::Expression* lhs = MakeVectorExpr(this, param.type);
@@ -1528,7 +1528,7 @@ TEST_P(BinaryArithVectorScalarMultiplyTest, ScalarVector) {
     auto& param = GetParam();
 
     if (param.type == Type::f16) {
-        Enable(builtin::Extension::kF16);
+        Enable(wgsl::Extension::kF16);
     }
 
     const ast::Expression* lhs = MakeScalarExpr(this, param.type);
@@ -1574,8 +1574,8 @@ OpFunctionEnd
 }
 INSTANTIATE_TEST_SUITE_P(SpirvASTPrinterTest,
                          BinaryArithVectorScalarMultiplyTest,
-                         testing::Values(Param{Type::f32, ast::BinaryOp::kMultiply, "OpFMul"},
-                                         Param{Type::f16, ast::BinaryOp::kMultiply, "OpFMul"}));
+                         testing::Values(Param{Type::f32, core::BinaryOp::kMultiply, "OpFMul"},
+                                         Param{Type::f16, core::BinaryOp::kMultiply, "OpFMul"}));
 
 }  // namespace BinaryArithVectorScalar
 
@@ -1587,11 +1587,11 @@ static const ast::Expression* MakeMat3x4Expr(ProgramBuilder* builder, Type type)
     switch (type) {
         case Type::f32:
             builder->GlobalVar(name, builder->ty.mat3x4<f32>(), builder->Call<mat3x4<f32>>(),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
         case Type::f16:
             builder->GlobalVar(name, builder->ty.mat3x4<f16>(), builder->Call<mat3x4<f16>>(),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
     }
     return builder->Expr(name);
@@ -1601,11 +1601,11 @@ static const ast::Expression* MakeMat4x3Expr(ProgramBuilder* builder, Type type)
     switch (type) {
         case Type::f32:
             builder->GlobalVar(name, builder->ty.mat4x3<f32>(), builder->Call<mat4x3<f32>>(),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
             break;
         case Type::f16:
             builder->GlobalVar(name, builder->ty.mat4x3<f16>(), builder->Call<mat4x3<f16>>(),
-                               builtin::AddressSpace::kPrivate);
+                               core::AddressSpace::kPrivate);
     }
     return builder->Expr(name);
 }
@@ -1634,7 +1634,7 @@ OpCapability StorageInputOutput16)";
 
 struct Param {
     Type type;
-    ast::BinaryOp op;
+    core::BinaryOp op;
     std::string name;
 };
 
@@ -1643,7 +1643,7 @@ TEST_P(BinaryArithMatrixMatrix, AddOrSubtract) {
     auto& param = GetParam();
 
     if (param.type == Type::f16) {
-        Enable(builtin::Extension::kF16);
+        Enable(wgsl::Extension::kF16);
     }
 
     const ast::Expression* lhs = MakeMat3x4Expr(this, param.type);
@@ -1696,17 +1696,17 @@ OpFunctionEnd
 INSTANTIATE_TEST_SUITE_P(  //
     SpirvASTPrinterTest,
     BinaryArithMatrixMatrix,
-    testing::Values(Param{Type::f32, ast::BinaryOp::kAdd, "OpFAdd"},
-                    Param{Type::f32, ast::BinaryOp::kSubtract, "OpFSub"},
-                    Param{Type::f16, ast::BinaryOp::kAdd, "OpFAdd"},
-                    Param{Type::f16, ast::BinaryOp::kSubtract, "OpFSub"}));
+    testing::Values(Param{Type::f32, core::BinaryOp::kAdd, "OpFAdd"},
+                    Param{Type::f32, core::BinaryOp::kSubtract, "OpFSub"},
+                    Param{Type::f16, core::BinaryOp::kAdd, "OpFAdd"},
+                    Param{Type::f16, core::BinaryOp::kSubtract, "OpFSub"}));
 
 using BinaryArithMatrixMatrixMultiply = TestParamHelper<Param>;
 TEST_P(BinaryArithMatrixMatrixMultiply, Multiply) {
     auto& param = GetParam();
 
     if (param.type == Type::f16) {
-        Enable(builtin::Extension::kF16);
+        Enable(wgsl::Extension::kF16);
     }
 
     const ast::Expression* lhs = MakeMat3x4Expr(this, param.type);
@@ -1755,8 +1755,8 @@ OpFunctionEnd
 INSTANTIATE_TEST_SUITE_P(  //
     SpirvASTPrinterTest,
     BinaryArithMatrixMatrixMultiply,
-    testing::Values(Param{Type::f32, ast::BinaryOp::kMultiply, ""},
-                    Param{Type::f16, ast::BinaryOp::kMultiply, ""}));
+    testing::Values(Param{Type::f32, core::BinaryOp::kMultiply, ""},
+                    Param{Type::f16, core::BinaryOp::kMultiply, ""}));
 
 }  // namespace BinaryArithMatrixMatrix
 

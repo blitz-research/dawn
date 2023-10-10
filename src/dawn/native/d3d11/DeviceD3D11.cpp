@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/D3D11Backend.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Instance.h"
@@ -41,6 +42,8 @@
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
 #include "dawn/native/d3d11/SamplerD3D11.h"
 #include "dawn/native/d3d11/ShaderModuleD3D11.h"
+#include "dawn/native/d3d11/SharedFenceD3D11.h"
+#include "dawn/native/d3d11/SharedTextureMemoryD3D11.h"
 #include "dawn/native/d3d11/SwapChainD3D11.h"
 #include "dawn/native/d3d11/TextureD3D11.h"
 #include "dawn/platform/DawnPlatform.h"
@@ -54,8 +57,8 @@ static constexpr uint64_t kMaxDebugMessagesToPrint = 5;
 void AppendDebugLayerMessagesToError(ID3D11InfoQueue* infoQueue,
                                      uint64_t totalErrors,
                                      ErrorData* error) {
-    ASSERT(totalErrors > 0);
-    ASSERT(error != nullptr);
+    DAWN_ASSERT(totalErrors > 0);
+    DAWN_ASSERT(error != nullptr);
 
     uint64_t errorsToPrint = std::min(kMaxDebugMessagesToPrint, totalErrors);
     for (uint64_t i = 0; i < errorsToPrint; ++i) {
@@ -103,7 +106,7 @@ ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
 
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     DAWN_TRY_ASSIGN(mD3d11Device, ToBackend(GetPhysicalDevice())->CreateD3D11Device());
-    ASSERT(mD3d11Device != nullptr);
+    DAWN_ASSERT(mD3d11Device != nullptr);
 
     DAWN_TRY(DeviceBase::Initialize(Queue::Create(this, &descriptor->defaultQueue)));
 
@@ -152,7 +155,7 @@ CommandRecordingContext* Device::GetPendingCommandContext(Device::SubmitMode sub
 
 MaybeError Device::TickImpl() {
     // Perform cleanup operations to free unused objects
-    [[maybe_unused]] ExecutionSerial completedSerial = GetCompletedCommandSerial();
+    [[maybe_unused]] ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
 
     // Check for debug layer messages before executing the command context in case we encounter an
     // error during execution and early out as a result.
@@ -167,7 +170,7 @@ MaybeError Device::TickImpl() {
 }
 
 MaybeError Device::NextSerial() {
-    IncrementLastSubmittedCommandSerial();
+    GetQueue()->IncrementLastSubmittedCommandSerial();
 
     TRACE_EVENT1(GetPlatform(), General, "D3D11Device::SignalFence", "serial",
                  uint64_t(GetLastSubmittedCommandSerial()));
@@ -182,12 +185,12 @@ MaybeError Device::NextSerial() {
 }
 
 MaybeError Device::WaitForSerial(ExecutionSerial serial) {
-    DAWN_TRY(CheckPassedSerials());
-    if (GetCompletedCommandSerial() < serial) {
+    DAWN_TRY(GetQueue()->CheckPassedSerials());
+    if (GetQueue()->GetCompletedCommandSerial() < serial) {
         DAWN_TRY(CheckHRESULT(mFence->SetEventOnCompletion(uint64_t(serial), mFenceEvent),
                               "D3D11 set event on completion"));
         WaitForSingleObject(mFenceEvent, INFINITE);
-        DAWN_TRY(CheckPassedSerials());
+        DAWN_TRY(GetQueue()->CheckPassedSerials());
     }
     return {};
 }
@@ -203,7 +206,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
         return DAWN_DEVICE_LOST_ERROR("Device lost");
     }
 
-    if (completedSerial <= GetCompletedCommandSerial()) {
+    if (completedSerial <= GetQueue()->GetCompletedCommandSerial()) {
         return ExecutionSerial(0);
     }
 
@@ -229,10 +232,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     return BindGroup::Create(this, descriptor);
 }
 
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return BindGroupLayout::Create(this, descriptor);
 }
 
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
@@ -304,11 +306,67 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPip
     RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
 }
 
+ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
+    const SharedTextureMemoryDescriptor* descriptor) {
+    UnpackedSharedTextureMemoryDescriptorChain unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+
+    wgpu::SType type;
+    DAWN_TRY_ASSIGN(
+        type, (ValidateBranches<BranchList<Branch<SharedTextureMemoryDXGISharedHandleDescriptor>,
+                                           Branch<SharedTextureMemoryD3D11Texture2DDescriptor>>>(
+                  unpacked)));
+
+    switch (type) {
+        case wgpu::SType::SharedTextureMemoryDXGISharedHandleDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedTextureMemoryDXGISharedHandle),
+                            "%s is not enabled.",
+                            wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle);
+            return SharedTextureMemory::Create(
+                this, descriptor->label,
+                std::get<const SharedTextureMemoryDXGISharedHandleDescriptor*>(unpacked));
+        case wgpu::SType::SharedTextureMemoryD3D11Texture2DDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedTextureMemoryD3D11Texture2D),
+                            "%s is not enabled.",
+                            wgpu::FeatureName::SharedTextureMemoryD3D11Texture2D);
+            return SharedTextureMemory::Create(
+                this, descriptor->label,
+                std::get<const SharedTextureMemoryD3D11Texture2DDescriptor*>(unpacked));
+        default:
+            DAWN_UNREACHABLE();
+    }
+}
+
+ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
+    const SharedFenceDescriptor* descriptor) {
+    UnpackedSharedFenceDescriptorChain unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+
+    wgpu::SType type;
+    DAWN_TRY_ASSIGN(
+        type,
+        (ValidateBranches<BranchList<Branch<SharedFenceDXGISharedHandleDescriptor>>>(unpacked)));
+
+    switch (type) {
+        case wgpu::SType::SharedFenceDXGISharedHandleDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedFenceDXGISharedHandle), "%s is not enabled.",
+                            wgpu::FeatureName::SharedFenceDXGISharedHandle);
+            return SharedFence::Create(
+                this, descriptor->label,
+                std::get<const SharedFenceDXGISharedHandleDescriptor*>(unpacked));
+        default:
+            DAWN_UNREACHABLE();
+    }
+}
+
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
+    // D3D11 requires that buffers are unmapped before being used in a copy.
+    DAWN_TRY(source->Unmap());
+
     CommandRecordingContext* commandContext = GetPendingCommandContext();
     return Buffer::Copy(commandContext, ToBackend(source), sourceOffset, size,
                         ToBackend(destination), destinationOffset);
@@ -376,7 +434,14 @@ void Device::AppendDebugLayerMessages(ErrorData* error) {
 }
 
 void Device::DestroyImpl() {
-    ASSERT(GetState() == State::Disconnected);
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the device is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the device.
+    // - It may be called when the last ref to the device is dropped and the device
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the device since there are no other live refs.
+    DAWN_ASSERT(GetState() == State::Disconnected);
 
     Base::DestroyImpl();
 
@@ -458,7 +523,7 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
     // Shared handle is assumed to support resource sharing capability. The resource
     // shared capability tier must agree to share resources between D3D devices.
     const Format* format = GetInternalFormat(textureDescriptor->format).AcquireSuccess();
-    if (format->IsMultiPlanar()) {
+    if (format->IsMultiPlanar() && descriptor->GetType() == ExternalImageType::DXGISharedHandle) {
         DAWN_TRY(ValidateVideoTextureCanBeShared(
             this, d3d::DXGITextureFormat(textureDescriptor->format)));
     }
@@ -473,6 +538,10 @@ bool Device::MayRequireDuplicationOfIndirectParameters() const {
 
 uint64_t Device::GetBufferCopyOffsetAlignmentForDepthStencil() const {
     return DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil();
+}
+
+bool Device::IsResolveTextureBlitWithDrawSupported() const {
+    return true;
 }
 
 Ref<TextureBase> Device::CreateD3DExternalTexture(const TextureDescriptor* descriptor,

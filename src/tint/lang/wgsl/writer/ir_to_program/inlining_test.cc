@@ -25,8 +25,8 @@
 namespace tint::wgsl::writer {
 namespace {
 
-using namespace tint::number_suffixes;        // NOLINT
-using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 using IRToProgramInliningTest = IRToProgramTest;
 
@@ -735,9 +735,8 @@ fn a(v : i32) -> i32 {
 }
 
 fn f() -> f32 {
-  let v_1 = array<mat3x4<f32>, 5u>();
-  let v_2 = a(2i);
-  return v_1[a(1i)][v_2][a(3i)];
+  let v_1 = a(2i);
+  return array<mat3x4<f32>, 5u>()[a(1i)][v_1][a(3i)];
 }
 )");
 }
@@ -763,9 +762,8 @@ fn a(v : i32) -> i32 {
 }
 
 fn f() -> f32 {
-  let v_1 = array<mat3x4<f32>, 5u>();
-  let v_2 = a(3i);
-  return v_1[a(1i)][a(2i)][v_2];
+  let v_1 = a(3i);
+  return array<mat3x4<f32>, 5u>()[a(1i)][a(2i)][v_1];
 }
 )");
 }
@@ -791,10 +789,9 @@ fn a(v : i32) -> i32 {
 }
 
 fn f() -> f32 {
-  let v_1 = array<mat3x4<f32>, 5u>();
-  let v_2 = a(3i);
-  let v_3 = a(2i);
-  return v_1[a(1i)][v_3][v_2];
+  let v_1 = a(3i);
+  let v_2 = a(2i);
+  return array<mat3x4<f32>, 5u>()[a(1i)][v_2][v_1];
 }
 )");
 }
@@ -922,7 +919,7 @@ TEST_F(IRToProgramInliningTest, UnsequencedOutsideSwitch) {
     b.Append(fn->Block(), [&] {
         auto* v = b.Add(ty.i32(), 1_i, 2_i);
         auto* switch_ = b.Switch(3_i);
-        auto* case_ = b.Case(switch_, {ir::Switch::CaseSelector{}});
+        auto* case_ = b.Case(switch_, {core::ir::Switch::CaseSelector{}});
         b.Append(case_, [&] { b.Return(fn, v); });
         b.Return(fn, 0_i);
     });
@@ -947,7 +944,7 @@ TEST_F(IRToProgramInliningTest, SequencedOutsideSwitch) {
         auto* v_1 = b.Load(var);
         auto* v_2 = b.Add(ty.i32(), v_1, 2_i);
         auto* switch_ = b.Switch(3_i);
-        auto* case_ = b.Case(switch_, {ir::Switch::CaseSelector{}});
+        auto* case_ = b.Case(switch_, {core::ir::Switch::CaseSelector{}});
         b.Append(case_, [&] { b.Return(fn, v_2); });
         b.Return(fn, 0_i);
     });
@@ -971,7 +968,7 @@ TEST_F(IRToProgramInliningTest, UnsequencedUsedBySwitchCondition) {
     b.Append(fn->Block(), [&] {
         auto* v = b.Add(ty.i32(), 1_i, 2_i);
         auto* switch_ = b.Switch(v);
-        auto* case_ = b.Case(switch_, {ir::Switch::CaseSelector{}});
+        auto* case_ = b.Case(switch_, {core::ir::Switch::CaseSelector{}});
         b.Append(case_, [&] { b.Return(fn, 3_i); });
         b.Return(fn, 0_i);
     });
@@ -995,7 +992,7 @@ TEST_F(IRToProgramInliningTest, SequencedUsedBySwitchCondition) {
         var->SetInitializer(b.Constant(1_i));
         auto* v_1 = b.Load(var);
         auto* switch_ = b.Switch(v_1);
-        auto* case_ = b.Case(switch_, {ir::Switch::CaseSelector{}});
+        auto* case_ = b.Case(switch_, {core::ir::Switch::CaseSelector{}});
         b.Append(case_, [&] { b.Return(fn, 3_i); });
         b.Return(fn, 0_i);
     });
@@ -1020,7 +1017,7 @@ TEST_F(IRToProgramInliningTest, LoadVar_ThenWriteToVarInSwitch_ThenUseLoad) {
         b.Store(var, 1_i);
         auto* load = b.Load(var);
         auto* switch_ = b.Switch(1_i);
-        auto* case_ = b.Case(switch_, {ir::Switch::CaseSelector{}});
+        auto* case_ = b.Case(switch_, {core::ir::Switch::CaseSelector{}});
         b.Append(case_, [&] {
             b.Store(var, 2_i);
             b.ExitSwitch(switch_);

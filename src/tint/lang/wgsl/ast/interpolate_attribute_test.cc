@@ -16,7 +16,7 @@
 
 #include <string>
 
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 #include "src/tint/utils/text/string.h"
 
 namespace tint::ast {
@@ -25,8 +25,7 @@ namespace {
 using InterpolateAttributeTest = TestHelper;
 
 TEST_F(InterpolateAttributeTest, Creation) {
-    auto* d =
-        Interpolate(builtin::InterpolationType::kLinear, builtin::InterpolationSampling::kCenter);
+    auto* d = Interpolate(core::InterpolationType::kLinear, core::InterpolationSampling::kCenter);
     CheckIdentifier(d->type, "linear");
     CheckIdentifier(d->sampling, "center");
 }

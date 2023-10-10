@@ -20,6 +20,7 @@
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
+#include "src/tint/lang/wgsl/sem/array.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
 #include "src/tint/utils/rtti/switch.h"
@@ -33,11 +34,11 @@ SingleEntryPoint::SingleEntryPoint() = default;
 
 SingleEntryPoint::~SingleEntryPoint() = default;
 
-Transform::ApplyResult SingleEntryPoint::Apply(const Program* src,
+Transform::ApplyResult SingleEntryPoint::Apply(const Program& src,
                                                const DataMap& inputs,
                                                DataMap&) const {
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
 
     auto* cfg = inputs.Get<Config>();
     if (cfg == nullptr) {
@@ -48,7 +49,7 @@ Transform::ApplyResult SingleEntryPoint::Apply(const Program* src,
 
     // Find the target entry point.
     const Function* entry_point = nullptr;
-    for (auto* f : src->AST().Functions()) {
+    for (auto* f : src.AST().Functions()) {
         if (!f->IsEntryPoint()) {
             continue;
         }
@@ -63,23 +64,20 @@ Transform::ApplyResult SingleEntryPoint::Apply(const Program* src,
         return resolver::Resolve(b);
     }
 
-    auto& sem = src->Sem();
+    auto& sem = src.Sem();
     auto& referenced_vars = sem.Get(entry_point)->TransitivelyReferencedGlobals();
 
     // Clone any module-scope variables, types, and functions that are statically referenced by the
     // target entry point.
-    for (auto* decl : src->AST().GlobalDeclarations()) {
+    for (auto* decl : src.AST().GlobalDeclarations()) {
         Switch(
             decl,  //
             [&](const TypeDecl* ty) {
                 // Strip aliases that reference unused override declarations.
-                if (auto* arr = sem.Get(ty)->As<type::Array>()) {
-                    auto* refs = sem.TransitivelyReferencedOverrides(arr);
-                    if (refs) {
-                        for (auto* o : *refs) {
-                            if (!referenced_vars.Contains(o)) {
-                                return;
-                            }
+                if (auto* arr = sem.Get(ty)->As<sem::Array>()) {
+                    for (auto* o : arr->TransitivelyReferencedOverrides()) {
+                        if (!referenced_vars.Contains(o)) {
+                            return;
                         }
                     }
                 }

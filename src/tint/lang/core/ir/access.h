@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_ACCESS_H_
 #define SRC_TINT_LANG_CORE_IR_ACCESS_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/operand_instruction.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// An access instruction in the IR.
-class Access : public Castable<Access, OperandInstruction<3, 1>> {
+class Access final : public Castable<Access, OperandInstruction<3, 1>> {
   public:
     /// The offset in Operands() for the object being accessed
     static constexpr size_t kObjectOperandOffset = 0;
@@ -36,6 +38,9 @@ class Access : public Castable<Access, OperandInstruction<3, 1>> {
     Access(InstructionResult* result, Value* object, VectorRef<Value*> indices);
     ~Access() override;
 
+    /// @copydoc Instruction::Clone()
+    Access* Clone(CloneContext& ctx) override;
+
     /// @returns the object used for the access
     Value* Object() { return operands_[kObjectOperandOffset]; }
 
@@ -47,9 +52,9 @@ class Access : public Castable<Access, OperandInstruction<3, 1>> {
     tint::Slice<Value*> Indices() { return operands_.Slice().Offset(kIndicesOperandOffset); }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "access"; }
+    std::string FriendlyName() override { return "access"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_ACCESS_H_

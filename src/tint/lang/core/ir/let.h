@@ -15,12 +15,14 @@
 #ifndef SRC_TINT_LANG_CORE_IR_LET_H_
 #define SRC_TINT_LANG_CORE_IR_LET_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/operand_instruction.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A no-op instruction in the IR, used to position and name a value
-class Let : public Castable<Let, OperandInstruction<1, 1>> {
+class Let final : public Castable<Let, OperandInstruction<1, 1>> {
   public:
     /// The offset in Operands() for the value
     static constexpr size_t kValueOperandOffset = 0;
@@ -31,13 +33,16 @@ class Let : public Castable<Let, OperandInstruction<1, 1>> {
     Let(InstructionResult* result, Value* value);
     ~Let() override;
 
+    /// @copydoc Instruction::Clone()
+    Let* Clone(CloneContext& ctx) override;
+
     /// @returns the value
     ir::Value* Value() { return operands_[kValueOperandOffset]; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "let"; }
+    std::string FriendlyName() override { return "let"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_LET_H_

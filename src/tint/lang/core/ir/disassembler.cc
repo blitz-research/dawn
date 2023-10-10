@@ -18,6 +18,7 @@
 #include "src/tint/lang/core/constant/composite.h"
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/access.h"
 #include "src/tint/lang/core/ir/binary.h"
 #include "src/tint/lang/core/ir/bitcast.h"
@@ -34,7 +35,6 @@
 #include "src/tint/lang/core/ir/exit_switch.h"
 #include "src/tint/lang/core/ir/if.h"
 #include "src/tint/lang/core/ir/instruction_result.h"
-#include "src/tint/lang/core/ir/intrinsic_call.h"
 #include "src/tint/lang/core/ir/let.h"
 #include "src/tint/lang/core/ir/load.h"
 #include "src/tint/lang/core/ir/load_vector_element.h"
@@ -57,7 +57,9 @@
 #include "src/tint/utils/rtti/switch.h"
 #include "src/tint/utils/text/string.h"
 
-namespace tint::ir {
+using namespace tint::core::fluent_types;  // NOLINT
+
+namespace tint::core::ir {
 namespace {
 
 class ScopedIndent {
@@ -71,6 +73,10 @@ class ScopedIndent {
 };
 
 }  // namespace
+
+std::string Disassemble(Module& mod) {
+    return Disassembler{mod}.Disassemble();
+}
 
 Disassembler::Disassembler(Module& mod) : mod_(mod) {}
 
@@ -145,12 +151,12 @@ Source::Location Disassembler::MakeCurrentLocation() {
 
 std::string Disassembler::Disassemble() {
     for (auto* ty : mod_.Types()) {
-        if (auto* str = ty->As<type::Struct>()) {
+        if (auto* str = ty->As<core::type::Struct>()) {
             EmitStructDecl(str);
         }
     }
 
-    if (mod_.root_block) {
+    if (!mod_.root_block->IsEmpty()) {
         EmitBlock(mod_.root_block, "root");
         EmitLine();
     }
@@ -202,7 +208,7 @@ void Disassembler::EmitLocation(Location loc) {
     if (loc.interpolation.has_value()) {
         out_ << ", @interpolate(";
         out_ << loc.interpolation->type;
-        if (loc.interpolation->sampling != builtin::InterpolationSampling::kUndefined) {
+        if (loc.interpolation->sampling != core::InterpolationSampling::kUndefined) {
             out_ << ", ";
             out_ << loc.interpolation->sampling;
         }
@@ -363,51 +369,55 @@ void Disassembler::EmitValue(Value* val) {
     tint::Switch(
         val,
         [&](ir::Constant* constant) {
-            std::function<void(const constant::Value*)> emit = [&](const constant::Value* c) {
-                tint::Switch(
-                    c,
-                    [&](const constant::Scalar<AFloat>* scalar) {
-                        out_ << scalar->ValueAs<AFloat>().value;
-                    },
-                    [&](const constant::Scalar<AInt>* scalar) {
-                        out_ << scalar->ValueAs<AInt>().value;
-                    },
-                    [&](const constant::Scalar<i32>* scalar) {
-                        out_ << scalar->ValueAs<i32>().value << "i";
-                    },
-                    [&](const constant::Scalar<u32>* scalar) {
-                        out_ << scalar->ValueAs<u32>().value << "u";
-                    },
-                    [&](const constant::Scalar<f32>* scalar) {
-                        out_ << scalar->ValueAs<f32>().value << "f";
-                    },
-                    [&](const constant::Scalar<f16>* scalar) {
-                        out_ << scalar->ValueAs<f16>().value << "h";
-                    },
-                    [&](const constant::Scalar<bool>* scalar) {
-                        out_ << (scalar->ValueAs<bool>() ? "true" : "false");
-                    },
-                    [&](const constant::Splat* splat) {
-                        out_ << splat->Type()->FriendlyName() << "(";
-                        emit(splat->Index(0));
-                        out_ << ")";
-                    },
-                    [&](const constant::Composite* composite) {
-                        out_ << composite->Type()->FriendlyName() << "(";
-                        for (const auto* elem : composite->elements) {
-                            if (elem != composite->elements[0]) {
-                                out_ << ", ";
+            std::function<void(const core::constant::Value*)> emit =
+                [&](const core::constant::Value* c) {
+                    tint::Switch(
+                        c,
+                        [&](const core::constant::Scalar<AFloat>* scalar) {
+                            out_ << scalar->ValueAs<AFloat>().value;
+                        },
+                        [&](const core::constant::Scalar<AInt>* scalar) {
+                            out_ << scalar->ValueAs<AInt>().value;
+                        },
+                        [&](const core::constant::Scalar<i32>* scalar) {
+                            out_ << scalar->ValueAs<i32>().value << "i";
+                        },
+                        [&](const core::constant::Scalar<u32>* scalar) {
+                            out_ << scalar->ValueAs<u32>().value << "u";
+                        },
+                        [&](const core::constant::Scalar<f32>* scalar) {
+                            out_ << scalar->ValueAs<f32>().value << "f";
+                        },
+                        [&](const core::constant::Scalar<f16>* scalar) {
+                            out_ << scalar->ValueAs<f16>().value << "h";
+                        },
+                        [&](const core::constant::Scalar<bool>* scalar) {
+                            out_ << (scalar->ValueAs<bool>() ? "true" : "false");
+                        },
+                        [&](const core::constant::Splat* splat) {
+                            out_ << splat->Type()->FriendlyName() << "(";
+                            emit(splat->Index(0));
+                            out_ << ")";
+                        },
+                        [&](const core::constant::Composite* composite) {
+                            out_ << composite->Type()->FriendlyName() << "(";
+                            bool need_comma = false;
+                            for (const auto* elem : composite->elements) {
+                                if (need_comma) {
+                                    out_ << ", ";
+                                }
+                                emit(elem);
+                                need_comma = true;
                             }
-                            emit(elem);
-                        }
-                        out_ << ")";
-                    });
-            };
+                            out_ << ")";
+                        });
+                };
             emit(constant->Value());
         },
         [&](ir::InstructionResult* rv) { out_ << "%" << IdOf(rv); },
         [&](ir::BlockParam* p) { out_ << "%" << IdOf(p) << ":" << p->Type()->FriendlyName(); },
         [&](ir::FunctionParam* p) { out_ << "%" << IdOf(p); },
+        [&](ir::Function* f) { out_ << "%" << IdOf(f); },
         [&](Default) {
             if (val == nullptr) {
                 out_ << "undef";
@@ -417,9 +427,9 @@ void Disassembler::EmitValue(Value* val) {
         });
 }
 
-void Disassembler::EmitInstructionName(std::string_view name, Instruction* inst) {
+void Disassembler::EmitInstructionName(Instruction* inst) {
     SourceMarker sm(this);
-    out_ << name;
+    out_ << inst->FriendlyName();
     sm.Store(inst);
 }
 
@@ -439,75 +449,25 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         [&](Loop* l) { EmitLoop(l); },      //
         [&](Binary* b) { EmitBinary(b); },  //
         [&](Unary* u) { EmitUnary(u); },    //
-        [&](Bitcast* b) {
-            EmitValueWithType(b);
-            out_ << " = ";
-            EmitInstructionName("bitcast", b);
-            out_ << " ";
-            EmitOperandList(b);
-        },
-        [&](Discard* d) { EmitInstructionName("discard", d); },
-        [&](CoreBuiltinCall* b) {
-            EmitValueWithType(b);
-            out_ << " = ";
-            EmitInstructionName(builtin::str(b->Func()), b);
-            out_ << " ";
-            EmitOperandList(b);
-        },
-        [&](Construct* c) {
-            EmitValueWithType(c);
-            out_ << " = ";
-            EmitInstructionName("construct", c);
-            if (!c->Operands().IsEmpty()) {
-                out_ << " ";
-                EmitOperandList(c);
-            }
-        },
-        [&](Convert* c) {
-            EmitValueWithType(c);
-            out_ << " = ";
-            EmitInstructionName("convert", c);
-            out_ << " ";
-            EmitOperandList(c);
-        },
-        [&](IntrinsicCall* i) {
-            EmitValueWithType(i);
-            out_ << " = ";
-            EmitInstructionName(tint::ToString(i->Kind()), i);
-            out_ << " ";
-            EmitOperandList(i);
-        },
-        [&](Load* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("load", l);
-            out_ << " ";
-            EmitValue(l->From());
-        },
+        [&](Discard* d) { EmitInstructionName(d); },
         [&](Store* s) {
-            EmitInstructionName("store", s);
+            EmitInstructionName(s);
             out_ << " ";
-            EmitValue(s->To());
+            EmitOperand(s, Store::kToOperandOffset);
             out_ << ", ";
-            EmitValue(s->From());
-        },
-        [&](LoadVectorElement* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("load_vector_element", l);
-            out_ << " ";
-            EmitOperandList(l);
+            EmitOperand(s, Store::kFromOperandOffset);
         },
         [&](StoreVectorElement* s) {
-            EmitInstructionName("store_vector_element", s);
+            EmitInstructionName(s);
             out_ << " ";
             EmitOperandList(s);
         },
         [&](UserCall* uc) {
             EmitValueWithType(uc);
             out_ << " = ";
-            EmitInstructionName("call", uc);
-            out_ << " %" << IdOf(uc->Func());
+            EmitInstructionName(uc);
+            out_ << " ";
+            EmitOperand(uc, UserCall::kFunctionOperandOffset);
             if (!uc->Args().IsEmpty()) {
                 out_ << ", ";
             }
@@ -516,7 +476,7 @@ void Disassembler::EmitInstruction(Instruction* inst) {
         [&](Var* v) {
             EmitValueWithType(v);
             out_ << " = ";
-            EmitInstructionName("var", v);
+            EmitInstructionName(v);
             if (v->Initializer()) {
                 out_ << ", ";
                 EmitOperand(v, Var::kInitializerOperandOffset);
@@ -525,25 +485,31 @@ void Disassembler::EmitInstruction(Instruction* inst) {
                 out_ << " ";
                 EmitBindingPoint(v->BindingPoint().value());
             }
-        },
-        [&](Let* l) {
-            EmitValueWithType(l);
-            out_ << " = ";
-            EmitInstructionName("let", l);
-            out_ << " ";
-            EmitOperandList(l);
-        },
-        [&](Access* a) {
-            EmitValueWithType(a);
-            out_ << " = ";
-            EmitInstructionName("access", a);
-            out_ << " ";
-            EmitOperandList(a);
+            if (v->Attributes().invariant) {
+                out_ << " @invariant";
+            }
+            if (v->Attributes().location.has_value()) {
+                out_ << " @location(" << v->Attributes().location.value() << ")";
+            }
+            if (v->Attributes().index.has_value()) {
+                out_ << " @index(" << v->Attributes().index.value() << ")";
+            }
+            if (v->Attributes().interpolation.has_value()) {
+                auto& interp = v->Attributes().interpolation.value();
+                out_ << " @interpolate(" << interp.type;
+                if (interp.sampling != core::InterpolationSampling::kUndefined) {
+                    out_ << ", " << interp.sampling;
+                }
+                out_ << ")";
+            }
+            if (v->Attributes().builtin.has_value()) {
+                out_ << " @builtin(" << v->Attributes().builtin.value() << ")";
+            }
         },
         [&](Swizzle* s) {
             EmitValueWithType(s);
             out_ << " = ";
-            EmitInstructionName("swizzle", s);
+            EmitInstructionName(s);
             out_ << " ";
             EmitValue(s->Object());
             out_ << ", ";
@@ -565,7 +531,15 @@ void Disassembler::EmitInstruction(Instruction* inst) {
             }
         },
         [&](Terminator* b) { EmitTerminator(b); },
-        [&](Default) { out_ << "Unknown instruction: " << inst->TypeInfo().name; });
+        [&](Default) {
+            EmitValueWithType(inst);
+            out_ << " = ";
+            EmitInstructionName(inst);
+            if (!inst->Operands().IsEmpty()) {
+                out_ << " ";
+                EmitOperandList(inst);
+            }
+        });
 
     {  // Add a comment if the result IDs don't match their names
         Vector<std::string, 4> names;
@@ -891,9 +865,9 @@ void Disassembler::EmitUnary(Unary* u) {
     sm.Store(u);
 }
 
-void Disassembler::EmitStructDecl(const type::Struct* str) {
+void Disassembler::EmitStructDecl(const core::type::Struct* str) {
     out_ << str->Name().Name() << " = struct @align(" << str->Align() << ")";
-    if (str->StructFlags().Contains(type::StructFlag::kBlock)) {
+    if (str->StructFlags().Contains(core::type::StructFlag::kBlock)) {
         out_ << ", @block";
     }
     out_ << " {";
@@ -910,7 +884,7 @@ void Disassembler::EmitStructDecl(const type::Struct* str) {
         if (member->Attributes().interpolation.has_value()) {
             auto& interp = member->Attributes().interpolation.value();
             out_ << ", @interpolate(" << interp.type;
-            if (interp.sampling != builtin::InterpolationSampling::kUndefined) {
+            if (interp.sampling != core::InterpolationSampling::kUndefined) {
                 out_ << ", " << interp.sampling;
             }
             out_ << ")";
@@ -925,4 +899,4 @@ void Disassembler::EmitStructDecl(const type::Struct* str) {
     EmitLine();
 }
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir

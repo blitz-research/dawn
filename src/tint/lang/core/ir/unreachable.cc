@@ -14,10 +14,17 @@
 
 #include "src/tint/lang/core/ir/unreachable.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Unreachable);
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 
-namespace tint::ir {
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Unreachable);
+
+namespace tint::core::ir {
 
 Unreachable::~Unreachable() = default;
 
-}  // namespace tint::ir
+Unreachable* Unreachable::Clone(CloneContext& ctx) {
+    return ctx.ir.instructions.Create<Unreachable>();
+}
+
+}  // namespace tint::core::ir

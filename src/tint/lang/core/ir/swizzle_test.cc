@@ -16,11 +16,11 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
 
-using namespace tint::builtin::fluent_types;  // NOLINT
+using namespace tint::core::fluent_types;  // NOLINT
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
 using IR_SwizzleTest = IRTestHelper;
@@ -86,5 +86,22 @@ TEST_F(IR_SwizzleTest, Fail_IndexOutOfRange) {
         "");
 }
 
+TEST_F(IR_SwizzleTest, Clone) {
+    auto* var = b.Var(ty.ptr<function, i32>());
+    auto* s = b.Swizzle(mod.Types().i32(), var, {2u});
+
+    auto* new_var = clone_ctx.Clone(var);
+    auto* new_s = clone_ctx.Clone(s);
+
+    EXPECT_NE(s, new_s);
+    EXPECT_NE(nullptr, new_s->Result());
+    EXPECT_NE(s->Result(), new_s->Result());
+
+    EXPECT_EQ(new_var->Result(), new_s->Object());
+
+    EXPECT_EQ(1u, new_s->Indices().Length());
+    EXPECT_EQ(2u, new_s->Indices().Front());
+}
+
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

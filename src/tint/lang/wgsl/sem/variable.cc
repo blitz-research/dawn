@@ -28,69 +28,41 @@ TINT_INSTANTIATE_TYPEINFO(tint::sem::Parameter);
 TINT_INSTANTIATE_TYPEINFO(tint::sem::VariableUser);
 
 namespace tint::sem {
-Variable::Variable(const ast::Variable* declaration,
-                   const type::Type* type,
-                   EvaluationStage stage,
-                   builtin::AddressSpace address_space,
-                   builtin::Access access,
-                   const constant::Value* constant_value)
-    : declaration_(declaration),
-      type_(type),
-      stage_(stage),
-      address_space_(address_space),
-      access_(access),
-      constant_value_(constant_value) {}
+Variable::Variable(const ast::Variable* declaration) : declaration_(declaration) {}
 
 Variable::~Variable() = default;
 
-LocalVariable::LocalVariable(const ast::Variable* declaration,
-                             const type::Type* type,
-                             EvaluationStage stage,
-                             builtin::AddressSpace address_space,
-                             builtin::Access access,
-                             const sem::Statement* statement,
-                             const constant::Value* constant_value)
-    : Base(declaration, type, stage, address_space, access, constant_value),
-      statement_(statement) {}
+LocalVariable::LocalVariable(const ast::Variable* declaration, const sem::Statement* statement)
+    : Base(declaration), statement_(statement) {}
 
 LocalVariable::~LocalVariable() = default;
 
-GlobalVariable::GlobalVariable(const ast::Variable* declaration,
-                               const type::Type* type,
-                               EvaluationStage stage,
-                               builtin::AddressSpace address_space,
-                               builtin::Access access,
-                               const constant::Value* constant_value,
-                               std::optional<tint::BindingPoint> binding_point,
-                               std::optional<uint32_t> location,
-                               std::optional<uint32_t> index)
-    : Base(declaration, type, stage, address_space, access, constant_value),
-      binding_point_(binding_point),
-      location_(location),
-      index_(index) {}
+GlobalVariable::GlobalVariable(const ast::Variable* declaration) : Base(declaration) {}
 
 GlobalVariable::~GlobalVariable() = default;
 
+void GlobalVariable::AddTransitivelyReferencedOverride(const GlobalVariable* var) {
+    if (transitively_referenced_overrides_.Add(var)) {
+        for (auto* ref : var->TransitivelyReferencedOverrides()) {
+            AddTransitivelyReferencedOverride(ref);
+        }
+    }
+}
+
 Parameter::Parameter(const ast::Parameter* declaration,
-                     uint32_t index,
-                     const type::Type* type,
-                     builtin::AddressSpace address_space,
-                     builtin::Access access,
-                     const ParameterUsage usage /* = ParameterUsage::kNone */,
-                     std::optional<tint::BindingPoint> binding_point /* = {} */,
-                     std::optional<uint32_t> location /* = std::nullopt */)
-    : Base(declaration, type, EvaluationStage::kRuntime, address_space, access, nullptr),
-      index_(index),
-      usage_(usage),
-      binding_point_(binding_point),
-      location_(location) {}
+                     uint32_t index /* = 0 */,
+                     const core::type::Type* type /* = nullptr */,
+                     core::ParameterUsage usage /* = core::ParameterUsage::kNone */)
+    : Base(declaration), index_(index), usage_(usage) {
+    SetType(type);
+}
 
 Parameter::~Parameter() = default;
 
 VariableUser::VariableUser(const ast::IdentifierExpression* declaration,
-                           EvaluationStage stage,
+                           core::EvaluationStage stage,
                            Statement* statement,
-                           const constant::Value* constant,
+                           const core::constant::Value* constant,
                            sem::Variable* variable)
     : Base(declaration,
            variable->Type(),
@@ -100,7 +72,7 @@ VariableUser::VariableUser(const ast::IdentifierExpression* declaration,
            /* has_side_effects */ false),
       variable_(variable) {
     auto* type = variable->Type();
-    if (type->Is<type::Pointer>() && variable->Initializer()) {
+    if (type->Is<core::type::Pointer>() && variable->Initializer()) {
         root_identifier_ = variable->Initializer()->RootIdentifier();
     } else {
         root_identifier_ = variable;

@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "dawn/common/GPUInfo.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/D3D12Backend.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/Instance.h"
@@ -44,6 +45,8 @@
 #include "dawn/native/d3d12/SamplerHeapCacheD3D12.h"
 #include "dawn/native/d3d12/ShaderModuleD3D12.h"
 #include "dawn/native/d3d12/ShaderVisibleDescriptorAllocatorD3D12.h"
+#include "dawn/native/d3d12/SharedFenceD3D12.h"
+#include "dawn/native/d3d12/SharedTextureMemoryD3D12.h"
 #include "dawn/native/d3d12/StagingDescriptorAllocatorD3D12.h"
 #include "dawn/native/d3d12/SwapChainD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
@@ -73,7 +76,7 @@ ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
 MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     mD3d12Device = ToBackend(GetPhysicalDevice())->GetDevice();
 
-    ASSERT(mD3d12Device != nullptr);
+    DAWN_ASSERT(mD3d12Device != nullptr);
 
     // Create device-global objects
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
@@ -100,44 +103,46 @@ MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
     // value.
     mCommandQueue.As(&mD3d12SharingContract);
 
-    DAWN_TRY(CheckHRESULT(mD3d12Device->CreateFence(uint64_t(GetLastSubmittedCommandSerial()),
+    DAWN_TRY(CheckHRESULT(mD3d12Device->CreateFence(uint64_t(kBeginningOfGPUTime),
                                                     D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&mFence)),
                           "D3D12 create fence"));
 
     mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    ASSERT(mFenceEvent != nullptr);
+    DAWN_ASSERT(mFenceEvent != nullptr);
 
     DAWN_TRY(CheckHRESULT(mD3d12Device->CreateSharedHandle(mFence.Get(), nullptr, GENERIC_ALL,
                                                            nullptr, &mFenceHandle),
                           "D3D12 create fence handle"));
-    ASSERT(mFenceHandle != nullptr);
+    DAWN_ASSERT(mFenceHandle != nullptr);
 
     // Initialize backend services
     mCommandAllocatorManager = std::make_unique<CommandAllocatorManager>(this);
 
     // Zero sized allocator is never requested and does not need to exist.
     for (uint32_t countIndex = 0; countIndex < kNumViewDescriptorAllocators; countIndex++) {
-        mViewAllocators[countIndex + 1] = std::make_unique<StagingDescriptorAllocator>(
-            this, 1u << countIndex, kShaderVisibleDescriptorHeapSize,
-            D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        mViewAllocators[countIndex + 1] =
+            std::make_unique<MutexProtected<StagingDescriptorAllocator>>(
+                this, 1u << countIndex, kShaderVisibleDescriptorHeapSize,
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     }
 
     for (uint32_t countIndex = 0; countIndex < kNumSamplerDescriptorAllocators; countIndex++) {
-        mSamplerAllocators[countIndex + 1] = std::make_unique<StagingDescriptorAllocator>(
-            this, 1u << countIndex, kShaderVisibleDescriptorHeapSize,
-            D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+        mSamplerAllocators[countIndex + 1] =
+            std::make_unique<MutexProtected<StagingDescriptorAllocator>>(
+                this, 1u << countIndex, kShaderVisibleDescriptorHeapSize,
+                D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
     }
 
-    mRenderTargetViewAllocator = std::make_unique<StagingDescriptorAllocator>(
+    mRenderTargetViewAllocator = std::make_unique<MutexProtected<StagingDescriptorAllocator>>(
         this, 1, kAttachmentDescriptorHeapSize, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-    mDepthStencilViewAllocator = std::make_unique<StagingDescriptorAllocator>(
+    mDepthStencilViewAllocator = std::make_unique<MutexProtected<StagingDescriptorAllocator>>(
         this, 1, kAttachmentDescriptorHeapSize, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
     mSamplerHeapCache = std::make_unique<SamplerHeapCache>(this);
 
-    mResidencyManager = std::make_unique<ResidencyManager>(this);
-    mResourceAllocatorManager = std::make_unique<ResourceAllocatorManager>(this);
+    mResidencyManager = std::make_unique<MutexProtected<ResidencyManager>>(this);
+    mResourceAllocatorManager = std::make_unique<MutexProtected<ResourceAllocatorManager>>(this);
 
     // ShaderVisibleDescriptorAllocators use the ResidencyManager and must be initialized after.
     DAWN_TRY_ASSIGN(
@@ -221,7 +226,7 @@ ComPtr<ID3D12CommandSignature> Device::GetDrawIndexedIndirectSignature() const {
 // Ensure DXC if use_dxc toggles are set and validated.
 MaybeError Device::EnsureDXCIfRequired() {
     if (IsToggleEnabled(Toggle::UseDXC)) {
-        ASSERT(ToBackend(GetPhysicalDevice())->GetBackend()->IsDXCAvailable());
+        DAWN_ASSERT(ToBackend(GetPhysicalDevice())->GetBackend()->IsDXCAvailable());
         DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcCompiler());
         DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcLibrary());
         DAWN_TRY(ToBackend(GetPhysicalDevice())->GetBackend()->EnsureDxcValidator());
@@ -238,8 +243,8 @@ CommandAllocatorManager* Device::GetCommandAllocatorManager() const {
     return mCommandAllocatorManager.get();
 }
 
-ResidencyManager* Device::GetResidencyManager() const {
-    return mResidencyManager.get();
+MutexProtected<ResidencyManager>& Device::GetResidencyManager() const {
+    return *mResidencyManager;
 }
 
 ResultOrError<CommandRecordingContext*> Device::GetPendingCommandContext(
@@ -308,15 +313,15 @@ MaybeError Device::ClearBufferToZero(CommandRecordingContext* commandContext,
 
 MaybeError Device::TickImpl() {
     // Perform cleanup operations to free unused objects
-    ExecutionSerial completedSerial = GetCompletedCommandSerial();
+    ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
 
-    mResourceAllocatorManager->Tick(completedSerial);
+    (*mResourceAllocatorManager)->Tick(completedSerial);
     DAWN_TRY(mCommandAllocatorManager->Tick(completedSerial));
-    mViewShaderVisibleDescriptorAllocator->Tick(completedSerial);
-    mSamplerShaderVisibleDescriptorAllocator->Tick(completedSerial);
-    mRenderTargetViewAllocator->Tick(completedSerial);
-    mDepthStencilViewAllocator->Tick(completedSerial);
-    mUsedComObjectRefs.ClearUpTo(completedSerial);
+    (*mViewShaderVisibleDescriptorAllocator)->Tick(completedSerial);
+    (*mSamplerShaderVisibleDescriptorAllocator)->Tick(completedSerial);
+    (*mRenderTargetViewAllocator)->Tick(completedSerial);
+    (*mDepthStencilViewAllocator)->Tick(completedSerial);
+    mUsedComObjectRefs->ClearUpTo(completedSerial);
 
     if (mPendingCommands.IsOpen() && mPendingCommands.NeedsSubmit()) {
         DAWN_TRY(ExecutePendingCommandContext());
@@ -329,7 +334,7 @@ MaybeError Device::TickImpl() {
 }
 
 MaybeError Device::NextSerial() {
-    IncrementLastSubmittedCommandSerial();
+    GetQueue()->IncrementLastSubmittedCommandSerial();
 
     TRACE_EVENT1(GetPlatform(), General, "D3D12Device::SignalFence", "serial",
                  uint64_t(GetLastSubmittedCommandSerial()));
@@ -340,12 +345,12 @@ MaybeError Device::NextSerial() {
 }
 
 MaybeError Device::WaitForSerial(ExecutionSerial serial) {
-    DAWN_TRY(CheckPassedSerials());
-    if (GetCompletedCommandSerial() < serial) {
+    DAWN_TRY(GetQueue()->CheckPassedSerials());
+    if (GetQueue()->GetCompletedCommandSerial() < serial) {
         DAWN_TRY(CheckHRESULT(mFence->SetEventOnCompletion(uint64_t(serial), mFenceEvent),
                               "D3D12 set event on completion"));
         WaitForSingleObject(mFenceEvent, INFINITE);
-        DAWN_TRY(CheckPassedSerials());
+        DAWN_TRY(GetQueue()->CheckPassedSerials());
     }
     return {};
 }
@@ -361,7 +366,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
         return DAWN_DEVICE_LOST_ERROR("Device lost");
     }
 
-    if (completedSerial <= GetCompletedCommandSerial()) {
+    if (completedSerial <= GetQueue()->GetCompletedCommandSerial()) {
         return ExecutionSerial(0);
     }
 
@@ -369,7 +374,7 @@ ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
 }
 
 void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
-    mUsedComObjectRefs.Enqueue(object, GetPendingCommandSerial());
+    mUsedComObjectRefs->Enqueue(std::move(object), GetPendingCommandSerial());
 }
 
 bool Device::HasPendingCommands() const {
@@ -383,7 +388,7 @@ void Device::ForceEventualFlushOfCommands() {
 }
 
 MaybeError Device::ExecutePendingCommandContext() {
-    ASSERT(IsLockedByCurrentThreadIfNeeded());
+    DAWN_ASSERT(IsLockedByCurrentThreadIfNeeded());
 
     return mPendingCommands.ExecuteCommandList(this);
 }
@@ -392,10 +397,9 @@ ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
     const BindGroupDescriptor* descriptor) {
     return BindGroup::Create(this, descriptor);
 }
-ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-    const BindGroupLayoutDescriptor* descriptor,
-    PipelineCompatibilityToken pipelineCompatibilityToken) {
-    return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
+ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImpl(
+    const BindGroupLayoutDescriptor* descriptor) {
+    return BindGroupLayout::Create(this, descriptor);
 }
 ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
     return Buffer::Create(this, descriptor);
@@ -454,6 +458,51 @@ void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPip
     RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
 }
 
+ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
+    const SharedTextureMemoryDescriptor* descriptor) {
+    UnpackedSharedTextureMemoryDescriptorChain unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+
+    wgpu::SType type;
+    DAWN_TRY_ASSIGN(
+        type, (ValidateBranches<BranchList<Branch<SharedTextureMemoryDXGISharedHandleDescriptor>>>(
+                  unpacked)));
+
+    switch (type) {
+        case wgpu::SType::SharedTextureMemoryDXGISharedHandleDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedTextureMemoryDXGISharedHandle),
+                            "%s is not enabled.",
+                            wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle);
+            return SharedTextureMemory::Create(
+                this, descriptor->label,
+                std::get<const SharedTextureMemoryDXGISharedHandleDescriptor*>(unpacked));
+        default:
+            DAWN_UNREACHABLE();
+    }
+}
+
+ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
+    const SharedFenceDescriptor* descriptor) {
+    UnpackedSharedFenceDescriptorChain unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpackChain(descriptor));
+
+    wgpu::SType type;
+    DAWN_TRY_ASSIGN(
+        type,
+        (ValidateBranches<BranchList<Branch<SharedFenceDXGISharedHandleDescriptor>>>(unpacked)));
+
+    switch (type) {
+        case wgpu::SType::SharedFenceDXGISharedHandleDescriptor:
+            DAWN_INVALID_IF(!HasFeature(Feature::SharedFenceDXGISharedHandle), "%s is not enabled.",
+                            wgpu::FeatureName::SharedFenceDXGISharedHandle);
+            return SharedFence::Create(
+                this, descriptor->label,
+                std::get<const SharedFenceDXGISharedHandleDescriptor*>(unpacked));
+        default:
+            DAWN_UNREACHABLE();
+    }
+}
+
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
@@ -481,7 +530,7 @@ void Device::CopyFromStagingToBufferHelper(CommandRecordingContext* commandConte
                                            BufferBase* destination,
                                            uint64_t destinationOffset,
                                            uint64_t size) {
-    ASSERT(commandContext != nullptr);
+    DAWN_ASSERT(commandContext != nullptr);
     Buffer* dstBuffer = ToBackend(destination);
     Buffer* srcBuffer = ToBackend(source);
     dstBuffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopyDst);
@@ -501,7 +550,7 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 
     SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
 
-    if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst.mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst.mipLevel, dst.aspect)) {
         texture->SetIsSubresourceContentInitialized(true, range);
     } else {
         DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));
@@ -518,7 +567,7 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
 }
 
 void Device::DeallocateMemory(ResourceHeapAllocation& allocation) {
-    mResourceAllocatorManager->DeallocateMemory(allocation);
+    (*mResourceAllocatorManager)->DeallocateMemory(allocation);
 }
 
 ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
@@ -528,9 +577,9 @@ ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
     uint32_t formatBytesPerBlock,
     bool forceAllocateAsCommittedResource) {
     // formatBytesPerBlock is needed only for color non-compressed formats for a workaround.
-    return mResourceAllocatorManager->AllocateMemory(heapType, resourceDescriptor, initialUsage,
-                                                     formatBytesPerBlock,
-                                                     forceAllocateAsCommittedResource);
+    return (*mResourceAllocatorManager)
+        ->AllocateMemory(heapType, resourceDescriptor, initialUsage, formatBytesPerBlock,
+                         forceAllocateAsCommittedResource);
 }
 
 ResultOrError<Ref<d3d::Fence>> Device::CreateFence(
@@ -614,8 +663,8 @@ MaybeError Device::WaitForIdleForDestruction() {
 void AppendDebugLayerMessagesToError(ID3D12InfoQueue* infoQueue,
                                      uint64_t totalErrors,
                                      ErrorData* error) {
-    ASSERT(totalErrors > 0);
-    ASSERT(error != nullptr);
+    DAWN_ASSERT(totalErrors > 0);
+    DAWN_ASSERT(error != nullptr);
 
     uint64_t errorsToPrint = std::min(kMaxDebugMessagesToPrint, totalErrors);
     for (uint64_t i = 0; i < errorsToPrint; ++i) {
@@ -693,7 +742,15 @@ void Device::AppendDebugLayerMessages(ErrorData* error) {
 }
 
 void Device::DestroyImpl() {
-    ASSERT(GetState() == State::Disconnected);
+    DAWN_ASSERT(GetState() == State::Disconnected);
+
+    // TODO(crbug.com/dawn/831): DestroyImpl is called from two places.
+    // - It may be called if the device is explicitly destroyed with APIDestroy.
+    //   This case is NOT thread-safe and needs proper synchronization with other
+    //   simultaneous uses of the device.
+    // - It may be called when the last ref to the device is dropped and the device
+    //   is implicitly destroyed. This case is thread-safe because there are no
+    //   other threads using the device since there are no other live refs.
 
     Base::DestroyImpl();
 
@@ -712,46 +769,48 @@ void Device::DestroyImpl() {
     mResourceAllocatorManager.reset();
 
     // We need to handle clearing up com object refs that were enqeued after TickImpl
-    mUsedComObjectRefs.ClearUpTo(std::numeric_limits<ExecutionSerial>::max());
+    mUsedComObjectRefs->ClearUpTo(std::numeric_limits<ExecutionSerial>::max());
 
-    ASSERT(mUsedComObjectRefs.Empty());
-    ASSERT(!mPendingCommands.IsOpen());
+    DAWN_ASSERT(mUsedComObjectRefs->Empty());
+    DAWN_ASSERT(!mPendingCommands.IsOpen());
 
     // Now that we've cleared out pending work from the queue, we can safely release it and reclaim
     // memory.
     mCommandQueue.Reset();
 }
 
-ShaderVisibleDescriptorAllocator* Device::GetViewShaderVisibleDescriptorAllocator() const {
-    return mViewShaderVisibleDescriptorAllocator.get();
+MutexProtected<ShaderVisibleDescriptorAllocator>& Device::GetViewShaderVisibleDescriptorAllocator()
+    const {
+    return *mViewShaderVisibleDescriptorAllocator.get();
 }
 
-ShaderVisibleDescriptorAllocator* Device::GetSamplerShaderVisibleDescriptorAllocator() const {
-    return mSamplerShaderVisibleDescriptorAllocator.get();
+MutexProtected<ShaderVisibleDescriptorAllocator>&
+Device::GetSamplerShaderVisibleDescriptorAllocator() const {
+    return *mSamplerShaderVisibleDescriptorAllocator.get();
 }
 
-StagingDescriptorAllocator* Device::GetViewStagingDescriptorAllocator(
+MutexProtected<StagingDescriptorAllocator>* Device::GetViewStagingDescriptorAllocator(
     uint32_t descriptorCount) const {
-    ASSERT(descriptorCount <= kMaxViewDescriptorsPerBindGroup);
+    DAWN_ASSERT(descriptorCount <= kMaxViewDescriptorsPerBindGroup);
     // This is Log2 of the next power of two, plus 1.
     uint32_t allocatorIndex = descriptorCount == 0 ? 0 : Log2Ceil(descriptorCount) + 1;
     return mViewAllocators[allocatorIndex].get();
 }
 
-StagingDescriptorAllocator* Device::GetSamplerStagingDescriptorAllocator(
+MutexProtected<StagingDescriptorAllocator>* Device::GetSamplerStagingDescriptorAllocator(
     uint32_t descriptorCount) const {
-    ASSERT(descriptorCount <= kMaxSamplerDescriptorsPerBindGroup);
+    DAWN_ASSERT(descriptorCount <= kMaxSamplerDescriptorsPerBindGroup);
     // This is Log2 of the next power of two, plus 1.
     uint32_t allocatorIndex = descriptorCount == 0 ? 0 : Log2Ceil(descriptorCount) + 1;
     return mSamplerAllocators[allocatorIndex].get();
 }
 
-StagingDescriptorAllocator* Device::GetRenderTargetViewAllocator() const {
-    return mRenderTargetViewAllocator.get();
+MutexProtected<StagingDescriptorAllocator>& Device::GetRenderTargetViewAllocator() const {
+    return *mRenderTargetViewAllocator.get();
 }
 
-StagingDescriptorAllocator* Device::GetDepthStencilViewAllocator() const {
-    return mDepthStencilViewAllocator.get();
+MutexProtected<StagingDescriptorAllocator>& Device::GetDepthStencilViewAllocator() const {
+    return *mDepthStencilViewAllocator.get();
 }
 
 SamplerHeapCache* Device::GetSamplerHeapCache() {
@@ -803,6 +862,14 @@ uint64_t Device::GetBufferCopyOffsetAlignmentForDepthStencil() const {
         return D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT;
     }
     return DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil();
+}
+
+ComPtr<IDxcLibrary> Device::GetDxcLibrary() const {
+    return ToBackend(GetPhysicalDevice())->GetBackend()->GetDxcLibrary();
+}
+
+ComPtr<IDxcCompiler3> Device::GetDxcCompiler() const {
+    return ToBackend(GetPhysicalDevice())->GetBackend()->GetDxcCompiler();
 }
 
 }  // namespace dawn::native::d3d12

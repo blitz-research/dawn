@@ -132,13 +132,13 @@ if [ "$BUILD_SYSTEM" == "cmake" ]; then
     COMMON_CMAKE_FLAGS+=" -DTINT_RANDOMIZE_HASHES=1"
 
     if [ "$BUILD_TOOLCHAIN" == "clang" ]; then
-        using clang-10.0.0
+        using clang-13.0.1
         COMMON_CMAKE_FLAGS+=" -DTINT_BUILD_FUZZERS=1"
         COMMON_CMAKE_FLAGS+=" -DTINT_BUILD_SPIRV_TOOLS_FUZZER=1"
         COMMON_CMAKE_FLAGS+=" -DTINT_BUILD_AST_FUZZER=1"
         COMMON_CMAKE_FLAGS+=" -DTINT_BUILD_REGEX_FUZZER=1"
     elif [ "$BUILD_TOOLCHAIN" == "gcc" ]; then
-        using gcc-10
+        using gcc-13
     fi
 
     if [ "$BUILD_SANITIZER" == "asan" ]; then
@@ -200,6 +200,11 @@ if [ "$BUILD_SYSTEM" == "cmake" ]; then
     status "Testing test/tint/test-all.sh"
     show_cmds
         ${SRC_DIR}/test/tint/test-all.sh "${BUILD_DIR}/tint" --verbose
+    hide_cmds
+
+    status "Testing test/tint/test-all.sh for SPIR-V IR backend"
+    show_cmds
+        ${SRC_DIR}/test/tint/test-all.sh "${BUILD_DIR}/tint" --verbose --format spvasm --use-ir
     hide_cmds
 
     status "Checking _other.cc files also build"

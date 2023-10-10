@@ -18,9 +18,9 @@
 #include "src/tint/lang/wgsl/sem/expression.h"
 
 // Forward declarations
-namespace tint::type {
+namespace tint::core::type {
 class Type;
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 namespace tint::sem {
 
@@ -33,16 +33,20 @@ class TypeExpression : public Castable<TypeExpression, Expression> {
     /// @param type the type that this expression resolved to
     TypeExpression(const ast::Expression* declaration,
                    const Statement* statement,
-                   const type::Type* type);
+                   const core::type::Type* type);
 
     /// Destructor
     ~TypeExpression() override;
 
     /// @return the type that the expression resolved to
-    const type::Type* Type() const { return type_; }
+    const core::type::Type* Type() const { return type_; }
+
+    /// Sets the type that this expression resolved to
+    /// @param type the new type
+    void SetType(const core::type::Type* type) { type_ = type; }
 
   private:
-    type::Type const* const type_;
+    const core::type::Type* type_ = nullptr;
 };
 
 }  // namespace tint::sem

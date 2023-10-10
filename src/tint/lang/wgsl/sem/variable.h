@@ -19,16 +19,16 @@
 #include <utility>
 #include <vector>
 
-#include "tint/override_id.h"
+#include "src/tint/api/common/override_id.h"
 
-#include "src/tint/lang/core/builtin/access.h"
-#include "src/tint/lang/core/builtin/address_space.h"
+#include "src/tint/api/common/binding_point.h"
+#include "src/tint/lang/core/access.h"
+#include "src/tint/lang/core/address_space.h"
+#include "src/tint/lang/core/parameter_usage.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/lang/wgsl/ast/parameter.h"
-#include "src/tint/lang/wgsl/sem/parameter_usage.h"
 #include "src/tint/lang/wgsl/sem/value_expression.h"
 #include "src/tint/utils/containers/unique_vector.h"
-#include "tint/binding_point.h"
 
 // Forward declarations
 namespace tint::ast {
@@ -49,17 +49,7 @@ class Variable : public Castable<Variable, Node> {
   public:
     /// Constructor
     /// @param declaration the AST declaration node
-    /// @param type the variable type
-    /// @param stage the evaluation stage for an expression of this variable type
-    /// @param address_space the variable address space
-    /// @param access the variable access control type
-    /// @param constant_value the constant value for the variable. May be null
-    Variable(const ast::Variable* declaration,
-             const type::Type* type,
-             EvaluationStage stage,
-             builtin::AddressSpace address_space,
-             builtin::Access access,
-             const constant::Value* constant_value);
+    explicit Variable(const ast::Variable* declaration);
 
     /// Destructor
     ~Variable() override;
@@ -67,28 +57,43 @@ class Variable : public Castable<Variable, Node> {
     /// @returns the AST declaration node
     const ast::Variable* Declaration() const { return declaration_; }
 
+    /// @param type the variable type
+    void SetType(const core::type::Type* type) { type_ = type; }
+
     /// @returns the canonical type for the variable
-    const type::Type* Type() const { return type_; }
+    const core::type::Type* Type() const { return type_; }
+
+    /// @param stage the evaluation stage for an expression of this variable type
+    void SetStage(core::EvaluationStage stage) { stage_ = stage; }
 
     /// @returns the evaluation stage for an expression of this variable type
-    EvaluationStage Stage() const { return stage_; }
+    core::EvaluationStage Stage() const { return stage_; }
+
+    /// @param space the variable address space
+    void SetAddressSpace(core::AddressSpace space) { address_space_ = space; }
 
     /// @returns the address space for the variable
-    builtin::AddressSpace AddressSpace() const { return address_space_; }
+    core::AddressSpace AddressSpace() const { return address_space_; }
+
+    /// @param access the variable access control type
+    void SetAccess(core::Access access) { access_ = access; }
 
     /// @returns the access control for the variable
-    builtin::Access Access() const { return access_; }
+    core::Access Access() const { return access_; }
+
+    /// @param value the constant value for the variable. May be null
+    void SetConstantValue(const core::constant::Value* value) { constant_value_ = value; }
 
     /// @return the constant value of this expression
-    const constant::Value* ConstantValue() const { return constant_value_; }
-
-    /// @returns the variable initializer expression, or nullptr if the variable
-    /// does not have one.
-    const ValueExpression* Initializer() const { return initializer_; }
+    const core::constant::Value* ConstantValue() const { return constant_value_; }
 
     /// Sets the variable initializer expression.
     /// @param initializer the initializer expression to assign to this variable.
     void SetInitializer(const ValueExpression* initializer) { initializer_ = initializer; }
+
+    /// @returns the variable initializer expression, or nullptr if the variable
+    /// does not have one.
+    const ValueExpression* Initializer() const { return initializer_; }
 
     /// @returns the expressions that use the variable
     VectorRef<const VariableUser*> Users() const { return users_; }
@@ -97,12 +102,12 @@ class Variable : public Castable<Variable, Node> {
     void AddUser(const VariableUser* user) { users_.Push(user); }
 
   private:
-    const ast::Variable* const declaration_;
-    const type::Type* const type_;
-    const EvaluationStage stage_;
-    const builtin::AddressSpace address_space_;
-    const builtin::Access access_;
-    const constant::Value* constant_value_;
+    const ast::Variable* const declaration_ = nullptr;
+    const core::type::Type* type_ = nullptr;
+    core::EvaluationStage stage_ = core::EvaluationStage::kRuntime;
+    core::AddressSpace address_space_ = core::AddressSpace::kUndefined;
+    core::Access access_ = core::Access::kUndefined;
+    const core::constant::Value* constant_value_ = nullptr;
     const ValueExpression* initializer_ = nullptr;
     tint::Vector<const VariableUser*, 8> users_;
 };
@@ -112,19 +117,8 @@ class LocalVariable final : public Castable<LocalVariable, Variable> {
   public:
     /// Constructor
     /// @param declaration the AST declaration node
-    /// @param type the variable type
-    /// @param stage the evaluation stage for an expression of this variable type
-    /// @param address_space the variable address space
-    /// @param access the variable access control type
     /// @param statement the statement that declared this local variable
-    /// @param constant_value the constant value for the variable. May be null
-    LocalVariable(const ast::Variable* declaration,
-                  const type::Type* type,
-                  EvaluationStage stage,
-                  builtin::AddressSpace address_space,
-                  builtin::Access access,
-                  const sem::Statement* statement,
-                  const constant::Value* constant_value);
+    LocalVariable(const ast::Variable* declaration, const sem::Statement* statement);
 
     /// Destructor
     ~LocalVariable() override;
@@ -132,12 +126,12 @@ class LocalVariable final : public Castable<LocalVariable, Variable> {
     /// @returns the statement that declares this local variable
     const sem::Statement* Statement() const { return statement_; }
 
-    /// @returns the Type, Function or Variable that this local variable shadows
-    const CastableBase* Shadows() const { return shadows_; }
-
     /// Sets the Type, Function or Variable that this local variable shadows
     /// @param shadows the Type, Function or Variable that this variable shadows
     void SetShadows(const CastableBase* shadows) { shadows_ = shadows; }
+
+    /// @returns the Type, Function or Variable that this local variable shadows
+    const CastableBase* Shadows() const { return shadows_; }
 
   private:
     const sem::Statement* const statement_;
@@ -149,29 +143,15 @@ class GlobalVariable final : public Castable<GlobalVariable, Variable> {
   public:
     /// Constructor
     /// @param declaration the AST declaration node
-    /// @param type the variable type
-    /// @param stage the evaluation stage for an expression of this variable type
-    /// @param address_space the variable address space
-    /// @param access the variable access control type
-    /// @param constant_value the constant value for the variable. May be null
-    /// @param binding_point the optional resource binding point of the variable
-    /// @param location the location value if provided
-    /// @param index the index value if provided
-    ///
-    /// Note, a GlobalVariable generally doesn't have a `location` in WGSL, as it isn't allowed by
-    /// the spec. The location maybe attached by transforms such as CanonicalizeEntryPointIO.
-    GlobalVariable(const ast::Variable* declaration,
-                   const type::Type* type,
-                   EvaluationStage stage,
-                   builtin::AddressSpace address_space,
-                   builtin::Access access,
-                   const constant::Value* constant_value,
-                   std::optional<tint::BindingPoint> binding_point = std::nullopt,
-                   std::optional<uint32_t> location = std::nullopt,
-                   std::optional<uint32_t> index = std::nullopt);
+    explicit GlobalVariable(const ast::Variable* declaration);
 
     /// Destructor
     ~GlobalVariable() override;
+
+    /// @param binding_point the resource binding point for the parameter
+    void SetBindingPoint(std::optional<tint::BindingPoint> binding_point) {
+        binding_point_ = binding_point;
+    }
 
     /// @returns the resource binding point for the variable
     std::optional<tint::BindingPoint> BindingPoint() const { return binding_point_; }
@@ -182,40 +162,49 @@ class GlobalVariable final : public Castable<GlobalVariable, Variable> {
     /// @returns the pipeline constant ID associated with the variable
     tint::OverrideId OverrideId() const { return override_id_; }
 
+    /// @param location the location value for the parameter, if set
+    /// @note a GlobalVariable generally doesn't have a `location` in WGSL, as it isn't allowed by
+    /// the spec. The location maybe attached by transforms such as CanonicalizeEntryPointIO.
+    void SetLocation(std::optional<uint32_t> location) { location_ = location; }
+
     /// @returns the location value for the parameter, if set
     std::optional<uint32_t> Location() const { return location_; }
+
+    /// @param index the index value for the parameter, if set
+    void SetIndex(std::optional<uint32_t> index) { index_ = index; }
 
     /// @returns the index value for the parameter, if set
     std::optional<uint32_t> Index() const { return index_; }
 
-  private:
-    const std::optional<tint::BindingPoint> binding_point_;
+    /// Records that this variable (transitively) references the given override variable.
+    /// @param var the module-scope override variable
+    void AddTransitivelyReferencedOverride(const GlobalVariable* var);
 
+    /// @returns all transitively referenced override variables
+    VectorRef<const GlobalVariable*> TransitivelyReferencedOverrides() const {
+        return transitively_referenced_overrides_;
+    }
+
+  private:
+    std::optional<tint::BindingPoint> binding_point_;
     tint::OverrideId override_id_;
     std::optional<uint32_t> location_;
     std::optional<uint32_t> index_;
+    UniqueVector<const GlobalVariable*, 4> transitively_referenced_overrides_;
 };
 
 /// Parameter is a function parameter
 class Parameter final : public Castable<Parameter, Variable> {
   public:
-    /// Constructor for function parameters
+    /// Constructor
     /// @param declaration the AST declaration node
-    /// @param index the index of the parmeter in the function
+    /// @param index the index of the parameter in the function
     /// @param type the variable type
-    /// @param address_space the variable address space
-    /// @param access the variable access control type
-    /// @param usage the semantic usage for the parameter
-    /// @param binding_point the optional resource binding point of the parameter
-    /// @param location the location value, if set
+    /// @param usage the parameter usage
     Parameter(const ast::Parameter* declaration,
-              uint32_t index,
-              const type::Type* type,
-              builtin::AddressSpace address_space,
-              builtin::Access access,
-              const ParameterUsage usage = ParameterUsage::kNone,
-              std::optional<tint::BindingPoint> binding_point = {},
-              std::optional<uint32_t> location = std::nullopt);
+              uint32_t index = 0,
+              const core::type::Type* type = nullptr,
+              core::ParameterUsage usage = core::ParameterUsage::kNone);
 
     /// Destructor
     ~Parameter() override;
@@ -225,38 +214,52 @@ class Parameter final : public Castable<Parameter, Variable> {
         return static_cast<const ast::Parameter*>(Variable::Declaration());
     }
 
+    /// @param index the index value for the parameter, if set
+    void SetIndex(uint32_t index) { index_ = index; }
+
     /// @return the index of the parameter in the function
     uint32_t Index() const { return index_; }
 
-    /// @returns the semantic usage for the parameter
-    ParameterUsage Usage() const { return usage_; }
+    /// @param usage the semantic usage for the parameter
+    void SetUsage(core::ParameterUsage usage) { usage_ = usage; }
 
-    /// @returns the CallTarget owner of this parameter
-    CallTarget const* Owner() const { return owner_; }
+    /// @returns the semantic usage for the parameter
+    core::ParameterUsage Usage() const { return usage_; }
 
     /// @param owner the CallTarget owner of this parameter
-    void SetOwner(CallTarget const* owner) { owner_ = owner; }
+    void SetOwner(const CallTarget* owner) { owner_ = owner; }
 
-    /// @returns the Type, Function or Variable that this local variable shadows
-    const CastableBase* Shadows() const { return shadows_; }
+    /// @returns the CallTarget owner of this parameter
+    const CallTarget* Owner() const { return owner_; }
 
     /// Sets the Type, Function or Variable that this local variable shadows
     /// @param shadows the Type, Function or Variable that this variable shadows
     void SetShadows(const CastableBase* shadows) { shadows_ = shadows; }
 
+    /// @returns the Type, Function or Variable that this local variable shadows
+    const CastableBase* Shadows() const { return shadows_; }
+
+    /// @param binding_point the resource binding point for the parameter
+    void SetBindingPoint(std::optional<tint::BindingPoint> binding_point) {
+        binding_point_ = binding_point;
+    }
+
     /// @returns the resource binding point for the parameter
     std::optional<tint::BindingPoint> BindingPoint() const { return binding_point_; }
+
+    /// @param location the location value for the parameter, if set
+    void SetLocation(std::optional<uint32_t> location) { location_ = location; }
 
     /// @returns the location value for the parameter, if set
     std::optional<uint32_t> Location() const { return location_; }
 
   private:
-    const uint32_t index_;
-    const ParameterUsage usage_;
+    uint32_t index_ = 0;
+    core::ParameterUsage usage_ = core::ParameterUsage::kNone;
     CallTarget const* owner_ = nullptr;
     const CastableBase* shadows_ = nullptr;
-    const std::optional<tint::BindingPoint> binding_point_;
-    const std::optional<uint32_t> location_;
+    std::optional<tint::BindingPoint> binding_point_;
+    std::optional<uint32_t> location_;
 };
 
 /// VariableUser holds the semantic information for an identifier expression
@@ -270,9 +273,9 @@ class VariableUser final : public Castable<VariableUser, ValueExpression> {
     /// @param constant the constant value of the expression. May be null
     /// @param variable the semantic variable
     VariableUser(const ast::IdentifierExpression* declaration,
-                 EvaluationStage stage,
+                 core::EvaluationStage stage,
                  Statement* statement,
-                 const constant::Value* constant,
+                 const core::constant::Value* constant,
                  sem::Variable* variable);
     ~VariableUser() override;
 

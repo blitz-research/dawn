@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/wgsl/writer/ast_printer/helper_test.h"
 
 #include "gmock/gmock.h"
+#include "src/tint/lang/core/fluent_types.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::wgsl::writer {
 namespace {
@@ -98,7 +100,7 @@ TEST_F(WgslASTPrinterTest, Emit_ForLoopWithMultiStmtInit) {
     // for({ignore(1i); ignore(2i);}; ; ) {
     //   return;
     // }
-    GlobalVar("a", ty.atomic<i32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), core::AddressSpace::kWorkgroup);
     auto* multi_stmt = Block(Ignore(1_i), Ignore(2_i));
     auto* f = For(multi_stmt, nullptr, nullptr, Block(Return()));
     WrapInFunction(f);
@@ -165,7 +167,7 @@ TEST_F(WgslASTPrinterTest, Emit_ForLoopWithMultiStmtCont) {
     //   return;
     // }
 
-    GlobalVar("a", ty.atomic<i32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), core::AddressSpace::kWorkgroup);
     auto* multi_stmt = Block(Ignore(1_i), Ignore(2_i));
     auto* f = For(nullptr, nullptr, multi_stmt, Block(Return()));
     WrapInFunction(f);
@@ -210,7 +212,7 @@ TEST_F(WgslASTPrinterTest, Emit_ForLoopWithMultiStmtInitCondCont) {
     // for({ ignore(1i); ignore(2i); }; true; { ignore(3i); ignore(4i); }) {
     //   return;
     // }
-    GlobalVar("a", ty.atomic<i32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), core::AddressSpace::kWorkgroup);
     auto* multi_stmt_a = Block(Ignore(1_i), Ignore(2_i));
     auto* multi_stmt_b = Block(Ignore(3_i), Ignore(4_i));
     auto* f = For(multi_stmt_a, Expr(true), multi_stmt_b, Block(Return()));
@@ -280,7 +282,7 @@ TEST_F(WgslASTPrinterTest, Emit_WhileMultiCond) {
     // }
 
     auto* multi_stmt =
-        create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(true), Expr(false));
+        create<ast::BinaryExpression>(core::BinaryOp::kLogicalAnd, Expr(true), Expr(false));
     auto* f = While(multi_stmt, Block(Return()));
     WrapInFunction(f);
 

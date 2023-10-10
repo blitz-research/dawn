@@ -38,6 +38,7 @@ MaybeError PhysicalDeviceBase::Initialize() {
     EnableFeature(Feature::DawnNative);
     EnableFeature(Feature::DawnInternalUsages);
     EnableFeature(Feature::ImplicitDeviceSynchronization);
+    EnableFeature(Feature::ChromiumExperimentalReadWriteStorageTexture);
     InitializeSupportedFeaturesImpl();
 
     DAWN_TRY_CONTEXT(
@@ -113,14 +114,19 @@ bool PhysicalDeviceBase::IsFeatureSupportedWithToggles(wgpu::FeatureName feature
     }
 }
 
+void PhysicalDeviceBase::GetDefaultLimitsForSupportedFeatureLevel(Limits* limits) const {
+    // If the physical device does not support core then the defaults are compat defaults.
+    GetDefaultLimits(limits, SupportsFeatureLevel(FeatureLevel::Core)
+                                 ? FeatureLevel::Core
+                                 : FeatureLevel::Compatibility);
+}
+
 FeaturesSet PhysicalDeviceBase::GetSupportedFeatures(const TogglesState& toggles) const {
     FeaturesSet supportedFeaturesWithToggles;
     // Iterate each PhysicalDevice's supported feature and check if it is supported with given
     // toggles
-    for (uint32_t i : IterateBitSet(mSupportedFeatures.featuresBitSet)) {
-        Feature feature = static_cast<Feature>(i);
-        wgpu::FeatureName featureName = FeatureEnumToAPIFeature(feature);
-        if (IsFeatureSupportedWithToggles(featureName, toggles)) {
+    for (Feature feature : IterateBitSet(mSupportedFeatures.featuresBitSet)) {
+        if (IsFeatureSupportedWithToggles(ToAPI(feature), toggles)) {
             supportedFeaturesWithToggles.EnableFeature(feature);
         }
     }

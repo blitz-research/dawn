@@ -15,34 +15,49 @@
 #ifndef SRC_TINT_LANG_CORE_IR_CORE_BUILTIN_CALL_H_
 #define SRC_TINT_LANG_CORE_IR_CORE_BUILTIN_CALL_H_
 
-#include "src/tint/lang/core/builtin/function.h"
+#include <string>
+
+#include "src/tint/lang/core/builtin_fn.h"
+#include "src/tint/lang/core/intrinsic/dialect.h"
+#include "src/tint/lang/core/intrinsic/table_data.h"
 #include "src/tint/lang/core/ir/builtin_call.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A core builtin call instruction in the IR.
-class CoreBuiltinCall : public Castable<CoreBuiltinCall, BuiltinCall> {
+class CoreBuiltinCall final : public Castable<CoreBuiltinCall, BuiltinCall> {
   public:
     /// Constructor
     /// @param result the result value
     /// @param func the builtin function
     /// @param args the conversion arguments
     CoreBuiltinCall(InstructionResult* result,
-                    builtin::Function func,
+                    core::BuiltinFn func,
                     VectorRef<Value*> args = tint::Empty);
     ~CoreBuiltinCall() override;
 
+    /// @copydoc Instruction::Clone()
+    CoreBuiltinCall* Clone(CloneContext& ctx) override;
+
     /// @returns the builtin function
-    builtin::Function Func() { return func_; }
+    core::BuiltinFn Func() { return func_; }
+
+    /// @returns the identifier for the function
+    size_t FuncId() override { return static_cast<size_t>(func_); }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "core-builtin-call"; }
+    std::string FriendlyName() override { return core::str(func_); }
+
+    /// @returns the table data to validate this builtin
+    const core::intrinsic::TableData& TableData() override {
+        return core::intrinsic::Dialect::kData;
+    }
 
   private:
-    builtin::Function func_;
+    core::BuiltinFn func_;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_CORE_BUILTIN_CALL_H_

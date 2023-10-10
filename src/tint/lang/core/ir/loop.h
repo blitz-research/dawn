@@ -15,14 +15,16 @@
 #ifndef SRC_TINT_LANG_CORE_IR_LOOP_H_
 #define SRC_TINT_LANG_CORE_IR_LOOP_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/control_instruction.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class MultiInBlock;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// Loop instruction.
 ///
@@ -54,7 +56,7 @@ namespace tint::ir {
 ///                     out
 ///
 /// ```
-class Loop : public Castable<Loop, ControlInstruction> {
+class Loop final : public Castable<Loop, ControlInstruction> {
   public:
     /// Constructor
     /// @param i the initializer block
@@ -62,6 +64,9 @@ class Loop : public Castable<Loop, ControlInstruction> {
     /// @param c the continuing block
     Loop(ir::Block* i, ir::MultiInBlock* b, ir::MultiInBlock* c);
     ~Loop() override;
+
+    /// @copydoc Instruction::Clone()
+    Loop* Clone(CloneContext& ctx) override;
 
     /// @copydoc ControlInstruction::ForeachBlock
     void ForeachBlock(const std::function<void(ir::Block*)>& cb) override;
@@ -80,7 +85,7 @@ class Loop : public Castable<Loop, ControlInstruction> {
     ir::MultiInBlock* Continuing() { return continuing_; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "loop"; }
+    std::string FriendlyName() override { return "loop"; }
 
   private:
     ir::Block* initializer_ = nullptr;
@@ -88,6 +93,6 @@ class Loop : public Castable<Loop, ControlInstruction> {
     ir::MultiInBlock* continuing_ = nullptr;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_LOOP_H_

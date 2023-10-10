@@ -18,7 +18,6 @@
 
 #include "src/tint/utils/containers/hashmap.h"
 #include "src/tint/utils/containers/vector.h"
-#include "src/tint/utils/text/symbol.h"
 
 namespace tint {
 

@@ -56,8 +56,8 @@ static constexpr std::array<InstanceExtInfo, kInstanceExtCount> sInstanceExtInfo
 
 const InstanceExtInfo& GetInstanceExtInfo(InstanceExt ext) {
     uint32_t index = static_cast<uint32_t>(ext);
-    ASSERT(index < sInstanceExtInfos.size());
-    ASSERT(sInstanceExtInfos[index].index == ext);
+    DAWN_ASSERT(index < sInstanceExtInfos.size());
+    DAWN_ASSERT(sInstanceExtInfos[index].index == ext);
     return sInstanceExtInfos[index];
 }
 
@@ -79,7 +79,7 @@ InstanceExtSet EnsureDependencies(const InstanceExtSet& advertisedExts) {
     InstanceExtSet trimmedSet;
 
     auto HasDep = [&](InstanceExt ext) -> bool {
-        ASSERT(visitedSet[ext]);
+        DAWN_ASSERT(visitedSet[ext]);
         return trimmedSet[ext];
     };
 
@@ -111,7 +111,7 @@ InstanceExtSet EnsureDependencies(const InstanceExtSet& advertisedExts) {
                 break;
 
             case InstanceExt::EnumCount:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         trimmedSet.set(ext, hasDependencies && advertisedExts[ext]);
@@ -159,19 +159,22 @@ static constexpr std::array<DeviceExtInfo, kDeviceExtCount> sDeviceExtInfos{{
     {DeviceExt::ZeroInitializeWorkgroupMemory, "VK_KHR_zero_initialize_workgroup_memory",
      VulkanVersion_1_3},
     {DeviceExt::Maintenance4, "VK_KHR_maintenance4", VulkanVersion_1_3},
+    {DeviceExt::SubgroupSizeControl, "VK_EXT_subgroup_size_control", VulkanVersion_1_3},
 
     {DeviceExt::DepthClipEnable, "VK_EXT_depth_clip_enable", NeverPromoted},
     {DeviceExt::ImageDrmFormatModifier, "VK_EXT_image_drm_format_modifier", NeverPromoted},
     {DeviceExt::Swapchain, "VK_KHR_swapchain", NeverPromoted},
-    {DeviceExt::SubgroupSizeControl, "VK_EXT_subgroup_size_control", NeverPromoted},
     {DeviceExt::QueueFamilyForeign, "VK_EXT_queue_family_foreign", NeverPromoted},
     {DeviceExt::Robustness2, "VK_EXT_robustness2", NeverPromoted},
+    {DeviceExt::ShaderSubgroupUniformControlFlow, "VK_KHR_shader_subgroup_uniform_control_flow",
+     NeverPromoted},
 
     {DeviceExt::ExternalMemoryAndroidHardwareBuffer,
      "VK_ANDROID_external_memory_android_hardware_buffer", NeverPromoted},
     {DeviceExt::ExternalMemoryFD, "VK_KHR_external_memory_fd", NeverPromoted},
     {DeviceExt::ExternalMemoryDmaBuf, "VK_EXT_external_memory_dma_buf", NeverPromoted},
     {DeviceExt::ExternalMemoryZirconHandle, "VK_FUCHSIA_external_memory", NeverPromoted},
+    {DeviceExt::ExternalMemoryHost, "VK_EXT_external_memory_host", NeverPromoted},
     {DeviceExt::ExternalSemaphoreFD, "VK_KHR_external_semaphore_fd", NeverPromoted},
     {DeviceExt::ExternalSemaphoreZirconHandle, "VK_FUCHSIA_external_semaphore", NeverPromoted},
     //
@@ -179,8 +182,8 @@ static constexpr std::array<DeviceExtInfo, kDeviceExtCount> sDeviceExtInfos{{
 
 const DeviceExtInfo& GetDeviceExtInfo(DeviceExt ext) {
     uint32_t index = static_cast<uint32_t>(ext);
-    ASSERT(index < sDeviceExtInfos.size());
-    ASSERT(sDeviceExtInfos[index].index == ext);
+    DAWN_ASSERT(index < sDeviceExtInfos.size());
+    DAWN_ASSERT(sDeviceExtInfos[index].index == ext);
     return sDeviceExtInfos[index];
 }
 
@@ -193,15 +196,14 @@ std::unordered_map<std::string, DeviceExt> CreateDeviceExtNameMap() {
 }
 
 DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
-                                const InstanceExtSet& instanceExts,
-                                uint32_t icdVersion) {
+                                const InstanceExtSet& instanceExts) {
     // This is very similar to EnsureDependencies for instanceExtSet. See comment there for
     // an explanation of what happens.
     DeviceExtSet visitedSet;
     DeviceExtSet trimmedSet;
 
     auto HasDep = [&](DeviceExt ext) -> bool {
-        ASSERT(visitedSet[ext]);
+        DAWN_ASSERT(visitedSet[ext]);
         return trimmedSet[ext];
     };
 
@@ -281,6 +283,7 @@ DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
 
             case DeviceExt::ExternalMemoryFD:
             case DeviceExt::ExternalMemoryZirconHandle:
+            case DeviceExt::ExternalMemoryHost:
             case DeviceExt::QueueFamilyForeign:
                 hasDependencies = HasDep(DeviceExt::ExternalMemory);
                 break;
@@ -299,23 +302,18 @@ DeviceExtSet EnsureDependencies(const DeviceExtSet& advertisedExts,
                                   HasDep(DeviceExt::StorageBufferStorageClass);
                 break;
 
-            case DeviceExt::SubgroupSizeControl:
-                // Using the extension requires DeviceExt::GetPhysicalDeviceProperties2, but we
-                // don't need to check for it as it also requires Vulkan 1.1 in which
-                // VK_KHR_get_physical_device_properties2 was promoted.
-                hasDependencies = icdVersion >= VulkanVersion_1_1;
-                break;
-
             case DeviceExt::DepthClipEnable:
             case DeviceExt::ShaderIntegerDotProduct:
             case DeviceExt::ZeroInitializeWorkgroupMemory:
             case DeviceExt::Maintenance4:
             case DeviceExt::Robustness2:
+            case DeviceExt::SubgroupSizeControl:
+            case DeviceExt::ShaderSubgroupUniformControlFlow:
                 hasDependencies = HasDep(DeviceExt::GetPhysicalDeviceProperties2);
                 break;
 
             case DeviceExt::EnumCount:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
         }
 
         trimmedSet.set(ext, hasDependencies && advertisedExts[ext]);
@@ -348,8 +346,8 @@ static constexpr std::array<VulkanLayerInfo, kVulkanLayerCount> sVulkanLayerInfo
 
 const VulkanLayerInfo& GetVulkanLayerInfo(VulkanLayer layer) {
     uint32_t index = static_cast<uint32_t>(layer);
-    ASSERT(index < sVulkanLayerInfos.size());
-    ASSERT(sVulkanLayerInfos[index].layer == layer);
+    DAWN_ASSERT(index < sVulkanLayerInfos.size());
+    DAWN_ASSERT(sVulkanLayerInfos[index].layer == layer);
     return sVulkanLayerInfos[index];
 }
 

@@ -13,15 +13,15 @@
 // limitations under the License.
 
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
-#include "src/tint/lang/wgsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/wgsl/writer/ast_printer/helper_test.h"
 
 #include "gmock/gmock.h"
 
 namespace tint::wgsl::writer {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using WgslASTPrinterTest = TestHelper;
 
@@ -146,7 +146,7 @@ TEST_F(WgslASTPrinterTest, Emit_VariableDeclStatement_Const_f32) {
 }
 
 TEST_F(WgslASTPrinterTest, Emit_VariableDeclStatement_Const_f16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* C = Const("C", Expr(1_h));
     Func("f", tint::Empty, ty.void_(),
@@ -222,7 +222,7 @@ TEST_F(WgslASTPrinterTest, Emit_VariableDeclStatement_Const_vec3_f32) {
 }
 
 TEST_F(WgslASTPrinterTest, Emit_VariableDeclStatement_Const_vec3_f16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* C = Const("C", Call<vec3<f16>>(1_h, 2_h, 3_h));
     Func("f", tint::Empty, ty.void_(),
@@ -280,7 +280,7 @@ TEST_F(WgslASTPrinterTest, Emit_VariableDeclStatement_Const_mat2x3_f32) {
 }
 
 TEST_F(WgslASTPrinterTest, Emit_VariableDeclStatement_Const_mat2x3_f16) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     auto* C = Const("C", Call<mat2x3<f16>>(1_h, 2_h, 3_h, 4_h, 5_h, 6_h));
     Func("f", tint::Empty, ty.void_(),

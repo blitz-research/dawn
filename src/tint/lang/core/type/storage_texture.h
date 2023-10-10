@@ -17,17 +17,17 @@
 
 #include <string>
 
-#include "src/tint/lang/core/builtin/access.h"
-#include "src/tint/lang/core/builtin/texel_format.h"
+#include "src/tint/lang/core/access.h"
+#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 
 // Forward declarations
-namespace tint::type {
+namespace tint::core::type {
 class Manager;
-}  // namespace tint::type
+}  // namespace tint::core::type
 
-namespace tint::type {
+namespace tint::core::type {
 
 /// A storage texture type.
 class StorageTexture final : public Castable<StorageTexture, Texture> {
@@ -38,9 +38,9 @@ class StorageTexture final : public Castable<StorageTexture, Texture> {
     /// @param access the access control type of the texture
     /// @param subtype the storage subtype. Use SubtypeFor() to calculate this.
     StorageTexture(TextureDimension dim,
-                   builtin::TexelFormat format,
-                   builtin::Access access,
-                   Type* subtype);
+                   core::TexelFormat format,
+                   core::Access access,
+                   const Type* subtype);
 
     /// Destructor
     ~StorageTexture() override;
@@ -50,13 +50,13 @@ class StorageTexture final : public Castable<StorageTexture, Texture> {
     bool Equals(const UniqueNode& other) const override;
 
     /// @returns the storage subtype
-    Type* type() const { return subtype_; }
+    const Type* type() const { return subtype_; }
 
     /// @returns the texel format
-    builtin::TexelFormat texel_format() const { return texel_format_; }
+    core::TexelFormat texel_format() const { return texel_format_; }
 
     /// @returns the access control
-    builtin::Access access() const { return access_; }
+    core::Access access() const { return access_; }
 
     /// @returns the name for this type that closely resembles how it would be
     /// declared in WGSL.
@@ -65,18 +65,18 @@ class StorageTexture final : public Castable<StorageTexture, Texture> {
     /// @param format the storage texture image format
     /// @param type_mgr the Manager used to build the returned type
     /// @returns the storage texture subtype for the given TexelFormat
-    static Type* SubtypeFor(builtin::TexelFormat format, Manager& type_mgr);
+    static Type* SubtypeFor(core::TexelFormat format, Manager& type_mgr);
 
     /// @param ctx the clone context
     /// @returns a clone of this type
     StorageTexture* Clone(CloneContext& ctx) const override;
 
   private:
-    builtin::TexelFormat const texel_format_;
-    builtin::Access const access_;
-    Type* const subtype_;
+    core::TexelFormat const texel_format_;
+    core::Access const access_;
+    const Type* const subtype_;
 };
 
-}  // namespace tint::type
+}  // namespace tint::core::type
 
 #endif  // SRC_TINT_LANG_CORE_TYPE_STORAGE_TEXTURE_H_

@@ -15,9 +15,9 @@
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 
 #include "gmock/gmock.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::resolver {
 namespace {
@@ -84,7 +84,7 @@ TEST_F(ResolverConstAssertTest, Local_Const_Fail) {
 }
 
 TEST_F(ResolverConstAssertTest, Local_NonConst) {
-    GlobalVar("V", ty.bool_(), Expr(true), builtin::AddressSpace::kPrivate);
+    GlobalVar("V", ty.bool_(), Expr(true), core::AddressSpace::kPrivate);
     WrapInFunction(ConstAssert(Expr(Source{{12, 34}}, "V")));
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),

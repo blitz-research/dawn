@@ -15,19 +15,21 @@
 #ifndef SRC_TINT_LANG_CORE_IR_BREAK_IF_H_
 #define SRC_TINT_LANG_CORE_IR_BREAK_IF_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/terminator.h"
 #include "src/tint/lang/core/ir/value.h"
 #include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class Loop;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A break-if iteration instruction.
-class BreakIf : public Castable<BreakIf, Terminator> {
+class BreakIf final : public Castable<BreakIf, Terminator> {
   public:
     /// The offset in Operands() for the condition
     static constexpr size_t kConditionOperandOffset = 0;
@@ -42,6 +44,9 @@ class BreakIf : public Castable<BreakIf, Terminator> {
     BreakIf(Value* condition, ir::Loop* loop, VectorRef<Value*> args = tint::Empty);
     ~BreakIf() override;
 
+    /// @copydoc Instruction::Clone()
+    BreakIf* Clone(CloneContext& ctx) override;
+
     /// @returns the MultiInBlock arguments
     tint::Slice<Value* const> Args() override {
         return operands_.Slice().Offset(kArgsOperandOffset);
@@ -54,12 +59,12 @@ class BreakIf : public Castable<BreakIf, Terminator> {
     ir::Loop* Loop() { return loop_; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "break-if"; }
+    std::string FriendlyName() override { return "break_if"; }
 
   private:
     ir::Loop* loop_ = nullptr;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_BREAK_IF_H_

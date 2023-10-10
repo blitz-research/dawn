@@ -14,12 +14,12 @@
 
 #include "src/tint/lang/wgsl/ast/struct_member_size_attribute.h"
 
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using StructMemberSizeAttributeTest = TestHelper;
 
 TEST_F(StructMemberSizeAttributeTest, Creation) {

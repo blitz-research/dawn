@@ -174,6 +174,19 @@ TEST_P(QueueWriteBufferTests, SuperLargeWriteBuffer) {
     EXPECT_BUFFER_U32_RANGE_EQ(expectedData.data(), buffer, 0, kElements);
 }
 
+// Test using the max buffer size. Regression test for dawn:1985. We don't bother validating the
+// results for this case since that would take a lot longer, just that there are no errors.
+TEST_P(QueueWriteBufferTests, MaxBufferSizeWriteBuffer) {
+    uint32_t maxBufferSize = GetSupportedLimits().limits.maxBufferSize;
+    wgpu::BufferDescriptor descriptor;
+    descriptor.size = maxBufferSize;
+    descriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
+    wgpu::Buffer buffer = device.CreateBuffer(&descriptor);
+
+    std::vector<uint8_t> data(maxBufferSize);
+    queue.WriteBuffer(buffer, 0, data.data(), maxBufferSize);
+}
+
 // Test a special code path: writing when dynamic uploader already contatins some unaligned
 // data, it might be necessary to use a ring buffer with properly aligned offset.
 TEST_P(QueueWriteBufferTests, UnalignedDynamicUploader) {
@@ -399,6 +412,9 @@ TEST_P(QueueWriteTextureTests, VaryingTextureOffset) {
 
 // Test writing a pixel with an offset to a texture array
 TEST_P(QueueWriteTextureTests, VaryingTextureArrayOffset) {
+    // TODO(crbug.com/dawn/2095): Failing on ANGLE + SwiftShader, needs investigation.
+    DAWN_SUPPRESS_TEST_IF(IsANGLESwiftShader());
+
     constexpr uint32_t kWidth = 259;
     constexpr uint32_t kHeight = 127;
     constexpr uint32_t kDepth = 62;
@@ -550,6 +566,9 @@ TEST_P(QueueWriteTextureTests, BytesPerRowWithOneRowCopy) {
 
 // Test with bytesPerRow greater than needed in a write to a texture array.
 TEST_P(QueueWriteTextureTests, VaryingArrayBytesPerRow) {
+    // TODO(crbug.com/dawn/2095): Failing on ANGLE + SwiftShader, needs investigation.
+    DAWN_SUPPRESS_TEST_IF(IsANGLESwiftShader());
+
     constexpr uint32_t kWidth = 257;
     constexpr uint32_t kHeight = 129;
     constexpr uint32_t kLayers = 65;

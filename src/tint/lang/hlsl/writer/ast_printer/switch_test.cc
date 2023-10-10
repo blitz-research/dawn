@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/hlsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/hlsl/writer/ast_printer/helper_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::hlsl::writer {
 namespace {
@@ -22,7 +22,7 @@ namespace {
 using HlslASTPrinterTest_Switch = TestHelper;
 
 TEST_F(HlslASTPrinterTest_Switch, Emit_Switch) {
-    GlobalVar("cond", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.i32(), core::AddressSpace::kPrivate);
     auto* s = Switch(                             //
         Expr("cond"),                             //
         Case(CaseSelector(5_i), Block(Break())),  //
@@ -46,7 +46,7 @@ TEST_F(HlslASTPrinterTest_Switch, Emit_Switch) {
 }
 
 TEST_F(HlslASTPrinterTest_Switch, Emit_Switch_MixedDefault) {
-    GlobalVar("cond", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.i32(), core::AddressSpace::kPrivate);
     auto* s = Switch(  //
         Expr("cond"),  //
         Case(Vector{CaseSelector(5_i), DefaultCaseSelector()}, Block(Break())));
@@ -76,8 +76,8 @@ TEST_F(HlslASTPrinterTest_Switch, Emit_Switch_OnlyDefaultCase_NoSideEffectsCondi
     //     }
     //   }
     // }
-    GlobalVar("cond", ty.i32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("cond", ty.i32(), core::AddressSpace::kPrivate);
+    GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
     auto* s = Switch(  //
         Expr("cond"),  //
         DefaultCase(Block(Assign(Expr("a"), Expr(42_i)))));
@@ -109,13 +109,13 @@ TEST_F(HlslASTPrinterTest_Switch, Emit_Switch_OnlyDefaultCase_SideEffectsConditi
     //     }
     //   }
     // }
-    GlobalVar("global", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("global", ty.i32(), core::AddressSpace::kPrivate);
     Func("bar", {}, ty.i32(),
          Vector{                               //
                 Assign("global", Expr(84_i)),  //
                 Return("global")});
 
-    GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
     auto* s = Switch(  //
         Call("bar"),   //
         DefaultCase(Block(Assign(Expr("a"), Expr(42_i)))));

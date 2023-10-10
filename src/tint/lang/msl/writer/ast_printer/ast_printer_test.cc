@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/msl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/msl/writer/ast_printer/helper_test.h"
 #include "src/tint/lang/msl/writer/writer.h"
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::msl::writer {
 namespace {
@@ -26,14 +28,15 @@ using MslASTPrinterTest = TestHelper;
 TEST_F(MslASTPrinterTest, InvalidProgram) {
     Diagnostics().add_error(diag::System::Writer, "make the program invalid");
     ASSERT_FALSE(IsValid());
-    auto program = std::make_unique<Program>(resolver::Resolve(*this));
-    ASSERT_FALSE(program->IsValid());
-    auto result = Generate(program.get(), Options{});
-    EXPECT_EQ(result.error, "input program is not valid");
+    auto program = resolver::Resolve(*this);
+    ASSERT_FALSE(program.IsValid());
+    auto result = Generate(program, Options{});
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.Failure().reason.str(), "error: make the program invalid");
 }
 
 TEST_F(MslASTPrinterTest, UnsupportedExtension) {
-    Enable(Source{{12, 34}}, builtin::Extension::kUndefined);
+    Enable(Source{{12, 34}}, wgsl::Extension::kUndefined);
 
     ASTPrinter& gen = Build();
 
@@ -66,7 +69,7 @@ TEST_F(MslASTPrinterTest, HasInvariantAttribute_True) {
     auto* out = Structure("Out", Vector{
                                      Member("pos", ty.vec4<f32>(),
                                             Vector{
-                                                Builtin(builtin::BuiltinValue::kPosition),
+                                                Builtin(core::BuiltinValue::kPosition),
                                                 Invariant(),
                                             }),
                                  });
@@ -104,7 +107,7 @@ TEST_F(MslASTPrinterTest, HasInvariantAttribute_False) {
     auto* out = Structure("Out", Vector{
                                      Member("pos", ty.vec4<f32>(),
                                             Vector{
-                                                Builtin(builtin::BuiltinValue::kPosition),
+                                                Builtin(core::BuiltinValue::kPosition),
                                             }),
                                  });
     Func("vert_main", tint::Empty, ty.Of(out), Vector{Return(Call(ty.Of(out)))},
@@ -131,7 +134,7 @@ vertex Out vert_main() {
 }
 
 TEST_F(MslASTPrinterTest, WorkgroupMatrix) {
-    GlobalVar("m", ty.mat2x2<f32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("m", ty.mat2x2<f32>(), core::AddressSpace::kWorkgroup);
     Func("comp_main", tint::Empty, ty.void_(), Vector{Decl(Let("x", Expr("m")))},
          Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -166,12 +169,12 @@ kernel void comp_main(threadgroup tint_symbol_3* tint_symbol_2 [[threadgroup(0)]
 
     auto allocations = gen.DynamicWorkgroupAllocations();
     ASSERT_TRUE(allocations.count("comp_main"));
-    ASSERT_EQ(allocations["comp_main"].size(), 1u);
-    EXPECT_EQ(allocations["comp_main"][0], 2u * 2u * sizeof(float));
+    ASSERT_EQ(allocations.at("comp_main").size(), 1u);
+    EXPECT_EQ(allocations.at("comp_main")[0], 2u * 2u * sizeof(float));
 }
 
 TEST_F(MslASTPrinterTest, WorkgroupMatrixInArray) {
-    GlobalVar("m", ty.array(ty.mat2x2<f32>(), 4_i), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("m", ty.array(ty.mat2x2<f32>(), 4_i), core::AddressSpace::kWorkgroup);
     Func("comp_main", tint::Empty, ty.void_(), Vector{Decl(Let("x", Expr("m")))},
          Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -220,8 +223,8 @@ kernel void comp_main(threadgroup tint_symbol_3* tint_symbol_2 [[threadgroup(0)]
 
     auto allocations = gen.DynamicWorkgroupAllocations();
     ASSERT_TRUE(allocations.count("comp_main"));
-    ASSERT_EQ(allocations["comp_main"].size(), 1u);
-    EXPECT_EQ(allocations["comp_main"][0], 4u * 2u * 2u * sizeof(float));
+    ASSERT_EQ(allocations.at("comp_main").size(), 1u);
+    EXPECT_EQ(allocations.at("comp_main")[0], 4u * 2u * 2u * sizeof(float));
 }
 
 TEST_F(MslASTPrinterTest, WorkgroupMatrixInStruct) {
@@ -232,7 +235,7 @@ TEST_F(MslASTPrinterTest, WorkgroupMatrixInStruct) {
     Structure("S2", Vector{
                         Member("s", ty("S1")),
                     });
-    GlobalVar("s", ty("S2"), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("s", ty("S2"), core::AddressSpace::kWorkgroup);
     Func("comp_main", tint::Empty, ty.void_(), Vector{Decl(Let("x", Expr("s")))},
          Vector{
              Stage(ast::PipelineStage::kCompute),
@@ -277,20 +280,20 @@ kernel void comp_main(threadgroup tint_symbol_4* tint_symbol_3 [[threadgroup(0)]
 
     auto allocations = gen.DynamicWorkgroupAllocations();
     ASSERT_TRUE(allocations.count("comp_main"));
-    ASSERT_EQ(allocations["comp_main"].size(), 1u);
-    EXPECT_EQ(allocations["comp_main"][0], (2 * 2 * sizeof(float)) + (4u * 4u * sizeof(float)));
+    ASSERT_EQ(allocations.at("comp_main").size(), 1u);
+    EXPECT_EQ(allocations.at("comp_main")[0], (2 * 2 * sizeof(float)) + (4u * 4u * sizeof(float)));
 }
 
 TEST_F(MslASTPrinterTest, WorkgroupMatrix_Multiples) {
-    GlobalVar("m1", ty.mat2x2<f32>(), builtin::AddressSpace::kWorkgroup);
-    GlobalVar("m2", ty.mat2x3<f32>(), builtin::AddressSpace::kWorkgroup);
-    GlobalVar("m3", ty.mat2x4<f32>(), builtin::AddressSpace::kWorkgroup);
-    GlobalVar("m4", ty.mat3x2<f32>(), builtin::AddressSpace::kWorkgroup);
-    GlobalVar("m5", ty.mat3x3<f32>(), builtin::AddressSpace::kWorkgroup);
-    GlobalVar("m6", ty.mat3x4<f32>(), builtin::AddressSpace::kWorkgroup);
-    GlobalVar("m7", ty.mat4x2<f32>(), builtin::AddressSpace::kWorkgroup);
-    GlobalVar("m8", ty.mat4x3<f32>(), builtin::AddressSpace::kWorkgroup);
-    GlobalVar("m9", ty.mat4x4<f32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("m1", ty.mat2x2<f32>(), core::AddressSpace::kWorkgroup);
+    GlobalVar("m2", ty.mat2x3<f32>(), core::AddressSpace::kWorkgroup);
+    GlobalVar("m3", ty.mat2x4<f32>(), core::AddressSpace::kWorkgroup);
+    GlobalVar("m4", ty.mat3x2<f32>(), core::AddressSpace::kWorkgroup);
+    GlobalVar("m5", ty.mat3x3<f32>(), core::AddressSpace::kWorkgroup);
+    GlobalVar("m6", ty.mat3x4<f32>(), core::AddressSpace::kWorkgroup);
+    GlobalVar("m7", ty.mat4x2<f32>(), core::AddressSpace::kWorkgroup);
+    GlobalVar("m8", ty.mat4x3<f32>(), core::AddressSpace::kWorkgroup);
+    GlobalVar("m9", ty.mat4x4<f32>(), core::AddressSpace::kWorkgroup);
     Func("main1", tint::Empty, ty.void_(),
          Vector{
              Decl(Let("a1", Expr("m1"))),
@@ -421,13 +424,13 @@ kernel void main4_no_usages() {
     ASSERT_TRUE(allocations.count("main1"));
     ASSERT_TRUE(allocations.count("main2"));
     ASSERT_TRUE(allocations.count("main3"));
-    EXPECT_EQ(allocations.count("main4_no_usages"), 0u);
-    ASSERT_EQ(allocations["main1"].size(), 1u);
-    EXPECT_EQ(allocations["main1"][0], 20u * sizeof(float));
-    ASSERT_EQ(allocations["main2"].size(), 1u);
-    EXPECT_EQ(allocations["main2"][0], 32u * sizeof(float));
-    ASSERT_EQ(allocations["main3"].size(), 1u);
-    EXPECT_EQ(allocations["main3"][0], 40u * sizeof(float));
+    ASSERT_EQ(allocations.at("main1").size(), 1u);
+    EXPECT_EQ(allocations.at("main1")[0], 20u * sizeof(float));
+    ASSERT_EQ(allocations.at("main2").size(), 1u);
+    EXPECT_EQ(allocations.at("main2")[0], 32u * sizeof(float));
+    ASSERT_EQ(allocations.at("main3").size(), 1u);
+    EXPECT_EQ(allocations.at("main3")[0], 40u * sizeof(float));
+    EXPECT_EQ(allocations.at("main4_no_usages").size(), 0u);
 }
 
 }  // namespace

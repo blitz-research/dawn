@@ -14,23 +14,22 @@
 
 #include <string>
 
-#include "src/tint/bench/benchmark.h"
-#include "src/tint/lang/msl/writer/writer.h"
+#include "src/tint/cmd/bench/bench.h"
+#include "src/tint/lang/wgsl/writer/writer.h"
 
 namespace tint::wgsl::writer {
 namespace {
 
 void GenerateWGSL(benchmark::State& state, std::string input_name) {
     auto res = bench::LoadProgram(input_name);
-    if (auto err = std::get_if<bench::Error>(&res)) {
-        state.SkipWithError(err->msg.c_str());
+    if (!res) {
+        state.SkipWithError(res.Failure().reason.str());
         return;
     }
-    auto& program = std::get<bench::ProgramAndFile>(res).program;
     for (auto _ : state) {
-        auto res = Generate(&program, {});
-        if (!res.error.empty()) {
-            state.SkipWithError(res.error.c_str());
+        auto gen_res = Generate(res->program, {});
+        if (!gen_res) {
+            state.SkipWithError(gen_res.Failure().reason.str());
         }
     }
 }

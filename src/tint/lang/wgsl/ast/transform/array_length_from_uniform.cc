@@ -18,6 +18,7 @@
 #include <string>
 #include <utility>
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/wgsl/ast/transform/simplify_pointers.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
@@ -31,15 +32,16 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::ArrayLengthFromUniform);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::ArrayLengthFromUniform::Config);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::ArrayLengthFromUniform::Result);
 
+using namespace tint::core::fluent_types;  // NOLINT
+                                           //
 namespace tint::ast::transform {
-
 namespace {
 
-bool ShouldRun(const Program* program) {
-    for (auto* fn : program->AST().Functions()) {
-        if (auto* sem_fn = program->Sem().Get(fn)) {
+bool ShouldRun(const Program& program) {
+    for (auto* fn : program.AST().Functions()) {
+        if (auto* sem_fn = program.Sem().Get(fn)) {
             for (auto* builtin : sem_fn->DirectlyCalledBuiltins()) {
-                if (builtin->Type() == builtin::Function::kArrayLength) {
+                if (builtin->Fn() == wgsl::BuiltinFn::kArrayLength) {
                     return true;
                 }
             }
@@ -59,7 +61,7 @@ struct ArrayLengthFromUniform::State {
     /// @param program the source program
     /// @param in the input transform data
     /// @param out the output transform data
-    explicit State(const Program* program, const DataMap& in, DataMap& out)
+    explicit State(const Program& program, const DataMap& in, DataMap& out)
         : src(program), inputs(in), outputs(out) {}
 
     /// Runs the transform
@@ -74,7 +76,7 @@ struct ArrayLengthFromUniform::State {
             return resolver::Resolve(b);
         }
 
-        if (!ShouldRun(ctx.src)) {
+        if (!ShouldRun(src)) {
             return SkipTransform;
         }
 
@@ -110,10 +112,10 @@ struct ArrayLengthFromUniform::State {
                                           b.ty.array(b.ty.vec4(b.ty.u32()),
                                                      u32((max_buffer_size_index / 4) + 1))),
                              });
-                buffer_size_ubo = b.GlobalVar(b.Sym(), b.ty.Of(buffer_size_struct),
-                                              builtin::AddressSpace::kUniform,
-                                              b.Group(AInt(cfg->ubo_binding.group)),
-                                              b.Binding(AInt(cfg->ubo_binding.binding)));
+                buffer_size_ubo =
+                    b.GlobalVar(b.Sym(), b.ty.Of(buffer_size_struct), core::AddressSpace::kUniform,
+                                b.Group(AInt(cfg->ubo_binding.group)),
+                                b.Binding(AInt(cfg->ubo_binding.binding)));
             }
             return buffer_size_ubo;
         };
@@ -148,14 +150,14 @@ struct ArrayLengthFromUniform::State {
             //                             array_stride
             const Expression* total_size = total_storage_buffer_size;
             auto* storage_buffer_type = storage_buffer_sem->Type()->UnwrapRef();
-            const type::Array* array_type = nullptr;
-            if (auto* str = storage_buffer_type->As<type::Struct>()) {
+            const core::type::Array* array_type = nullptr;
+            if (auto* str = storage_buffer_type->As<core::type::Struct>()) {
                 // The variable is a struct, so subtract the byte offset of the array
                 // member.
                 auto* array_member_sem = str->Members().Back();
-                array_type = array_member_sem->Type()->As<type::Array>();
+                array_type = array_member_sem->Type()->As<core::type::Array>();
                 total_size = b.Sub(total_storage_buffer_size, u32(array_member_sem->Offset()));
-            } else if (auto* arr = storage_buffer_type->As<type::Array>()) {
+            } else if (auto* arr = storage_buffer_type->As<core::type::Array>()) {
                 array_type = arr;
             } else {
                 TINT_ICE() << "expected form of arrayLength argument to be &array_var or "
@@ -175,7 +177,7 @@ struct ArrayLengthFromUniform::State {
 
   private:
     /// The source program
-    const Program* const src;
+    const Program& src;
     /// The transform inputs
     const DataMap& inputs;
     /// The transform outputs
@@ -183,7 +185,7 @@ struct ArrayLengthFromUniform::State {
     /// The target program builder
     ProgramBuilder b;
     /// The clone context
-    program::CloneContext ctx = {&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx = {&b, &src, /* auto_clone_symbols */ true};
 
     /// Iterate over all arrayLength() builtins that operate on
     /// storage buffer variables.
@@ -194,18 +196,18 @@ struct ArrayLengthFromUniform::State {
     /// sem::GlobalVariable for the storage buffer.
     template <typename F>
     void IterateArrayLengthOnStorageVar(F&& functor) {
-        auto& sem = src->Sem();
+        auto& sem = src.Sem();
 
         // Find all calls to the arrayLength() builtin.
-        for (auto* node : src->ASTNodes().Objects()) {
+        for (auto* node : src.ASTNodes().Objects()) {
             auto* call_expr = node->As<CallExpression>();
             if (!call_expr) {
                 continue;
             }
 
             auto* call = sem.Get(call_expr)->UnwrapMaterialize()->As<sem::Call>();
-            auto* builtin = call->Target()->As<sem::Builtin>();
-            if (!builtin || builtin->Type() != builtin::Function::kArrayLength) {
+            auto* builtin = call->Target()->As<sem::BuiltinFn>();
+            if (!builtin || builtin->Fn() != wgsl::BuiltinFn::kArrayLength) {
                 continue;
             }
 
@@ -224,7 +226,7 @@ struct ArrayLengthFromUniform::State {
             //   arrayLength(&struct_var.array_member)
             //   arrayLength(&array_var)
             auto* param = call_expr->args[0]->As<UnaryOpExpression>();
-            if (TINT_UNLIKELY(!param || param->op != UnaryOp::kAddressOf)) {
+            if (TINT_UNLIKELY(!param || param->op != core::UnaryOp::kAddressOf)) {
                 TINT_ICE() << "expected form of arrayLength argument to be &array_var or "
                               "&struct_var.array_member";
                 break;
@@ -251,7 +253,7 @@ struct ArrayLengthFromUniform::State {
     }
 };
 
-Transform::ApplyResult ArrayLengthFromUniform::Apply(const Program* src,
+Transform::ApplyResult ArrayLengthFromUniform::Apply(const Program& src,
                                                      const DataMap& inputs,
                                                      DataMap& outputs) const {
     return State{src, inputs, outputs}.Run();

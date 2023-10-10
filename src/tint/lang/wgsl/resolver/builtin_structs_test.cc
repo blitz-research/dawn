@@ -13,11 +13,11 @@
 // limitations under the License.
 
 #include "src/tint/lang/wgsl/resolver/resolver.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::resolver {
 namespace {
@@ -25,16 +25,16 @@ namespace {
 ////////////////////////////////////////////////////////////////////////////////
 // access
 ////////////////////////////////////////////////////////////////////////////////
-using ResolverBuiltinStructs = ResolverTestWithParam<builtin::Builtin>;
+using ResolverBuiltinStructs = ResolverTestWithParam<core::BuiltinType>;
 
 TEST_P(ResolverBuiltinStructs, Resolve) {
-    Enable(builtin::Extension::kF16);
+    Enable(wgsl::Extension::kF16);
 
     // var<private> p : NAME;
-    auto* var = GlobalVar("p", ty(GetParam()), builtin::AddressSpace::kPrivate);
+    auto* var = GlobalVar("p", ty(GetParam()), core::AddressSpace::kPrivate);
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
-    auto* str = As<type::Struct>(TypeOf(var)->UnwrapRef());
+    auto* str = As<core::type::Struct>(TypeOf(var)->UnwrapRef());
     ASSERT_NE(str, nullptr);
     EXPECT_EQ(str->Name().Name(), tint::ToString(GetParam()));
     EXPECT_FALSE(Is<sem::Struct>(str));
@@ -42,32 +42,32 @@ TEST_P(ResolverBuiltinStructs, Resolve) {
 
 INSTANTIATE_TEST_SUITE_P(,
                          ResolverBuiltinStructs,
-                         testing::Values(builtin::Builtin::kAtomicCompareExchangeResultI32,
-                                         builtin::Builtin::kAtomicCompareExchangeResultU32,
-                                         builtin::Builtin::kFrexpResultAbstract,
-                                         builtin::Builtin::kFrexpResultF16,
-                                         builtin::Builtin::kFrexpResultF32,
-                                         builtin::Builtin::kFrexpResultVec2Abstract,
-                                         builtin::Builtin::kFrexpResultVec2F16,
-                                         builtin::Builtin::kFrexpResultVec2F32,
-                                         builtin::Builtin::kFrexpResultVec3Abstract,
-                                         builtin::Builtin::kFrexpResultVec3F16,
-                                         builtin::Builtin::kFrexpResultVec3F32,
-                                         builtin::Builtin::kFrexpResultVec4Abstract,
-                                         builtin::Builtin::kFrexpResultVec4F16,
-                                         builtin::Builtin::kFrexpResultVec4F32,
-                                         builtin::Builtin::kModfResultAbstract,
-                                         builtin::Builtin::kModfResultF16,
-                                         builtin::Builtin::kModfResultF32,
-                                         builtin::Builtin::kModfResultVec2Abstract,
-                                         builtin::Builtin::kModfResultVec2F16,
-                                         builtin::Builtin::kModfResultVec2F32,
-                                         builtin::Builtin::kModfResultVec3Abstract,
-                                         builtin::Builtin::kModfResultVec3F16,
-                                         builtin::Builtin::kModfResultVec3F32,
-                                         builtin::Builtin::kModfResultVec4Abstract,
-                                         builtin::Builtin::kModfResultVec4F16,
-                                         builtin::Builtin::kModfResultVec4F32));
+                         testing::Values(core::BuiltinType::kAtomicCompareExchangeResultI32,
+                                         core::BuiltinType::kAtomicCompareExchangeResultU32,
+                                         core::BuiltinType::kFrexpResultAbstract,
+                                         core::BuiltinType::kFrexpResultF16,
+                                         core::BuiltinType::kFrexpResultF32,
+                                         core::BuiltinType::kFrexpResultVec2Abstract,
+                                         core::BuiltinType::kFrexpResultVec2F16,
+                                         core::BuiltinType::kFrexpResultVec2F32,
+                                         core::BuiltinType::kFrexpResultVec3Abstract,
+                                         core::BuiltinType::kFrexpResultVec3F16,
+                                         core::BuiltinType::kFrexpResultVec3F32,
+                                         core::BuiltinType::kFrexpResultVec4Abstract,
+                                         core::BuiltinType::kFrexpResultVec4F16,
+                                         core::BuiltinType::kFrexpResultVec4F32,
+                                         core::BuiltinType::kModfResultAbstract,
+                                         core::BuiltinType::kModfResultF16,
+                                         core::BuiltinType::kModfResultF32,
+                                         core::BuiltinType::kModfResultVec2Abstract,
+                                         core::BuiltinType::kModfResultVec2F16,
+                                         core::BuiltinType::kModfResultVec2F32,
+                                         core::BuiltinType::kModfResultVec3Abstract,
+                                         core::BuiltinType::kModfResultVec3F16,
+                                         core::BuiltinType::kModfResultVec3F32,
+                                         core::BuiltinType::kModfResultVec4Abstract,
+                                         core::BuiltinType::kModfResultVec4F16,
+                                         core::BuiltinType::kModfResultVec4F32));
 
 }  // namespace
 }  // namespace tint::resolver

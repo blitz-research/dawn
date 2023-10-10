@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/msl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/core/fluent_types.h"
+#include "src/tint/lang/msl/writer/ast_printer/helper_test.h"
 #include "src/tint/utils/text/string_stream.h"
+
+using namespace tint::core::fluent_types;  // NOLINT
 
 namespace tint::msl::writer {
 namespace {
@@ -22,7 +25,7 @@ using MslASTPrinterTest = TestHelper;
 
 TEST_F(MslASTPrinterTest, EmitExpression_MemberAccessor) {
     GlobalVar("str", ty.Of(Structure("my_str", Vector{Member("mem", ty.f32())})),
-              builtin::AddressSpace::kPrivate);
+              core::AddressSpace::kPrivate);
     auto* expr = MemberAccessor("str", "mem");
     WrapInFunction(expr);
 
@@ -34,7 +37,7 @@ TEST_F(MslASTPrinterTest, EmitExpression_MemberAccessor) {
 }
 
 TEST_F(MslASTPrinterTest, EmitExpression_MemberAccessor_Swizzle_xyz) {
-    GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), core::AddressSpace::kPrivate);
 
     auto* expr = MemberAccessor("my_vec", "xyz");
     WrapInFunction(expr);
@@ -46,7 +49,7 @@ TEST_F(MslASTPrinterTest, EmitExpression_MemberAccessor_Swizzle_xyz) {
 }
 
 TEST_F(MslASTPrinterTest, EmitExpression_MemberAccessor_Swizzle_gbr) {
-    GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), core::AddressSpace::kPrivate);
 
     auto* expr = MemberAccessor("my_vec", "gbr");
     WrapInFunction(expr);

@@ -13,14 +13,14 @@
 // limitations under the License.
 
 #include "src/tint/lang/core/ir/module.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
 #include "src/tint/lang/core/ir/var.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using IR_ModuleTest = IRTestHelper;
 
@@ -43,4 +43,4 @@ TEST_F(IR_ModuleTest, SetNameRename) {
 }
 
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

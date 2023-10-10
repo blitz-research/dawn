@@ -276,8 +276,8 @@ DAWN_NATIVE_EXPORT bool DeviceTick(WGPUDevice device) {
     return FromAPI(device)->APITick();
 }
 
-DAWN_NATIVE_EXPORT bool InstanceProcessEvents(WGPUInstance instance) {
-    return FromAPI(instance)->APIProcessEvents();
+DAWN_NATIVE_EXPORT void InstanceProcessEvents(WGPUInstance instance) {
+    FromAPI(instance)->APIProcessEvents();
 }
 
 // ExternalImageDescriptor
@@ -309,9 +309,12 @@ uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer) {
     return FromAPI(buffer)->GetAllocatedSize();
 }
 
-bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a, WGPUBindGroupLayout b) {
-    bool excludePipelineCompatibiltyToken = true;
-    return FromAPI(a)->IsLayoutEqual(FromAPI(b), excludePipelineCompatibiltyToken);
+std::vector<const ToggleInfo*> AllToggleInfos() {
+    return TogglesInfo::AllToggleInfos();
+}
+
+FeatureInfo GetFeatureInfo(wgpu::FeatureName featureName) {
+    return kFeatureNameAndInfoList[FromAPI(featureName)];
 }
 
 WGPUAdapter GetWGPUAdapter(WGPUDevice device) {

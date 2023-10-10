@@ -39,6 +39,7 @@ class NoopCommandSerializer final : public CommandSerializer {
 
 Client::Client(CommandSerializer* serializer, MemoryTransferService* memoryTransferService)
     : ClientBase(), mSerializer(serializer), mMemoryTransferService(memoryTransferService) {
+    mEventManager = std::make_unique<EventManager>(this);
     if (mMemoryTransferService == nullptr) {
         // If a MemoryTransferService is not provided, fall back to inline memory.
         mOwnedMemoryTransferService = CreateInlineMemoryTransferService();
@@ -48,6 +49,7 @@ Client::Client(CommandSerializer* serializer, MemoryTransferService* memoryTrans
 
 Client::~Client() {
     DestroyAllObjects();
+    mEventManager->ShutDown();
 }
 
 void Client::DestroyAllObjects() {
@@ -142,6 +144,10 @@ void Client::ReclaimInstanceReservation(const ReservedInstance& reservation) {
     Free(FromAPI(reservation.instance));
 }
 
+EventManager* Client::GetEventManager() {
+    return mEventManager.get();
+}
+
 void Client::Disconnect() {
     mDisconnected = true;
     mSerializer = ChunkedCommandSerializer(NoopCommandSerializer::GetInstance());
@@ -160,6 +166,7 @@ void Client::Disconnect() {
             object->value()->CancelCallbacksForDisconnect();
         }
     }
+    mEventManager->ShutDown();
 }
 
 bool Client::IsDisconnected() const {

@@ -42,47 +42,47 @@ bool CheckAllSlotsAreEmpty(CommandRecordingContext* commandContext) {
          slot < D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT - kReservedCBVSlots; ++slot) {
         ID3D11Buffer* buffer = nullptr;
         deviceContext1->VSGetConstantBuffers1(slot, 1, &buffer, nullptr, nullptr);
-        ASSERT(buffer == nullptr);
+        DAWN_ASSERT(buffer == nullptr);
         deviceContext1->PSGetConstantBuffers1(slot, 1, &buffer, nullptr, nullptr);
-        ASSERT(buffer == nullptr);
+        DAWN_ASSERT(buffer == nullptr);
         deviceContext1->CSGetConstantBuffers1(slot, 1, &buffer, nullptr, nullptr);
-        ASSERT(buffer == nullptr);
+        DAWN_ASSERT(buffer == nullptr);
     }
 
     // Check resource slots
     for (UINT slot = 0; slot < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++slot) {
         ID3D11ShaderResourceView* srv = nullptr;
         deviceContext1->VSGetShaderResources(slot, 1, &srv);
-        ASSERT(srv == nullptr);
+        DAWN_ASSERT(srv == nullptr);
         deviceContext1->PSGetShaderResources(slot, 1, &srv);
-        ASSERT(srv == nullptr);
+        DAWN_ASSERT(srv == nullptr);
         deviceContext1->CSGetShaderResources(slot, 1, &srv);
-        ASSERT(srv == nullptr);
+        DAWN_ASSERT(srv == nullptr);
     }
 
     // Check sampler slots
     for (UINT slot = 0; slot < D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT; ++slot) {
         ID3D11SamplerState* sampler = nullptr;
         deviceContext1->VSGetSamplers(slot, 1, &sampler);
-        ASSERT(sampler == nullptr);
+        DAWN_ASSERT(sampler == nullptr);
         deviceContext1->PSGetSamplers(slot, 1, &sampler);
-        ASSERT(sampler == nullptr);
+        DAWN_ASSERT(sampler == nullptr);
         deviceContext1->CSGetSamplers(slot, 1, &sampler);
-        ASSERT(sampler == nullptr);
+        DAWN_ASSERT(sampler == nullptr);
     }
 
     // Check UAV slots for compute
     for (UINT slot = 0; slot < D3D11_1_UAV_SLOT_COUNT; ++slot) {
         ID3D11UnorderedAccessView* uav = nullptr;
         deviceContext1->CSGetUnorderedAccessViews(slot, 1, &uav);
-        ASSERT(uav == nullptr);
+        DAWN_ASSERT(uav == nullptr);
     }
     // Check UAV slots for render
     for (UINT slot = 0; slot < commandContext->GetDevice()->GetUAVSlotCount(); ++slot) {
         ID3D11UnorderedAccessView* uav = nullptr;
         deviceContext1->OMGetRenderTargetsAndUnorderedAccessViews(0, nullptr, nullptr, slot, 1,
                                                                   &uav);
-        ASSERT(uav == nullptr);
+        DAWN_ASSERT(uav == nullptr);
     }
 
     return true;
@@ -135,7 +135,7 @@ BindGroupTracker::~BindGroupTracker() {
         }
     }
     // All slots should be unbound here.
-    ASSERT(CheckAllSlotsAreEmpty(mCommandContext));
+    DAWN_ASSERT(CheckAllSlotsAreEmpty(mCommandContext));
 }
 
 MaybeError BindGroupTracker::Apply() {
@@ -167,7 +167,7 @@ MaybeError BindGroupTracker::Apply() {
                         switch (bindingInfo.buffer.type) {
                             case wgpu::BufferBindingType::Storage:
                             case kInternalStorageBufferBinding: {
-                                ASSERT(IsSubset(
+                                DAWN_ASSERT(IsSubset(
                                     bindingInfo.visibility,
                                     wgpu::ShaderStage::Fragment | wgpu::ShaderStage::Compute));
                                 ComPtr<ID3D11UnorderedAccessView> d3d11UAV;
@@ -188,12 +188,23 @@ MaybeError BindGroupTracker::Apply() {
                     }
 
                     case BindingInfoType::StorageTexture: {
-                        ASSERT(bindingInfo.storageTexture.access ==
-                               wgpu::StorageTextureAccess::WriteOnly);
-                        ComPtr<ID3D11UnorderedAccessView> d3d11UAV;
-                        TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
-                        DAWN_TRY_ASSIGN(d3d11UAV, view->CreateD3D11UnorderedAccessView());
-                        d3d11UAVs.insert(d3d11UAVs.begin(), std::move(d3d11UAV));
+                        switch (bindingInfo.storageTexture.access) {
+                            case wgpu::StorageTextureAccess::WriteOnly:
+                            case wgpu::StorageTextureAccess::ReadWrite: {
+                                ComPtr<ID3D11UnorderedAccessView> d3d11UAV;
+                                TextureView* view =
+                                    ToBackend(group->GetBindingAsTextureView(bindingIndex));
+                                DAWN_TRY_ASSIGN(d3d11UAV,
+                                                view->GetOrCreateD3D11UnorderedAccessView());
+                                d3d11UAVs.insert(d3d11UAVs.begin(), std::move(d3d11UAV));
+                                break;
+                            }
+                            case wgpu::StorageTextureAccess::ReadOnly:
+                                break;
+                            default:
+                                DAWN_UNREACHABLE();
+                                break;
+                        }
                         break;
                     }
                     case BindingInfoType::Texture:
@@ -295,8 +306,9 @@ MaybeError BindGroupTracker::ApplyBindGroup(BindGroupIndex index) {
                     }
                     case wgpu::BufferBindingType::Storage:
                     case kInternalStorageBufferBinding: {
-                        ASSERT(IsSubset(bindingInfo.visibility,
-                                        wgpu::ShaderStage::Fragment | wgpu::ShaderStage::Compute));
+                        DAWN_ASSERT(
+                            IsSubset(bindingInfo.visibility,
+                                     wgpu::ShaderStage::Fragment | wgpu::ShaderStage::Compute));
                         if (bindingVisibility & wgpu::ShaderStage::Compute) {
                             ComPtr<ID3D11UnorderedAccessView> d3d11UAV;
                             DAWN_TRY_ASSIGN(d3d11UAV, ToBackend(binding.buffer)
@@ -328,7 +340,7 @@ MaybeError BindGroupTracker::ApplyBindGroup(BindGroupIndex index) {
                         break;
                     }
                     case wgpu::BufferBindingType::Undefined:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
                 break;
             }
@@ -356,7 +368,7 @@ MaybeError BindGroupTracker::ApplyBindGroup(BindGroupIndex index) {
                     DAWN_TRY_ASSIGN(
                         srv, ToBackend(view->GetTexture())->GetStencilSRV(mCommandContext, view));
                 } else {
-                    DAWN_TRY_ASSIGN(srv, view->CreateD3D11ShaderResourceView());
+                    DAWN_TRY_ASSIGN(srv, view->GetOrCreateD3D11ShaderResourceView());
                 }
                 if (bindingVisibility & wgpu::ShaderStage::Vertex) {
                     deviceContext1->VSSetShaderResources(bindingSlot, 1, srv.GetAddressOf());
@@ -371,13 +383,34 @@ MaybeError BindGroupTracker::ApplyBindGroup(BindGroupIndex index) {
             }
 
             case BindingInfoType::StorageTexture: {
-                ASSERT(bindingInfo.storageTexture.access == wgpu::StorageTextureAccess::WriteOnly);
-                if (bindingVisibility & wgpu::ShaderStage::Compute) {
-                    ComPtr<ID3D11UnorderedAccessView> d3d11UAV;
-                    TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
-                    DAWN_TRY_ASSIGN(d3d11UAV, view->CreateD3D11UnorderedAccessView());
-                    deviceContext1->CSSetUnorderedAccessViews(bindingSlot, 1,
-                                                              d3d11UAV.GetAddressOf(), nullptr);
+                TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
+                switch (bindingInfo.storageTexture.access) {
+                    case wgpu::StorageTextureAccess::WriteOnly:
+                    case wgpu::StorageTextureAccess::ReadWrite: {
+                        ID3D11UnorderedAccessView* d3d11UAV = nullptr;
+                        DAWN_TRY_ASSIGN(d3d11UAV, view->GetOrCreateD3D11UnorderedAccessView());
+                        if (bindingVisibility & wgpu::ShaderStage::Compute) {
+                            deviceContext1->CSSetUnorderedAccessViews(bindingSlot, 1, &d3d11UAV,
+                                                                      nullptr);
+                        }
+                        break;
+                    }
+                    case wgpu::StorageTextureAccess::ReadOnly: {
+                        ID3D11ShaderResourceView* d3d11SRV = nullptr;
+                        DAWN_TRY_ASSIGN(d3d11SRV, view->GetOrCreateD3D11ShaderResourceView());
+                        if (bindingVisibility & wgpu::ShaderStage::Vertex) {
+                            deviceContext1->VSSetShaderResources(bindingSlot, 1, &d3d11SRV);
+                        }
+                        if (bindingVisibility & wgpu::ShaderStage::Fragment) {
+                            deviceContext1->PSSetShaderResources(bindingSlot, 1, &d3d11SRV);
+                        }
+                        if (bindingVisibility & wgpu::ShaderStage::Compute) {
+                            deviceContext1->CSSetShaderResources(bindingSlot, 1, &d3d11SRV);
+                        }
+                        break;
+                    }
+                    default:
+                        DAWN_UNREACHABLE();
                 }
                 break;
             }
@@ -392,7 +425,8 @@ MaybeError BindGroupTracker::ApplyBindGroup(BindGroupIndex index) {
 
 void BindGroupTracker::UnApplyBindGroup(BindGroupIndex index) {
     ID3D11DeviceContext1* deviceContext1 = mCommandContext->GetD3D11DeviceContext1();
-    BindGroupLayoutBase* groupLayout = mLastAppliedPipelineLayout->GetBindGroupLayout(index);
+    BindGroupLayoutInternalBase* groupLayout =
+        mLastAppliedPipelineLayout->GetBindGroupLayout(index);
     const auto& indices = ToBackend(mLastAppliedPipelineLayout)->GetBindingIndexInfo()[index];
 
     for (BindingIndex bindingIndex{0}; bindingIndex < groupLayout->GetBindingCount();
@@ -422,8 +456,9 @@ void BindGroupTracker::UnApplyBindGroup(BindGroupIndex index) {
                     }
                     case wgpu::BufferBindingType::Storage:
                     case kInternalStorageBufferBinding: {
-                        ASSERT(IsSubset(bindingInfo.visibility,
-                                        wgpu::ShaderStage::Fragment | wgpu::ShaderStage::Compute));
+                        DAWN_ASSERT(
+                            IsSubset(bindingInfo.visibility,
+                                     wgpu::ShaderStage::Fragment | wgpu::ShaderStage::Compute));
                         ID3D11UnorderedAccessView* nullUAV = nullptr;
                         if (bindingVisibility & wgpu::ShaderStage::Fragment) {
                             deviceContext1->OMSetRenderTargetsAndUnorderedAccessViews(
@@ -450,7 +485,7 @@ void BindGroupTracker::UnApplyBindGroup(BindGroupIndex index) {
                         break;
                     }
                     case wgpu::BufferBindingType::Undefined:
-                        UNREACHABLE();
+                        DAWN_UNREACHABLE();
                 }
                 break;
             }
@@ -484,21 +519,42 @@ void BindGroupTracker::UnApplyBindGroup(BindGroupIndex index) {
             }
 
             case BindingInfoType::StorageTexture: {
-                ASSERT(bindingInfo.storageTexture.access == wgpu::StorageTextureAccess::WriteOnly);
-                ID3D11UnorderedAccessView* nullUAV = nullptr;
-                if (bindingVisibility & wgpu::ShaderStage::Fragment) {
-                    deviceContext1->OMSetRenderTargetsAndUnorderedAccessViews(
-                        D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL, nullptr, nullptr, bindingSlot,
-                        1, &nullUAV, nullptr);
-                }
-                if (bindingVisibility & wgpu::ShaderStage::Compute) {
-                    deviceContext1->CSSetUnorderedAccessViews(bindingSlot, 1, &nullUAV, nullptr);
+                switch (bindingInfo.storageTexture.access) {
+                    case wgpu::StorageTextureAccess::WriteOnly:
+                    case wgpu::StorageTextureAccess::ReadWrite: {
+                        ID3D11UnorderedAccessView* nullUAV = nullptr;
+                        if (bindingVisibility & wgpu::ShaderStage::Fragment) {
+                            deviceContext1->OMSetRenderTargetsAndUnorderedAccessViews(
+                                D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL, nullptr, nullptr,
+                                bindingSlot, 1, &nullUAV, nullptr);
+                        }
+                        if (bindingVisibility & wgpu::ShaderStage::Compute) {
+                            deviceContext1->CSSetUnorderedAccessViews(bindingSlot, 1, &nullUAV,
+                                                                      nullptr);
+                        }
+                        break;
+                    }
+                    case wgpu::StorageTextureAccess::ReadOnly: {
+                        ID3D11ShaderResourceView* nullSRV = nullptr;
+                        if (bindingVisibility & wgpu::ShaderStage::Vertex) {
+                            deviceContext1->VSSetShaderResources(bindingSlot, 1, &nullSRV);
+                        }
+                        if (bindingVisibility & wgpu::ShaderStage::Fragment) {
+                            deviceContext1->PSSetShaderResources(bindingSlot, 1, &nullSRV);
+                        }
+                        if (bindingVisibility & wgpu::ShaderStage::Compute) {
+                            deviceContext1->CSSetShaderResources(bindingSlot, 1, &nullSRV);
+                        }
+                        break;
+                    }
+                    default:
+                        DAWN_UNREACHABLE();
                 }
                 break;
             }
 
             case BindingInfoType::ExternalTexture: {
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
             }
         }

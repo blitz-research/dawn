@@ -16,13 +16,13 @@
 
 #include "gmock/gmock.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
 namespace tint::resolver {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using ResolverCallValidationTest = ResolverTest;
 
@@ -166,7 +166,7 @@ TEST_F(ResolverCallValidationTest,
     //   var v : S;
     //   foo(&v.m);
     // }
-    Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
+    Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
     auto* S = Structure("S", Vector{
                                  Member("m", ty.i32()),
                              });
@@ -297,7 +297,7 @@ TEST_F(ResolverCallValidationTest, LetPointerPrivate) {
              Param("p", ty.ptr<private_, i32>()),
          },
          ty.void_(), tint::Empty);
-    GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
     Func("main", tint::Empty, ty.void_(),
          Vector{
              Decl(Let("p", ty.ptr<private_, i32>(), AddressOf("v"))),
@@ -346,7 +346,7 @@ TEST_F(ResolverCallValidationTest, LetPointer_NotWholeVar_WithFullPtrParametersE
     //   let p: ptr<function, i32> = &(v[0]);
     //   x(p);
     // }
-    Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
+    Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
     Func("foo",
          Vector{
              Param("p", ty.ptr<function, i32>()),
@@ -436,7 +436,7 @@ TEST_F(ResolverCallValidationTest, ComplexPointerChain_NotWholeVar_WithFullPtrPa
     //   let p3 = &(*p2)[0];
     //   foo(&*p);
     // }
-    Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
+    Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
     Func("foo",
          Vector{
              Param("p", ty.ptr<function, i32>()),
@@ -501,7 +501,8 @@ TEST_F(ResolverCallValidationTest, UnexpectedBuiltinTemplateArgs) {
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(12:34 error: builtin 'min' does not take template arguments)");
+    EXPECT_EQ(r()->error(),
+              R"(12:34 error: builtin function 'min' does not take template arguments)");
 }
 
 }  // namespace

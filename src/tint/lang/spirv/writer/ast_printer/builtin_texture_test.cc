@@ -14,8 +14,8 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/spirv/writer/ast_printer/test_helper.h"
-#include "src/tint/lang/spirv/writer/spv_dump.h"
+#include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 #include "src/tint/lang/wgsl/ast/builtin_texture_helper_test.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
@@ -3786,12 +3786,12 @@ TEST_P(BuiltinTextureTest, DISABLED_OutsideFunction_IsError) {
                         pb.Stage(ast::PipelineStage::kFragment),
                     });
 
-            auto program = std::make_unique<Program>(resolver::Resolve(pb));
-            auto b = std::make_unique<Builder>(program.get());
+            auto program = resolver::Resolve(pb);
+            Builder b(program);
 
-            b->GenerateGlobalVariable(texture);
-            b->GenerateGlobalVariable(sampler);
-            b->GenerateExpression(call);
+            b.GenerateGlobalVariable(texture);
+            b.GenerateGlobalVariable(sampler);
+            b.GenerateExpression(call);
         },
         "Internal error: trying to add SPIR-V instruction ");
 }

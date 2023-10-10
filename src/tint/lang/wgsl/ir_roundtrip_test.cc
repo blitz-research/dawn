@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// GEN_BUILD:CONDITION(tint_build_wgsl_reader && tint_build_wgsl_writer)
+
 #include "src/tint/lang/wgsl/helpers/ir_program_test.h"
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
@@ -19,45 +21,30 @@
 #include "src/tint/lang/wgsl/writer/writer.h"
 #include "src/tint/utils/text/string.h"
 
-#if !TINT_BUILD_WGSL_READER || !TINT_BUILD_WGSL_WRITER
-#error "ir_roundtrip_test.cc requires both the WGSL reader and writer to be enabled"
-#endif
-
 namespace tint::wgsl {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 class IRToProgramRoundtripTest : public helpers::IRProgramTest {
   public:
     void Test(std::string_view input_wgsl, std::string_view expected_wgsl) {
         auto input = tint::TrimSpace(input_wgsl);
         Source::File file("test.wgsl", std::string(input));
-        auto input_program = wgsl::reader::Parse(&file);
-        ASSERT_TRUE(input_program.IsValid()) << input_program.Diagnostics().str();
+        auto ir_module = wgsl::reader::WgslToIR(&file);
+        ASSERT_TRUE(ir_module) << ir_module;
 
-        auto ir_module = wgsl::reader::ProgramToIR(&input_program);
-        ASSERT_TRUE(ir_module) << (ir_module ? "" : ir_module.Failure());
+        auto disassembly = tint::core::ir::Disassemble(ir_module.Get());
 
-        tint::ir::Disassembler d{ir_module.Get()};
-        auto disassembly = d.Disassemble();
-
-        auto output_program = wgsl::writer::IRToProgram(ir_module.Get());
-        if (!output_program.IsValid()) {
-            FAIL() << output_program.Diagnostics().str() << std::endl  //
-                   << "IR:" << std::endl                               //
-                   << disassembly << std::endl                         //
-                   << "AST:" << std::endl                              //
-                   << Program::printer(&output_program) << std::endl;
+        auto output = wgsl::writer::WgslFromIR(ir_module.Get());
+        if (!output) {
+            FAIL() << output.Failure() << std::endl  //
+                   << "IR:" << std::endl             //
+                   << disassembly << std::endl;
         }
 
-        ASSERT_TRUE(output_program.IsValid()) << output_program.Diagnostics().str();
-
-        auto output = wgsl::writer::Generate(&output_program, {});
-        ASSERT_TRUE(output.success) << output.error;
-
         auto expected = expected_wgsl.empty() ? input : tint::TrimSpace(expected_wgsl);
-        auto got = tint::TrimSpace(output.wgsl);
+        auto got = tint::TrimSpace(output->wgsl);
         EXPECT_EQ(expected, got) << "IR:" << std::endl << disassembly;
     }
 
@@ -325,10 +312,10 @@ fn f(a : i32, b : i32) {
 
 TEST_F(IRToProgramRoundtripTest, CoreBuiltinCall_PtrArg) {
     Test(R"(
-var<workgroup> v : bool;
+@group(0) @binding(0) var<storage, read> v : array<u32>;
 
-fn foo() -> bool {
-  return workgroupUniformLoad(&(v));
+fn foo() -> u32 {
+  return arrayLength(&(v));
 }
 )");
 }

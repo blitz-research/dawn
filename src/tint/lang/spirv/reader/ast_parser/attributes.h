@@ -15,13 +15,13 @@
 #ifndef SRC_TINT_LANG_SPIRV_READER_AST_PARSER_ATTRIBUTES_H_
 #define SRC_TINT_LANG_SPIRV_READER_AST_PARSER_ATTRIBUTES_H_
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/wgsl/ast/attribute.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/utils/containers/enum_set.h"
 #include "src/tint/utils/containers/vector.h"
 
-namespace tint::spirv::reader {
+namespace tint::spirv::reader::ast_parser {
 
 /// Attributes holds a vector of ast::Attribute pointers, and a enum-set of flags used to hold
 /// additional metadata.
@@ -50,9 +50,9 @@ struct Attributes {
     /// @param builder the program builder
     /// @param source the source of the builtin attribute
     /// @param builtin the builtin attribute to add
-    void Add(ProgramBuilder& builder, const Source& source, builtin::BuiltinValue builtin) {
+    void Add(ProgramBuilder& builder, const Source& source, core::BuiltinValue builtin) {
         Add(builder.Builtin(source, builtin));
-        if (builtin == builtin::BuiltinValue::kSampleMask) {
+        if (builtin == core::BuiltinValue::kSampleMask) {
             flags.Add(Flags::kHasBuiltinSampleMask);
         }
     }
@@ -76,6 +76,6 @@ struct Attributes {
     tint::EnumSet<Flags> flags;
 };
 
-}  // namespace tint::spirv::reader
+}  // namespace tint::spirv::reader::ast_parser
 
 #endif  // SRC_TINT_LANG_SPIRV_READER_AST_PARSER_ATTRIBUTES_H_

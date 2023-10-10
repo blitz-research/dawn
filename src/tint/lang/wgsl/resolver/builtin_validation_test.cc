@@ -15,15 +15,15 @@
 #include <unordered_set>
 
 #include "src/tint/lang/wgsl/ast/builtin_texture_helper_test.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 #include "src/tint/lang/wgsl/sem/value_constructor.h"
 #include "src/tint/utils/text/string_stream.h"
 
 namespace tint::resolver {
 namespace {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using ResolverBuiltinValidationTest = ResolverTest;
 
@@ -35,7 +35,8 @@ TEST_F(ResolverBuiltinValidationTest, FunctionTypeMustMatchReturnStatementType_v
          });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: builtin 'workgroupBarrier' does not return a value");
+    EXPECT_EQ(r()->error(),
+              "12:34 error: builtin function 'workgroupBarrier' does not return a value");
 }
 
 TEST_F(ResolverBuiltinValidationTest, InvalidPipelineStageDirect) {
@@ -118,7 +119,8 @@ TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsFunctionUsedAsVariable)
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), R"(56:78 error: cannot use function 'mix' as value
-12:34 note: function 'mix' declared here)");
+12:34 note: function 'mix' declared here
+56:78 note: are you missing '()'?)");
 }
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalConstUsedAsVariable) {
@@ -134,7 +136,7 @@ TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalConstUsedAsVariab
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalVarUsedAsVariable) {
     auto* mix =
-        GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), builtin::AddressSpace::kPrivate);
+        GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), core::AddressSpace::kPrivate);
     auto* use = Expr("mix");
     WrapInFunction(Decl(Var("v", use)));
 
@@ -420,7 +422,7 @@ TEST_P(BuiltinTextureConstExprArgValidationTest, GlobalVar) {
     overload.BuildSamplerVariable(this);
 
     // Build the module-scope var 'G' with the offset value
-    GlobalVar("G", expr({}, *this), builtin::AddressSpace::kPrivate);
+    GlobalVar("G", expr({}, *this), core::AddressSpace::kPrivate);
 
     auto args = overload.args(this);
     auto*& arg_to_replace = (param.position == Position::kFirst) ? args.Front() : args.Back();
@@ -537,7 +539,7 @@ using ResolverDP4aExtensionValidationTest = ResolverTest;
 TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithExtension) {
     // enable chromium_experimental_dp4a;
     // fn func { return dot4I8Packed(1u, 2u); }
-    Enable(builtin::Extension::kChromiumExperimentalDp4A);
+    Enable(wgsl::Extension::kChromiumExperimentalDp4A);
 
     Func("func", tint::Empty, ty.i32(),
          Vector{
@@ -565,7 +567,7 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithoutExtension) {
 TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithExtension) {
     // enable chromium_experimental_dp4a;
     // fn func { return dot4U8Packed(1u, 2u); }
-    Enable(builtin::Extension::kChromiumExperimentalDp4A);
+    Enable(wgsl::Extension::kChromiumExperimentalDp4A);
 
     Func("func", tint::Empty, ty.u32(),
          Vector{
@@ -595,7 +597,7 @@ TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_WrongAddressSpace) {
     // fn foo() {
     //   workgroupUniformLoad(&v);
     // }
-    GlobalVar("v", ty.i32(), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+    GlobalVar("v", ty.i32(), core::AddressSpace::kStorage, core::Access::kReadWrite,
               Vector{Group(0_a), Binding(0_a)});
     WrapInFunction(CallStmt(Call("workgroupUniformLoad", AddressOf(Source{{12, 34}}, "v"))));
 
@@ -613,7 +615,7 @@ TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_Atomic) {
     // fn foo() {
     //   workgroupUniformLoad(&v);
     // }
-    GlobalVar("v", ty.atomic<i32>(), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("v", ty.atomic<i32>(), core::AddressSpace::kWorkgroup);
     WrapInFunction(CallStmt(Call("workgroupUniformLoad", AddressOf(Source{{12, 34}}, "v"))));
 
     EXPECT_FALSE(r()->Resolve());
@@ -627,7 +629,7 @@ TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_AtomicInArray) {
     // fn foo() {
     //   workgroupUniformLoad(&v);
     // }
-    GlobalVar("v", ty.array(ty.atomic<i32>(), 4_a), builtin::AddressSpace::kWorkgroup);
+    GlobalVar("v", ty.array(ty.atomic<i32>(), 4_a), core::AddressSpace::kWorkgroup);
     WrapInFunction(CallStmt(Call("workgroupUniformLoad", AddressOf(Source{{12, 34}}, "v"))));
 
     EXPECT_FALSE(r()->Resolve());
@@ -645,13 +647,179 @@ TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_AtomicInStruct) {
     // }
     Structure("Inner", Vector{Member("a", ty.array(ty.atomic<i32>(), 4_a))});
     Structure("S", Vector{Member("i", ty("Inner"))});
-    GlobalVar(Source{{12, 34}}, "v", ty.array(ty("S"), 4_a), builtin::AddressSpace::kWorkgroup);
+    GlobalVar(Source{{12, 34}}, "v", ty.array(ty("S"), 4_a), core::AddressSpace::kWorkgroup);
     WrapInFunction(CallStmt(Call("workgroupUniformLoad", AddressOf("v"))));
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(
         r()->error(),
         R"(error: workgroupUniformLoad must not be called with an argument that contains an atomic type)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubgroupBallotWithoutExtension) {
+    // fn func { return subgroupBallot(); }
+    Func("func", tint::Empty, ty.vec4<u32>(),
+         Vector{
+             Return(Call(Source{Source::Location{12, 34}}, "subgroupBallot")),
+         });
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: cannot call built-in function 'subgroupBallot' without extension chromium_experimental_subgroups)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubgroupBallotWithExtension) {
+    // enable chromium_experimental_subgroups;
+    // fn func -> vec4<u32> { return subgroupBallot(); }
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+
+    Func("func", tint::Empty, ty.vec4<u32>(),
+         Vector{
+             Return(Call("subgroupBallot")),
+         });
+
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubgroupBroadcastWithoutExtension) {
+    // fn func -> i32 { return subgroupBroadcast(1,0); }
+    Func("func", tint::Empty, ty.i32(),
+         Vector{
+             Return(Call(Source{{12, 34}}, "subgroupBroadcast", 1_i, 0_u)),
+         });
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: cannot call built-in function 'subgroupBroadcast' without extension chromium_experimental_subgroups)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubgroupBroadcastWithExtension) {
+    // enable chromium_experimental_subgroups;
+    // fn func -> i32 { return subgroupBroadcast(1,0); }
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+
+    Func("func", tint::Empty, ty.i32(),
+         Vector{
+             Return(Call("subgroupBroadcast", 1_i, 0_u)),
+         });
+
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubroupBroadcastInComputeStage) {
+    // @vertex fn func { dpdx(1.0); }
+
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+
+    auto* call = Call("subgroupBroadcast", 1_f, 0_u);
+    Func(Source{{1, 2}}, "func", tint::Empty, ty.void_(), Vector{Ignore(call)},
+         Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(1_i),
+         });
+
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubroupBroadcastInVertexStageIsError) {
+    // @vertex fn func { dpdx(1.0); }
+
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+
+    auto* call = Call(Source{{3, 4}}, "subgroupBroadcast", 1_f, 0_u);
+    Func("func", tint::Empty, ty.vec4<f32>(), Vector{Ignore(call), Return(Call(ty.vec4<f32>()))},
+         Vector{
+             Stage(ast::PipelineStage::kVertex),
+         },
+         Vector{Builtin(core::BuiltinValue::kPosition)});
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "3:4 error: built-in cannot be used by vertex pipeline stage");
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubroupBroadcastInFragmentStageIsError) {
+    // @vertex fn func { dpdx(1.0); }
+
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+
+    auto* call = Call(Source{{3, 4}}, "subgroupBroadcast", 1_f, 0_u);
+    Func("func",
+         Vector{Param("pos", ty.vec4<f32>(), Vector{Builtin(core::BuiltinValue::kPosition)})},
+         ty.void_(), Vector{Ignore(call)},
+         Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "3:4 error: built-in cannot be used by fragment pipeline stage");
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubgroupBroadcastValueF32) {
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+    Func("func", tint::Empty, ty.f32(),
+         Vector{
+             Return(Call("subgroupBroadcast", 1_f, 0_u)),
+         });
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubgroupBroadcastValueI32) {
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+    Func("func", tint::Empty, ty.i32(),
+         Vector{
+             Return(Call("subgroupBroadcast", 1_i, 0_u)),
+         });
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubgroupBroadcastValueU32) {
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+    Func("func", tint::Empty, ty.u32(),
+         Vector{
+             Return(Call("subgroupBroadcast", 1_u, 0_u)),
+         });
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(ResolverBuiltinValidationTest, SubgroupBroadcastLaneArgMustBeConst) {
+    Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
+    Func("func", tint::Empty, ty.void_(),
+         Vector{
+             Decl(Let("lane", Expr(1_u))),
+             Ignore(Call("subgroupBroadcast", 1_f, Ident(Source{{12, 34}}, "lane"))),
+         });
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: the sourceLaneIndex argument of subgroupBroadcast must be a const-expression)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, TextureBarrierWithoutExtension) {
+    // fn func { textureBarrier(); }
+    Func("func", tint::Empty, ty.void_(),
+         Vector{
+             CallStmt(Call(Source{Source::Location{12, 34}}, "textureBarrier")),
+         });
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: cannot call built-in function 'textureBarrier' without extension chromium_experimental_read_write_storage_texture)");
+}
+
+TEST_F(ResolverBuiltinValidationTest, TextureBarrierWithExtension) {
+    // enable chromium_experimental_read_write_storage_texture;
+    // fn func { textureBarrier(); }
+    Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
+
+    Func("func", tint::Empty, ty.void_(),
+         Vector{
+             CallStmt(Call(Source{Source::Location{12, 34}}, "textureBarrier")),
+         });
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
 }  // namespace

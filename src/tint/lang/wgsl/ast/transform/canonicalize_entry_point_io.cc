@@ -20,7 +20,8 @@
 #include <utility>
 #include <vector>
 
-#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin_value.h"
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/wgsl/ast/disable_validation_attribute.h"
 #include "src/tint/lang/wgsl/ast/transform/unshadow.h"
 #include "src/tint/lang/wgsl/program/clone_context.h"
@@ -28,10 +29,12 @@
 #include "src/tint/lang/wgsl/resolver/resolve.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::CanonicalizeEntryPointIO);
 TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::CanonicalizeEntryPointIO::Config);
+TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::CanonicalizeEntryPointIO::HLSLWaveIntrinsic);
 
 namespace tint::ast::transform {
 
@@ -52,33 +55,33 @@ struct MemberInfo {
 
 /// FXC is sensitive to field order in structures, this is used by StructMemberComparator to ensure
 /// that FXC is happy with the order of emitted fields.
-uint32_t BuiltinOrder(builtin::BuiltinValue builtin) {
+uint32_t BuiltinOrder(core::BuiltinValue builtin) {
     switch (builtin) {
-        case builtin::BuiltinValue::kPosition:
+        case core::BuiltinValue::kPosition:
             return 1;
-        case builtin::BuiltinValue::kVertexIndex:
+        case core::BuiltinValue::kVertexIndex:
             return 2;
-        case builtin::BuiltinValue::kInstanceIndex:
+        case core::BuiltinValue::kInstanceIndex:
             return 3;
-        case builtin::BuiltinValue::kFrontFacing:
+        case core::BuiltinValue::kFrontFacing:
             return 4;
-        case builtin::BuiltinValue::kFragDepth:
+        case core::BuiltinValue::kFragDepth:
             return 5;
-        case builtin::BuiltinValue::kLocalInvocationId:
+        case core::BuiltinValue::kLocalInvocationId:
             return 6;
-        case builtin::BuiltinValue::kLocalInvocationIndex:
+        case core::BuiltinValue::kLocalInvocationIndex:
             return 7;
-        case builtin::BuiltinValue::kGlobalInvocationId:
+        case core::BuiltinValue::kGlobalInvocationId:
             return 8;
-        case builtin::BuiltinValue::kWorkgroupId:
+        case core::BuiltinValue::kWorkgroupId:
             return 9;
-        case builtin::BuiltinValue::kNumWorkgroups:
+        case core::BuiltinValue::kNumWorkgroups:
             return 10;
-        case builtin::BuiltinValue::kSampleIndex:
+        case core::BuiltinValue::kSampleIndex:
             return 11;
-        case builtin::BuiltinValue::kSampleMask:
+        case core::BuiltinValue::kSampleMask:
             return 12;
-        case builtin::BuiltinValue::kPointSize:
+        case core::BuiltinValue::kPointSize:
             return 13;
         default:
             break;
@@ -141,7 +144,9 @@ struct CanonicalizeEntryPointIO::State {
     /// Input names used by the entrypoint
     std::unordered_set<std::string> input_names;
     /// A map of cloned attribute to builtin value
-    Hashmap<const BuiltinAttribute*, builtin::BuiltinValue, 16> builtin_attrs;
+    Hashmap<const BuiltinAttribute*, core::BuiltinValue, 16> builtin_attrs;
+    /// A map of builtin values to HLSL wave intrinsic functions.
+    Hashmap<core::BuiltinValue, Symbol, 2> wave_intrinsics;
 
     /// Constructor
     /// @param context the clone context
@@ -171,16 +176,16 @@ struct CanonicalizeEntryPointIO::State {
         }
     }
 
-    /// Clones the shader IO attributes from @p in.
+    /// Clones the shader IO and internal attributes from @p in.
     /// @param in the attributes to clone
     /// @param do_interpolate whether to clone InterpolateAttribute
     /// @return the cloned attributes
-    template <size_t N>
-    auto CloneShaderIOAttributes(const tint::Vector<const Attribute*, N> in, bool do_interpolate) {
-        tint::Vector<const Attribute*, N> out;
+    auto CloneShaderIOAttributes(tint::VectorRef<const Attribute*> in, bool do_interpolate) {
+        tint::Vector<const Attribute*, 8> out;
         for (auto* attr : in) {
-            if (IsShaderIOAttribute(attr) &&
-                (do_interpolate || !attr->template Is<InterpolateAttribute>())) {
+            if ((IsShaderIOAttribute(attr) &&
+                 (do_interpolate || !attr->template Is<InterpolateAttribute>())) ||
+                attr->Is<ast::InternalAttribute>()) {
                 CloneAttribute(attr, out);
             }
         }
@@ -189,7 +194,7 @@ struct CanonicalizeEntryPointIO::State {
 
     /// @param attr the input attribute
     /// @returns the builtin value of the attribute
-    builtin::BuiltinValue BuiltinOf(const BuiltinAttribute* attr) {
+    core::BuiltinValue BuiltinOf(const BuiltinAttribute* attr) {
         if (attr->generation_id == b.ID()) {
             // attr belongs to the target program.
             // Obtain the builtin value from #builtin_attrs.
@@ -202,17 +207,17 @@ struct CanonicalizeEntryPointIO::State {
             return ctx.src->Sem().Get(attr)->Value();
         }
         TINT_ICE() << "could not obtain builtin value from attribute";
-        return builtin::BuiltinValue::kUndefined;
+        return core::BuiltinValue::kUndefined;
     }
 
     /// @param attrs the input attribute list
     /// @returns the builtin value if any of the attributes in @p attrs is a builtin attribute,
-    /// otherwise builtin::BuiltinValue::kUndefined
-    builtin::BuiltinValue BuiltinOf(VectorRef<const Attribute*> attrs) {
+    /// otherwise core::BuiltinValue::kUndefined
+    core::BuiltinValue BuiltinOf(VectorRef<const Attribute*> attrs) {
         if (auto* builtin = GetAttribute<BuiltinAttribute>(attrs)) {
             return BuiltinOf(builtin);
         }
-        return builtin::BuiltinValue::kUndefined;
+        return core::BuiltinValue::kUndefined;
     }
 
     /// Create or return a symbol for the wrapper function's struct parameter.
@@ -224,6 +229,44 @@ struct CanonicalizeEntryPointIO::State {
         return wrapper_struct_param_name;
     }
 
+    /// Call a wave intrinsic function for the subgroup builtin contained in @p attrs, if any.
+    /// @param attrs the attribute list that may contain a subgroup builtin
+    /// @returns an expression that calls a HLSL wave intrinsic, or nullptr
+    const ast::CallExpression* CallWaveIntrinsic(VectorRef<const Attribute*> attrs) {
+        if (cfg.shader_style != ShaderStyle::kHlsl) {
+            return nullptr;
+        }
+
+        // Helper to make a wave intrinsic.
+        auto make_intrinsic = [&](const char* name, HLSLWaveIntrinsic::Op op) {
+            auto symbol = b.Symbols().New(name);
+            b.Func(symbol, Empty, b.ty.u32(), nullptr,
+                   Vector{b.ASTNodes().Create<HLSLWaveIntrinsic>(b.ID(), b.AllocateNodeID(), op),
+                          b.Disable(DisabledValidation::kFunctionHasNoBody)});
+            return symbol;
+        };
+
+        // Get or create the intrinsic function.
+        auto builtin = BuiltinOf(attrs);
+        auto intrinsic = wave_intrinsics.GetOrCreate(builtin, [&] {
+            if (builtin == core::BuiltinValue::kSubgroupInvocationId) {
+                return make_intrinsic("__WaveGetLaneIndex",
+                                      HLSLWaveIntrinsic::Op::kWaveGetLaneIndex);
+            }
+            if (builtin == core::BuiltinValue::kSubgroupSize) {
+                return make_intrinsic("__WaveGetLaneCount",
+                                      HLSLWaveIntrinsic::Op::kWaveGetLaneCount);
+            }
+            return Symbol();
+        });
+        if (!intrinsic) {
+            return nullptr;
+        }
+
+        // Call the intrinsic function.
+        return b.Call(intrinsic);
+    }
+
     /// Add a shader input to the entry point.
     /// @param name the name of the shader input
     /// @param type the type of the shader input
@@ -231,7 +274,7 @@ struct CanonicalizeEntryPointIO::State {
     /// @param attrs the attributes to apply to the shader input
     /// @returns an expression which evaluates to the value of the shader input
     const Expression* AddInput(std::string name,
-                               const type::Type* type,
+                               const core::type::Type* type,
                                std::optional<uint32_t> location,
                                tint::Vector<const Attribute*, 8> attrs) {
         auto ast_type = CreateASTTypeFor(ctx, type);
@@ -248,8 +291,8 @@ struct CanonicalizeEntryPointIO::State {
                 type->is_integer_scalar_or_vector() && !HasAttribute<InterpolateAttribute>(attrs) &&
                 (HasAttribute<LocationAttribute>(attrs) ||
                  cfg.shader_style == ShaderStyle::kSpirv)) {
-                attrs.Push(b.Interpolate(builtin::InterpolationType::kFlat,
-                                         builtin::InterpolationSampling::kUndefined));
+                attrs.Push(b.Interpolate(core::InterpolationType::kFlat,
+                                         core::InterpolationSampling::kUndefined));
             }
 
             // Disable validation for use of the `input` address space.
@@ -258,29 +301,29 @@ struct CanonicalizeEntryPointIO::State {
             // In GLSL, if it's a builtin, override the name with the
             // corresponding gl_ builtin name
             if (cfg.shader_style == ShaderStyle::kGlsl &&
-                builtin_attr != builtin::BuiltinValue::kUndefined) {
+                builtin_attr != core::BuiltinValue::kUndefined) {
                 name = GLSLBuiltinToString(builtin_attr, func_ast->PipelineStage(),
-                                           builtin::AddressSpace::kIn);
+                                           core::AddressSpace::kIn);
             }
             auto symbol = b.Symbols().New(name);
 
             // Create the global variable and use its value for the shader input.
             const Expression* value = b.Expr(symbol);
 
-            if (builtin_attr != builtin::BuiltinValue::kUndefined) {
+            if (builtin_attr != core::BuiltinValue::kUndefined) {
                 if (cfg.shader_style == ShaderStyle::kGlsl) {
                     value = FromGLSLBuiltin(builtin_attr, value, ast_type);
-                } else if (builtin_attr == builtin::BuiltinValue::kSampleMask) {
+                } else if (builtin_attr == core::BuiltinValue::kSampleMask) {
                     // Vulkan requires the type of a SampleMask builtin to be an array.
                     // Declare it as array<u32, 1> and then load the first element.
                     ast_type = b.ty.array(ast_type, 1_u);
                     value = b.IndexAccessor(value, 0_i);
                 }
             }
-            b.GlobalVar(symbol, ast_type, builtin::AddressSpace::kIn, std::move(attrs));
+            b.GlobalVar(symbol, ast_type, core::AddressSpace::kIn, std::move(attrs));
             return value;
         } else if (cfg.shader_style == ShaderStyle::kMsl &&
-                   builtin_attr != builtin::BuiltinValue::kUndefined) {
+                   builtin_attr != core::BuiltinValue::kUndefined) {
             // If this input is a builtin and we are targeting MSL, then add it to the
             // parameter list and pass it directly to the inner function.
             Symbol symbol = input_names.emplace(name).second ? b.Symbols().Register(name)
@@ -305,7 +348,7 @@ struct CanonicalizeEntryPointIO::State {
     /// @param attrs the attributes to apply to the shader output
     /// @param value the value of the shader output
     void AddOutput(std::string name,
-                   const type::Type* type,
+                   const core::type::Type* type,
                    std::optional<uint32_t> location,
                    std::optional<uint32_t> index,
                    tint::Vector<const Attribute*, 8> attrs,
@@ -319,16 +362,16 @@ struct CanonicalizeEntryPointIO::State {
             func_ast->PipelineStage() == PipelineStage::kVertex &&
             type->is_integer_scalar_or_vector() && HasAttribute<LocationAttribute>(attrs) &&
             !HasAttribute<InterpolateAttribute>(attrs)) {
-            attrs.Push(b.Interpolate(builtin::InterpolationType::kFlat,
-                                     builtin::InterpolationSampling::kUndefined));
+            attrs.Push(b.Interpolate(core::InterpolationType::kFlat,
+                                     core::InterpolationSampling::kUndefined));
         }
 
         // In GLSL, if it's a builtin, override the name with the
         // corresponding gl_ builtin name
         if (cfg.shader_style == ShaderStyle::kGlsl) {
-            if (builtin_attr != builtin::BuiltinValue::kUndefined) {
+            if (builtin_attr != core::BuiltinValue::kUndefined) {
                 name = GLSLBuiltinToString(builtin_attr, func_ast->PipelineStage(),
-                                           builtin::AddressSpace::kOut);
+                                           core::AddressSpace::kOut);
                 value = ToGLSLBuiltin(builtin_attr, value, type);
             }
         }
@@ -349,6 +392,14 @@ struct CanonicalizeEntryPointIO::State {
     /// that will be passed to the original function.
     /// @param param the original function parameter
     void ProcessNonStructParameter(const sem::Parameter* param) {
+        if (auto* wave_intrinsic_call = CallWaveIntrinsic(param->Declaration()->attributes)) {
+            inner_call_parameters.Push(wave_intrinsic_call);
+            for (auto* attr : param->Declaration()->attributes) {
+                ctx.Remove(param->Declaration()->attributes, attr);
+            }
+            return;
+        }
+
         // Do not add interpolation attributes on vertex input
         bool do_interpolate = func_ast->PipelineStage() != PipelineStage::kVertex;
         // Remove the shader IO attributes from the inner function parameter, and attach them to the
@@ -383,8 +434,13 @@ struct CanonicalizeEntryPointIO::State {
         // list to pass them through to the inner function.
         tint::Vector<const Expression*, 8> inner_struct_values;
         for (auto* member : str->Members()) {
-            if (TINT_UNLIKELY(member->Type()->Is<type::Struct>())) {
+            if (TINT_UNLIKELY(member->Type()->Is<core::type::Struct>())) {
                 TINT_ICE() << "nested IO struct";
+                continue;
+            }
+
+            if (auto* wave_intrinsic_call = CallWaveIntrinsic(member->Declaration()->attributes)) {
+                inner_struct_values.Push(wave_intrinsic_call);
                 continue;
             }
 
@@ -407,12 +463,12 @@ struct CanonicalizeEntryPointIO::State {
     /// function.
     /// @param inner_ret_type the original function return type
     /// @param original_result the result object produced by the original function
-    void ProcessReturnType(const type::Type* inner_ret_type, Symbol original_result) {
+    void ProcessReturnType(const core::type::Type* inner_ret_type, Symbol original_result) {
         // Do not add interpolation attributes on fragment output
         bool do_interpolate = func_ast->PipelineStage() != PipelineStage::kFragment;
         if (auto* str = inner_ret_type->As<sem::Struct>()) {
             for (auto* member : str->Members()) {
-                if (TINT_UNLIKELY(member->Type()->Is<type::Struct>())) {
+                if (TINT_UNLIKELY(member->Type()->Is<core::type::Struct>())) {
                     TINT_ICE() << "nested IO struct";
                     continue;
                 }
@@ -426,7 +482,7 @@ struct CanonicalizeEntryPointIO::State {
                           member->Attributes().index, std::move(attributes),
                           b.MemberAccessor(original_result, name));
             }
-        } else if (!inner_ret_type->Is<type::Void>()) {
+        } else if (!inner_ret_type->Is<core::type::Void>()) {
             auto attributes =
                 CloneShaderIOAttributes(func_ast->return_type_attributes, do_interpolate);
 
@@ -442,7 +498,7 @@ struct CanonicalizeEntryPointIO::State {
     void AddFixedSampleMask() {
         // Check the existing output values for a sample mask builtin.
         for (auto& outval : wrapper_output_values) {
-            if (BuiltinOf(outval.attributes) == builtin::BuiltinValue::kSampleMask) {
+            if (BuiltinOf(outval.attributes) == core::BuiltinValue::kSampleMask) {
                 // Combine the authored sample mask with the fixed mask.
                 outval.value = b.And(outval.value, u32(cfg.fixed_sample_mask));
                 return;
@@ -451,19 +507,19 @@ struct CanonicalizeEntryPointIO::State {
 
         // No existing sample mask builtin was found, so create a new output value using the fixed
         // sample mask.
-        auto* builtin = b.Builtin(builtin::BuiltinValue::kSampleMask);
-        builtin_attrs.Add(builtin, builtin::BuiltinValue::kSampleMask);
-        AddOutput("fixed_sample_mask", b.create<type::U32>(), std::nullopt, std::nullopt, {builtin},
-                  b.Expr(u32(cfg.fixed_sample_mask)));
+        auto* builtin = b.Builtin(core::BuiltinValue::kSampleMask);
+        builtin_attrs.Add(builtin, core::BuiltinValue::kSampleMask);
+        AddOutput("fixed_sample_mask", b.create<core::type::U32>(), std::nullopt, std::nullopt,
+                  {builtin}, b.Expr(u32(cfg.fixed_sample_mask)));
     }
 
     /// Add a point size builtin to the wrapper function output.
     void AddVertexPointSize() {
         // Create a new output value and assign it a literal 1.0 value.
-        auto* builtin = b.Builtin(builtin::BuiltinValue::kPointSize);
-        builtin_attrs.Add(builtin, builtin::BuiltinValue::kPointSize);
-        AddOutput("vertex_point_size", b.create<type::F32>(), std::nullopt, std::nullopt, {builtin},
-                  b.Expr(1_f));
+        auto* builtin = b.Builtin(core::BuiltinValue::kPointSize);
+        builtin_attrs.Add(builtin, core::BuiltinValue::kPointSize);
+        AddOutput("vertex_point_size", b.create<core::type::F32>(), std::nullopt, std::nullopt,
+                  {builtin}, b.Expr(1_f));
     }
 
     /// Create an expression for gl_Position.[component]
@@ -585,13 +641,13 @@ struct CanonicalizeEntryPointIO::State {
             auto name = b.Symbols().New(outval.name);
             Type type = outval.type;
             const Expression* lhs = b.Expr(name);
-            if (BuiltinOf(attributes) == builtin::BuiltinValue::kSampleMask) {
+            if (BuiltinOf(attributes) == core::BuiltinValue::kSampleMask) {
                 // Vulkan requires the type of a SampleMask builtin to be an array.
                 // Declare it as array<u32, 1> and then store to the first element.
                 type = b.ty.array(type, 1_u);
                 lhs = b.IndexAccessor(lhs, 0_i);
             }
-            b.GlobalVar(name, type, builtin::AddressSpace::kOut, std::move(attributes));
+            b.GlobalVar(name, type, core::AddressSpace::kOut, std::move(attributes));
             wrapper_body.Push(b.Assign(lhs, outval.value));
         }
     }
@@ -636,9 +692,9 @@ struct CanonicalizeEntryPointIO::State {
         }
 
         // Exit early if there is no shader IO to handle.
-        if (func_sem->Parameters().Length() == 0 && func_sem->ReturnType()->Is<type::Void>() &&
-            !needs_fixed_sample_mask && !needs_vertex_point_size &&
-            cfg.shader_style != ShaderStyle::kGlsl) {
+        if (func_sem->Parameters().Length() == 0 &&
+            func_sem->ReturnType()->Is<core::type::Void>() && !needs_fixed_sample_mask &&
+            !needs_vertex_point_size && cfg.shader_style != ShaderStyle::kGlsl) {
             return;
         }
 
@@ -646,7 +702,7 @@ struct CanonicalizeEntryPointIO::State {
         // aggregated into a single structure.
         if (!func_sem->Parameters().IsEmpty()) {
             for (auto* param : func_sem->Parameters()) {
-                if (param->Type()->Is<type::Struct>()) {
+                if (param->Type()->Is<core::type::Struct>()) {
                     ProcessStructParameter(param);
                 } else {
                     ProcessNonStructParameter(param);
@@ -664,7 +720,7 @@ struct CanonicalizeEntryPointIO::State {
 
         // Process the return type, and start building the wrapper function body.
         std::function<Type()> wrapper_ret_type = [&] { return b.ty.void_(); };
-        if (func_sem->ReturnType()->Is<type::Void>()) {
+        if (func_sem->ReturnType()->Is<core::type::Void>()) {
             // The function call is just a statement with no result.
             wrapper_body.Push(b.CallStmt(call_inner));
         } else {
@@ -700,7 +756,8 @@ struct CanonicalizeEntryPointIO::State {
         if (cfg.shader_style == ShaderStyle::kGlsl &&
             func_ast->PipelineStage() == PipelineStage::kVertex) {
             auto* pos_y = GLPosition("y");
-            auto* negate_pos_y = b.create<UnaryOpExpression>(UnaryOp::kNegation, GLPosition("y"));
+            auto* negate_pos_y =
+                b.create<UnaryOpExpression>(core::UnaryOp::kNegation, GLPosition("y"));
             wrapper_body.Push(b.Assign(pos_y, negate_pos_y));
 
             auto* two_z = b.Mul(b.Expr(2_f), GLPosition("z"));
@@ -729,11 +786,11 @@ struct CanonicalizeEntryPointIO::State {
     /// @param stage the current pipeline stage
     /// @param address_space the address space (input or output)
     /// @returns the gl_ string corresponding to that builtin
-    const char* GLSLBuiltinToString(builtin::BuiltinValue builtin,
+    const char* GLSLBuiltinToString(core::BuiltinValue builtin,
                                     PipelineStage stage,
-                                    builtin::AddressSpace address_space) {
+                                    core::AddressSpace address_space) {
         switch (builtin) {
-            case builtin::BuiltinValue::kPosition:
+            case core::BuiltinValue::kPosition:
                 switch (stage) {
                     case PipelineStage::kVertex:
                         return "gl_Position";
@@ -742,28 +799,28 @@ struct CanonicalizeEntryPointIO::State {
                     default:
                         return "";
                 }
-            case builtin::BuiltinValue::kVertexIndex:
+            case core::BuiltinValue::kVertexIndex:
                 return "gl_VertexID";
-            case builtin::BuiltinValue::kInstanceIndex:
+            case core::BuiltinValue::kInstanceIndex:
                 return "gl_InstanceID";
-            case builtin::BuiltinValue::kFrontFacing:
+            case core::BuiltinValue::kFrontFacing:
                 return "gl_FrontFacing";
-            case builtin::BuiltinValue::kFragDepth:
+            case core::BuiltinValue::kFragDepth:
                 return "gl_FragDepth";
-            case builtin::BuiltinValue::kLocalInvocationId:
+            case core::BuiltinValue::kLocalInvocationId:
                 return "gl_LocalInvocationID";
-            case builtin::BuiltinValue::kLocalInvocationIndex:
+            case core::BuiltinValue::kLocalInvocationIndex:
                 return "gl_LocalInvocationIndex";
-            case builtin::BuiltinValue::kGlobalInvocationId:
+            case core::BuiltinValue::kGlobalInvocationId:
                 return "gl_GlobalInvocationID";
-            case builtin::BuiltinValue::kNumWorkgroups:
+            case core::BuiltinValue::kNumWorkgroups:
                 return "gl_NumWorkGroups";
-            case builtin::BuiltinValue::kWorkgroupId:
+            case core::BuiltinValue::kWorkgroupId:
                 return "gl_WorkGroupID";
-            case builtin::BuiltinValue::kSampleIndex:
+            case core::BuiltinValue::kSampleIndex:
                 return "gl_SampleID";
-            case builtin::BuiltinValue::kSampleMask:
-                if (address_space == builtin::AddressSpace::kIn) {
+            case core::BuiltinValue::kSampleMask:
+                if (address_space == core::AddressSpace::kIn) {
                     return "gl_SampleMaskIn";
                 } else {
                     return "gl_SampleMask";
@@ -779,18 +836,18 @@ struct CanonicalizeEntryPointIO::State {
     /// @param ast_type (inout) the incoming WGSL and outgoing GLSL types
     /// @returns an expression representing the GLSL builtin converted to what
     /// WGSL expects
-    const Expression* FromGLSLBuiltin(builtin::BuiltinValue builtin,
+    const Expression* FromGLSLBuiltin(core::BuiltinValue builtin,
                                       const Expression* value,
                                       Type& ast_type) {
         switch (builtin) {
-            case builtin::BuiltinValue::kVertexIndex:
-            case builtin::BuiltinValue::kInstanceIndex:
-            case builtin::BuiltinValue::kSampleIndex:
+            case core::BuiltinValue::kVertexIndex:
+            case core::BuiltinValue::kInstanceIndex:
+            case core::BuiltinValue::kSampleIndex:
                 // GLSL uses i32 for these, so bitcast to u32.
                 value = b.Bitcast(ast_type, value);
                 ast_type = b.ty.i32();
                 break;
-            case builtin::BuiltinValue::kSampleMask:
+            case core::BuiltinValue::kSampleMask:
                 // gl_SampleMask is an array of i32. Retrieve the first element and
                 // bitcast it to u32.
                 value = b.IndexAccessor(value, 0_i);
@@ -809,15 +866,15 @@ struct CanonicalizeEntryPointIO::State {
     /// @param value the value to convert
     /// @param type (out) the type to which the value was converted
     /// @returns the converted value which can be assigned to the GLSL builtin
-    const Expression* ToGLSLBuiltin(builtin::BuiltinValue builtin,
+    const Expression* ToGLSLBuiltin(core::BuiltinValue builtin,
                                     const Expression* value,
-                                    const type::Type*& type) {
+                                    const core::type::Type*& type) {
         switch (builtin) {
-            case builtin::BuiltinValue::kVertexIndex:
-            case builtin::BuiltinValue::kInstanceIndex:
-            case builtin::BuiltinValue::kSampleIndex:
-            case builtin::BuiltinValue::kSampleMask:
-                type = b.create<type::I32>();
+            case core::BuiltinValue::kVertexIndex:
+            case core::BuiltinValue::kInstanceIndex:
+            case core::BuiltinValue::kSampleIndex:
+            case core::BuiltinValue::kSampleMask:
+                type = b.create<core::type::I32>();
                 value = b.Bitcast(CreateASTTypeFor(ctx, type), value);
                 break;
             default:
@@ -827,11 +884,11 @@ struct CanonicalizeEntryPointIO::State {
     }
 };
 
-Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program* src,
+Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program& src,
                                                        const DataMap& inputs,
                                                        DataMap&) const {
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
 
     auto* cfg = inputs.Get<Config>();
     if (cfg == nullptr) {
@@ -842,7 +899,7 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program* src,
 
     // Remove entry point IO attributes from struct declarations.
     // New structures will be created for each entry point, as necessary.
-    for (auto* ty : src->AST().TypeDecls()) {
+    for (auto* ty : src.AST().TypeDecls()) {
         if (auto* struct_ty = ty->As<Struct>()) {
             for (auto* member : struct_ty->members) {
                 for (auto* attr : member->attributes) {
@@ -854,7 +911,7 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program* src,
         }
     }
 
-    for (auto* func_ast : src->AST().Functions()) {
+    for (auto* func_ast : src.AST().Functions()) {
         if (!func_ast->IsEntryPoint()) {
             continue;
         }
@@ -876,5 +933,25 @@ CanonicalizeEntryPointIO::Config::Config(ShaderStyle style,
 
 CanonicalizeEntryPointIO::Config::Config(const Config&) = default;
 CanonicalizeEntryPointIO::Config::~Config() = default;
+
+CanonicalizeEntryPointIO::HLSLWaveIntrinsic::HLSLWaveIntrinsic(GenerationID pid, NodeID nid, Op o)
+    : Base(pid, nid, Empty), op(o) {}
+CanonicalizeEntryPointIO::HLSLWaveIntrinsic::~HLSLWaveIntrinsic() = default;
+std::string CanonicalizeEntryPointIO::HLSLWaveIntrinsic::InternalName() const {
+    StringStream ss;
+    switch (op) {
+        case Op::kWaveGetLaneCount:
+            return "intrinsic_wave_get_lane_count";
+        case Op::kWaveGetLaneIndex:
+            return "intrinsic_wave_get_lane_index";
+    }
+    return ss.str();
+}
+
+const CanonicalizeEntryPointIO::HLSLWaveIntrinsic*
+CanonicalizeEntryPointIO::HLSLWaveIntrinsic::Clone(ast::CloneContext& ctx) const {
+    return ctx.dst->ASTNodes().Create<CanonicalizeEntryPointIO::HLSLWaveIntrinsic>(
+        ctx.dst->ID(), ctx.dst->AllocateNodeID(), op);
+}
 
 }  // namespace tint::ast::transform

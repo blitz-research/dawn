@@ -24,7 +24,6 @@
 #include <variant>
 #include <vector>
 
-#include "src/tint/utils/containers/vector.h"
 #include "src/tint/utils/math/crc32.h"
 
 namespace tint {
@@ -61,6 +60,15 @@ struct HashCombineOffset<8> {
     }
 };
 
+template <typename T, typename = void>
+struct HasHashCodeMember : std::false_type {};
+
+template <typename T>
+struct HasHashCodeMember<
+    T,
+    std::enable_if_t<std::is_member_function_pointer_v<decltype(&T::HashCode)>>> : std::true_type {
+};
+
 }  // namespace detail
 
 /// Forward declarations (see below)
@@ -73,11 +81,20 @@ size_t HashCombine(size_t hash, const ARGS&... values);
 /// A STL-compatible hasher that does a more thorough job than most implementations of std::hash.
 /// Hasher has been optimized for a better quality hash at the expense of increased computation
 /// costs.
+/// Hasher is specialized for various core Tint data types. The default implementation will use a
+/// `size_t HashCode()` method on the `T` type, and will fallback to `std::hash<T>` if
+/// `T::HashCode` is missing.
 template <typename T>
 struct Hasher {
     /// @param value the value to hash
     /// @returns a hash of the value
-    size_t operator()(const T& value) const { return std::hash<T>()(value); }
+    size_t operator()(const T& value) const {
+        if constexpr (detail::HasHashCodeMember<T>::value) {
+            return value.HashCode();
+        } else {
+            return std::hash<T>()(value);
+        }
+    }
 };
 
 /// Hasher specialization for pointers
@@ -104,34 +121,6 @@ struct Hasher<std::vector<T>> {
     /// @returns a hash of the vector
     size_t operator()(const std::vector<T>& vector) const {
         auto hash = Hash(vector.size());
-        for (auto& el : vector) {
-            hash = HashCombine(hash, el);
-        }
-        return hash;
-    }
-};
-
-/// Hasher specialization for Vector
-template <typename T, size_t N>
-struct Hasher<Vector<T, N>> {
-    /// @param vector the Vector to hash
-    /// @returns a hash of the Vector
-    size_t operator()(const Vector<T, N>& vector) const {
-        auto hash = Hash(vector.Length());
-        for (auto& el : vector) {
-            hash = HashCombine(hash, el);
-        }
-        return hash;
-    }
-};
-
-/// Hasher specialization for VectorRef
-template <typename T>
-struct Hasher<VectorRef<T>> {
-    /// @param vector the VectorRef reference to hash
-    /// @returns a hash of the Vector
-    size_t operator()(const VectorRef<T>& vector) const {
-        auto hash = Hash(vector.Length());
         for (auto& el : vector) {
             hash = HashCombine(hash, el);
         }

@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "dawn/native/BindGroup.h"
-#include "dawn/native/BindGroupLayout.h"
+#include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/CommandBuffer.h"
 #include "dawn/native/CommandEncoder.h"
@@ -103,6 +103,7 @@ class Device final : public DeviceBase {
 
     void AddPendingOperation(std::unique_ptr<PendingOperation> operation);
     MaybeError SubmitPendingOperations();
+    void ForgetPendingOperations();
 
     MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                            uint64_t sourceOffset,
@@ -124,16 +125,13 @@ class Device final : public DeviceBase {
 
     bool IsResolveTextureBlitWithDrawSupported() const override;
 
-    void ForceEventualFlushOfCommands() override;
-
   private:
     using DeviceBase::DeviceBase;
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
-    ResultOrError<Ref<BindGroupLayoutBase>> CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor,
-        PipelineCompatibilityToken pipelineCompatibilityToken) override;
+    ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
+        const BindGroupLayoutDescriptor* descriptor) override;
     ResultOrError<Ref<BufferBase>> CreateBufferImpl(const BufferDescriptor* descriptor) override;
     Ref<ComputePipelineBase> CreateUninitializedComputePipelineImpl(
         const ComputePipelineDescriptor* descriptor) override;
@@ -160,11 +158,7 @@ class Device final : public DeviceBase {
     ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
         const Surface* surface) const override;
 
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
-
     void DestroyImpl() override;
-    MaybeError WaitForIdleForDestruction() override;
-    bool HasPendingCommands() const override;
 
     std::vector<std::unique_ptr<PendingOperation>> mPendingOperations;
 
@@ -222,11 +216,9 @@ class BindGroup final : private BindGroupDataHolder, public BindGroupBase {
     ~BindGroup() override = default;
 };
 
-class BindGroupLayout final : public BindGroupLayoutBase {
+class BindGroupLayout final : public BindGroupLayoutInternalBase {
   public:
-    BindGroupLayout(DeviceBase* device,
-                    const BindGroupLayoutDescriptor* descriptor,
-                    PipelineCompatibilityToken pipelineCompatibilityToken);
+    BindGroupLayout(DeviceBase* device, const BindGroupLayoutDescriptor* descriptor);
 
   private:
     ~BindGroupLayout() override = default;
@@ -275,6 +267,10 @@ class Queue final : public QueueBase {
                                uint64_t bufferOffset,
                                const void* data,
                                size_t size) override;
+    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
+    void ForceEventualFlushOfCommands() override;
+    bool HasPendingCommands() const override;
+    MaybeError WaitForIdleForDestruction() override;
 };
 
 class ComputePipeline final : public ComputePipelineBase {
@@ -320,7 +316,7 @@ class SwapChain final : public SwapChainBase {
 
 class Texture : public TextureBase {
   public:
-    Texture(DeviceBase* device, const TextureDescriptor* descriptor, TextureState state);
+    Texture(DeviceBase* device, const TextureDescriptor* descriptor);
 };
 
 }  // namespace dawn::native::null

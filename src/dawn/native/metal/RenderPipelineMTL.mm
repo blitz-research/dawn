@@ -17,7 +17,6 @@
 #include "dawn/native/Adapter.h"
 #include "dawn/native/CreatePipelineAsyncTask.h"
 #include "dawn/native/Instance.h"
-#include "dawn/native/VertexFormat.h"
 #include "dawn/native/metal/DeviceMTL.h"
 #include "dawn/native/metal/PipelineLayoutMTL.h"
 #include "dawn/native/metal/ShaderModuleMTL.h"
@@ -89,8 +88,10 @@ MTLVertexFormat VertexFormatType(wgpu::VertexFormat format) {
             return MTLVertexFormatInt3;
         case wgpu::VertexFormat::Sint32x4:
             return MTLVertexFormatInt4;
+        case wgpu::VertexFormat::Unorm10_10_10_2:
+            return MTLVertexFormatUInt1010102Normalized;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -101,7 +102,7 @@ MTLVertexStepFunction VertexStepModeFunction(wgpu::VertexStepMode mode) {
         case wgpu::VertexStepMode::Instance:
             return MTLVertexStepFunctionPerInstance;
         case wgpu::VertexStepMode::VertexBufferNotUsed:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
     }
 }
 
@@ -162,10 +163,13 @@ MTLBlendFactor MetalBlendFactor(wgpu::BlendFactor factor, bool alpha) {
         case wgpu::BlendFactor::OneMinusConstant:
             return alpha ? MTLBlendFactorOneMinusBlendAlpha : MTLBlendFactorOneMinusBlendColor;
         case wgpu::BlendFactor::Src1:
+            return MTLBlendFactorSource1Color;
         case wgpu::BlendFactor::OneMinusSrc1:
+            return MTLBlendFactorOneMinusSource1Color;
         case wgpu::BlendFactor::Src1Alpha:
+            return MTLBlendFactorSource1Alpha;
         case wgpu::BlendFactor::OneMinusSrc1Alpha:
-            UNREACHABLE();
+            return MTLBlendFactorOneMinusSource1Alpha;
     }
 }
 
@@ -415,7 +419,7 @@ MaybeError RenderPipeline::Initialize() {
     }
 
     descriptorMTL.inputPrimitiveTopology = MTLInputPrimitiveTopology(GetPrimitiveTopology());
-    descriptorMTL.sampleCount = GetSampleCount();
+    descriptorMTL.rasterSampleCount = GetSampleCount();
     descriptorMTL.alphaToCoverageEnabled = IsAlphaToCoverageEnabled();
 
     NSError* error = nullptr;
@@ -425,7 +429,7 @@ MaybeError RenderPipeline::Initialize() {
         return DAWN_INTERNAL_ERROR(std::string("Error creating pipeline state ") +
                                    [error.localizedDescription UTF8String]);
     }
-    ASSERT(mMtlRenderPipelineState != nil);
+    DAWN_ASSERT(mMtlRenderPipelineState != nil);
 
     // Create depth stencil state and cache it, fetch the cached depth stencil state when we
     // call setDepthStencilState() for a given render pipeline in CommandEncoder, in order
@@ -459,7 +463,7 @@ id<MTLDepthStencilState> RenderPipeline::GetMTLDepthStencilState() {
 }
 
 uint32_t RenderPipeline::GetMtlVertexBufferIndex(VertexBufferSlot slot) const {
-    ASSERT(slot < kMaxVertexBuffersTyped);
+    DAWN_ASSERT(slot < kMaxVertexBuffersTyped);
     return mMtlVertexBufferIndices[slot];
 }
 

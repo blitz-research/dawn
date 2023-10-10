@@ -24,7 +24,7 @@
 #include "src/tint/utils/macros/compiler.h"
 #include "src/tint/utils/memory/block_allocator.h"
 #include "src/tint/utils/result/result.h"
-#include "src/tint/utils/text/parse_num.h"
+#include "src/tint/utils/strconv/parse_num.h"
 #include "src/tint/utils/text/string.h"
 
 namespace tint::cli {
@@ -172,10 +172,9 @@ class OptionSet {
     void ShowHelp(std::ostream& out);
 
     /// Parses all the options in @p options.
-    /// @param err the error stream
     /// @param arguments the command line arguments, excluding the initial executable name
     /// @return a Result holding a list of arguments that were not consumed as options
-    Result<Unconsumed> Parse(std::ostream& err, VectorRef<std::string_view> arguments);
+    Result<Unconsumed> Parse(VectorRef<std::string_view> arguments);
 
   private:
     /// The list of options to parse

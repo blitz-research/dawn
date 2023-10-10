@@ -54,14 +54,16 @@ class BlobCache;
 class CallbackTaskManager;
 class DynamicUploader;
 class ErrorScopeStack;
+class SharedTextureMemory;
 class OwnedCompilationMessages;
 struct CallbackTask;
 struct InternalPipelineStore;
 struct ShaderModuleParseResult;
+struct TrackedFutureWaitInfo;
 
 using WGSLExtensionSet = std::unordered_set<std::string>;
 
-class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase {
+class DeviceBase : public RefCountedWithExternalCount {
   public:
     DeviceBase(AdapterBase* adapter,
                const DeviceDescriptor* descriptor,
@@ -156,6 +158,7 @@ class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase
 
     MaybeError ValidateObject(const ApiObjectBase* object) const;
 
+    InstanceBase* GetInstance() const;
     AdapterBase* GetAdapter() const;
     PhysicalDeviceBase* GetPhysicalDevice() const;
     virtual dawn::platform::Platform* GetPlatform() const;
@@ -197,7 +200,7 @@ class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase
     PipelineLayoutBase* GetEmptyPipelineLayout();
 
     ResultOrError<Ref<TextureViewBase>> CreateImplicitMSAARenderTextureViewFor(
-        const TextureBase* singleSampledTexture,
+        const TextureViewBase* singleSampledTexture,
         uint32_t sampleCount);
 
     ResultOrError<Ref<TextureViewBase>> GetOrCreatePlaceholderTextureViewForExternalTexture();
@@ -215,7 +218,8 @@ class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase
     Ref<AttachmentState> GetOrCreateAttachmentState(AttachmentState* blueprint);
     Ref<AttachmentState> GetOrCreateAttachmentState(
         const RenderBundleEncoderDescriptor* descriptor);
-    Ref<AttachmentState> GetOrCreateAttachmentState(const RenderPipelineDescriptor* descriptor);
+    Ref<AttachmentState> GetOrCreateAttachmentState(const RenderPipelineDescriptor* descriptor,
+                                                    const PipelineLayoutBase* layout);
     Ref<AttachmentState> GetOrCreateAttachmentState(const RenderPassDescriptor* descriptor);
 
     Ref<PipelineCacheBase> GetOrCreatePipelineCache(const CacheKey& key);
@@ -273,6 +277,9 @@ class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase
         const RenderBundleEncoderDescriptor* descriptor);
     RenderPipelineBase* APICreateRenderPipeline(const RenderPipelineDescriptor* descriptor);
     ExternalTextureBase* APICreateExternalTexture(const ExternalTextureDescriptor* descriptor);
+    SharedTextureMemoryBase* APIImportSharedTextureMemory(
+        const SharedTextureMemoryDescriptor* descriptor);
+    SharedFenceBase* APIImportSharedFence(const SharedFenceDescriptor* descriptor);
     SamplerBase* APICreateSampler(const SamplerDescriptor* descriptor);
     ShaderModuleBase* APICreateShaderModule(const ShaderModuleDescriptor* descriptor);
     ShaderModuleBase* APICreateErrorShaderModule(const ShaderModuleDescriptor* descriptor,
@@ -425,6 +432,10 @@ class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase
 
     virtual void AppendDebugLayerMessages(ErrorData* error) {}
 
+    [[nodiscard]] virtual bool WaitAnyImpl(size_t futureCount,
+                                           TrackedFutureWaitInfo* futures,
+                                           Nanoseconds timeout);
+
     // It is guaranteed that the wrapped mutex will outlive the Device (if the Device is deleted
     // before the AutoLockAndHoldRef).
     [[nodiscard]] Mutex::AutoLockAndHoldRef GetScopedLockSafeForDelete();
@@ -434,14 +445,16 @@ class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase
 
     // This method returns true if Feature::ImplicitDeviceSynchronization is turned on and the
     // device is locked by current thread. This method is only enabled when DAWN_ENABLE_ASSERTS is
-    // turned on. Thus it should only be wrapped inside ASSERT() macro. i.e.
-    // ASSERT(device.IsLockedByCurrentThread())
+    // turned on. Thus it should only be wrapped inside DAWN_ASSERT() macro. i.e.
+    // DAWN_ASSERT(device.IsLockedByCurrentThread())
     bool IsLockedByCurrentThreadIfNeeded() const;
 
-    // In the 'Normal' mode, currently recorded commands in the backend normally will be actually
-    // submitted in the next Tick. However in the 'Passive' mode, the submission will be postponed
-    // as late as possible, for example, until the client has explictly issued a submission.
-    enum class SubmitMode { Normal, Passive };
+    // TODO(dawn:XXX): remove this enum forwarding once no longer necessary.
+    using SubmitMode = ExecutionQueueBase::SubmitMode;
+
+    // TODO(dawn:1413): Remove this proxy methods in favor of using the ExecutionQueue directly.
+    ExecutionSerial GetLastSubmittedCommandSerial() const;
+    ExecutionSerial GetPendingCommandSerial() const;
 
   protected:
     // Constructor used only for mocking and testing.
@@ -458,9 +471,8 @@ class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase
 
     virtual ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) = 0;
-    virtual ResultOrError<Ref<BindGroupLayoutBase>> CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor,
-        PipelineCompatibilityToken pipelineCompatibilityToken) = 0;
+    virtual ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
+        const BindGroupLayoutDescriptor* descriptor) = 0;
     virtual ResultOrError<Ref<BufferBase>> CreateBufferImpl(const BufferDescriptor* descriptor) = 0;
     virtual ResultOrError<Ref<ExternalTextureBase>> CreateExternalTextureImpl(
         const ExternalTextureDescriptor* descriptor);
@@ -488,6 +500,10 @@ class DeviceBase : public RefCountedWithExternalCount, public ExecutionQueueBase
         const ComputePipelineDescriptor* descriptor) = 0;
     virtual Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) = 0;
+    virtual ResultOrError<Ref<SharedTextureMemoryBase>> ImportSharedTextureMemoryImpl(
+        const SharedTextureMemoryDescriptor* descriptor);
+    virtual ResultOrError<Ref<SharedFenceBase>> ImportSharedFenceImpl(
+        const SharedFenceDescriptor* descriptor);
     virtual void SetLabelImpl();
 
     virtual ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(

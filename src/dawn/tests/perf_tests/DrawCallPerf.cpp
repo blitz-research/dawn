@@ -330,7 +330,7 @@ void DrawCallPerf::SetUp() {
             break;
 
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
 
@@ -434,14 +434,14 @@ void DrawCallPerf::SetUp() {
                 device, mUniformBindGroupLayout, {{0, mUniformBuffers[0], 0, kUniformSize}});
             break;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
 
     // If using render bundles, record the render commands now.
     if (GetParam().withRenderBundle == RenderBundle::Yes) {
         wgpu::RenderBundleEncoderDescriptor descriptor = {};
-        descriptor.colorFormatsCount = 1;
+        descriptor.colorFormatCount = 1;
         descriptor.colorFormats = &renderPipelineDesc.cTargets[0].format;
         descriptor.depthStencilFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
@@ -467,7 +467,7 @@ void DrawCallPerf::RecordRenderCommands(Encoder pass) {
 
     if (GetParam().bindGroupType == BindGroup::NoChange) {
         // Incompatible. Can't change pipeline without changing bind groups.
-        ASSERT(GetParam().pipelineType == Pipeline::Static);
+        DAWN_ASSERT(GetParam().pipelineType == Pipeline::Static);
 
         // Static bind group can be set now.
         pass.SetBindGroup(uniformBindGroupIndex, mUniformBindGroups[0]);
@@ -535,7 +535,7 @@ void DrawCallPerf::RecordRenderCommands(Encoder pass) {
             }
 
             default:
-                UNREACHABLE();
+                DAWN_UNREACHABLE();
                 break;
         }
         pass.Draw(3);
@@ -581,7 +581,7 @@ void DrawCallPerf::Step() {
             pass.ExecuteBundles(1, &mRenderBundle);
             break;
         default:
-            UNREACHABLE();
+            DAWN_UNREACHABLE();
             break;
     }
 

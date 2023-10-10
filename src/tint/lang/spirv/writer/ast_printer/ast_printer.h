@@ -19,8 +19,8 @@
 #include <vector>
 
 #include "src/tint/lang/spirv/writer/ast_printer/builder.h"
-#include "src/tint/lang/spirv/writer/binary_writer.h"
-#include "src/tint/lang/spirv/writer/options.h"
+#include "src/tint/lang/spirv/writer/common/binary_writer.h"
+#include "src/tint/lang/spirv/writer/common/options.h"
 #include "src/tint/lang/wgsl/program/program.h"
 
 namespace tint::spirv::writer {
@@ -34,7 +34,7 @@ struct SanitizedResult {
 /// Sanitize a program in preparation for generating SPIR-V.
 /// @program The program to sanitize
 /// @param options The SPIR-V generator options.
-SanitizedResult Sanitize(const Program* program, const Options& options);
+SanitizedResult Sanitize(const Program& program, const Options& options);
 
 /// Implementation class for SPIR-V generator
 class ASTPrinter {
@@ -43,7 +43,12 @@ class ASTPrinter {
     /// @param program the program to generate
     /// @param zero_initialize_workgroup_memory `true` to initialize all the
     /// variables in the Workgroup address space with OpConstantNull
-    ASTPrinter(const Program* program, bool zero_initialize_workgroup_memory);
+    /// @param experimental_require_subgroup_uniform_control_flow `true` to require
+    /// `SPV_KHR_subgroup_uniform_control_flow` extension and `SubgroupUniformControlFlowKHR`
+    /// execution mode for compute stage entry points.
+    ASTPrinter(const Program& program,
+               bool zero_initialize_workgroup_memory,
+               bool experimental_require_subgroup_uniform_control_flow);
 
     /// @returns true on successful generation; false otherwise
     bool Generate();

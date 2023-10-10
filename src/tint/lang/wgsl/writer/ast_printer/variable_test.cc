@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/wgsl/writer/ast_printer/helper_test.h"
 #include "src/tint/utils/text/string_stream.h"
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::wgsl::writer {
 namespace {
@@ -25,7 +25,7 @@ namespace {
 using WgslASTPrinterTest = TestHelper;
 
 TEST_F(WgslASTPrinterTest, EmitVariable) {
-    auto* v = GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("a", ty.f32(), core::AddressSpace::kPrivate);
 
     ASTPrinter& gen = Build();
 
@@ -36,7 +36,7 @@ TEST_F(WgslASTPrinterTest, EmitVariable) {
 }
 
 TEST_F(WgslASTPrinterTest, EmitVariable_AddressSpace) {
-    auto* v = GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("a", ty.f32(), core::AddressSpace::kPrivate);
 
     ASTPrinter& gen = Build();
 
@@ -48,7 +48,7 @@ TEST_F(WgslASTPrinterTest, EmitVariable_AddressSpace) {
 
 TEST_F(WgslASTPrinterTest, EmitVariable_Access_Read) {
     auto* s = Structure("S", Vector{Member("a", ty.i32())});
-    auto* v = GlobalVar("a", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kRead,
+    auto* v = GlobalVar("a", ty.Of(s), core::AddressSpace::kStorage, core::Access::kRead,
                         Binding(0_a), Group(0_a));
 
     ASTPrinter& gen = Build();
@@ -61,7 +61,7 @@ TEST_F(WgslASTPrinterTest, EmitVariable_Access_Read) {
 
 TEST_F(WgslASTPrinterTest, EmitVariable_Access_ReadWrite) {
     auto* s = Structure("S", Vector{Member("a", ty.i32())});
-    auto* v = GlobalVar("a", ty.Of(s), builtin::AddressSpace::kStorage, builtin::Access::kReadWrite,
+    auto* v = GlobalVar("a", ty.Of(s), core::AddressSpace::kStorage, core::Access::kReadWrite,
                         Binding(0_a), Group(0_a));
 
     ASTPrinter& gen = Build();
@@ -73,7 +73,8 @@ TEST_F(WgslASTPrinterTest, EmitVariable_Access_ReadWrite) {
 }
 
 TEST_F(WgslASTPrinterTest, EmitVariable_Decorated) {
-    auto* v = GlobalVar("a", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
+    auto* v =
+        GlobalVar("a", ty.sampler(core::type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
 
     ASTPrinter& gen = Build();
 
@@ -84,7 +85,7 @@ TEST_F(WgslASTPrinterTest, EmitVariable_Decorated) {
 }
 
 TEST_F(WgslASTPrinterTest, EmitVariable_Initializer) {
-    auto* v = GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate, Expr(1_f));
+    auto* v = GlobalVar("a", ty.f32(), core::AddressSpace::kPrivate, Expr(1_f));
 
     ASTPrinter& gen = Build();
 

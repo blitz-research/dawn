@@ -18,6 +18,7 @@
 #include <d3dcompiler.h>
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "dawn/native/CacheRequest.h"
@@ -28,12 +29,12 @@
 
 namespace dawn::native::stream {
 
-// Define no-op serializations for pD3DCompile, IDxcLibrary, and IDxcCompiler.
+// Define no-op serializations for pD3DCompile, IDxcLibrary, and IDxcCompiler3.
 // These are output-only interfaces used to generate bytecode.
 template <>
 inline void Stream<IDxcLibrary*>::Write(Sink*, IDxcLibrary* const&) {}
 template <>
-inline void Stream<IDxcCompiler*>::Write(Sink*, IDxcCompiler* const&) {}
+inline void Stream<IDxcCompiler3*>::Write(Sink*, IDxcCompiler3* const&) {}
 template <>
 inline void Stream<pD3DCompile>::Write(Sink*, pD3DCompile const&) {}
 
@@ -42,6 +43,8 @@ inline void Stream<pD3DCompile>::Write(Sink*, pD3DCompile const&) {}
 namespace dawn::native::d3d {
 
 enum class Compiler { FXC, DXC };
+
+using AccessControl = std::unordered_map<tint::BindingPoint, tint::core::Access>;
 
 #define HLSL_COMPILATION_REQUEST_MEMBERS(X)                                                      \
     X(const tint::Program*, inputProgram)                                                        \
@@ -55,7 +58,7 @@ enum class Compiler { FXC, DXC };
     X(std::string_view, fxcShaderProfile)                                                        \
     X(pD3DCompile, d3dCompile)                                                                   \
     X(IDxcLibrary*, dxcLibrary)                                                                  \
-    X(IDxcCompiler*, dxcCompiler)                                                                \
+    X(IDxcCompiler3*, dxcCompiler)                                                               \
     X(uint32_t, firstIndexOffsetShaderRegister)                                                  \
     X(uint32_t, firstIndexOffsetRegisterSpace)                                                   \
     X(bool, usesNumWorkgroups)                                                                   \
@@ -64,6 +67,7 @@ enum class Compiler { FXC, DXC };
     X(tint::ExternalTextureOptions, externalTextureOptions)                                      \
     X(tint::ArrayLengthFromUniformOptions, arrayLengthFromUniform)                               \
     X(tint::BindingRemapperOptions, bindingRemapper)                                             \
+    X(AccessControl, accessControls)                                                             \
     X(std::optional<tint::ast::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
     X(std::bitset<kMaxInterStageShaderVariables>, interstageLocations)                           \
     X(LimitsForCompilationRequest, limits)                                                       \
@@ -83,7 +87,7 @@ enum class Compiler { FXC, DXC };
     X(std::string_view, fxcShaderProfile)           \
     X(pD3DCompile, d3dCompile)                      \
     X(IDxcLibrary*, dxcLibrary)                     \
-    X(IDxcCompiler*, dxcCompiler)
+    X(IDxcCompiler3*, dxcCompiler)
 
 DAWN_SERIALIZABLE(struct, HlslCompilationRequest, HLSL_COMPILATION_REQUEST_MEMBERS){};
 #undef HLSL_COMPILATION_REQUEST_MEMBERS

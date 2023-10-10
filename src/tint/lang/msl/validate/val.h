@@ -30,11 +30,24 @@ namespace tint::msl::validate {
 
 using EntryPointList = std::vector<std::pair<std::string, ast::PipelineStage>>;
 
+/// The version of MSL to validate against.
+/// Note: these must kept be in ascending order
+enum class MslVersion {
+    kMsl_1_2,
+    kMsl_2_1,
+    kMsl_2_3,
+};
+
+/// MslVersion less-than operator
+inline bool operator<(MslVersion a, MslVersion b) {
+    return static_cast<int>(a) < static_cast<int>(b);
+}
+
 /// The return structure of Validate()
 struct Result {
     /// True if validation passed
     bool failed = false;
-    /// Output of DXC.
+    /// Output of Metal compiler.
     std::string output;
 };
 
@@ -42,16 +55,18 @@ struct Result {
 /// verifying that the shader compiles successfully.
 /// @param xcrun_path path to xcrun
 /// @param source the generated MSL source
+/// @param version the version of MSL to validate against
 /// @return the result of the compile
-Result Msl(const std::string& xcrun_path, const std::string& source);
+Result Msl(const std::string& xcrun_path, const std::string& source, MslVersion version);
 
-#ifdef TINT_ENABLE_MSL_VALIDATION_USING_METAL_API
+#ifdef __APPLE__
 /// Msl attempts to compile the shader with the runtime Metal Shader Compiler
 /// API, verifying that the shader compiles successfully.
 /// @param source the generated MSL source
+/// @param version the version of MSL to validate against
 /// @return the result of the compile
-Result UsingMetalAPI(const std::string& source);
-#endif  // TINT_ENABLE_MSL_VALIDATION_USING_METAL_API
+Result UsingMetalAPI(const std::string& source, MslVersion version);
+#endif  // __APPLE__
 
 }  // namespace tint::msl::validate
 

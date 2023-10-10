@@ -76,6 +76,45 @@ function (set_if_not_defined name value description)
     endif()
 endfunction()
 
+function (install_if_enabled target)
+    if(NOT DAWN_ENABLE_INSTALL)
+        return()
+    endif()
+
+    install(TARGETS ${target}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    get_target_property(targetHeaders ${target} INTERFACE_SOURCES)
+    if (NOT targetHeaders)
+        return()
+    endif()
+
+    foreach(headerFile ${targetHeaders})
+        # Starting from CMake 3.20 there is the cmake_path command that could simplify this code.
+        # Compute the install subdirectory for the header by stripping out the path to
+        # the include / gen/include directory...
+        string(FIND "${headerFile}" "${DAWN_INCLUDE_DIR}" foundIndex)
+        if (foundIndex EQUAL 0)
+            string(LENGTH "${DAWN_INCLUDE_DIR}/" lengthToRemove)
+        endif()
+        string(FIND "${headerFile}" "${DAWN_BUILD_GEN_DIR}/include/" foundIndex)
+        if (foundIndex EQUAL 0)
+            string(LENGTH "${DAWN_BUILD_GEN_DIR}/include/" lengthToRemove)
+        endif()
+        string(SUBSTRING "${headerFile}" "${lengthToRemove}" -1 headerRelDir)
+
+        # ... then remove everything after the last /
+        string(FIND "${headerRelDir}" "/" foundIndex REVERSE)
+        string(SUBSTRING "${headerRelDir}" 0 ${foundIndex} headerRelDir)
+
+        install(FILES "${headerFile}" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${headerRelDir})
+    endforeach()
+endfunction()
+
+
 # Default values for the backend-enabling options
 set(ENABLE_D3D11 OFF)
 set(ENABLE_D3D12 OFF)
@@ -110,7 +149,8 @@ endif()
 
 # GLFW is not supported in UWP
 set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING OFF)
-if ((WIN32 AND NOT WINDOWS_STORE) OR UNIX AND NOT ANDROID)
+
+if ((WIN32 AND NOT WINDOWS_STORE) OR (UNIX AND NOT ANDROID))
     set(DAWN_SUPPORTS_GLFW_FOR_WINDOWING ON)
 endif()
 
@@ -120,6 +160,7 @@ if (DAWN_SUPPORTS_GLFW_FOR_WINDOWING)
 endif()
 
 option_if_not_defined(DAWN_ENABLE_ASAN "Enable address sanitizer" OFF)
+option_if_not_defined(DAWN_ENABLE_INSTALL "Enable install step for Dawn libraries" OFF)
 option_if_not_defined(DAWN_ENABLE_TSAN "Enable thread sanitizer" OFF)
 option_if_not_defined(DAWN_ENABLE_MSAN "Enable memory sanitizer" OFF)
 option_if_not_defined(DAWN_ENABLE_UBSAN "Enable undefined behaviour sanitizer" OFF)
@@ -154,11 +195,12 @@ else()
   set(TINT_DEFAULT_GLSL OFF)
 endif()
 
-option_if_not_defined(TINT_BUILD_SAMPLES "Build samples" ${DAWN_BUILD_SAMPLES})
+option_if_not_defined(TINT_ENABLE_INSTALL "Enable install step for Tint libraries" OFF)
+option_if_not_defined(TINT_BUILD_CMD_TOOLS "Build the Tint command line tools" ON)
 option_if_not_defined(TINT_BUILD_DOCS "Build documentation" ON)
 option_if_not_defined(TINT_DOCS_WARN_AS_ERROR "When building documentation, treat warnings as errors" OFF)
 
-if (NOT DAWN_USE_GLFW AND (TINT_BUILD_SAMPLES OR DAWN_BUILD_SAMPLES))
+if (NOT DAWN_USE_GLFW AND (TINT_BUILD_CMD_TOOLS OR DAWN_BUILD_SAMPLES))
   message(SEND_ERROR "Dawn samples require GLFW")
 endif()
 
@@ -171,16 +213,13 @@ option_if_not_defined(TINT_BUILD_SPV_WRITER "Build the SPIR-V output writer" ${D
 option_if_not_defined(TINT_BUILD_WGSL_WRITER "Build the WGSL output writer" ON)
 
 option_if_not_defined(TINT_BUILD_SYNTAX_TREE_WRITER "Build the syntax tree writer" OFF)
-option_if_not_defined(TINT_BUILD_IR "Build the IR" ON)
 
 option_if_not_defined(TINT_BUILD_FUZZERS "Build fuzzers" OFF)
-option_if_not_defined(TINT_BUILD_SPIRV_TOOLS_FUZZER "Build SPIRV-Tools fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_AST_FUZZER "Build AST fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_REGEX_FUZZER "Build regex fuzzer" OFF)
 option_if_not_defined(TINT_BUILD_BENCHMARKS "Build Tint benchmarks" OFF)
 option_if_not_defined(TINT_BUILD_TESTS "Build tests" ON)
 option_if_not_defined(TINT_BUILD_AS_OTHER_OS "Override OS detection to force building of *_other.cc files" OFF)
-option_if_not_defined(TINT_BUILD_REMOTE_COMPILE "Build the remote-compile tool for validating shaders on a remote machine" OFF)
 
 set_if_not_defined(TINT_EXTERNAL_BENCHMARK_CORPUS_DIR "" "Directory that holds a corpus of external shaders to benchmark.")
 
@@ -204,7 +243,7 @@ set_if_not_defined(DAWN_SWIFTSHADER_DIR "${DAWN_THIRD_PARTY_DIR}/swiftshader" "D
 set_if_not_defined(DAWN_SPIRV_TOOLS_DIR "${DAWN_VULKAN_DEPS_DIR}/spirv-tools/src" "Directory in which to find SPIRV-Tools")
 set_if_not_defined(DAWN_SPIRV_HEADERS_DIR "${DAWN_VULKAN_DEPS_DIR}/spirv-headers/src" "Directory in which to find SPIRV-Headers")
 set_if_not_defined(DAWN_VULKAN_HEADERS_DIR "${DAWN_VULKAN_DEPS_DIR}/vulkan-headers/src" "Directory in which to find Vulkan-Headers")
-set_if_not_defined(DAWN_VULKAN_TOOLS_DIR "${DAWN_VULKAN_DEPS_DIR}/vulkan-tools/src" "Directory in which to find Vulkan-Tools")
+set_if_not_defined(DAWN_VULKAN_UTILITY_LIBRARIES_DIR "${DAWN_VULKAN_DEPS_DIR}/vulkan-utility-libraries/src" "Directory in which to find Vulkan-Utility-Libraries")
 
 # Dependencies for DAWN_BUILD_NODE_BINDINGS
 set_if_not_defined(NODE_ADDON_API_DIR "${DAWN_THIRD_PARTY_DIR}/node-addon-api" "Directory in which to find node-addon-api")
@@ -221,26 +260,6 @@ endif()
 
 if(DAWN_ENABLE_PIC)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif()
-
-if (${TINT_BUILD_SPIRV_TOOLS_FUZZER})
-  message(STATUS "TINT_BUILD_SPIRV_TOOLS_FUZZER is ON - setting
-      TINT_BUILD_FUZZERS
-      TINT_BUILD_SPV_READER
-      TINT_BUILD_SPV_WRITER
-      TINT_BUILD_WGSL_READER
-      TINT_BUILD_WGSL_WRITER
-      TINT_BUILD_GLSL_WRITER
-      TINT_BUILD_HLSL_WRITER
-      TINT_BUILD_MSL_WRITER to ON")
-  set(TINT_BUILD_FUZZERS ON CACHE BOOL "Build tint fuzzers" FORCE)
-  set(TINT_BUILD_SPV_READER ON CACHE BOOL "Build SPIR-V reader" FORCE)
-  set(TINT_BUILD_SPV_WRITER ON CACHE BOOL "Build SPIR-V writer" FORCE)
-  set(TINT_BUILD_WGSL_READER ON CACHE BOOL "Build WGSL reader" FORCE)
-  set(TINT_BUILD_WGSL_WRITER ON CACHE BOOL "Build WGSL writer" FORCE)
-  set(TINT_BUILD_GLSL_WRITER ON CACHE BOOL "Build HLSL writer" FORCE)
-  set(TINT_BUILD_HLSL_WRITER ON CACHE BOOL "Build HLSL writer" FORCE)
-  set(TINT_BUILD_MSL_WRITER ON CACHE BOOL "Build MSL writer" FORCE)
 endif()
 
 if (${TINT_BUILD_AST_FUZZER})
@@ -304,7 +323,7 @@ message(STATUS "Dawn build with TSAN: ${DAWN_ENABLE_TSAN}")
 message(STATUS "Dawn build with MSAN: ${DAWN_ENABLE_MSAN}")
 message(STATUS "Dawn build with UBSAN: ${DAWN_ENABLE_UBSAN}")
 
-message(STATUS "Tint build samples: ${TINT_BUILD_SAMPLES}")
+message(STATUS "Tint build command line executable tools: ${TINT_BUILD_CMD_TOOLS}")
 message(STATUS "Tint build docs: ${TINT_BUILD_DOCS}")
 message(STATUS "Tint build docs with warn as error: ${TINT_DOCS_WARN_AS_ERROR}")
 message(STATUS "Tint build SPIR-V reader: ${TINT_BUILD_SPV_READER}")
@@ -315,15 +334,12 @@ message(STATUS "Tint build MSL writer: ${TINT_BUILD_MSL_WRITER}")
 message(STATUS "Tint build SPIR-V writer: ${TINT_BUILD_SPV_WRITER}")
 message(STATUS "Tint build WGSL writer: ${TINT_BUILD_WGSL_WRITER}")
 message(STATUS "Tint build Syntax Tree writer: ${TINT_BUILD_SYNTAX_TREE_WRITER}")
-message(STATUS "Tint build IR: ${TINT_BUILD_IR}")
 message(STATUS "Tint build fuzzers: ${TINT_BUILD_FUZZERS}")
-message(STATUS "Tint build SPIRV-Tools fuzzer: ${TINT_BUILD_SPIRV_TOOLS_FUZZER}")
 message(STATUS "Tint build AST fuzzer: ${TINT_BUILD_AST_FUZZER}")
 message(STATUS "Tint build regex fuzzer: ${TINT_BUILD_REGEX_FUZZER}")
 message(STATUS "Tint build benchmarks: ${TINT_BUILD_BENCHMARKS}")
 message(STATUS "Tint build tests: ${TINT_BUILD_TESTS}")
 message(STATUS "Tint build checking [chromium-style]: ${TINT_CHECK_CHROMIUM_STYLE}")
-message(STATUS "Tint build remote-compile tool: ${TINT_BUILD_REMOTE_COMPILE}")
 message(STATUS "Tint external benchmark corpus dir: ${TINT_EXTERNAL_BENCHMARK_CORPUS_DIR}")
 
 
@@ -461,6 +477,8 @@ set(CMAKE_CXX_STANDARD "17")
 set(TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS "" CACHE STRING "Used by OSS-Fuzz to control, via link options, which fuzzing engine should be used")
 
 set(TINT_ROOT_SOURCE_DIR ${PROJECT_SOURCE_DIR})
+set(TINT_SPIRV_HEADERS_DIR ${DAWN_SPIRV_HEADERS_DIR})
+set(TINT_SPIRV_TOOLS_DIR   ${DAWN_SPIRV_TOOLS_DIR})
 
 # CMake < 3.15 sets /W3 in CMAKE_CXX_FLAGS. Remove it if it's there.
 # See https://gitlab.kitware.com/cmake/cmake/-/issues/18317
@@ -474,10 +492,6 @@ if (${TINT_CHECK_CHROMIUM_STYLE})
    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -add-plugin -Xclang find-bad-constructs")
 endif()
 
-if (${TINT_BUILD_SPV_READER})
-  include_directories("${DAWN_THIRD_PARTY_DIR}/vulkan-deps/spirv-tools/include")
-endif()
-
 if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang") AND (CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
   set(COMPILER_IS_CLANG_CL TRUE)
 endif()
@@ -488,6 +502,10 @@ if((CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang") OR
   set(COMPILER_IS_CLANG TRUE)
 endif()
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(COMPILER_IS_GNU TRUE)
+endif()
+
 if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") OR COMPILER_IS_CLANG)
   set(COMPILER_IS_LIKE_GNU TRUE)
 endif()
@@ -495,17 +513,6 @@ endif()
 # Enable msbuild multiprocessor builds
 if (MSVC AND NOT COMPILER_IS_CLANG_CL)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
-endif()
-
-set(TINT_OS_CC_SUFFIX "other")
-if (NOT TINT_BUILD_AS_OTHER_OS)
-  if(UNIX OR APPLE)
-    set(TINT_OS_CC_SUFFIX "posix")
-    set(TINT_OS_CC_SUFFIX "posix")
-  elseif(WIN32)
-    set(TINT_OS_CC_SUFFIX "windows")
-    set(TINT_OS_CC_SUFFIX "windows")
-  endif()
 endif()
 
 if(${TINT_BUILD_DOCS})
@@ -536,121 +543,6 @@ if(${TINT_BUILD_DOCS})
   endif(DOXYGEN_FOUND)
 endif()
 
-function(tint_core_compile_options TARGET)
-  target_include_directories(${TARGET} PUBLIC "${TINT_ROOT_SOURCE_DIR}")
-  target_include_directories(${TARGET} PUBLIC "${TINT_ROOT_SOURCE_DIR}/include")
-
-  if (${TINT_BUILD_SPV_READER} OR ${TINT_BUILD_SPV_WRITER})
-    target_include_directories(${TARGET} PUBLIC
-        "${DAWN_THIRD_PARTY_DIR}/spirv-headers/include")
-  endif()
-
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SPV_READER=$<BOOL:${TINT_BUILD_SPV_READER}>)
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_READER=$<BOOL:${TINT_BUILD_WGSL_READER}>)
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_GLSL_WRITER=$<BOOL:${TINT_BUILD_GLSL_WRITER}>)
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_HLSL_WRITER=$<BOOL:${TINT_BUILD_HLSL_WRITER}>)
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_MSL_WRITER=$<BOOL:${TINT_BUILD_MSL_WRITER}>)
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_SPV_WRITER=$<BOOL:${TINT_BUILD_SPV_WRITER}>)
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_WGSL_WRITER=$<BOOL:${TINT_BUILD_WGSL_WRITER}>)
-  target_compile_definitions(${TARGET} PUBLIC
-      -DTINT_BUILD_SYNTAX_TREE_WRITER=$<BOOL:${TINT_BUILD_SYNTAX_TREE_WRITER}>)
-  target_compile_definitions(${TARGET} PUBLIC -DTINT_BUILD_IR=$<BOOL:${TINT_BUILD_IR}>)
-
-  common_compile_options(${TARGET})
-endfunction()
-
-function(tint_default_compile_options TARGET)
-  tint_core_compile_options(${TARGET})
-
-  set(COMMON_GNU_OPTIONS
-#    -Wall
-#    -Werror
-#    -Wextra
-    -Wno-documentation-unknown-command
-    -Wno-padded
-    -Wno-switch-enum
-    -Wno-unknown-pragmas
-  )
-
-  set(COMMON_CLANG_OPTIONS
-    -Wno-c++98-compat
-    -Wno-c++98-compat-pedantic
-    -Wno-format-pedantic
-    -Wno-poison-system-directories
-    -Wno-return-std-move-in-c++11
-    -Wno-unknown-warning-option
-    -Wno-undefined-var-template
-    -Wno-unsafe-buffer-usage
-    -Wno-used-but-marked-unused
-    -Weverything
-  )
-
-  if (COMPILER_IS_LIKE_GNU)
-    target_compile_options(${TARGET} PRIVATE
-      -pedantic-errors
-      ${COMMON_GNU_OPTIONS}
-    )
-
-    if (COMPILER_IS_CLANG)
-      target_compile_options(${TARGET} PRIVATE
-        ${COMMON_CLANG_OPTIONS}
-      )
-    endif()
-  endif(COMPILER_IS_LIKE_GNU)
-
-  if (MSVC)
-    # Specify /EHs for exception handling.
-    target_compile_options(${TARGET} PRIVATE
-      /bigobj
-      /EHsc
-      /W4
-      /WX
-      /wd4068 # unknown pragma
-      /wd4127 # conditional expression is constant
-      /wd4244 # 'conversion' conversion from 'type1' to 'type2', possible loss of data
-      /wd4267 # 'var' : conversion from 'size_t' to 'type', possible loss of data
-      /wd4324 # 'struct_name' : structure was padded due to __declspec(align())
-      /wd4459 # declaration of 'identifier' hides global declaration
-      /wd4458 # declaration of 'identifier' hides class member
-      /wd4514 # 'function' : unreferenced inline function has been removed
-      /wd4571 # catch(...) semantics changed since Visual C++ 7.1; structured exceptions (SEH) are no longer caught
-      /wd4625 # 'derived class' : copy constructor was implicitly defined as deleted because a base class copy constructor is inaccessible or deleted
-      /wd4626 # 'derived class' : assignment operator was implicitly defined as deleted because a base class assignment operator is inaccessible or deleted
-      /wd4710 # 'function' : function not inlined
-      /wd4774 # 'function' : format string 'string' requires an argument of type 'type', but variadic argument number has type 'type'
-      /wd4820 # 'bytes' bytes padding added after construct 'member_name'
-      /wd5026 # 'type': move constructor was implicitly defined as deleted
-      /wd5027 # 'type': move assignment operator was implicitly defined as deleted
-    )
-
-    # When building with clang-cl on Windows, try to match our clang build
-    # options as much as possible.
-    if (COMPILER_IS_CLANG_CL)
-      target_compile_options(${TARGET} PRIVATE
-        ${COMMON_GNU_OPTIONS}
-        ${COMMON_CLANG_OPTIONS}
-        # Disable warnings that are usually disabled in downstream deps for
-        # gcc/clang, but aren't for clang-cl.
-        -Wno-global-constructors
-        -Wno-zero-as-null-pointer-constant
-        -Wno-shorten-64-to-32
-        -Wno-shadow-field-in-constructor
-        -Wno-reserved-id-macro
-        -Wno-language-extension-token
-      )
-    endif()
-  endif()
-
-  if (TINT_RANDOMIZE_HASHES)
-    if(NOT DEFINED TINT_HASH_SEED)
-        string(RANDOM LENGTH 16 ALPHABET "0123456789abcdef" seed)
-        set(TINT_HASH_SEED "0x${seed}" CACHE STRING "Tint hash seed value")
-        message("Using TINT_HASH_SEED: ${TINT_HASH_SEED}")
-    endif()
-    target_compile_definitions(${TARGET} PUBLIC "-DTINT_HASH_SEED=${TINT_HASH_SEED}")
-  endif()
-endfunction()
-
 ################################################################################
 # Run on all subdirectories
 ################################################################################
@@ -670,15 +562,6 @@ add_subdirectory(src/dawn)
 ################################################################################
 # Samples
 ################################################################################
-
-if (TINT_BUILD_SAMPLES)
-  add_subdirectory(src/tint/cmd)
-endif()
-
-if (TINT_BUILD_FUZZERS)
-  add_subdirectory(src/tint/fuzzers)
-endif()
-
 add_custom_target(tint-lint
   COMMAND ./tools/lint
   WORKING_DIRECTORY ${TINT_ROOT_SOURCE_DIR}
@@ -706,10 +589,6 @@ if (DAWN_EMIT_COVERAGE)
     WORKING_DIRECTORY ${TINT_ROOT_SOURCE_DIR}
     COMMENT "Generating tint coverage data"
     VERBATIM)
-endif()
-
-if (TINT_BUILD_REMOTE_COMPILE)
-  add_subdirectory(tools/src/cmd/remote-compile)
 endif()
 
 add_subdirectory(dawn_static)

@@ -41,7 +41,7 @@ TEST(ReplaceIdentifierTest, NotApplicable_Simple) {
   )";
     Source::File file("test.wgsl", content);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -120,7 +120,7 @@ var<private> b: i32;
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -147,7 +147,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -179,7 +179,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -215,7 +215,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -250,7 +250,7 @@ fn f(b: i32) {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -286,7 +286,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -322,7 +322,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -359,7 +359,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -394,7 +394,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -430,7 +430,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -461,7 +461,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -483,12 +483,12 @@ fn f() {
     ASSERT_NE(replacement_id, 0);
 
     ASSERT_TRUE(MaybeApplyMutation(program, MutationReplaceIdentifier(use_id, replacement_id),
-                                   node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+                                   node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn f() {
   var b : vec2<u32>;
@@ -496,7 +496,7 @@ fn f() {
   (*(&(b)))[1] = 3u;
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(ReplaceIdentifierTest, Applicable2) {
@@ -510,7 +510,7 @@ fn f(b: ptr<function, vec2<u32>>) {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -527,12 +527,12 @@ fn f(b: ptr<function, vec2<u32>>) {
     ASSERT_NE(replacement_id, 0);
 
     ASSERT_TRUE(MaybeApplyMutation(program, MutationReplaceIdentifier(use_id, replacement_id),
-                                   node_id_map, &program, &node_id_map, nullptr));
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+                                   node_id_map, program, &node_id_map, nullptr));
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     wgsl::writer::Options options;
-    auto result = wgsl::writer::Generate(&program, options);
-    ASSERT_TRUE(result.success) << result.error;
+    auto result = wgsl::writer::Generate(program, options);
+    ASSERT_TRUE(result) << result.Failure();
 
     std::string expected_shader = R"(fn f(b : ptr<function, vec2<u32>>) {
   var a = vec2<u32>(34u, 45u);
@@ -540,7 +540,7 @@ fn f(b: ptr<function, vec2<u32>>) {
   (*(b))[1] = 3u;
 }
 )";
-    ASSERT_EQ(expected_shader, result.wgsl);
+    ASSERT_EQ(expected_shader, result->wgsl);
 }
 
 TEST(ReplaceIdentifierTest, NotApplicable12) {
@@ -555,7 +555,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -588,7 +588,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 
@@ -623,7 +623,7 @@ fn f() {
 )";
     Source::File file("test.wgsl", shader);
     auto program = wgsl::reader::Parse(&file);
-    ASSERT_TRUE(program.IsValid()) << program.Diagnostics().str();
+    ASSERT_TRUE(program.IsValid()) << program.Diagnostics();
 
     NodeIdMap node_id_map(program);
 

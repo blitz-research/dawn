@@ -25,7 +25,7 @@
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/utils/containers/unique_vector.h"
 #include "src/tint/utils/containers/vector.h"
-#include "src/tint/utils/text/symbol.h"
+#include "src/tint/utils/symbol/symbol.h"
 
 // Forward declarations
 namespace tint::ast {
@@ -35,7 +35,7 @@ class LocationAttribute;
 class ReturnStatement;
 }  // namespace tint::ast
 namespace tint::sem {
-class Builtin;
+class BuiltinFn;
 class Variable;
 }  // namespace tint::sem
 
@@ -86,11 +86,11 @@ class Function final : public Castable<Function, CallTarget> {
     }
 
     /// Records that this function directly references the given global variable.
-    /// Note: Implicitly adds this global to the transtively-called globals.
+    /// Note: Implicitly adds this global to the transitively-called globals.
     /// @param global the module-scope variable
     void AddDirectlyReferencedGlobal(const sem::GlobalVariable* global) {
         directly_referenced_globals_.Add(global);
-        transitively_referenced_globals_.Add(global);
+        AddTransitivelyReferencedGlobal(global);
     }
 
     /// @returns all transitively referenced global variables
@@ -101,9 +101,7 @@ class Function final : public Castable<Function, CallTarget> {
     /// Records that this function transitively references the given global
     /// variable.
     /// @param global the module-scoped variable
-    void AddTransitivelyReferencedGlobal(const sem::GlobalVariable* global) {
-        transitively_referenced_globals_.Add(global);
-    }
+    void AddTransitivelyReferencedGlobal(const sem::GlobalVariable* global);
 
     /// @returns the list of functions that this function transitively calls.
     const UniqueVector<const Function*, 8>& TransitivelyCalledFunctions() const {
@@ -117,13 +115,13 @@ class Function final : public Castable<Function, CallTarget> {
     }
 
     /// @returns the list of builtins that this function directly calls.
-    const UniqueVector<const Builtin*, 4>& DirectlyCalledBuiltins() const {
+    const UniqueVector<const BuiltinFn*, 4>& DirectlyCalledBuiltins() const {
         return directly_called_builtins_;
     }
 
     /// Records that this function transitively calls `builtin`.
     /// @param builtin the builtin this function directly calls
-    void AddDirectlyCalledBuiltin(const Builtin* builtin) {
+    void AddDirectlyCalledBuiltin(const BuiltinFn* builtin) {
         directly_called_builtins_.Add(builtin);
     }
 
@@ -266,12 +264,12 @@ class Function final : public Castable<Function, CallTarget> {
     /// Modifies the severity of a specific diagnostic rule for this function.
     /// @param rule the diagnostic rule
     /// @param severity the new diagnostic severity
-    void SetDiagnosticSeverity(builtin::DiagnosticRule rule, builtin::DiagnosticSeverity severity) {
+    void SetDiagnosticSeverity(wgsl::DiagnosticRule rule, wgsl::DiagnosticSeverity severity) {
         diagnostic_severities_[rule] = severity;
     }
 
     /// @returns the diagnostic severity modifications applied to this function
-    const builtin::DiagnosticRuleSeverities& DiagnosticSeverities() const {
+    const wgsl::DiagnosticRuleSeverities& DiagnosticSeverities() const {
         return diagnostic_severities_;
     }
 
@@ -279,7 +277,7 @@ class Function final : public Castable<Function, CallTarget> {
     Function(const Function&) = delete;
     Function(Function&&) = delete;
 
-    VariableBindings TransitivelyReferencedSamplerVariablesImpl(type::SamplerKind kind) const;
+    VariableBindings TransitivelyReferencedSamplerVariablesImpl(core::type::SamplerKind kind) const;
     VariableBindings TransitivelyReferencedSampledTextureVariablesImpl(bool multisampled) const;
 
     const ast::Function* const declaration_;
@@ -288,14 +286,14 @@ class Function final : public Castable<Function, CallTarget> {
     UniqueVector<const GlobalVariable*, 4> directly_referenced_globals_;
     UniqueVector<const GlobalVariable*, 8> transitively_referenced_globals_;
     UniqueVector<const Function*, 8> transitively_called_functions_;
-    UniqueVector<const Builtin*, 4> directly_called_builtins_;
+    UniqueVector<const BuiltinFn*, 4> directly_called_builtins_;
     UniqueVector<VariablePair, 8> texture_sampler_pairs_;
     std::vector<const Call*> direct_calls_;
     std::vector<const Call*> callsites_;
     std::vector<const Function*> ancestor_entry_points_;
     const Statement* discard_stmt_ = nullptr;
     sem::Behaviors behaviors_{sem::Behavior::kNext};
-    builtin::DiagnosticRuleSeverities diagnostic_severities_;
+    wgsl::DiagnosticRuleSeverities diagnostic_severities_;
 
     std::optional<uint32_t> return_location_;
     std::optional<uint32_t> return_index_;

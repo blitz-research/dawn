@@ -44,7 +44,6 @@ class DeviceMock : public DeviceBase {
 
     // Mock specific functionality.
     QueueMock* GetQueueMock();
-    BindGroupLayoutMock* GetEmptyBindGroupLayoutMock();
 
     MOCK_METHOD(ResultOrError<Ref<CommandBufferBase>>,
                 CreateCommandBuffer,
@@ -64,15 +63,14 @@ class DeviceMock : public DeviceBase {
     MOCK_METHOD(uint64_t, GetOptimalBufferToTextureCopyOffsetAlignment, (), (const, override));
 
     MOCK_METHOD(float, GetTimestampPeriodInNS, (), (const, override));
-    MOCK_METHOD(void, ForceEventualFlushOfCommands, (), (override));
 
     MOCK_METHOD(ResultOrError<Ref<BindGroupBase>>,
                 CreateBindGroupImpl,
                 (const BindGroupDescriptor*),
                 (override));
-    MOCK_METHOD(ResultOrError<Ref<BindGroupLayoutBase>>,
+    MOCK_METHOD(ResultOrError<Ref<BindGroupLayoutInternalBase>>,
                 CreateBindGroupLayoutImpl,
-                (const BindGroupLayoutDescriptor*, PipelineCompatibilityToken),
+                (const BindGroupLayoutDescriptor*),
                 (override));
     MOCK_METHOD(ResultOrError<Ref<BufferBase>>,
                 CreateBufferImpl,
@@ -128,10 +126,7 @@ class DeviceMock : public DeviceBase {
 
     MOCK_METHOD(MaybeError, TickImpl, (), (override));
 
-    MOCK_METHOD(ResultOrError<ExecutionSerial>, CheckAndUpdateCompletedSerials, (), (override));
     MOCK_METHOD(void, DestroyImpl, (), (override));
-    MOCK_METHOD(MaybeError, WaitForIdleForDestruction, (), (override));
-    MOCK_METHOD(bool, HasPendingCommands, (), (const, override));
 
   private:
     Ref<InstanceBase> mInstance;

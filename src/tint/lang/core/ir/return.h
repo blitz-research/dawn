@@ -15,18 +15,20 @@
 #ifndef SRC_TINT_LANG_CORE_IR_RETURN_H_
 #define SRC_TINT_LANG_CORE_IR_RETURN_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/terminator.h"
 #include "src/tint/utils/rtti/castable.h"
 
 // Forward declarations
-namespace tint::ir {
+namespace tint::core::ir {
 class Function;
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A return instruction.
-class Return : public Castable<Return, Terminator> {
+class Return final : public Castable<Return, Terminator> {
   public:
     /// The offset in Operands() for the function being returned
     static constexpr size_t kFunctionOperandOffset = 0;
@@ -45,8 +47,11 @@ class Return : public Castable<Return, Terminator> {
 
     ~Return() override;
 
+    /// @copydoc Instruction::Clone()
+    Return* Clone(CloneContext& ctx) override;
+
     /// @returns the function being returned
-    Function* Func() { return tint::As<Function>(operands_[kFunctionOperandOffset]); }
+    Function* Func() const;
 
     /// @returns the return value, or nullptr
     ir::Value* Value() const {
@@ -63,9 +68,9 @@ class Return : public Castable<Return, Terminator> {
     }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "return"; }
+    std::string FriendlyName() override { return "return"; }
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_RETURN_H_

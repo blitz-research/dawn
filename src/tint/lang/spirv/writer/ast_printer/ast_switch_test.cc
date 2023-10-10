@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/spirv/writer/ast_printer/test_helper.h"
-#include "src/tint/lang/spirv/writer/spv_dump.h"
+#include "src/tint/lang/spirv/writer/ast_printer/helper_test.h"
+#include "src/tint/lang/spirv/writer/common/spv_dump_test.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::spirv::writer {
 namespace {
@@ -56,8 +56,8 @@ TEST_F(SpirvASTPrinterTest, Switch_WithCase) {
     //   default: {}
     // }
 
-    auto* v = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
-    auto* a = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
 
     auto* func = Func("a_func", tint::Empty, ty.void_(),
                       Vector{
@@ -113,8 +113,8 @@ TEST_F(SpirvASTPrinterTest, Switch_WithCase_Unsigned) {
     //   default: {}
     // }
 
-    auto* v = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
-    auto* a = GlobalVar("a", ty.u32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.u32(), core::AddressSpace::kPrivate);
 
     auto* func = Func("a_func", tint::Empty, ty.void_(),
                       Vector{
@@ -170,8 +170,8 @@ TEST_F(SpirvASTPrinterTest, Switch_WithDefault) {
     //     v = 1i;
     //  }
 
-    auto* v = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
-    auto* a = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
 
     auto* func = Func("a_func", tint::Empty, ty.void_(),
                       Vector{
@@ -220,8 +220,8 @@ TEST_F(SpirvASTPrinterTest, Switch_WithCaseAndDefault) {
     //      v = 3i;
     //  }
 
-    auto* v = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
-    auto* a = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
 
     auto* func = Func("a_func", tint::Empty, ty.void_(),
                       Vector{
@@ -280,8 +280,8 @@ TEST_F(SpirvASTPrinterTest, Switch_WithCaseAndMixedDefault) {
     //      v = 2i;
     //  }
 
-    auto* v = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
-    auto* a = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
 
     auto* func = Func(
         "a_func", tint::Empty, ty.void_(),
@@ -337,8 +337,8 @@ TEST_F(SpirvASTPrinterTest, Switch_WithNestedBreak) {
     //   default: {}
     // }
 
-    auto* v = GlobalVar("v", ty.i32(), builtin::AddressSpace::kPrivate);
-    auto* a = GlobalVar("a", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* v = GlobalVar("v", ty.i32(), core::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.i32(), core::AddressSpace::kPrivate);
 
     auto* func = Func("a_func", tint::Empty, ty.void_(),
                       Vector{

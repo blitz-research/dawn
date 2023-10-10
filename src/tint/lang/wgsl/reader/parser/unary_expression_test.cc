@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
-#include "src/tint/lang/wgsl/reader/parser/test_helper.h"
+#include "src/tint/lang/wgsl/reader/parser/helper_test.h"
 
 namespace tint::wgsl::reader {
 namespace {
@@ -48,7 +48,7 @@ TEST_F(WGSLParserTest, UnaryExpression_Minus) {
     ASSERT_TRUE(e->Is<ast::UnaryOpExpression>());
 
     auto* u = e->As<ast::UnaryOpExpression>();
-    ASSERT_EQ(u->op, ast::UnaryOp::kNegation);
+    ASSERT_EQ(u->op, core::UnaryOp::kNegation);
 
     ASSERT_TRUE(u->expr->Is<ast::IntLiteralExpression>());
     EXPECT_EQ(u->expr->As<ast::IntLiteralExpression>()->value, 1);
@@ -66,7 +66,7 @@ TEST_F(WGSLParserTest, UnaryExpression_AddressOf) {
     ASSERT_TRUE(e->Is<ast::UnaryOpExpression>());
 
     auto* u = e->As<ast::UnaryOpExpression>();
-    EXPECT_EQ(u->op, ast::UnaryOp::kAddressOf);
+    EXPECT_EQ(u->op, core::UnaryOp::kAddressOf);
     EXPECT_TRUE(u->expr->Is<ast::IdentifierExpression>());
 }
 
@@ -80,7 +80,7 @@ TEST_F(WGSLParserTest, UnaryExpression_Dereference) {
     ASSERT_TRUE(e->Is<ast::UnaryOpExpression>());
 
     auto* u = e->As<ast::UnaryOpExpression>();
-    EXPECT_EQ(u->op, ast::UnaryOp::kIndirection);
+    EXPECT_EQ(u->op, core::UnaryOp::kIndirection);
     EXPECT_TRUE(u->expr->Is<ast::IdentifierExpression>());
 }
 
@@ -94,7 +94,7 @@ TEST_F(WGSLParserTest, UnaryExpression_AddressOf_Precedence) {
     ASSERT_TRUE(e->Is<ast::UnaryOpExpression>());
 
     auto* u = e->As<ast::UnaryOpExpression>();
-    EXPECT_EQ(u->op, ast::UnaryOp::kAddressOf);
+    EXPECT_EQ(u->op, core::UnaryOp::kAddressOf);
     EXPECT_TRUE(u->expr->Is<ast::MemberAccessorExpression>());
 }
 
@@ -108,7 +108,7 @@ TEST_F(WGSLParserTest, UnaryExpression_Dereference_Precedence) {
     ASSERT_TRUE(e->Is<ast::UnaryOpExpression>());
 
     auto* u = e->As<ast::UnaryOpExpression>();
-    EXPECT_EQ(u->op, ast::UnaryOp::kIndirection);
+    EXPECT_EQ(u->op, core::UnaryOp::kIndirection);
     EXPECT_TRUE(u->expr->Is<ast::MemberAccessorExpression>());
 }
 
@@ -132,7 +132,7 @@ TEST_F(WGSLParserTest, UnaryExpression_Bang) {
     ASSERT_TRUE(e->Is<ast::UnaryOpExpression>());
 
     auto* u = e->As<ast::UnaryOpExpression>();
-    ASSERT_EQ(u->op, ast::UnaryOp::kNot);
+    ASSERT_EQ(u->op, core::UnaryOp::kNot);
 
     ASSERT_TRUE(u->expr->Is<ast::IntLiteralExpression>());
     EXPECT_EQ(u->expr->As<ast::IntLiteralExpression>()->value, 1);
@@ -160,7 +160,7 @@ TEST_F(WGSLParserTest, UnaryExpression_Tilde) {
     ASSERT_TRUE(e->Is<ast::UnaryOpExpression>());
 
     auto* u = e->As<ast::UnaryOpExpression>();
-    ASSERT_EQ(u->op, ast::UnaryOp::kComplement);
+    ASSERT_EQ(u->op, core::UnaryOp::kComplement);
 
     ASSERT_TRUE(u->expr->Is<ast::IntLiteralExpression>());
     EXPECT_EQ(u->expr->As<ast::IntLiteralExpression>()->value, 1);

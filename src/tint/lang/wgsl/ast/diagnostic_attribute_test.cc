@@ -12,26 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/ast/test_helper.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 
 namespace tint::ast {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using DiagnosticAttributeTest = TestHelper;
 
 TEST_F(DiagnosticAttributeTest, Name) {
-    auto* d = DiagnosticAttribute(builtin::DiagnosticSeverity::kWarning, "foo");
+    auto* d = DiagnosticAttribute(wgsl::DiagnosticSeverity::kWarning, "foo");
     EXPECT_EQ(d->Name(), "diagnostic");
-    EXPECT_EQ(d->control.severity, builtin::DiagnosticSeverity::kWarning);
+    EXPECT_EQ(d->control.severity, wgsl::DiagnosticSeverity::kWarning);
     EXPECT_EQ(d->control.rule_name->category, nullptr);
     CheckIdentifier(d->control.rule_name->name, "foo");
 }
 
 TEST_F(DiagnosticAttributeTest, CategoryAndName) {
-    auto* d = DiagnosticAttribute(builtin::DiagnosticSeverity::kWarning, "foo", "bar");
+    auto* d = DiagnosticAttribute(wgsl::DiagnosticSeverity::kWarning, "foo", "bar");
     EXPECT_EQ(d->Name(), "diagnostic");
-    EXPECT_EQ(d->control.severity, builtin::DiagnosticSeverity::kWarning);
+    EXPECT_EQ(d->control.severity, wgsl::DiagnosticSeverity::kWarning);
     CheckIdentifier(d->control.rule_name->category, "foo");
     CheckIdentifier(d->control.rule_name->name, "bar");
 }

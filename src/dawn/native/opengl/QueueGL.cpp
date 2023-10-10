@@ -63,7 +63,8 @@ MaybeError Queue::WriteTextureImpl(const ImageCopyTexture& destination,
     textureCopy.aspect = SelectFormatAspects(destination.texture->GetFormat(), destination.aspect);
 
     SubresourceRange range = GetSubresourcesAffectedByCopy(textureCopy, writeSizePixel);
-    if (IsCompleteSubresourceCopiedTo(destination.texture, writeSizePixel, destination.mipLevel)) {
+    if (IsCompleteSubresourceCopiedTo(destination.texture, writeSizePixel, destination.mipLevel,
+                                      destination.aspect)) {
         destination.texture->SetIsSubresourceContentInitialized(true, range);
     } else {
         DAWN_TRY(ToBackend(destination.texture)->EnsureSubresourceContentInitialized(range));
@@ -71,6 +72,22 @@ MaybeError Queue::WriteTextureImpl(const ImageCopyTexture& destination,
     DoTexSubImage(ToBackend(GetDevice())->GetGL(), textureCopy, data, dataLayout, writeSizePixel);
     ToBackend(destination.texture)->Touch();
     return {};
+}
+
+bool Queue::HasPendingCommands() const {
+    return ToBackend(GetDevice())->HasPendingCommands();
+}
+
+ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {
+    return ToBackend(GetDevice())->CheckAndUpdateCompletedSerials();
+}
+
+void Queue::ForceEventualFlushOfCommands() {
+    return ToBackend(GetDevice())->ForceEventualFlushOfCommands();
+}
+
+MaybeError Queue::WaitForIdleForDestruction() {
+    return ToBackend(GetDevice())->WaitForIdleForDestruction();
 }
 
 }  // namespace dawn::native::opengl

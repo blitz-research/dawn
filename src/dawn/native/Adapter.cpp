@@ -35,8 +35,8 @@ AdapterBase::AdapterBase(Ref<PhysicalDeviceBase> physicalDevice,
       mFeatureLevel(featureLevel),
       mTogglesState(requiredAdapterToggles),
       mPowerPreference(powerPreference) {
-    ASSERT(mPhysicalDevice->SupportsFeatureLevel(featureLevel));
-    ASSERT(mTogglesState.GetStage() == ToggleStage::Adapter);
+    DAWN_ASSERT(mPhysicalDevice->SupportsFeatureLevel(featureLevel));
+    DAWN_ASSERT(mTogglesState.GetStage() == ToggleStage::Adapter);
     // Cache the supported features of this adapter. Note that with device toggles overriding, a
     // device created by this adapter may support features not in this set and vice versa.
     mSupportedFeatures = mPhysicalDevice->GetSupportedFeatures(mTogglesState);
@@ -58,14 +58,17 @@ PhysicalDeviceBase* AdapterBase::GetPhysicalDevice() {
 
 InstanceBase* AdapterBase::APIGetInstance() const {
     InstanceBase* instance = mPhysicalDevice->GetInstance();
-    ASSERT(instance != nullptr);
+    DAWN_ASSERT(instance != nullptr);
     instance->APIReference();
     return instance;
 }
 
 bool AdapterBase::APIGetLimits(SupportedLimits* limits) const {
-    ASSERT(limits != nullptr);
-    if (limits->nextInChain != nullptr) {
+    DAWN_ASSERT(limits != nullptr);
+    // TODO(dawn:1955): Revisit after deciding how to improve the validation for ChainedStructOut.
+    MaybeError result =
+        ValidateSTypes(limits->nextInChain, {{wgpu::SType::DawnExperimentalSubgroupLimits}});
+    if (mPhysicalDevice->GetInstance()->ConsumedError(std::move(result))) {
         return false;
     }
     if (mUseTieredLimits) {
@@ -73,11 +76,34 @@ bool AdapterBase::APIGetLimits(SupportedLimits* limits) const {
     } else {
         limits->limits = mPhysicalDevice->GetLimits().v1;
     }
+    for (auto* chain = limits->nextInChain; chain; chain = chain->nextInChain) {
+        wgpu::ChainedStructOut originalChain = *chain;
+        switch (chain->sType) {
+            case (wgpu::SType::DawnExperimentalSubgroupLimits): {
+                DawnExperimentalSubgroupLimits* subgroupLimits =
+                    reinterpret_cast<DawnExperimentalSubgroupLimits*>(chain);
+                if (!mTogglesState.IsEnabled(Toggle::AllowUnsafeAPIs)) {
+                    // If AllowUnsafeAPIs is not enabled, return the default-initialized
+                    // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
+                    // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
+                    *subgroupLimits = DawnExperimentalSubgroupLimits{};
+                } else {
+                    *subgroupLimits = mPhysicalDevice->GetLimits().experimentalSubgroupLimits;
+                }
+                break;
+            }
+            default:
+                // ValidateSTypes ensures that all chained sTypes are known.
+                DAWN_UNREACHABLE();
+        }
+        // Recover the original chain
+        *chain = originalChain;
+    }
     return true;
 }
 
 void AdapterBase::APIGetProperties(AdapterProperties* properties) const {
-    ASSERT(properties != nullptr);
+    DAWN_ASSERT(properties != nullptr);
 
     MaybeError result = ValidateSingleSType(properties->nextInChain,
                                             wgpu::SType::DawnAdapterPropertiesPowerPreference);
@@ -93,14 +119,40 @@ void AdapterBase::APIGetProperties(AdapterProperties* properties) const {
         powerPreferenceDesc->powerPreference = mPowerPreference;
     }
     properties->vendorID = mPhysicalDevice->GetVendorId();
-    properties->vendorName = mPhysicalDevice->GetVendorName().c_str();
-    properties->architecture = mPhysicalDevice->GetArchitectureName().c_str();
     properties->deviceID = mPhysicalDevice->GetDeviceId();
-    properties->name = mPhysicalDevice->GetName().c_str();
-    properties->driverDescription = mPhysicalDevice->GetDriverDescription().c_str();
     properties->adapterType = mPhysicalDevice->GetAdapterType();
     properties->backendType = mPhysicalDevice->GetBackendType();
     properties->compatibilityMode = mFeatureLevel == FeatureLevel::Compatibility;
+
+    // Get lengths, with null terminators.
+    size_t vendorNameCLen = mPhysicalDevice->GetVendorName().length() + 1;
+    size_t architectureCLen = mPhysicalDevice->GetArchitectureName().length() + 1;
+    size_t nameCLen = mPhysicalDevice->GetName().length() + 1;
+    size_t driverDescriptionCLen = mPhysicalDevice->GetDriverDescription().length() + 1;
+
+    // Allocate space for all strings.
+    char* ptr = new char[vendorNameCLen + architectureCLen + nameCLen + driverDescriptionCLen];
+
+    properties->vendorName = ptr;
+    memcpy(ptr, mPhysicalDevice->GetVendorName().c_str(), vendorNameCLen);
+    ptr += vendorNameCLen;
+
+    properties->architecture = ptr;
+    memcpy(ptr, mPhysicalDevice->GetArchitectureName().c_str(), architectureCLen);
+    ptr += architectureCLen;
+
+    properties->name = ptr;
+    memcpy(ptr, mPhysicalDevice->GetName().c_str(), nameCLen);
+    ptr += nameCLen;
+
+    properties->driverDescription = ptr;
+    memcpy(ptr, mPhysicalDevice->GetDriverDescription().c_str(), driverDescriptionCLen);
+    ptr += driverDescriptionCLen;
+}
+
+void APIAdapterPropertiesFreeMembers(WGPUAdapterProperties properties) {
+    // This single delete is enough because everything is a single allocation.
+    delete[] properties.vendorName;
 }
 
 bool AdapterBase::APIHasFeature(wgpu::FeatureName feature) const {
@@ -126,7 +178,7 @@ DeviceBase* AdapterBase::APICreateDevice(const DeviceDescriptor* descriptor) {
 }
 
 ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor* descriptor) {
-    ASSERT(descriptor != nullptr);
+    DAWN_ASSERT(descriptor != nullptr);
 
     // Create device toggles state from required toggles descriptor and inherited adapter toggles
     // state.
@@ -139,6 +191,7 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor*
     deviceToggles.InheritFrom(mTogglesState);
     // Default toggles for all backend
     deviceToggles.Default(Toggle::LazyClearResourceOnFirstUse, true);
+    deviceToggles.Default(Toggle::TimestampQuantization, true);
 
     // Backend-specific forced and default device toggles
     mPhysicalDevice->SetupBackendDeviceToggles(&deviceToggles);
@@ -149,21 +202,23 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor*
     // that not supported by the adapter. We allow such toggles overriding for the convinience e.g.
     // creating a deivce for internal usage with AllowUnsafeAPI enabled from an adapter that
     // disabled AllowUnsafeAPIS.
-    for (uint32_t i = 0; i < descriptor->requiredFeaturesCount; ++i) {
+    for (uint32_t i = 0; i < descriptor->requiredFeatureCount; ++i) {
         wgpu::FeatureName feature = descriptor->requiredFeatures[i];
         DAWN_TRY(mPhysicalDevice->ValidateFeatureSupportedWithToggles(feature, deviceToggles));
     }
 
     if (descriptor->requiredLimits != nullptr) {
+        // Only consider limits in RequiredLimits structure, and currently no chained structure
+        // supported.
+        DAWN_INVALID_IF(descriptor->requiredLimits->nextInChain != nullptr,
+                        "can not chain after requiredLimits.");
+
         SupportedLimits supportedLimits;
         bool success = APIGetLimits(&supportedLimits);
-        ASSERT(success);
+        DAWN_ASSERT(success);
 
         DAWN_TRY_CONTEXT(ValidateLimits(supportedLimits.limits, descriptor->requiredLimits->limits),
                          "validating required limits");
-
-        DAWN_INVALID_IF(descriptor->requiredLimits->nextInChain != nullptr,
-                        "nextInChain is not nullptr.");
     }
 
     return mPhysicalDevice->CreateDevice(this, descriptor, deviceToggles);

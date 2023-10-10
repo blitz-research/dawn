@@ -13,13 +13,13 @@
 // limitations under the License.
 
 #include "src/tint/lang/core/type/struct.h"
-#include "src/tint/lang/core/type/test_helper.h"
+#include "src/tint/lang/core/type/helper_test.h"
 #include "src/tint/lang/core/type/texture.h"
 
-namespace tint::type {
+namespace tint::core::type {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using TypeStructTest = TestHelper;
 
 TEST_F(TypeStructTest, Creation) {
@@ -65,7 +65,7 @@ TEST_F(TypeStructTest, Layout) {
                                         });
 
     auto p = Build();
-    ASSERT_TRUE(p.IsValid()) << p.Diagnostics().str();
+    ASSERT_TRUE(p.IsValid()) << p.Diagnostics();
 
     auto* sem_inner_st = p.Sem().Get(inner_st);
     auto* sem_outer_st = p.Sem().Get(outer_st);
@@ -96,7 +96,7 @@ TEST_F(TypeStructTest, Location) {
                                });
 
     auto p = Build();
-    ASSERT_TRUE(p.IsValid()) << p.Diagnostics().str();
+    ASSERT_TRUE(p.IsValid()) << p.Diagnostics();
 
     auto* sem = p.Sem().Get(st);
     ASSERT_EQ(2u, sem->Members().Length());
@@ -127,7 +127,7 @@ TEST_F(TypeStructTest, IsConstructable) {
                                                 Member("runtime_sized_array", ty.array<i32>()),
                                             });
     auto p = Build();
-    ASSERT_TRUE(p.IsValid()) << p.Diagnostics().str();
+    ASSERT_TRUE(p.IsValid()) << p.Diagnostics();
 
     auto* sem_inner = p.Sem().Get(inner);
     auto* sem_outer = p.Sem().Get(outer);
@@ -160,7 +160,7 @@ TEST_F(TypeStructTest, HasCreationFixedFootprint) {
                                             });
 
     auto p = Build();
-    ASSERT_TRUE(p.IsValid()) << p.Diagnostics().str();
+    ASSERT_TRUE(p.IsValid()) << p.Diagnostics();
 
     auto* sem_inner = p.Sem().Get(inner);
     auto* sem_outer = p.Sem().Get(outer);
@@ -193,7 +193,7 @@ TEST_F(TypeStructTest, HasFixedFootprint) {
                                             });
 
     auto p = Build();
-    ASSERT_TRUE(p.IsValid()) << p.Diagnostics().str();
+    ASSERT_TRUE(p.IsValid()) << p.Diagnostics();
 
     auto* sem_inner = p.Sem().Get(inner);
     auto* sem_outer = p.Sem().Get(outer);
@@ -205,7 +205,7 @@ TEST_F(TypeStructTest, HasFixedFootprint) {
 }
 
 TEST_F(TypeStructTest, Clone) {
-    type::StructMemberAttributes attrs_location_2;
+    core::type::StructMemberAttributes attrs_location_2;
     attrs_location_2.location = 2;
 
     auto* s = create<Struct>(
@@ -213,14 +213,14 @@ TEST_F(TypeStructTest, Clone) {
         tint::Vector{create<StructMember>(Sym("b"), create<Vector>(create<F32>(), 3u), 0u, 0u, 16u,
                                           12u, attrs_location_2),
                      create<StructMember>(Sym("a"), create<I32>(), 1u, 16u, 4u, 4u,
-                                          type::StructMemberAttributes{})},
+                                          core::type::StructMemberAttributes{})},
         4u /* align */, 8u /* size */, 16u /* size_no_padding */);
 
     GenerationID id;
     SymbolTable new_st{id};
 
-    type::Manager mgr;
-    type::CloneContext ctx{{&Symbols()}, {&new_st, &mgr}};
+    core::type::Manager mgr;
+    core::type::CloneContext ctx{{&Symbols()}, {&new_st, &mgr}};
 
     auto* st = s->Clone(ctx);
 
@@ -250,4 +250,4 @@ TEST_F(TypeStructTest, Clone) {
 }
 
 }  // namespace
-}  // namespace tint::type
+}  // namespace tint::core::type

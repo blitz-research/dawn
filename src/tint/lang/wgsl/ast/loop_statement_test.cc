@@ -17,8 +17,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
 #include "src/tint/lang/wgsl/ast/discard_statement.h"
+#include "src/tint/lang/wgsl/ast/helper_test.h"
 #include "src/tint/lang/wgsl/ast/if_statement.h"
-#include "src/tint/lang/wgsl/ast/test_helper.h"
 
 namespace tint::ast {
 namespace {
@@ -50,8 +50,8 @@ TEST_F(LoopStatementTest, Creation_WithSource) {
 }
 
 TEST_F(LoopStatementTest, Creation_WithAttributes) {
-    auto* attr1 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(builtin::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "foo");
+    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "bar");
 
     auto* body = Block(Return());
     auto* l = create<LoopStatement>(body, nullptr, tint::Vector{attr1, attr2});

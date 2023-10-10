@@ -16,11 +16,11 @@
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
-#include "src/tint/lang/wgsl/writer/ast_printer/test_helper.h"
+#include "src/tint/lang/wgsl/writer/ast_printer/helper_test.h"
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 namespace tint::wgsl::writer {
 namespace {
@@ -31,7 +31,7 @@ TEST_F(WgslASTPrinterTest, Emit_GlobalDeclAfterFunction) {
     auto* func_var = Var("a", ty.f32());
     WrapInFunction(func_var);
 
-    GlobalVar("a", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("a", ty.f32(), core::AddressSpace::kPrivate);
 
     ASTPrinter& gen = Build();
 
@@ -48,7 +48,7 @@ TEST_F(WgslASTPrinterTest, Emit_GlobalDeclAfterFunction) {
 }
 
 TEST_F(WgslASTPrinterTest, Emit_GlobalsInterleaved) {
-    GlobalVar("a0", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("a0", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* s0 = Structure("S0", Vector{
                                    Member("a", ty.i32()),
@@ -60,7 +60,7 @@ TEST_F(WgslASTPrinterTest, Emit_GlobalsInterleaved) {
          },
          tint::Empty);
 
-    GlobalVar("a1", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("a1", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* s1 = Structure("S1", Vector{
                                    Member("a", ty.i32()),
@@ -108,7 +108,7 @@ TEST_F(WgslASTPrinterTest, Emit_GlobalsInterleaved) {
 }
 
 TEST_F(WgslASTPrinterTest, Emit_Global_Sampler) {
-    GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(0_a), Binding(0_a));
+    GlobalVar("s", ty.sampler(core::type::SamplerKind::kSampler), Group(0_a), Binding(0_a));
 
     ASTPrinter& gen = Build();
 
@@ -119,7 +119,7 @@ TEST_F(WgslASTPrinterTest, Emit_Global_Sampler) {
 }
 
 TEST_F(WgslASTPrinterTest, Emit_Global_Texture) {
-    auto st = ty.sampled_texture(type::TextureDimension::k1d, ty.f32());
+    auto st = ty.sampled_texture(core::type::TextureDimension::k1d, ty.f32());
     GlobalVar("t", st, Group(0_a), Binding(0_a));
 
     ASTPrinter& gen = Build();

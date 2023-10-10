@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_UNARY_H_
 #define SRC_TINT_LANG_CORE_IR_UNARY_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/operand_instruction.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A unary instruction in the IR.
-class Unary : public Castable<Unary, OperandInstruction<1, 1>> {
+class Unary final : public Castable<Unary, OperandInstruction<1, 1>> {
   public:
     /// The offset in Operands() for the value
     static constexpr size_t kValueOperandOffset = 0;
@@ -39,6 +41,9 @@ class Unary : public Castable<Unary, OperandInstruction<1, 1>> {
     Unary(InstructionResult* result, enum Kind kind, Value* val);
     ~Unary() override;
 
+    /// @copydoc Instruction::Clone()
+    Unary* Clone(CloneContext& ctx) override;
+
     /// @returns the value for the instruction
     Value* Val() { return operands_[kValueOperandOffset]; }
 
@@ -46,12 +51,12 @@ class Unary : public Castable<Unary, OperandInstruction<1, 1>> {
     enum Kind Kind() { return kind_; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "unary"; }
+    std::string FriendlyName() override { return "unary"; }
 
   private:
     enum Kind kind_;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_UNARY_H_

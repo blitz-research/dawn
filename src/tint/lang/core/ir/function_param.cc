@@ -14,13 +14,15 @@
 
 #include "src/tint/lang/core/ir/function_param.h"
 
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::FunctionParam);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::FunctionParam);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
-FunctionParam::FunctionParam(const type::Type* ty) : type_(ty) {
+FunctionParam::FunctionParam(const core::type::Type* ty) : type_(ty) {
     TINT_ASSERT(ty != nullptr);
 }
 
@@ -50,8 +52,26 @@ std::string_view ToString(enum FunctionParam::Builtin value) {
             return "sample_index";
         case FunctionParam::Builtin::kSampleMask:
             return "sample_mask";
+        case FunctionParam::Builtin::kSubgroupInvocationId:
+            return "subgroup_invocation_id";
+        case FunctionParam::Builtin::kSubgroupSize:
+            return "subgroup_size";
     }
     return "<unknown>";
 }
 
-}  // namespace tint::ir
+FunctionParam* FunctionParam::Clone(CloneContext& ctx) {
+    auto* out = ctx.ir.values.Create<FunctionParam>(type_);
+    out->builtin_ = builtin_;
+    out->location_ = location_;
+    out->binding_point_ = binding_point_;
+    out->invariant_ = invariant_;
+
+    auto name = ctx.ir.NameOf(this);
+    if (name.IsValid()) {
+        ctx.ir.SetName(out, name);
+    }
+    return out;
+}
+
+}  // namespace tint::core::ir

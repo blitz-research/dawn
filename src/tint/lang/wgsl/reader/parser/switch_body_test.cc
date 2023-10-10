@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/wgsl/reader/parser/test_helper.h"
+#include "src/tint/lang/wgsl/reader/parser/helper_test.h"
 
 namespace tint::wgsl::reader {
 namespace {
@@ -60,7 +60,7 @@ TEST_F(WGSLParserTest, SwitchBody_Case_Expression) {
     ASSERT_TRUE(sel->expr->Is<ast::BinaryExpression>());
     auto* expr = sel->expr->As<ast::BinaryExpression>();
 
-    EXPECT_EQ(ast::BinaryOp::kAdd, expr->op);
+    EXPECT_EQ(core::BinaryOp::kAdd, expr->op);
     auto* v = expr->lhs->As<ast::IntLiteralExpression>();
     ASSERT_NE(nullptr, v);
     EXPECT_EQ(v->value, 1u);

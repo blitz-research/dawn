@@ -16,14 +16,14 @@
 
 #include <utility>
 
+#include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
 #include "src/tint/lang/wgsl/inspector/inspector.h"
-#include "tint/binding_point.h"
 
 namespace tint::writer {
 
-std::optional<Program> FlattenBindings(const Program* program) {
+std::optional<Program> FlattenBindings(const Program& program) {
     // TODO(crbug.com/tint/1101): Make this more robust for multiple entry points.
     tint::ast::transform::BindingRemapper::BindingPoints binding_points;
     uint32_t next_buffer_idx = 0;
@@ -53,6 +53,8 @@ std::optional<Program> FlattenBindings(const Program* program) {
                 case tint::inspector::ResourceBinding::ResourceType::kSampledTexture:
                 case tint::inspector::ResourceBinding::ResourceType::kMultisampledTexture:
                 case tint::inspector::ResourceBinding::ResourceType::kWriteOnlyStorageTexture:
+                case tint::inspector::ResourceBinding::ResourceType::kReadOnlyStorageTexture:
+                case tint::inspector::ResourceBinding::ResourceType::kReadWriteStorageTexture:
                 case tint::inspector::ResourceBinding::ResourceType::kDepthTexture:
                 case tint::inspector::ResourceBinding::ResourceType::kDepthMultisampledTexture:
                 case tint::inspector::ResourceBinding::ResourceType::kExternalTexture:

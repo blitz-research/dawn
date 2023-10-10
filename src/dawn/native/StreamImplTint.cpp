@@ -33,12 +33,12 @@ template <>
 void stream::Stream<tint::Program>::Write(stream::Sink* sink, const tint::Program& p) {
 #if TINT_BUILD_WGSL_WRITER
     tint::wgsl::writer::Options options{};
-    StreamIn(sink, tint::wgsl::writer::Generate(&p, options).wgsl);
+    StreamIn(sink, tint::wgsl::writer::Generate(p, options)->wgsl);
 #else
     // TODO(crbug.com/dawn/1481): We shouldn't need to write back to WGSL if we have a CacheKey
     // built from the initial shader module input. Then, we would never need to parse the program
     // and write back out to WGSL.
-    UNREACHABLE();
+    DAWN_UNREACHABLE();
 #endif
 }
 
@@ -48,6 +48,40 @@ void stream::Stream<tint::BindingPoint>::Write(stream::Sink* sink,
                                                const tint::BindingPoint& point) {
     StreamInTintObject(point, sink);
 }
+
+// static
+template <>
+MaybeError stream::Stream<tint::BindingPoint>::Read(Source* s, tint::BindingPoint* point) {
+    DAWN_TRY(StreamOut(s, &point->group));
+    DAWN_TRY(StreamOut(s, &point->binding));
+    return {};
+}
+
+#if TINT_BUILD_SPV_WRITER
+// static
+template <>
+void stream::Stream<tint::spirv::writer::Bindings>::Write(
+    stream::Sink* sink,
+    const tint::spirv::writer::Bindings& bindings) {
+    StreamInTintObject(bindings, sink);
+}
+
+// static
+template <>
+void stream::Stream<tint::spirv::writer::binding::ExternalTexture>::Write(
+    stream::Sink* sink,
+    const tint::spirv::writer::binding::ExternalTexture& et) {
+    StreamInTintObject(et, sink);
+}
+
+// static
+template <>
+void stream::Stream<tint::spirv::writer::binding::BindingInfo>::Write(
+    stream::Sink* sink,
+    const tint::spirv::writer::binding::BindingInfo& point) {
+    StreamInTintObject(point, sink);
+}
+#endif  // TINT_BUILD_SPV_WRITER
 
 // static
 template <>
@@ -108,6 +142,14 @@ template <>
 void stream::Stream<tint::ArrayLengthFromUniformOptions>::Write(
     stream::Sink* sink,
     const tint::ArrayLengthFromUniformOptions& options) {
+    StreamInTintObject(options, sink);
+}
+
+// static
+template <>
+void stream::Stream<tint::TextureBuiltinsFromUniformOptions>::Write(
+    stream::Sink* sink,
+    const tint::TextureBuiltinsFromUniformOptions& options) {
     StreamInTintObject(options, sink);
 }
 

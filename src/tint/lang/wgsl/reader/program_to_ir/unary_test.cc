@@ -21,7 +21,7 @@
 namespace tint::wgsl::reader {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 using ProgramToIRUnaryTest = helpers::IRProgramTest;
 
@@ -31,7 +31,7 @@ TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_Not) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():bool -> %b1 {
   %b1 = block {
@@ -54,7 +54,7 @@ TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_Not_Vector) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():vec4<bool> -> %b1 {
   %b1 = block {
@@ -77,7 +77,7 @@ TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_Complement) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():u32 -> %b1 {
   %b1 = block {
@@ -100,7 +100,7 @@ TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_Negation) {
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%my_func = func():i32 -> %b1 {
   %b1 = block {
@@ -118,13 +118,13 @@ TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_Negation) {
 }
 
 TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_AddressOf) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.i32());
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.i32());
 
     auto* expr = Decl(Let("v2", AddressOf("v1")));
     WrapInFunction(expr);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, i32, read_write> = var
@@ -140,7 +140,7 @@ TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_AddressOf) {
 }
 
 TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_Indirection) {
-    GlobalVar("v1", builtin::AddressSpace::kPrivate, ty.i32());
+    GlobalVar("v1", core::AddressSpace::kPrivate, ty.i32());
     Vector stmts = {
         Decl(Let("v3", AddressOf("v1"))),
         Assign(Deref("v3"), 42_i),
@@ -148,7 +148,7 @@ TEST_F(ProgramToIRUnaryTest, EmitExpression_Unary_Indirection) {
     WrapInFunction(stmts);
 
     auto m = Build();
-    ASSERT_TRUE(m) << (!m ? m.Failure() : "");
+    ASSERT_TRUE(m) << m;
 
     EXPECT_EQ(Disassemble(m.Get()), R"(%b1 = block {  # root
   %v1:ptr<private, i32, read_write> = var

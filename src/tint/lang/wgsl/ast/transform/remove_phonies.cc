@@ -35,7 +35,7 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::RemovePhonies);
 namespace tint::ast::transform {
 namespace {
 
-using SinkSignature = std::vector<const type::Type*>;
+using SinkSignature = std::vector<const core::type::Type*>;
 
 }  // namespace
 
@@ -43,16 +43,16 @@ RemovePhonies::RemovePhonies() = default;
 
 RemovePhonies::~RemovePhonies() = default;
 
-Transform::ApplyResult RemovePhonies::Apply(const Program* src, const DataMap&, DataMap&) const {
+Transform::ApplyResult RemovePhonies::Apply(const Program& src, const DataMap&, DataMap&) const {
     ProgramBuilder b;
-    program::CloneContext ctx{&b, src, /* auto_clone_symbols */ true};
+    program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
 
-    auto& sem = src->Sem();
+    auto& sem = src.Sem();
 
-    Hashmap<SinkSignature, Symbol, 8, Hasher<SinkSignature>> sinks;
+    Hashmap<SinkSignature, Symbol, 8> sinks;
 
     bool made_changes = false;
-    for (auto* node : src->ASTNodes().Objects()) {
+    for (auto* node : src.ASTNodes().Objects()) {
         Switch(
             node,
             [&](const AssignmentStatement* stmt) {
@@ -71,7 +71,7 @@ Transform::ApplyResult RemovePhonies::Apply(const Program* src, const DataMap&, 
                                 // have side effects. Just skip.
                                 return TraverseAction::Skip;
                             }
-                            if (call->Target()->IsAnyOf<sem::Function, sem::Builtin>() &&
+                            if (call->Target()->IsAnyOf<sem::Function, sem::BuiltinFn>() &&
                                 call->HasSideEffects()) {
                                 side_effects.push_back(expr);
                                 return TraverseAction::Skip;

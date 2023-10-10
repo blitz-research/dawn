@@ -14,17 +14,9 @@
 
 #include "dawn/native/opengl/BackendGL.h"
 
-#include <EGL/egl.h>
-
-#include <memory>
-#include <utility>
-
-#include "dawn/common/SystemUtils.h"
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/OpenGLBackend.h"
-#include "dawn/native/opengl/ContextEGL.h"
-#include "dawn/native/opengl/EGLFunctions.h"
 #include "dawn/native/opengl/PhysicalDeviceGL.h"
 
 namespace dawn::native::opengl {
@@ -45,11 +37,13 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
     }
 
     void* (*getProc)(const char* name) = nullptr;
+    EGLDisplay display = EGL_NO_DISPLAY;
 
     const RequestAdapterOptionsGetGLProc* glGetProcOptions = nullptr;
     FindInChain(options->nextInChain, &glGetProcOptions);
     if (glGetProcOptions) {
         getProc = glGetProcOptions->getProc;
+        display = glGetProcOptions->display;
     }
 
     if (getProc == nullptr) {
@@ -76,41 +70,27 @@ std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevices(
         }
     }
 
-    EGLFunctions egl;
-    egl.Init(getProc);
-
-    EGLenum api = GetType() == wgpu::BackendType::OpenGLES ? EGL_OPENGL_ES_API : EGL_OPENGL_API;
-    std::unique_ptr<ContextEGL> context;
-    if (GetInstance()->ConsumedErrorAndWarnOnce(ContextEGL::Create(egl, api), &context)) {
-        return {};
-    }
-
-    EGLDisplay prevDisplay = egl.GetCurrentDisplay();
-    EGLContext prevDrawSurface = egl.GetCurrentSurface(EGL_DRAW);
-    EGLContext prevReadSurface = egl.GetCurrentSurface(EGL_READ);
-    EGLContext prevContext = egl.GetCurrentContext();
-
-    context->MakeCurrent();
-    auto physicalDevices = DiscoverPhysicalDevicesWithProcs(getProc);
-    egl.MakeCurrent(prevDisplay, prevDrawSurface, prevReadSurface, prevContext);
-    return physicalDevices;
+    return DiscoverPhysicalDevicesWithProcs(getProc, display);
 }
 
 std::vector<Ref<PhysicalDeviceBase>> Backend::DiscoverPhysicalDevicesWithProcs(
-    void* (*getProc)(const char*)) {
+    void* (*getProc)(const char*),
+    EGLDisplay display) {
     // TODO(cwallez@chromium.org): For now only create a single OpenGL physicalDevice because don't
     // know how to handle MakeCurrent.
-    if (mPhysicalDevice != nullptr && mGetProc != getProc) {
+    if (mPhysicalDevice != nullptr && (mGetProc != getProc || mDisplay != display)) {
         GetInstance()->ConsumedErrorAndWarnOnce(
             DAWN_VALIDATION_ERROR("The OpenGL backend can only create a single physicalDevice."));
         return {};
     }
     if (mPhysicalDevice == nullptr) {
         if (GetInstance()->ConsumedErrorAndWarnOnce(
-                PhysicalDevice::Create(GetInstance(), GetType(), getProc), &mPhysicalDevice)) {
+                PhysicalDevice::Create(GetInstance(), GetType(), getProc, display),
+                &mPhysicalDevice)) {
             return {};
         }
         mGetProc = getProc;
+        mDisplay = display;
     }
     return {mPhysicalDevice};
 }

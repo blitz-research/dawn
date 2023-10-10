@@ -19,15 +19,17 @@
 
 #include "src/tint/lang/wgsl/program/program.h"
 #include "src/tint/lang/wgsl/sem/struct.h"
+#include "src/tint/utils/generator/text_generator.h"
 #include "src/tint/utils/text/string_stream.h"
-#include "src/tint/utils/text/text_generator.h"
 
 // Forward declarations
+namespace tint::core {
+enum class BinaryOp;
+}
 namespace tint::ast {
 class AssignmentStatement;
 class Attribute;
 class BinaryExpression;
-enum class BinaryOp;
 class BitcastExpression;
 class BlockStatement;
 class BlockStatement;
@@ -63,9 +65,9 @@ class UnaryOpExpression;
 class Variable;
 class WhileStatement;
 }  // namespace tint::ast
-namespace tint::builtin {
-enum class TexelFormat;
-}  // namespace tint::builtin
+namespace tint::core {
+enum class TexelFormat : uint8_t;
+}  // namespace tint::core
 
 namespace tint::wgsl::writer {
 
@@ -74,11 +76,12 @@ class SyntaxTreePrinter : public tint::TextGenerator {
   public:
     /// Constructor
     /// @param program the program
-    explicit SyntaxTreePrinter(const Program* program);
+    explicit SyntaxTreePrinter(const Program& program);
     ~SyntaxTreePrinter() override;
 
     /// Generates the result data
-    void Generate();
+    /// @returns true on success.
+    bool Generate();
 
     /// Handles generating a diagnostic control
     /// @param diagnostic the diagnostic control node
@@ -100,7 +103,7 @@ class SyntaxTreePrinter : public tint::TextGenerator {
     void EmitBinary(const ast::BinaryExpression* expr);
     /// Handles generating a binary operator
     /// @param op the binary operator
-    void EmitBinaryOp(const ast::BinaryOp op);
+    void EmitBinaryOp(const core::BinaryOp op);
     /// Handles generating a bitcast expression
     /// @param expr the bitcast expression
     void EmitBitcast(const ast::BitcastExpression* expr);
@@ -187,7 +190,7 @@ class SyntaxTreePrinter : public tint::TextGenerator {
     void EmitStructType(const ast::Struct* str);
     /// Handles emitting an image format
     /// @param fmt the format to generate
-    void EmitImageFormat(const builtin::TexelFormat fmt);
+    void EmitImageFormat(const core::TexelFormat fmt);
     /// Handles a unary op expression
     /// @param expr the expression to emit
     void EmitUnaryOp(const ast::UnaryOpExpression* expr);
@@ -199,7 +202,7 @@ class SyntaxTreePrinter : public tint::TextGenerator {
     void EmitAttributes(VectorRef<const ast::Attribute*> attrs);
 
   private:
-    Program const* const program_;
+    const Program& program_;
 };
 
 }  // namespace tint::wgsl::writer

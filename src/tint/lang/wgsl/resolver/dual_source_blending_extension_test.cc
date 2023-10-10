@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 
 #include "gmock/gmock.h"
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
 
 namespace tint::resolver {
 namespace {
@@ -40,7 +42,7 @@ TEST_F(DualSourceBlendingExtensionTest, UseIndexAttribWithoutExtensionError) {
 class DualSourceBlendingExtensionTests : public ResolverTest {
   public:
     DualSourceBlendingExtensionTests() {
-        Enable(builtin::Extension::kChromiumInternalDualSourceBlending);
+        Enable(wgsl::Extension::kChromiumInternalDualSourceBlending);
     }
 };
 
@@ -127,7 +129,7 @@ TEST_F(DualSourceBlendingExtensionTests, GlobalVariableIndexAttribute) {
     GlobalVar(
         "var", ty.vec4<f32>(),
         Vector{Location(0_a), Index(0_a), Disable(ast::DisabledValidation::kIgnoreAddressSpace)},
-        builtin::AddressSpace::kOut);
+        core::AddressSpace::kOut);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -142,6 +144,34 @@ TEST_F(DualSourceBlendingExtensionTests, IndexWithNonZeroLocation) {
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "12:34 error: index attribute must only be used with @location(0)");
 }
+
+class DualSourceBlendingExtensionTestWithParams : public ResolverTestWithParam<int> {
+  public:
+    DualSourceBlendingExtensionTestWithParams() {
+        Enable(wgsl::Extension::kChromiumInternalDualSourceBlending);
+    }
+};
+
+// Rendering to multiple render targets while using dual source blending should fail.
+TEST_P(DualSourceBlendingExtensionTestWithParams, MultipleRenderTargetsNotAllowed) {
+    Structure("Output",
+              Vector{
+                  Member("a", ty.vec4<f32>(), Vector{Location(0_a), Index(0_a)}),
+                  Member("b", ty.vec4<f32>(), Vector{Location(0_a), Index(1_a)}),
+                  Member("c", ty.vec4<f32>(), Vector{Location(Source{{12, 34}}, AInt(GetParam()))}),
+              });
+
+    EXPECT_FALSE(r()->Resolve());
+    StringStream err;
+    err << "12:34 error: Multiple render targets are not allowed when using dual source blending. "
+           "The output @location("
+        << GetParam() << ") is not allowed as a render target.";
+    EXPECT_EQ(r()->error(), err.str());
+}
+
+INSTANTIATE_TEST_SUITE_P(DualSourceBlendingExtensionTests,
+                         DualSourceBlendingExtensionTestWithParams,
+                         testing::Values(1, 2, 3, 4, 5, 6, 7));
 
 }  // namespace
 }  // namespace tint::resolver

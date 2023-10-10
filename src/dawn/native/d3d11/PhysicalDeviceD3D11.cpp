@@ -138,15 +138,23 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::TextureCompressionBC);
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::D3D11MultithreadProtected);
+    EnableFeature(Feature::MSAARenderToSingleSampled);
+    EnableFeature(Feature::DualSourceBlending);
+    EnableFeature(Feature::Norm16TextureFormats);
 
     // To import multi planar textures, we need to at least tier 2 support.
     if (mDeviceInfo.supportsSharedResourceCapabilityTier2) {
-        EnableFeature(Feature::MultiPlanarFormats);
+        EnableFeature(Feature::DawnMultiPlanarFormats);
+        EnableFeature(Feature::MultiPlanarFormatP010);
     }
+
+    EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
+    EnableFeature(Feature::SharedTextureMemoryD3D11Texture2D);
+    EnableFeature(Feature::SharedFenceDXGISharedHandle);
 }
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
-    GetDefaultLimits(&limits->v1);
+    GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
 
     // // https://docs.microsoft.com/en-us/windows/win32/direct3d12/hardware-feature-levels
 
@@ -164,8 +172,6 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
                                     ? D3D11_1_UAV_SLOT_COUNT
                                     : D3D11_PS_CS_UAV_REGISTER_COUNT;
     mUAVSlotCount = maxUAVsAllStages;
-    ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageTexturesPerShaderStage);
-    ASSERT(maxUAVsAllStages / 4 > limits->v1.maxStorageBuffersPerShaderStage);
     uint32_t maxUAVsPerStage = maxUAVsAllStages / 2;
 
     // Reserve one slot for builtin constants.
@@ -175,10 +181,12 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
 
     // Allocate half of the UAVs to storage buffers, and half to storage textures.
     limits->v1.maxStorageTexturesPerShaderStage = maxUAVsPerStage / 2;
-    limits->v1.maxStorageBuffersPerShaderStage = maxUAVsPerStage - maxUAVsPerStage / 2;
+    limits->v1.maxStorageBuffersPerShaderStage = maxUAVsPerStage / 2;
     limits->v1.maxSampledTexturesPerShaderStage = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
     limits->v1.maxSamplersPerShaderStage = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
     limits->v1.maxColorAttachments = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
+    // This is maxColorAttachments times 16, the color format with the largest cost.
+    limits->v1.maxColorAttachmentBytesPerSample = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT * 16;
 
     limits->v1.maxDynamicUniformBuffersPerPipelineLayout =
         limits->v1.maxUniformBuffersPerShaderStage;
@@ -248,7 +256,7 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* ada
 // creating a new one.
 MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     [[maybe_unused]] auto refCount = mD3d11Device.Reset();
-    ASSERT(refCount == 0);
+    DAWN_ASSERT(refCount == 0);
     DAWN_TRY(Initialize());
 
     return {};

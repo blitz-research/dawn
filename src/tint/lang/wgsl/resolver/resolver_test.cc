@@ -18,7 +18,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
-#include "src/tint/lang/core/builtin/builtin_value.h"
+#include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
@@ -38,7 +38,8 @@
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
-#include "src/tint/lang/wgsl/resolver/resolver_test_helper.h"
+#include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
+#include "src/tint/lang/wgsl/sem/array.h"
 #include "src/tint/lang/wgsl/sem/call.h"
 #include "src/tint/lang/wgsl/sem/function.h"
 #include "src/tint/lang/wgsl/sem/member_accessor_expression.h"
@@ -54,8 +55,8 @@ namespace {
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 // Helpers and typedefs
 template <typename T>
@@ -68,7 +69,7 @@ template <typename T>
 using alias2 = builder::alias2<T>;
 template <typename T>
 using alias3 = builder::alias3<T>;
-using Op = ast::BinaryOp;
+using Op = core::BinaryOp;
 
 TEST_F(ResolverTest, Stmt_Assign) {
     auto* v = Var("v", ty.f32());
@@ -83,8 +84,8 @@ TEST_F(ResolverTest, Stmt_Assign) {
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
 
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(lhs), assign);
     EXPECT_EQ(StmtOf(rhs), assign);
 }
@@ -107,8 +108,8 @@ TEST_F(ResolverTest, Stmt_Case) {
 
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(lhs), assign);
     EXPECT_EQ(StmtOf(rhs), assign);
     EXPECT_EQ(BlockOf(assign), block);
@@ -140,8 +141,8 @@ TEST_F(ResolverTest, Stmt_Block) {
 
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(lhs), assign);
     EXPECT_EQ(StmtOf(rhs), assign);
     EXPECT_EQ(BlockOf(lhs), block);
@@ -175,11 +176,11 @@ TEST_F(ResolverTest, Stmt_If) {
     ASSERT_NE(TypeOf(else_rhs), nullptr);
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
-    EXPECT_TRUE(TypeOf(stmt->condition)->Is<type::Bool>());
-    EXPECT_TRUE(TypeOf(else_lhs)->UnwrapRef()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(else_rhs)->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(stmt->condition)->Is<core::type::Bool>());
+    EXPECT_TRUE(TypeOf(else_lhs)->UnwrapRef()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(else_rhs)->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(lhs), assign);
     EXPECT_EQ(StmtOf(rhs), assign);
     EXPECT_EQ(StmtOf(cond), stmt);
@@ -210,10 +211,10 @@ TEST_F(ResolverTest, Stmt_Loop) {
     ASSERT_NE(TypeOf(body_rhs), nullptr);
     ASSERT_NE(TypeOf(continuing_lhs), nullptr);
     ASSERT_NE(TypeOf(continuing_rhs), nullptr);
-    EXPECT_TRUE(TypeOf(body_lhs)->UnwrapRef()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(body_rhs)->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(continuing_lhs)->UnwrapRef()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(continuing_rhs)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(body_lhs)->UnwrapRef()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(body_rhs)->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(continuing_lhs)->UnwrapRef()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(continuing_rhs)->Is<core::type::F32>());
     EXPECT_EQ(BlockOf(body_lhs), body);
     EXPECT_EQ(BlockOf(body_rhs), body);
     EXPECT_EQ(BlockOf(continuing_lhs), continuing);
@@ -230,7 +231,7 @@ TEST_F(ResolverTest, Stmt_Return) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(cond), nullptr);
-    EXPECT_TRUE(TypeOf(cond)->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(cond)->Is<core::type::I32>());
 }
 
 TEST_F(ResolverTest, Stmt_Return_WithoutValue) {
@@ -254,9 +255,9 @@ TEST_F(ResolverTest, Stmt_Switch) {
     ASSERT_NE(TypeOf(lhs), nullptr);
     ASSERT_NE(TypeOf(rhs), nullptr);
 
-    EXPECT_TRUE(TypeOf(stmt->condition)->Is<type::I32>());
-    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<type::F32>());
-    EXPECT_TRUE(TypeOf(rhs)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(stmt->condition)->Is<core::type::I32>());
+    EXPECT_TRUE(TypeOf(lhs)->UnwrapRef()->Is<core::type::F32>());
+    EXPECT_TRUE(TypeOf(rhs)->Is<core::type::F32>());
     EXPECT_EQ(BlockOf(lhs), case_block);
     EXPECT_EQ(BlockOf(rhs), case_block);
 }
@@ -275,7 +276,7 @@ TEST_F(ResolverTest, Stmt_Call) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<type::Void>());
+    EXPECT_TRUE(TypeOf(expr)->Is<core::type::Void>());
     EXPECT_EQ(StmtOf(expr), call);
 }
 
@@ -289,7 +290,7 @@ TEST_F(ResolverTest, Stmt_VariableDecl) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(init), nullptr);
-    EXPECT_TRUE(TypeOf(init)->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(init)->Is<core::type::I32>());
 }
 
 TEST_F(ResolverTest, Stmt_VariableDecl_Alias) {
@@ -303,17 +304,17 @@ TEST_F(ResolverTest, Stmt_VariableDecl_Alias) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(init), nullptr);
-    EXPECT_TRUE(TypeOf(init)->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(init)->Is<core::type::I32>());
 }
 
 TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScope) {
     auto* init = Expr(2_i);
-    GlobalVar("my_var", ty.i32(), builtin::AddressSpace::kPrivate, init);
+    GlobalVar("my_var", ty.i32(), core::AddressSpace::kPrivate, init);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(init), nullptr);
-    EXPECT_TRUE(TypeOf(init)->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(init)->Is<core::type::I32>());
     EXPECT_EQ(StmtOf(init), nullptr);
 }
 
@@ -353,13 +354,13 @@ TEST_F(ResolverTest, Stmt_VariableDecl_OuterScopeAfterInnerScope) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_NE(TypeOf(foo_i32_init), nullptr);
-    EXPECT_TRUE(TypeOf(foo_i32_init)->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(foo_i32_init)->Is<core::type::I32>());
     ASSERT_NE(TypeOf(foo_f32_init), nullptr);
-    EXPECT_TRUE(TypeOf(foo_f32_init)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(foo_f32_init)->Is<core::type::F32>());
     ASSERT_NE(TypeOf(bar_i32_init), nullptr);
-    EXPECT_TRUE(TypeOf(bar_i32_init)->UnwrapRef()->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(bar_i32_init)->UnwrapRef()->Is<core::type::I32>());
     ASSERT_NE(TypeOf(bar_f32_init), nullptr);
-    EXPECT_TRUE(TypeOf(bar_f32_init)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(bar_f32_init)->UnwrapRef()->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(foo_i32_init), foo_i32_decl);
     EXPECT_EQ(StmtOf(bar_i32_init), bar_i32_decl);
     EXPECT_EQ(StmtOf(foo_f32_init), foo_f32_decl);
@@ -388,7 +389,7 @@ TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScopeAfterFunctionScope) {
     Func("func_i32", tint::Empty, ty.void_(), Vector{fn_i32_decl});
 
     // Declare f32 "foo" at module scope
-    auto* mod_f32 = Var("foo", ty.f32(), builtin::AddressSpace::kPrivate, Expr(2_f));
+    auto* mod_f32 = Var("foo", ty.f32(), core::AddressSpace::kPrivate, Expr(2_f));
     auto* mod_init = mod_f32->initializer;
     AST().AddGlobalVariable(mod_f32);
 
@@ -400,11 +401,11 @@ TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScopeAfterFunctionScope) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_NE(TypeOf(mod_init), nullptr);
-    EXPECT_TRUE(TypeOf(mod_init)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(mod_init)->Is<core::type::F32>());
     ASSERT_NE(TypeOf(fn_i32_init), nullptr);
-    EXPECT_TRUE(TypeOf(fn_i32_init)->Is<type::I32>());
+    EXPECT_TRUE(TypeOf(fn_i32_init)->Is<core::type::I32>());
     ASSERT_NE(TypeOf(fn_f32_init), nullptr);
-    EXPECT_TRUE(TypeOf(fn_f32_init)->UnwrapRef()->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(fn_f32_init)->UnwrapRef()->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(fn_i32_init), fn_i32_decl);
     EXPECT_EQ(StmtOf(mod_init), nullptr);
     EXPECT_EQ(StmtOf(fn_f32_init), fn_f32_decl);
@@ -416,72 +417,72 @@ TEST_F(ResolverTest, Stmt_VariableDecl_ModuleScopeAfterFunctionScope) {
 
 TEST_F(ResolverTest, ArraySize_UnsignedLiteral) {
     // var<private> a : array<f32, 10u>;
-    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr(10_u)), builtin::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr(10_u)), core::AddressSpace::kPrivate);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<type::Reference>();
+    auto* ref = TypeOf(a)->As<core::type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<type::Array>();
-    EXPECT_EQ(ary->Count(), create<type::ConstantArrayCount>(10u));
+    auto* ary = ref->StoreType()->As<sem::Array>();
+    EXPECT_EQ(ary->Count(), create<core::type::ConstantArrayCount>(10u));
 }
 
 TEST_F(ResolverTest, ArraySize_SignedLiteral) {
     // var<private> a : array<f32, 10i>;
-    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr(10_i)), builtin::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr(10_i)), core::AddressSpace::kPrivate);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<type::Reference>();
+    auto* ref = TypeOf(a)->As<core::type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<type::Array>();
-    EXPECT_EQ(ary->Count(), create<type::ConstantArrayCount>(10u));
+    auto* ary = ref->StoreType()->As<sem::Array>();
+    EXPECT_EQ(ary->Count(), create<core::type::ConstantArrayCount>(10u));
 }
 
 TEST_F(ResolverTest, ArraySize_UnsignedConst) {
     // const size = 10u;
     // var<private> a : array<f32, size>;
     GlobalConst("size", Expr(10_u));
-    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), builtin::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), core::AddressSpace::kPrivate);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<type::Reference>();
+    auto* ref = TypeOf(a)->As<core::type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<type::Array>();
-    EXPECT_EQ(ary->Count(), create<type::ConstantArrayCount>(10u));
+    auto* ary = ref->StoreType()->As<sem::Array>();
+    EXPECT_EQ(ary->Count(), create<core::type::ConstantArrayCount>(10u));
 }
 
 TEST_F(ResolverTest, ArraySize_SignedConst) {
     // const size = 0;
     // var<private> a : array<f32, size>;
     GlobalConst("size", Expr(10_i));
-    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), builtin::AddressSpace::kPrivate);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), core::AddressSpace::kPrivate);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<type::Reference>();
+    auto* ref = TypeOf(a)->As<core::type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<type::Array>();
-    EXPECT_EQ(ary->Count(), create<type::ConstantArrayCount>(10u));
+    auto* ary = ref->StoreType()->As<sem::Array>();
+    EXPECT_EQ(ary->Count(), create<core::type::ConstantArrayCount>(10u));
 }
 
 TEST_F(ResolverTest, ArraySize_NamedOverride) {
     // override size = 10i;
     // var<workgroup> a : array<f32, size>;
     auto* override = Override("size", Expr(10_i));
-    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), builtin::AddressSpace::kWorkgroup);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), core::AddressSpace::kWorkgroup);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<type::Reference>();
+    auto* ref = TypeOf(a)->As<core::type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<type::Array>();
+    auto* ary = ref->StoreType()->As<sem::Array>();
     auto* sem_override = Sem().Get(override);
     ASSERT_NE(sem_override, nullptr);
     EXPECT_EQ(ary->Count(), create<sem::NamedOverrideArrayCount>(sem_override));
@@ -492,20 +493,20 @@ TEST_F(ResolverTest, ArraySize_NamedOverride_Equivalence) {
     // var<workgroup> a : array<f32, size>;
     // var<workgroup> b : array<f32, size>;
     auto* override = Override("size", Expr(10_i));
-    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), builtin::AddressSpace::kWorkgroup);
-    auto* b = GlobalVar("b", ty.array(ty.f32(), Expr("size")), builtin::AddressSpace::kWorkgroup);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), Expr("size")), core::AddressSpace::kWorkgroup);
+    auto* b = GlobalVar("b", ty.array(ty.f32(), Expr("size")), core::AddressSpace::kWorkgroup);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref_a = TypeOf(a)->As<type::Reference>();
+    auto* ref_a = TypeOf(a)->As<core::type::Reference>();
     ASSERT_NE(ref_a, nullptr);
-    auto* ary_a = ref_a->StoreType()->As<type::Array>();
+    auto* ary_a = ref_a->StoreType()->As<sem::Array>();
 
     ASSERT_NE(TypeOf(b), nullptr);
-    auto* ref_b = TypeOf(b)->As<type::Reference>();
+    auto* ref_b = TypeOf(b)->As<core::type::Reference>();
     ASSERT_NE(ref_b, nullptr);
-    auto* ary_b = ref_b->StoreType()->As<type::Array>();
+    auto* ary_b = ref_b->StoreType()->As<sem::Array>();
 
     auto* sem_override = Sem().Get(override);
     ASSERT_NE(sem_override, nullptr);
@@ -519,14 +520,14 @@ TEST_F(ResolverTest, ArraySize_UnnamedOverride) {
     // var<workgroup> a : array<f32, size*2>;
     auto* override = Override("size", Expr(10_i));
     auto* cnt = Mul("size", 2_a);
-    auto* a = GlobalVar("a", ty.array(ty.f32(), cnt), builtin::AddressSpace::kWorkgroup);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), cnt), core::AddressSpace::kWorkgroup);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref = TypeOf(a)->As<type::Reference>();
+    auto* ref = TypeOf(a)->As<core::type::Reference>();
     ASSERT_NE(ref, nullptr);
-    auto* ary = ref->StoreType()->As<type::Array>();
+    auto* ary = ref->StoreType()->As<sem::Array>();
     auto* sem_override = Sem().Get(override);
     ASSERT_NE(sem_override, nullptr);
     EXPECT_EQ(ary->Count(), create<sem::UnnamedOverrideArrayCount>(Sem().Get(cnt)));
@@ -539,20 +540,20 @@ TEST_F(ResolverTest, ArraySize_UnamedOverride_Equivalence) {
     auto* override = Override("size", Expr(10_i));
     auto* a_cnt = Mul("size", 2_a);
     auto* b_cnt = Mul("size", 2_a);
-    auto* a = GlobalVar("a", ty.array(ty.f32(), a_cnt), builtin::AddressSpace::kWorkgroup);
-    auto* b = GlobalVar("b", ty.array(ty.f32(), b_cnt), builtin::AddressSpace::kWorkgroup);
+    auto* a = GlobalVar("a", ty.array(ty.f32(), a_cnt), core::AddressSpace::kWorkgroup);
+    auto* b = GlobalVar("b", ty.array(ty.f32(), b_cnt), core::AddressSpace::kWorkgroup);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(a), nullptr);
-    auto* ref_a = TypeOf(a)->As<type::Reference>();
+    auto* ref_a = TypeOf(a)->As<core::type::Reference>();
     ASSERT_NE(ref_a, nullptr);
-    auto* ary_a = ref_a->StoreType()->As<type::Array>();
+    auto* ary_a = ref_a->StoreType()->As<sem::Array>();
 
     ASSERT_NE(TypeOf(b), nullptr);
-    auto* ref_b = TypeOf(b)->As<type::Reference>();
+    auto* ref_b = TypeOf(b)->As<core::type::Reference>();
     ASSERT_NE(ref_b, nullptr);
-    auto* ary_b = ref_b->StoreType()->As<type::Array>();
+    auto* ary_b = ref_b->StoreType()->As<sem::Array>();
 
     auto* sem_override = Sem().Get(override);
     ASSERT_NE(sem_override, nullptr);
@@ -562,7 +563,7 @@ TEST_F(ResolverTest, ArraySize_UnamedOverride_Equivalence) {
 }
 
 TEST_F(ResolverTest, Expr_Bitcast) {
-    GlobalVar("name", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("name", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* bitcast = Bitcast<f32>(Expr("name"));
     WrapInFunction(bitcast);
@@ -570,7 +571,7 @@ TEST_F(ResolverTest, Expr_Bitcast) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(bitcast), nullptr);
-    EXPECT_TRUE(TypeOf(bitcast)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(bitcast)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Call) {
@@ -582,7 +583,7 @@ TEST_F(ResolverTest, Expr_Call) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Call_InBinaryOp) {
@@ -594,7 +595,7 @@ TEST_F(ResolverTest, Expr_Call_InBinaryOp) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(expr)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Call_WithParams) {
@@ -611,7 +612,7 @@ TEST_F(ResolverTest, Expr_Call_WithParams) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(param), nullptr);
-    EXPECT_TRUE(TypeOf(param)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(param)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Call_Builtin) {
@@ -621,11 +622,11 @@ TEST_F(ResolverTest, Expr_Call_Builtin) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Cast) {
-    GlobalVar("name", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("name", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* cast = Call<f32>("name");
     WrapInFunction(cast);
@@ -633,7 +634,7 @@ TEST_F(ResolverTest, Expr_Cast) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(cast), nullptr);
-    EXPECT_TRUE(TypeOf(cast)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(cast)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Initializer_Scalar) {
@@ -643,7 +644,7 @@ TEST_F(ResolverTest, Expr_Initializer_Scalar) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(s), nullptr);
-    EXPECT_TRUE(TypeOf(s)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(s)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Initializer_Type_Vec2) {
@@ -653,9 +654,9 @@ TEST_F(ResolverTest, Expr_Initializer_Type_Vec2) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(tc), nullptr);
-    ASSERT_TRUE(TypeOf(tc)->Is<type::Vector>());
-    EXPECT_TRUE(TypeOf(tc)->As<type::Vector>()->type()->Is<type::F32>());
-    EXPECT_EQ(TypeOf(tc)->As<type::Vector>()->Width(), 2u);
+    ASSERT_TRUE(TypeOf(tc)->Is<core::type::Vector>());
+    EXPECT_TRUE(TypeOf(tc)->As<core::type::Vector>()->type()->Is<core::type::F32>());
+    EXPECT_EQ(TypeOf(tc)->As<core::type::Vector>()->Width(), 2u);
 }
 
 TEST_F(ResolverTest, Expr_Initializer_Type_Vec3) {
@@ -665,9 +666,9 @@ TEST_F(ResolverTest, Expr_Initializer_Type_Vec3) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(tc), nullptr);
-    ASSERT_TRUE(TypeOf(tc)->Is<type::Vector>());
-    EXPECT_TRUE(TypeOf(tc)->As<type::Vector>()->type()->Is<type::F32>());
-    EXPECT_EQ(TypeOf(tc)->As<type::Vector>()->Width(), 3u);
+    ASSERT_TRUE(TypeOf(tc)->Is<core::type::Vector>());
+    EXPECT_TRUE(TypeOf(tc)->As<core::type::Vector>()->type()->Is<core::type::F32>());
+    EXPECT_EQ(TypeOf(tc)->As<core::type::Vector>()->Width(), 3u);
 }
 
 TEST_F(ResolverTest, Expr_Initializer_Type_Vec4) {
@@ -677,13 +678,13 @@ TEST_F(ResolverTest, Expr_Initializer_Type_Vec4) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(tc), nullptr);
-    ASSERT_TRUE(TypeOf(tc)->Is<type::Vector>());
-    EXPECT_TRUE(TypeOf(tc)->As<type::Vector>()->type()->Is<type::F32>());
-    EXPECT_EQ(TypeOf(tc)->As<type::Vector>()->Width(), 4u);
+    ASSERT_TRUE(TypeOf(tc)->Is<core::type::Vector>());
+    EXPECT_TRUE(TypeOf(tc)->As<core::type::Vector>()->type()->Is<core::type::F32>());
+    EXPECT_EQ(TypeOf(tc)->As<core::type::Vector>()->Width(), 4u);
 }
 
 TEST_F(ResolverTest, Expr_Identifier_GlobalVariable) {
-    auto* my_var = GlobalVar("my_var", ty.f32(), builtin::AddressSpace::kPrivate);
+    auto* my_var = GlobalVar("my_var", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* ident = Expr("my_var");
     WrapInFunction(ident);
@@ -691,7 +692,7 @@ TEST_F(ResolverTest, Expr_Identifier_GlobalVariable) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(ident), nullptr);
-    EXPECT_TRUE(TypeOf(ident)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(ident)->Is<core::type::F32>());
     EXPECT_TRUE(CheckVarUsers(my_var, Vector{ident}));
     ASSERT_NE(VarOf(ident), nullptr);
     EXPECT_EQ(VarOf(ident)->Declaration(), my_var);
@@ -706,7 +707,7 @@ TEST_F(ResolverTest, Expr_Identifier_GlobalConst) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(ident), nullptr);
-    EXPECT_TRUE(TypeOf(ident)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(ident)->Is<core::type::F32>());
     EXPECT_TRUE(CheckVarUsers(my_var, Vector{ident}));
     ASSERT_NE(VarOf(ident), nullptr);
     EXPECT_EQ(VarOf(ident)->Declaration(), my_var);
@@ -726,7 +727,7 @@ TEST_F(ResolverTest, Expr_Identifier_FunctionVariable_Const) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(my_var_a), nullptr);
-    EXPECT_TRUE(TypeOf(my_var_a)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(my_var_a)->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(my_var_a), decl);
     EXPECT_TRUE(CheckVarUsers(var, Vector{my_var_a}));
     ASSERT_NE(VarOf(my_var_a), nullptr);
@@ -767,11 +768,11 @@ TEST_F(ResolverTest, Expr_Identifier_FunctionVariable) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(my_var_a), nullptr);
-    ASSERT_TRUE(TypeOf(my_var_a)->Is<type::Reference>());
-    EXPECT_TRUE(TypeOf(my_var_a)->UnwrapRef()->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(my_var_a)->Is<core::type::Reference>());
+    EXPECT_TRUE(TypeOf(my_var_a)->UnwrapRef()->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(my_var_a), assign);
     ASSERT_NE(TypeOf(my_var_b), nullptr);
-    EXPECT_TRUE(TypeOf(my_var_b)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(my_var_b)->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(my_var_b), assign);
     EXPECT_TRUE(CheckVarUsers(var, Vector{my_var_a, my_var_b}));
     ASSERT_NE(VarOf(my_var_a), nullptr);
@@ -796,12 +797,12 @@ TEST_F(ResolverTest, Expr_Identifier_Function_Ptr) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(v), nullptr);
-    ASSERT_TRUE(TypeOf(v)->Is<type::Reference>());
-    EXPECT_TRUE(TypeOf(v)->UnwrapRef()->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(v)->Is<core::type::Reference>());
+    EXPECT_TRUE(TypeOf(v)->UnwrapRef()->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(v), p_decl);
     ASSERT_NE(TypeOf(p), nullptr);
-    ASSERT_TRUE(TypeOf(p)->Is<type::Pointer>());
-    EXPECT_TRUE(TypeOf(p)->UnwrapPtr()->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(p)->Is<core::type::Pointer>());
+    EXPECT_TRUE(TypeOf(p)->UnwrapPtr()->Is<core::type::F32>());
     EXPECT_EQ(StmtOf(p), assign);
 }
 
@@ -817,7 +818,7 @@ TEST_F(ResolverTest, Expr_Call_Function) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(call), nullptr);
-    EXPECT_TRUE(TypeOf(call)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(call)->Is<core::type::F32>());
 }
 
 TEST_F(ResolverTest, Expr_Identifier_Unknown) {
@@ -845,21 +846,21 @@ TEST_F(ResolverTest, Function_Parameters) {
     auto* func_sem = Sem().Get(func);
     ASSERT_NE(func_sem, nullptr);
     EXPECT_EQ(func_sem->Parameters().Length(), 3u);
-    EXPECT_TRUE(func_sem->Parameters()[0]->Type()->Is<type::F32>());
-    EXPECT_TRUE(func_sem->Parameters()[1]->Type()->Is<type::I32>());
-    EXPECT_TRUE(func_sem->Parameters()[2]->Type()->Is<type::U32>());
+    EXPECT_TRUE(func_sem->Parameters()[0]->Type()->Is<core::type::F32>());
+    EXPECT_TRUE(func_sem->Parameters()[1]->Type()->Is<core::type::I32>());
+    EXPECT_TRUE(func_sem->Parameters()[2]->Type()->Is<core::type::U32>());
     EXPECT_EQ(func_sem->Parameters()[0]->Declaration(), param_a);
     EXPECT_EQ(func_sem->Parameters()[1]->Declaration(), param_b);
     EXPECT_EQ(func_sem->Parameters()[2]->Declaration(), param_c);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<core::type::Void>());
 }
 
 TEST_F(ResolverTest, Function_Parameters_Locations) {
     auto* param_a = Param("a", ty.f32(), Vector{Location(3_a)});
-    auto* param_b = Param("b", ty.u32(), Vector{Builtin(builtin::BuiltinValue::kVertexIndex)});
+    auto* param_b = Param("b", ty.u32(), Vector{Builtin(core::BuiltinValue::kVertexIndex)});
     auto* param_c = Param("c", ty.u32(), Vector{Location(1_a)});
 
-    GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), core::AddressSpace::kPrivate);
     auto* func = Func("my_func",
                       Vector{
                           param_a,
@@ -874,7 +875,7 @@ TEST_F(ResolverTest, Function_Parameters_Locations) {
                           Stage(ast::PipelineStage::kVertex),
                       },
                       Vector{
-                          Builtin(builtin::BuiltinValue::kPosition),
+                          Builtin(core::BuiltinValue::kPosition),
                       });
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -889,7 +890,7 @@ TEST_F(ResolverTest, Function_Parameters_Locations) {
 
 TEST_F(ResolverTest, Function_GlobalVariable_Location) {
     auto* var =
-        GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kIn,
+        GlobalVar("my_vec", ty.vec4<f32>(), core::AddressSpace::kIn,
                   Vector{Location(3_a), Disable(ast::DisabledValidation::kIgnoreAddressSpace)});
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -902,10 +903,10 @@ TEST_F(ResolverTest, Function_GlobalVariable_Location) {
 TEST_F(ResolverTest, Function_RegisterInputOutputVariables) {
     auto* s = Structure("S", Vector{Member("m", ty.u32())});
 
-    auto* sb_var = GlobalVar("sb_var", ty.Of(s), builtin::AddressSpace::kStorage,
-                             builtin::Access::kReadWrite, Binding(0_a), Group(0_a));
-    auto* wg_var = GlobalVar("wg_var", ty.f32(), builtin::AddressSpace::kWorkgroup);
-    auto* priv_var = GlobalVar("priv_var", ty.f32(), builtin::AddressSpace::kPrivate);
+    auto* sb_var = GlobalVar("sb_var", ty.Of(s), core::AddressSpace::kStorage,
+                             core::Access::kReadWrite, Binding(0_a), Group(0_a));
+    auto* wg_var = GlobalVar("wg_var", ty.f32(), core::AddressSpace::kWorkgroup);
+    auto* priv_var = GlobalVar("priv_var", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* func = Func("my_func", tint::Empty, ty.void_(),
                       Vector{
@@ -919,7 +920,7 @@ TEST_F(ResolverTest, Function_RegisterInputOutputVariables) {
     auto* func_sem = Sem().Get(func);
     ASSERT_NE(func_sem, nullptr);
     EXPECT_EQ(func_sem->Parameters().Length(), 0u);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<core::type::Void>());
 
     const auto& vars = func_sem->TransitivelyReferencedGlobals();
     ASSERT_EQ(vars.Length(), 3u);
@@ -948,7 +949,7 @@ TEST_F(ResolverTest, Function_ReturnType_Location) {
 }
 
 TEST_F(ResolverTest, Function_ReturnType_NoLocation) {
-    GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), core::AddressSpace::kPrivate);
     auto* func = Func("my_func", tint::Empty, ty.vec4<f32>(),
                       Vector{
                           Return("my_vec"),
@@ -957,7 +958,7 @@ TEST_F(ResolverTest, Function_ReturnType_NoLocation) {
                           Stage(ast::PipelineStage::kVertex),
                       },
                       Vector{
-                          Builtin(builtin::BuiltinValue::kPosition),
+                          Builtin(core::BuiltinValue::kPosition),
                       });
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -970,10 +971,10 @@ TEST_F(ResolverTest, Function_ReturnType_NoLocation) {
 TEST_F(ResolverTest, Function_RegisterInputOutputVariables_SubFunction) {
     auto* s = Structure("S", Vector{Member("m", ty.u32())});
 
-    auto* sb_var = GlobalVar("sb_var", ty.Of(s), builtin::AddressSpace::kStorage,
-                             builtin::Access::kReadWrite, Binding(0_a), Group(0_a));
-    auto* wg_var = GlobalVar("wg_var", ty.f32(), builtin::AddressSpace::kWorkgroup);
-    auto* priv_var = GlobalVar("priv_var", ty.f32(), builtin::AddressSpace::kPrivate);
+    auto* sb_var = GlobalVar("sb_var", ty.Of(s), core::AddressSpace::kStorage,
+                             core::Access::kReadWrite, Binding(0_a), Group(0_a));
+    auto* wg_var = GlobalVar("wg_var", ty.f32(), core::AddressSpace::kWorkgroup);
+    auto* priv_var = GlobalVar("priv_var", ty.f32(), core::AddressSpace::kPrivate);
 
     Func("my_func", tint::Empty, ty.f32(),
          Vector{Assign("wg_var", "wg_var"), Assign("sb_var", "sb_var"),
@@ -1011,7 +1012,7 @@ TEST_F(ResolverTest, Function_NotRegisterFunctionVariable) {
     ASSERT_NE(func_sem, nullptr);
 
     EXPECT_EQ(func_sem->TransitivelyReferencedGlobals().Length(), 0u);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<core::type::Void>());
 }
 
 TEST_F(ResolverTest, Function_NotRegisterFunctionConstant) {
@@ -1026,7 +1027,7 @@ TEST_F(ResolverTest, Function_NotRegisterFunctionConstant) {
     ASSERT_NE(func_sem, nullptr);
 
     EXPECT_EQ(func_sem->TransitivelyReferencedGlobals().Length(), 0u);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<core::type::Void>());
 }
 
 TEST_F(ResolverTest, Function_NotRegisterFunctionParams) {
@@ -1037,7 +1038,7 @@ TEST_F(ResolverTest, Function_NotRegisterFunctionParams) {
     ASSERT_NE(func_sem, nullptr);
 
     EXPECT_EQ(func_sem->TransitivelyReferencedGlobals().Length(), 0u);
-    EXPECT_TRUE(func_sem->ReturnType()->Is<type::Void>());
+    EXPECT_TRUE(func_sem->ReturnType()->Is<core::type::Void>());
 }
 
 TEST_F(ResolverTest, Function_CallSites) {
@@ -1225,13 +1226,13 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Type) {
 
     EXPECT_FALSE(r()->Resolve()) << r()->error();
     EXPECT_EQ(r()->error(), R"(12:34 error: cannot use type 'f32' as value
-12:34 note: are you missing '()' for value constructor?)");
+12:34 note: are you missing '()'?)");
 }
 
 TEST_F(ResolverTest, Expr_MemberAccessor_Struct) {
     auto* st =
         Structure("S", Vector{Member("first_member", ty.i32()), Member("second_member", ty.f32())});
-    GlobalVar("my_struct", ty.Of(st), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_struct", ty.Of(st), core::AddressSpace::kPrivate);
 
     auto* mem = MemberAccessor("my_struct", "second_member");
     WrapInFunction(mem);
@@ -1239,10 +1240,10 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Struct) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    EXPECT_TRUE(TypeOf(mem)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(mem)->Is<core::type::F32>());
     auto* sma = Sem().Get(mem)->UnwrapLoad()->As<sem::StructMemberAccess>();
     ASSERT_NE(sma, nullptr);
-    EXPECT_TRUE(sma->Member()->Type()->Is<type::F32>());
+    EXPECT_TRUE(sma->Member()->Type()->Is<core::type::F32>());
     EXPECT_EQ(sma->Object()->Declaration(), mem->object);
     EXPECT_EQ(sma->Member()->Index(), 1u);
     EXPECT_EQ(sma->Member()->Name().Name(), "second_member");
@@ -1252,7 +1253,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Struct_Alias) {
     auto* st =
         Structure("S", Vector{Member("first_member", ty.i32()), Member("second_member", ty.f32())});
     auto* alias = Alias("alias", ty.Of(st));
-    GlobalVar("my_struct", ty.Of(alias), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_struct", ty.Of(alias), core::AddressSpace::kPrivate);
 
     auto* mem = MemberAccessor("my_struct", "second_member");
     WrapInFunction(mem);
@@ -1260,16 +1261,16 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Struct_Alias) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    EXPECT_TRUE(TypeOf(mem)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(mem)->Is<core::type::F32>());
     auto* sma = Sem().Get(mem)->UnwrapLoad()->As<sem::StructMemberAccess>();
     ASSERT_NE(sma, nullptr);
     EXPECT_EQ(sma->Object()->Declaration(), mem->object);
-    EXPECT_TRUE(sma->Member()->Type()->Is<type::F32>());
+    EXPECT_TRUE(sma->Member()->Type()->Is<core::type::F32>());
     EXPECT_EQ(sma->Member()->Index(), 1u);
 }
 
 TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle) {
-    GlobalVar("my_vec", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), core::AddressSpace::kPrivate);
 
     auto* mem = MemberAccessor("my_vec", "xzyw");
     WrapInFunction(mem);
@@ -1277,9 +1278,9 @@ TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    ASSERT_TRUE(TypeOf(mem)->Is<type::Vector>());
-    EXPECT_TRUE(TypeOf(mem)->As<type::Vector>()->type()->Is<type::F32>());
-    EXPECT_EQ(TypeOf(mem)->As<type::Vector>()->Width(), 4u);
+    ASSERT_TRUE(TypeOf(mem)->Is<core::type::Vector>());
+    EXPECT_TRUE(TypeOf(mem)->As<core::type::Vector>()->type()->Is<core::type::F32>());
+    EXPECT_EQ(TypeOf(mem)->As<core::type::Vector>()->Width(), 4u);
     auto* sma = Sem().Get(mem)->As<sem::Swizzle>();
     ASSERT_NE(sma, nullptr);
     EXPECT_EQ(sma->Object()->Declaration(), mem->object);
@@ -1287,7 +1288,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle) {
 }
 
 TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle_SingleElement) {
-    GlobalVar("my_vec", ty.vec3<f32>(), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_vec", ty.vec3<f32>(), core::AddressSpace::kPrivate);
 
     auto* mem = MemberAccessor("my_vec", "b");
     WrapInFunction(mem);
@@ -1295,7 +1296,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_VectorSwizzle_SingleElement) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    ASSERT_TRUE(TypeOf(mem)->Is<type::F32>());
+    ASSERT_TRUE(TypeOf(mem)->Is<core::type::F32>());
     auto* sma = Sem().Get(mem)->UnwrapLoad()->As<sem::Swizzle>();
     ASSERT_NE(sma, nullptr);
     EXPECT_EQ(sma->Object()->Declaration(), mem->object);
@@ -1320,7 +1321,7 @@ TEST_F(ResolverTest, Expr_Accessor_MultiLevel) {
 
     auto* stB = Structure("B", Vector{Member("foo", ty.vec4<f32>())});
     auto* stA = Structure("A", Vector{Member("mem", ty.array(ty.Of(stB), 3_i))});
-    GlobalVar("c", ty.Of(stA), builtin::AddressSpace::kPrivate);
+    GlobalVar("c", ty.Of(stA), core::AddressSpace::kPrivate);
 
     auto* mem =
         MemberAccessor(MemberAccessor(IndexAccessor(MemberAccessor("c", "mem"), 0_i), "foo"), "yx");
@@ -1329,16 +1330,16 @@ TEST_F(ResolverTest, Expr_Accessor_MultiLevel) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(mem), nullptr);
-    ASSERT_TRUE(TypeOf(mem)->Is<type::Vector>());
-    EXPECT_TRUE(TypeOf(mem)->As<type::Vector>()->type()->Is<type::F32>());
-    EXPECT_EQ(TypeOf(mem)->As<type::Vector>()->Width(), 2u);
+    ASSERT_TRUE(TypeOf(mem)->Is<core::type::Vector>());
+    EXPECT_TRUE(TypeOf(mem)->As<core::type::Vector>()->type()->Is<core::type::F32>());
+    EXPECT_EQ(TypeOf(mem)->As<core::type::Vector>()->Width(), 2u);
     ASSERT_TRUE(Sem().Get(mem)->Is<sem::Swizzle>());
 }
 
 TEST_F(ResolverTest, Expr_MemberAccessor_InBinaryOp) {
     auto* st =
         Structure("S", Vector{Member("first_member", ty.f32()), Member("second_member", ty.f32())});
-    GlobalVar("my_struct", ty.Of(st), builtin::AddressSpace::kPrivate);
+    GlobalVar("my_struct", ty.Of(st), core::AddressSpace::kPrivate);
 
     auto* expr = Add(MemberAccessor("my_struct", "first_member"),
                      MemberAccessor("my_struct", "second_member"));
@@ -1347,7 +1348,7 @@ TEST_F(ResolverTest, Expr_MemberAccessor_InBinaryOp) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(expr), nullptr);
-    EXPECT_TRUE(TypeOf(expr)->Is<type::F32>());
+    EXPECT_TRUE(TypeOf(expr)->Is<core::type::F32>());
 }
 
 namespace ExprBinaryTest {
@@ -1368,7 +1369,7 @@ struct Aliased<mat<N, M, T>, ID> {
 };
 
 struct Params {
-    ast::BinaryOp op;
+    core::BinaryOp op;
     builder::ast_type_func_ptr create_lhs_type;
     builder::ast_type_func_ptr create_rhs_type;
     builder::ast_type_func_ptr create_lhs_alias_type;
@@ -1377,7 +1378,7 @@ struct Params {
 };
 
 template <typename LHS, typename RHS, typename RES>
-constexpr Params ParamsFor(ast::BinaryOp op) {
+constexpr Params ParamsFor(core::BinaryOp op) {
     return Params{op,
                   DataType<LHS>::AST,
                   DataType<RHS>::AST,
@@ -1386,25 +1387,25 @@ constexpr Params ParamsFor(ast::BinaryOp op) {
                   DataType<RES>::Sem};
 }
 
-static constexpr ast::BinaryOp all_ops[] = {
-    ast::BinaryOp::kAnd,
-    ast::BinaryOp::kOr,
-    ast::BinaryOp::kXor,
-    ast::BinaryOp::kLogicalAnd,
-    ast::BinaryOp::kLogicalOr,
-    ast::BinaryOp::kEqual,
-    ast::BinaryOp::kNotEqual,
-    ast::BinaryOp::kLessThan,
-    ast::BinaryOp::kGreaterThan,
-    ast::BinaryOp::kLessThanEqual,
-    ast::BinaryOp::kGreaterThanEqual,
-    ast::BinaryOp::kShiftLeft,
-    ast::BinaryOp::kShiftRight,
-    ast::BinaryOp::kAdd,
-    ast::BinaryOp::kSubtract,
-    ast::BinaryOp::kMultiply,
-    ast::BinaryOp::kDivide,
-    ast::BinaryOp::kModulo,
+static constexpr core::BinaryOp all_ops[] = {
+    core::BinaryOp::kAnd,
+    core::BinaryOp::kOr,
+    core::BinaryOp::kXor,
+    core::BinaryOp::kLogicalAnd,
+    core::BinaryOp::kLogicalOr,
+    core::BinaryOp::kEqual,
+    core::BinaryOp::kNotEqual,
+    core::BinaryOp::kLessThan,
+    core::BinaryOp::kGreaterThan,
+    core::BinaryOp::kLessThanEqual,
+    core::BinaryOp::kGreaterThanEqual,
+    core::BinaryOp::kShiftLeft,
+    core::BinaryOp::kShiftRight,
+    core::BinaryOp::kAdd,
+    core::BinaryOp::kSubtract,
+    core::BinaryOp::kMultiply,
+    core::BinaryOp::kDivide,
+    core::BinaryOp::kModulo,
 };
 
 static constexpr builder::ast_type_func_ptr all_create_type_funcs[] = {
@@ -1641,8 +1642,8 @@ TEST_P(Expr_Binary_Test_Valid, All) {
     ss << FriendlyName(lhs_type) << " " << params.op << " " << FriendlyName(rhs_type);
     SCOPED_TRACE(ss.str());
 
-    GlobalVar("lhs", lhs_type, builtin::AddressSpace::kPrivate);
-    GlobalVar("rhs", rhs_type, builtin::AddressSpace::kPrivate);
+    GlobalVar("lhs", lhs_type, core::AddressSpace::kPrivate);
+    GlobalVar("rhs", rhs_type, core::AddressSpace::kPrivate);
 
     auto* expr = create<ast::BinaryExpression>(params.op, Expr("lhs"), Expr("rhs"));
     WrapInFunction(expr);
@@ -1676,8 +1677,8 @@ TEST_P(Expr_Binary_Test_WithAlias_Valid, All) {
        << FriendlyName(rhs_type);
     SCOPED_TRACE(ss.str());
 
-    GlobalVar("lhs", lhs_type, builtin::AddressSpace::kPrivate);
-    GlobalVar("rhs", rhs_type, builtin::AddressSpace::kPrivate);
+    GlobalVar("lhs", lhs_type, core::AddressSpace::kPrivate);
+    GlobalVar("rhs", rhs_type, core::AddressSpace::kPrivate);
 
     auto* expr = create<ast::BinaryExpression>(params.op, Expr("lhs"), Expr("rhs"));
     WrapInFunction(expr);
@@ -1700,11 +1701,11 @@ INSTANTIATE_TEST_SUITE_P(ResolverTest,
 // (type * type * op), and processing only the triplets that are not found in
 // the `all_valid_cases` table.
 using Expr_Binary_Test_Invalid = ResolverTestWithParam<
-    std::tuple<builder::ast_type_func_ptr, builder::ast_type_func_ptr, ast::BinaryOp>>;
+    std::tuple<builder::ast_type_func_ptr, builder::ast_type_func_ptr, core::BinaryOp>>;
 TEST_P(Expr_Binary_Test_Invalid, All) {
     const builder::ast_type_func_ptr& lhs_create_type_func = std::get<0>(GetParam());
     const builder::ast_type_func_ptr& rhs_create_type_func = std::get<1>(GetParam());
-    const ast::BinaryOp op = std::get<2>(GetParam());
+    const core::BinaryOp op = std::get<2>(GetParam());
 
     // Skip if valid case
     // TODO(amaiorano): replace linear lookup with O(1) if too slow
@@ -1722,8 +1723,8 @@ TEST_P(Expr_Binary_Test_Invalid, All) {
     ss << FriendlyName(lhs_type) << " " << op << " " << FriendlyName(rhs_type);
     SCOPED_TRACE(ss.str());
 
-    GlobalVar("lhs", lhs_type, builtin::AddressSpace::kPrivate);
-    GlobalVar("rhs", rhs_type, builtin::AddressSpace::kPrivate);
+    GlobalVar("lhs", lhs_type, core::AddressSpace::kPrivate);
+    GlobalVar("rhs", rhs_type, core::AddressSpace::kPrivate);
 
     auto* expr = create<ast::BinaryExpression>(Source{{12, 34}}, op, Expr("lhs"), Expr("rhs"));
     WrapInFunction(expr);
@@ -1747,23 +1748,23 @@ TEST_P(Expr_Binary_Test_Invalid_VectorMatrixMultiply, All) {
 
     ast::Type lhs_type;
     ast::Type rhs_type;
-    const type::Type* result_type = nullptr;
+    const core::type::Type* result_type = nullptr;
     bool is_valid_expr;
 
     if (vec_by_mat) {
         lhs_type = ty.vec<f32>(vec_size);
         rhs_type = ty.mat<f32>(mat_cols, mat_rows);
-        result_type = create<type::Vector>(create<type::F32>(), mat_cols);
+        result_type = create<core::type::Vector>(create<core::type::F32>(), mat_cols);
         is_valid_expr = vec_size == mat_rows;
     } else {
         lhs_type = ty.mat<f32>(mat_cols, mat_rows);
         rhs_type = ty.vec<f32>(vec_size);
-        result_type = create<type::Vector>(create<type::F32>(), mat_rows);
+        result_type = create<core::type::Vector>(create<core::type::F32>(), mat_rows);
         is_valid_expr = vec_size == mat_cols;
     }
 
-    GlobalVar("lhs", lhs_type, builtin::AddressSpace::kPrivate);
-    GlobalVar("rhs", rhs_type, builtin::AddressSpace::kPrivate);
+    GlobalVar("lhs", lhs_type, core::AddressSpace::kPrivate);
+    GlobalVar("rhs", rhs_type, core::AddressSpace::kPrivate);
 
     auto* expr = Mul(Source{{12, 34}}, Expr("lhs"), Expr("rhs"));
     WrapInFunction(expr);
@@ -1795,12 +1796,12 @@ TEST_P(Expr_Binary_Test_Invalid_MatrixMatrixMultiply, All) {
     auto lhs_type = ty.mat<f32>(lhs_mat_cols, lhs_mat_rows);
     auto rhs_type = ty.mat<f32>(rhs_mat_cols, rhs_mat_rows);
 
-    auto* f32 = create<type::F32>();
-    auto* col = create<type::Vector>(f32, lhs_mat_rows);
-    auto* result_type = create<type::Matrix>(col, rhs_mat_cols);
+    auto* f32 = create<core::type::F32>();
+    auto* col = create<core::type::Vector>(f32, lhs_mat_rows);
+    auto* result_type = create<core::type::Matrix>(col, rhs_mat_cols);
 
-    GlobalVar("lhs", lhs_type, builtin::AddressSpace::kPrivate);
-    GlobalVar("rhs", rhs_type, builtin::AddressSpace::kPrivate);
+    GlobalVar("lhs", lhs_type, core::AddressSpace::kPrivate);
+    GlobalVar("rhs", rhs_type, core::AddressSpace::kPrivate);
 
     auto* expr = Mul(Source{{12, 34}}, Expr("lhs"), Expr("rhs"));
     WrapInFunction(expr);
@@ -1823,16 +1824,16 @@ INSTANTIATE_TEST_SUITE_P(ResolverTest,
 
 }  // namespace ExprBinaryTest
 
-using UnaryOpExpressionTest = ResolverTestWithParam<ast::UnaryOp>;
+using UnaryOpExpressionTest = ResolverTestWithParam<core::UnaryOp>;
 TEST_P(UnaryOpExpressionTest, Expr_UnaryOp) {
     auto op = GetParam();
 
-    if (op == ast::UnaryOp::kNot) {
-        GlobalVar("ident", ty.vec4<bool>(), builtin::AddressSpace::kPrivate);
-    } else if (op == ast::UnaryOp::kNegation || op == ast::UnaryOp::kComplement) {
-        GlobalVar("ident", ty.vec4<i32>(), builtin::AddressSpace::kPrivate);
+    if (op == core::UnaryOp::kNot) {
+        GlobalVar("ident", ty.vec4<bool>(), core::AddressSpace::kPrivate);
+    } else if (op == core::UnaryOp::kNegation || op == core::UnaryOp::kComplement) {
+        GlobalVar("ident", ty.vec4<i32>(), core::AddressSpace::kPrivate);
     } else {
-        GlobalVar("ident", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
+        GlobalVar("ident", ty.vec4<f32>(), core::AddressSpace::kPrivate);
     }
     auto* der = create<ast::UnaryOpExpression>(op, Expr("ident"));
     WrapInFunction(der);
@@ -1840,21 +1841,21 @@ TEST_P(UnaryOpExpressionTest, Expr_UnaryOp) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
     ASSERT_NE(TypeOf(der), nullptr);
-    ASSERT_TRUE(TypeOf(der)->Is<type::Vector>());
-    if (op == ast::UnaryOp::kNot) {
-        EXPECT_TRUE(TypeOf(der)->As<type::Vector>()->type()->Is<type::Bool>());
-    } else if (op == ast::UnaryOp::kNegation || op == ast::UnaryOp::kComplement) {
-        EXPECT_TRUE(TypeOf(der)->As<type::Vector>()->type()->Is<type::I32>());
+    ASSERT_TRUE(TypeOf(der)->Is<core::type::Vector>());
+    if (op == core::UnaryOp::kNot) {
+        EXPECT_TRUE(TypeOf(der)->As<core::type::Vector>()->type()->Is<core::type::Bool>());
+    } else if (op == core::UnaryOp::kNegation || op == core::UnaryOp::kComplement) {
+        EXPECT_TRUE(TypeOf(der)->As<core::type::Vector>()->type()->Is<core::type::I32>());
     } else {
-        EXPECT_TRUE(TypeOf(der)->As<type::Vector>()->type()->Is<type::F32>());
+        EXPECT_TRUE(TypeOf(der)->As<core::type::Vector>()->type()->Is<core::type::F32>());
     }
-    EXPECT_EQ(TypeOf(der)->As<type::Vector>()->Width(), 4u);
+    EXPECT_EQ(TypeOf(der)->As<core::type::Vector>()->Width(), 4u);
 }
 INSTANTIATE_TEST_SUITE_P(ResolverTest,
                          UnaryOpExpressionTest,
-                         testing::Values(ast::UnaryOp::kComplement,
-                                         ast::UnaryOp::kNegation,
-                                         ast::UnaryOp::kNot));
+                         testing::Values(core::UnaryOp::kComplement,
+                                         core::UnaryOp::kNegation,
+                                         core::UnaryOp::kNot));
 
 TEST_F(ResolverTest, AddressSpace_SetsIfMissing) {
     auto* var = Var("var", ty.i32());
@@ -1864,25 +1865,25 @@ TEST_F(ResolverTest, AddressSpace_SetsIfMissing) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    EXPECT_EQ(Sem().Get(var)->AddressSpace(), builtin::AddressSpace::kFunction);
+    EXPECT_EQ(Sem().Get(var)->AddressSpace(), core::AddressSpace::kFunction);
 }
 
 TEST_F(ResolverTest, AddressSpace_SetForSampler) {
-    auto t = ty.sampler(type::SamplerKind::kSampler);
+    auto t = ty.sampler(core::type::SamplerKind::kSampler);
     auto* var = GlobalVar("var", t, Binding(0_a), Group(0_a));
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    EXPECT_EQ(Sem().Get(var)->AddressSpace(), builtin::AddressSpace::kHandle);
+    EXPECT_EQ(Sem().Get(var)->AddressSpace(), core::AddressSpace::kHandle);
 }
 
 TEST_F(ResolverTest, AddressSpace_SetForTexture) {
-    auto t = ty.sampled_texture(type::TextureDimension::k1d, ty.f32());
+    auto t = ty.sampled_texture(core::type::TextureDimension::k1d, ty.f32());
     auto* var = GlobalVar("var", t, Binding(0_a), Group(0_a));
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    EXPECT_EQ(Sem().Get(var)->AddressSpace(), builtin::AddressSpace::kHandle);
+    EXPECT_EQ(Sem().Get(var)->AddressSpace(), core::AddressSpace::kHandle);
 }
 
 TEST_F(ResolverTest, AddressSpace_DoesNotSetOnConst) {
@@ -1892,26 +1893,28 @@ TEST_F(ResolverTest, AddressSpace_DoesNotSetOnConst) {
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    EXPECT_EQ(Sem().Get(var)->AddressSpace(), builtin::AddressSpace::kUndefined);
+    EXPECT_EQ(Sem().Get(var)->AddressSpace(), core::AddressSpace::kUndefined);
 }
 
 TEST_F(ResolverTest, Access_SetForStorageBuffer) {
     // struct S { x : i32 };
     // var<storage> g : S;
     auto* s = Structure("S", Vector{Member(Source{{12, 34}}, "x", ty.i32())});
-    auto* var = GlobalVar(Source{{56, 78}}, "g", ty.Of(s), builtin::AddressSpace::kStorage,
+    auto* var = GlobalVar(Source{{56, 78}}, "g", ty.Of(s), core::AddressSpace::kStorage,
                           Binding(0_a), Group(0_a));
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
-    EXPECT_EQ(Sem().Get(var)->Access(), builtin::Access::kRead);
+    EXPECT_EQ(Sem().Get(var)->Access(), core::Access::kRead);
 }
 
 TEST_F(ResolverTest, BindingPoint_SetForResources) {
     // @group(1) @binding(2) var s1 : sampler;
     // @group(3) @binding(4) var s2 : sampler;
-    auto* s1 = GlobalVar(Sym(), ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
-    auto* s2 = GlobalVar(Sym(), ty.sampler(type::SamplerKind::kSampler), Group(3_a), Binding(4_a));
+    auto* s1 =
+        GlobalVar(Sym(), ty.sampler(core::type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
+    auto* s2 =
+        GlobalVar(Sym(), ty.sampler(core::type::SamplerKind::kSampler), Group(3_a), Binding(4_a));
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 
@@ -1932,11 +1935,11 @@ TEST_F(ResolverTest, Function_EntryPoints_StageAttribute) {
     // ep_1 -> {}
     // ep_2 -> {}
 
-    GlobalVar("first", ty.f32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("second", ty.f32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("call_a", ty.f32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("call_b", ty.f32(), builtin::AddressSpace::kPrivate);
-    GlobalVar("call_c", ty.f32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("first", ty.f32(), core::AddressSpace::kPrivate);
+    GlobalVar("second", ty.f32(), core::AddressSpace::kPrivate);
+    GlobalVar("call_a", ty.f32(), core::AddressSpace::kPrivate);
+    GlobalVar("call_b", ty.f32(), core::AddressSpace::kPrivate);
+    GlobalVar("call_c", ty.f32(), core::AddressSpace::kPrivate);
 
     auto* func_b = Func("b", tint::Empty, ty.f32(),
                         Vector{
@@ -2076,8 +2079,8 @@ TEST_F(ResolverTest, ASTNodeReachedTwice) {
         {
             ProgramBuilder b;
             auto* expr = b.Expr(1_i);
-            b.GlobalVar("a", b.ty.i32(), builtin::AddressSpace::kPrivate, expr);
-            b.GlobalVar("b", b.ty.i32(), builtin::AddressSpace::kPrivate, expr);
+            b.GlobalVar("a", b.ty.i32(), core::AddressSpace::kPrivate, expr);
+            b.GlobalVar("b", b.ty.i32(), core::AddressSpace::kPrivate, expr);
             Resolver(&b).Resolve();
         },
         "internal compiler error: AST node 'tint::ast::IntLiteralExpression' was encountered twice "
@@ -2085,8 +2088,9 @@ TEST_F(ResolverTest, ASTNodeReachedTwice) {
 }
 
 TEST_F(ResolverTest, UnaryOp_Not) {
-    GlobalVar("ident", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
-    auto* der = create<ast::UnaryOpExpression>(ast::UnaryOp::kNot, Expr(Source{{12, 34}}, "ident"));
+    GlobalVar("ident", ty.vec4<f32>(), core::AddressSpace::kPrivate);
+    auto* der =
+        create<ast::UnaryOpExpression>(core::UnaryOp::kNot, Expr(Source{{12, 34}}, "ident"));
     WrapInFunction(der);
 
     EXPECT_FALSE(r()->Resolve());
@@ -2094,9 +2098,9 @@ TEST_F(ResolverTest, UnaryOp_Not) {
 }
 
 TEST_F(ResolverTest, UnaryOp_Complement) {
-    GlobalVar("ident", ty.vec4<f32>(), builtin::AddressSpace::kPrivate);
+    GlobalVar("ident", ty.vec4<f32>(), core::AddressSpace::kPrivate);
     auto* der =
-        create<ast::UnaryOpExpression>(ast::UnaryOp::kComplement, Expr(Source{{12, 34}}, "ident"));
+        create<ast::UnaryOpExpression>(core::UnaryOp::kComplement, Expr(Source{{12, 34}}, "ident"));
     WrapInFunction(der);
 
     EXPECT_FALSE(r()->Resolve());
@@ -2104,9 +2108,9 @@ TEST_F(ResolverTest, UnaryOp_Complement) {
 }
 
 TEST_F(ResolverTest, UnaryOp_Negation) {
-    GlobalVar("ident", ty.u32(), builtin::AddressSpace::kPrivate);
+    GlobalVar("ident", ty.u32(), core::AddressSpace::kPrivate);
     auto* der =
-        create<ast::UnaryOpExpression>(ast::UnaryOp::kNegation, Expr(Source{{12, 34}}, "ident"));
+        create<ast::UnaryOpExpression>(core::UnaryOp::kNegation, Expr(Source{{12, 34}}, "ident"));
     WrapInFunction(der);
 
     EXPECT_FALSE(r()->Resolve());
@@ -2114,9 +2118,9 @@ TEST_F(ResolverTest, UnaryOp_Negation) {
 }
 
 TEST_F(ResolverTest, TextureSampler_TextureSample) {
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(1_a),
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), Group(1_a),
               Binding(1_a));
-    GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
+    GlobalVar("s", ty.sampler(core::type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
 
     auto* call = Call("textureSample", "t", "s", Call<vec2<f32>>(1_f, 2_f));
     const ast::Function* f =
@@ -2133,9 +2137,9 @@ TEST_F(ResolverTest, TextureSampler_TextureSample) {
 }
 
 TEST_F(ResolverTest, TextureSampler_TextureSampleInFunction) {
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(1_a),
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), Group(1_a),
               Binding(1_a));
-    GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
+    GlobalVar("s", ty.sampler(core::type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
 
     auto* inner_call = Assign(Phony(), Call("textureSample", "t", "s", Call<vec2<f32>>(1_f, 2_f)));
     const ast::Function* inner_func =
@@ -2159,9 +2163,9 @@ TEST_F(ResolverTest, TextureSampler_TextureSampleInFunction) {
 }
 
 TEST_F(ResolverTest, TextureSampler_TextureSampleFunctionDiamondSameVariables) {
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(1_a),
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), Group(1_a),
               Binding(1_a));
-    GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
+    GlobalVar("s", ty.sampler(core::type::SamplerKind::kSampler), Group(1_a), Binding(2_a));
 
     auto* inner_call_1 =
         Assign(Phony(), Call("textureSample", "t", "s", Call<vec2<f32>>(1_f, 2_f)));
@@ -2196,11 +2200,11 @@ TEST_F(ResolverTest, TextureSampler_TextureSampleFunctionDiamondSameVariables) {
 }
 
 TEST_F(ResolverTest, TextureSampler_TextureSampleFunctionDiamondDifferentVariables) {
-    GlobalVar("t1", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(1_a),
+    GlobalVar("t1", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), Group(1_a),
               Binding(1_a));
-    GlobalVar("t2", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(1_a),
+    GlobalVar("t2", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), Group(1_a),
               Binding(2_a));
-    GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(1_a), Binding(3_a));
+    GlobalVar("s", ty.sampler(core::type::SamplerKind::kSampler), Group(1_a), Binding(3_a));
 
     auto* inner_call_1 =
         Assign(Phony(), Call("textureSample", "t1", "s", Call<vec2<f32>>(1_f, 2_f)));
@@ -2237,7 +2241,7 @@ TEST_F(ResolverTest, TextureSampler_TextureSampleFunctionDiamondDifferentVariabl
 }
 
 TEST_F(ResolverTest, TextureSampler_TextureDimensions) {
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(1_a),
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), Group(1_a),
               Binding(2_a));
 
     auto* call = Call("textureDimensions", "t");
@@ -2265,10 +2269,10 @@ TEST_F(ResolverTest, TextureSampler_Bug1715) {  // crbug.com/tint/1715
     // fn helper(sl: ptr<function, sampler>, tl: ptr<function, texture_2d<f32>>) -> vec4<f32> {
     //     return textureSampleLevel(*tl, *sl, c, 0.0);
     // }
-    GlobalVar("s", ty.sampler(type::SamplerKind::kSampler), Group(0_a), Binding(0_a));
-    GlobalVar("t", ty.sampled_texture(type::TextureDimension::k2d, ty.f32()), Group(0_a),
+    GlobalVar("s", ty.sampler(core::type::SamplerKind::kSampler), Group(0_a), Binding(0_a));
+    GlobalVar("t", ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()), Group(0_a),
               Binding(1_a));
-    GlobalVar("c", ty.vec2<f32>(), builtin::AddressSpace::kUniform, Group(0_a), Binding(2_a));
+    GlobalVar("c", ty.vec2<f32>(), core::AddressSpace::kUniform, Group(0_a), Binding(2_a));
 
     Func("main", tint::Empty, ty.vec4<f32>(),
          Vector{
@@ -2283,9 +2287,9 @@ TEST_F(ResolverTest, TextureSampler_Bug1715) {  // crbug.com/tint/1715
 
     Func("helper",
          Vector{
-             Param("sl", ty.ptr<function>(ty.sampler(type::SamplerKind::kSampler))),
-             Param("tl",
-                   ty.ptr<function>(ty.sampled_texture(type::TextureDimension::k2d, ty.f32()))),
+             Param("sl", ty.ptr<function>(ty.sampler(core::type::SamplerKind::kSampler))),
+             Param("tl", ty.ptr<function>(
+                             ty.sampled_texture(core::type::TextureDimension::k2d, ty.f32()))),
          },
          ty.vec4<f32>(),
          Vector{
@@ -2298,15 +2302,15 @@ TEST_F(ResolverTest, TextureSampler_Bug1715) {  // crbug.com/tint/1715
 
 TEST_F(ResolverTest, ModuleDependencyOrderedDeclarations) {
     auto* f0 = Func("f0", tint::Empty, ty.void_(), tint::Empty);
-    auto* v0 = GlobalVar("v0", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* v0 = GlobalVar("v0", ty.i32(), core::AddressSpace::kPrivate);
     auto* a0 = Alias("a0", ty.i32());
     auto* s0 = Structure("s0", Vector{Member("m", ty.i32())});
     auto* f1 = Func("f1", tint::Empty, ty.void_(), tint::Empty);
-    auto* v1 = GlobalVar("v1", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* v1 = GlobalVar("v1", ty.i32(), core::AddressSpace::kPrivate);
     auto* a1 = Alias("a1", ty.i32());
     auto* s1 = Structure("s1", Vector{Member("m", ty.i32())});
     auto* f2 = Func("f2", tint::Empty, ty.void_(), tint::Empty);
-    auto* v2 = GlobalVar("v2", ty.i32(), builtin::AddressSpace::kPrivate);
+    auto* v2 = GlobalVar("v2", ty.i32(), core::AddressSpace::kPrivate);
     auto* a2 = Alias("a2", ty.i32());
     auto* s2 = Structure("s2", Vector{Member("m", ty.i32())});
 

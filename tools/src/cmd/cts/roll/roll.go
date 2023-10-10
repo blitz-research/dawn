@@ -17,9 +17,12 @@ package roll
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +33,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	commonAuth "dawn.googlesource.com/dawn/tools/src/auth"
 	"dawn.googlesource.com/dawn/tools/src/buildbucket"
 	"dawn.googlesource.com/dawn/tools/src/cmd/cts/common"
 	"dawn.googlesource.com/dawn/tools/src/container"
@@ -53,9 +57,11 @@ func init() {
 
 const (
 	depsRelPath          = "DEPS"
+	gitLinkPath          = "third_party/webgpu-cts"
 	tsSourcesRelPath     = "third_party/gn/webgpu-cts/ts_sources.txt"
 	testListRelPath      = "third_party/gn/webgpu-cts/test_list.txt"
 	cacheListRelPath     = "third_party/gn/webgpu-cts/cache_list.txt"
+	cacheTarGz           = "third_party/gn/webgpu-cts/cache.tar.gz"
 	resourceFilesRelPath = "third_party/gn/webgpu-cts/resource_files.txt"
 	webTestsPath         = "webgpu-cts/webtests"
 	refMain              = "refs/heads/main"
@@ -63,14 +69,17 @@ const (
 )
 
 type rollerFlags struct {
-	gitPath  string
-	npmPath  string
-	nodePath string
-	auth     authcli.Flags
-	cacheDir string
-	force    bool // Create a new roll, even if CTS is up to date
-	rebuild  bool // Rebuild the expectations file from scratch
-	preserve bool // If false, abandon past roll changes
+	gitPath             string
+	npmPath             string
+	nodePath            string
+	auth                authcli.Flags
+	cacheDir            string
+	force               bool // Create a new roll, even if CTS is up to date
+	rebuild             bool // Rebuild the expectations file from scratch
+	preserve            bool // If false, abandon past roll changes
+	sendToGardener      bool // If true, automatically send to the gardener for review
+	parentSwarmingRunID string
+	maxAttempts         int
 }
 
 type cmd struct {
@@ -88,16 +97,17 @@ func (cmd) Desc() string {
 func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, error) {
 	gitPath, _ := exec.LookPath("git")
 	npmPath, _ := exec.LookPath("npm")
-	nodePath, _ := exec.LookPath("node")
-	c.flags.auth.Register(flag.CommandLine, common.DefaultAuthOptions())
+	c.flags.auth.Register(flag.CommandLine, commonAuth.DefaultAuthOptions())
 	flag.StringVar(&c.flags.gitPath, "git", gitPath, "path to git")
 	flag.StringVar(&c.flags.npmPath, "npm", npmPath, "path to npm")
-	flag.StringVar(&c.flags.nodePath, "node", nodePath, "path to node")
+	flag.StringVar(&c.flags.nodePath, "node", fileutils.NodePath(), "path to node")
 	flag.StringVar(&c.flags.cacheDir, "cache", common.DefaultCacheDir, "path to the results cache")
 	flag.BoolVar(&c.flags.force, "force", false, "create a new roll, even if CTS is up to date")
 	flag.BoolVar(&c.flags.rebuild, "rebuild", false, "rebuild the expectation file from scratch")
 	flag.BoolVar(&c.flags.preserve, "preserve", false, "do not abandon existing rolls")
-
+	flag.BoolVar(&c.flags.sendToGardener, "send-to-gardener", false, "send the CL to the WebGPU gardener for review")
+	flag.StringVar(&c.flags.parentSwarmingRunID, "parent-swarming-run-id", "", "parent swarming run id. All triggered tasks will be children of this task and will be canceled if the parent is canceled.")
+	flag.IntVar(&c.flags.maxAttempts, "max-attempts", 3, "number of update attempts before giving up")
 	return nil, nil
 }
 
@@ -134,7 +144,7 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to obtain authentication options: %w", err)
 	}
-	gerrit, err := gerrit.New(cfg.Gerrit.Host, gerrit.Credentials{})
+	gerrit, err := gerrit.New(ctx, auth, cfg.Gerrit.Host)
 	if err != nil {
 		return err
 	}
@@ -157,31 +167,33 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 
 	// Construct the roller, and roll
 	r := roller{
-		cfg:      cfg,
-		flags:    c.flags,
-		auth:     auth,
-		bb:       bb,
-		rdb:      rdb,
-		git:      git,
-		gerrit:   gerrit,
-		chromium: chromium,
-		dawn:     dawn,
-		ctsDir:   ctsDir,
+		cfg:                 cfg,
+		flags:               c.flags,
+		auth:                auth,
+		bb:                  bb,
+		parentSwarmingRunID: c.flags.parentSwarmingRunID,
+		rdb:                 rdb,
+		git:                 git,
+		gerrit:              gerrit,
+		chromium:            chromium,
+		dawn:                dawn,
+		ctsDir:              ctsDir,
 	}
 	return r.roll(ctx)
 }
 
 type roller struct {
-	cfg      common.Config
-	flags    rollerFlags
-	auth     auth.Options
-	bb       *buildbucket.Buildbucket
-	rdb      *resultsdb.ResultsDB
-	git      *git.Git
-	gerrit   *gerrit.Gerrit
-	chromium *gitiles.Gitiles
-	dawn     *gitiles.Gitiles
-	ctsDir   string
+	cfg                 common.Config
+	flags               rollerFlags
+	auth                auth.Options
+	bb                  *buildbucket.Buildbucket
+	parentSwarmingRunID string
+	rdb                 *resultsdb.ResultsDB
+	git                 *git.Git
+	gerrit              *gerrit.Gerrit
+	chromium            *gitiles.Gitiles
+	dawn                *gitiles.Gitiles
+	ctsDir              string
 }
 
 func (r *roller) roll(ctx context.Context) error {
@@ -227,16 +239,13 @@ func (r *roller) roll(ctx context.Context) error {
 		return fmt.Errorf("failed to load expectations: %v", err)
 	}
 
-	// If the user requested a full rebuild of the expecations, strip out
+	// If the user requested a full rebuild of the expectations, strip out
 	// everything but comment chunks.
 	if r.flags.rebuild {
 		rebuilt := ex.Clone()
 		rebuilt.Chunks = rebuilt.Chunks[:0]
 		for _, c := range ex.Chunks {
-			switch {
-			case c.IsBlankLine():
-				rebuilt.MaybeAddBlankLine()
-			case c.IsCommentOnly():
+			if c.IsCommentOnly() {
 				rebuilt.Chunks = append(rebuilt.Chunks, c)
 			}
 		}
@@ -313,6 +322,7 @@ func (r *roller) roll(ctx context.Context) error {
 	// Update the DEPS, expectations, and other generated files.
 	updateExpectationUpdateTimestamp(&ex)
 	generatedFiles[depsRelPath] = updatedDEPS
+	generatedFiles[gitLinkPath] = newCTSHash
 	generatedFiles[common.RelativeExpectationsPath] = ex.String()
 
 	msg := r.rollCommitMessage(oldCTSHash, newCTSHash, ctsLog, changeID)
@@ -322,12 +332,11 @@ func (r *roller) roll(ctx context.Context) error {
 	}
 
 	// Begin main roll loop
-	const maxAttempts = 3
 	results := result.List{}
 	for attempt := 0; ; attempt++ {
 		// Kick builds
 		log.Printf("building (attempt %v)...\n", attempt)
-		builds, err := common.GetOrStartBuildsAndWait(ctx, r.cfg, ps, r.bb, false)
+		builds, err := common.GetOrStartBuildsAndWait(ctx, r.cfg, ps, r.bb, r.parentSwarmingRunID, false)
 		if err != nil {
 			return err
 		}
@@ -386,14 +395,40 @@ func (r *roller) roll(ctx context.Context) error {
 			return fmt.Errorf("failed to update change '%v': %v", changeID, err)
 		}
 
-		if attempt >= maxAttempts {
+		if attempt >= r.flags.maxAttempts {
 			err := fmt.Errorf("CTS failed after %v attempts.\nGiving up", attempt)
 			r.gerrit.Comment(ps, err.Error(), nil)
 			return err
 		}
 	}
 
-	if err := r.gerrit.SetReadyForReview(changeID, "CTS roll succeeded"); err != nil {
+	reviewer := ""
+	if r.flags.sendToGardener {
+		resp, err := http.Get("https://chrome-ops-rotation-proxy.appspot.com/current/grotation:webgpu-gardener")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		jsonResponse, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		type StructuredJSONResponse struct {
+			Emails []string
+		}
+		var jsonRes StructuredJSONResponse
+		if err := json.Unmarshal(jsonResponse, &jsonRes); err != nil {
+			return err
+		}
+		if len(jsonRes.Emails) < 1 {
+			return fmt.Errorf("Expected at least one email in JSON response %s", jsonRes)
+		}
+		reviewer = jsonRes.Emails[0]
+	}
+
+	if err := r.gerrit.SetReadyForReview(changeID, "CTS roll succeeded", reviewer); err != nil {
 		return fmt.Errorf("failed to mark change as ready for review: %v", err)
 	}
 
@@ -648,11 +683,24 @@ func (r *roller) generateFiles(ctx context.Context) (map[string]string, error) {
 		}
 	}()
 
+	// Generate case cache
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if caseCache, err := common.BuildCache(ctx, r.ctsDir, r.flags.nodePath); err == nil {
+			mutex.Lock()
+			defer mutex.Unlock()
+			files[cacheListRelPath] = strings.Join(caseCache.FileList, "\n") + "\n"
+			files[cacheTarGz] = string(caseCache.TarGz)
+		} else {
+			errs <- fmt.Errorf("failed to create case cache: %v", err)
+		}
+	}()
+
 	// Generate typescript sources list, test list, resources file list.
 	for relPath, generator := range map[string]func(context.Context) (string, error){
 		tsSourcesRelPath:     r.genTSDepList,
 		testListRelPath:      r.genTestList,
-		cacheListRelPath:     r.genCacheList,
 		resourceFilesRelPath: r.genResourceFilesList,
 	} {
 		relPath, generator := relPath, generator // Capture values, not iterators
@@ -765,40 +813,6 @@ func (r *roller) genTestList(ctx context.Context) (string, error) {
 	}
 
 	return strings.Join(tests, "\n"), nil
-}
-
-// genCacheList returns the file list of cached data
-func (r *roller) genCacheList(ctx context.Context) (string, error) {
-	// Run 'src/common/runtime/cmdline.ts' to obtain the full test list
-	cmd := exec.CommandContext(ctx, r.flags.nodePath,
-		"-e", "require('./src/common/tools/setup-ts-in-node.js');require('./src/common/tools/gen_cache.ts');",
-		"--", // Start of arguments
-		// src/common/runtime/helper/sys.ts expects 'node file.js <args>'
-		// and slices away the first two arguments. When running with '-e', args
-		// start at 1, so just inject a placeholder argument.
-		"placeholder-arg",
-		".",
-		"src/webgpu",
-		"--list",
-	)
-	cmd.Dir = r.ctsDir
-
-	stderr := bytes.Buffer{}
-	cmd.Stderr = &stderr
-
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate cache list: %w\n%v", err, stderr.String())
-	}
-
-	files := []string{}
-	for _, file := range strings.Split(string(out), "\n") {
-		if file != "" {
-			files = append(files, strings.TrimPrefix(file, "./"))
-		}
-	}
-
-	return strings.Join(files, "\n") + "\n", nil
 }
 
 // genResourceFilesList returns a list of resource files, for the CTS checkout at r.ctsDir

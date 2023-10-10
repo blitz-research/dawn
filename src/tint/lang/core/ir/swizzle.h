@@ -15,13 +15,15 @@
 #ifndef SRC_TINT_LANG_CORE_IR_SWIZZLE_H_
 #define SRC_TINT_LANG_CORE_IR_SWIZZLE_H_
 
+#include <string>
+
 #include "src/tint/lang/core/ir/operand_instruction.h"
 #include "src/tint/utils/rtti/castable.h"
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 /// A swizzle instruction in the IR.
-class Swizzle : public Castable<Swizzle, OperandInstruction<1, 1>> {
+class Swizzle final : public Castable<Swizzle, OperandInstruction<1, 1>> {
   public:
     /// The offset in Operands() for the object being swizzled
     static constexpr size_t kObjectOperandOffset = 0;
@@ -33,6 +35,9 @@ class Swizzle : public Castable<Swizzle, OperandInstruction<1, 1>> {
     Swizzle(InstructionResult* result, Value* object, VectorRef<uint32_t> indices);
     ~Swizzle() override;
 
+    /// @copydoc Instruction::Clone()
+    Swizzle* Clone(CloneContext& ctx) override;
+
     /// @returns the object used for the access
     Value* Object() { return operands_[kObjectOperandOffset]; }
 
@@ -40,12 +45,12 @@ class Swizzle : public Castable<Swizzle, OperandInstruction<1, 1>> {
     VectorRef<uint32_t> Indices() { return indices_; }
 
     /// @returns the friendly name for the instruction
-    std::string_view FriendlyName() override { return "swizzle"; }
+    std::string FriendlyName() override { return "swizzle"; }
 
   private:
     Vector<uint32_t, 4> indices_;
 };
 
-}  // namespace tint::ir
+}  // namespace tint::core::ir
 
 #endif  // SRC_TINT_LANG_CORE_IR_SWIZZLE_H_

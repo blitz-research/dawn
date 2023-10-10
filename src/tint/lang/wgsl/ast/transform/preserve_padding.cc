@@ -30,8 +30,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::transform::PreservePadding);
 
 namespace tint::ast::transform {
 
-using namespace tint::builtin::fluent_types;  // NOLINT
-using namespace tint::number_suffixes;        // NOLINT
+using namespace tint::core::fluent_types;     // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 
 PreservePadding::PreservePadding() = default;
 
@@ -41,7 +41,7 @@ PreservePadding::~PreservePadding() = default;
 struct PreservePadding::State {
     /// Constructor
     /// @param src the source Program
-    explicit State(const Program* src) : ctx{&b, src, /* auto_clone_symbols */ true} {}
+    explicit State(const Program& src) : ctx{&b, &src, /* auto_clone_symbols */ true} {}
 
     /// The main function for the transform.
     /// @returns the ApplyResult
@@ -57,8 +57,8 @@ struct PreservePadding::State {
                         // Ignore phony assignment.
                         return;
                     }
-                    if (ty->As<type::Reference>()->AddressSpace() !=
-                        builtin::AddressSpace::kStorage) {
+                    if (ty->As<core::type::Reference>()->AddressSpace() !=
+                        core::AddressSpace::kStorage) {
                         // We only care about assignments that write to variables in the storage
                         // address space, as nothing else is host-visible.
                         return;
@@ -71,7 +71,7 @@ struct PreservePadding::State {
                 [&](const Enable* enable) {
                     // Check if the full pointer parameters extension is already enabled.
                     if (enable->HasExtension(
-                            builtin::Extension::kChromiumExperimentalFullPtrParameters)) {
+                            wgsl::Extension::kChromiumExperimentalFullPtrParameters)) {
                         ext_enabled = true;
                     }
                 });
@@ -99,7 +99,7 @@ struct PreservePadding::State {
     /// @param lhs the lhs expression (in the destination program)
     /// @param rhs the rhs expression (in the destination program)
     /// @returns the statement that performs the assignment
-    const Statement* MakeAssignment(const type::Type* ty,
+    const Statement* MakeAssignment(const core::type::Type* ty,
                                     const Expression* lhs,
                                     const Expression* rhs) {
         if (!HasPadding(ty)) {
@@ -136,7 +136,7 @@ struct PreservePadding::State {
 
         return Switch(
             ty,  //
-            [&](const type::Array* arr) {
+            [&](const core::type::Array* arr) {
                 // Call a helper function that uses a loop to assigns each element separately.
                 return call_helper([&] {
                     tint::Vector<const Statement*, 8> body;
@@ -150,7 +150,7 @@ struct PreservePadding::State {
                     return body;
                 });
             },
-            [&](const type::Matrix* mat) {
+            [&](const core::type::Matrix* mat) {
                 // Call a helper function that assigns each column separately.
                 return call_helper([&] {
                     tint::Vector<const Statement*, 4> body;
@@ -162,7 +162,7 @@ struct PreservePadding::State {
                     return body;
                 });
             },
-            [&](const type::Struct* str) {
+            [&](const core::type::Struct* str) {
                 // Call a helper function that assigns each member separately.
                 return call_helper([&] {
                     tint::Vector<const Statement*, 8> body;
@@ -184,24 +184,24 @@ struct PreservePadding::State {
     /// Checks if a type contains padding bytes.
     /// @param ty the type to check
     /// @returns true if `ty` (or any of its contained types) have padding bytes
-    bool HasPadding(const type::Type* ty) {
+    bool HasPadding(const core::type::Type* ty) {
         return Switch(
             ty,  //
-            [&](const type::Array* arr) {
+            [&](const core::type::Array* arr) {
                 auto* elem_ty = arr->ElemType();
                 if (elem_ty->Size() % elem_ty->Align() > 0) {
                     return true;
                 }
                 return HasPadding(elem_ty);
             },
-            [&](const type::Matrix* mat) {
+            [&](const core::type::Matrix* mat) {
                 auto* col_ty = mat->ColumnType();
                 if (mat->ColumnStride() > col_ty->Size()) {
                     return true;
                 }
                 return HasPadding(col_ty);
             },
-            [&](const type::Struct* str) {
+            [&](const core::type::Struct* str) {
                 uint32_t current_offset = 0;
                 for (auto* member : str->Members()) {
                     if (member->Offset() > current_offset) {
@@ -220,7 +220,7 @@ struct PreservePadding::State {
     /// Enable the full pointer parameters extension, if we have not already done so.
     void EnableExtension() {
         if (!ext_enabled) {
-            b.Enable(builtin::Extension::kChromiumExperimentalFullPtrParameters);
+            b.Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
             ext_enabled = true;
         }
     }
@@ -237,10 +237,10 @@ struct PreservePadding::State {
     /// Flag to track whether we have already enabled the full pointer parameters extension.
     bool ext_enabled = false;
     /// Map of semantic types to their assignment helper functions.
-    Hashmap<const type::Type*, Symbol, 8> helpers;
+    Hashmap<const core::type::Type*, Symbol, 8> helpers;
 };
 
-Transform::ApplyResult PreservePadding::Apply(const Program* program,
+Transform::ApplyResult PreservePadding::Apply(const Program& program,
                                               const DataMap&,
                                               DataMap&) const {
     return State(program).Run();

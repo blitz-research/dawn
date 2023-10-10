@@ -26,6 +26,7 @@
 #include "src/tint/utils/containers/slice.h"
 #include "src/tint/utils/ice/ice.h"
 #include "src/tint/utils/macros/compiler.h"
+#include "src/tint/utils/math/hash.h"
 #include "src/tint/utils/memory/bitcast.h"
 
 /// Forward declarations
@@ -35,6 +36,138 @@ class VectorRef;
 }  // namespace tint
 
 namespace tint {
+
+/// VectorIterator is a forward iterator of Vector elements.
+template <typename T, bool FORWARD = true>
+class VectorIterator {
+  public:
+    /// The iterator trait
+    using iterator_category = std::random_access_iterator_tag;
+    /// The type of an element that this iterator points to
+    using value_type = T;
+    /// The type of the difference of two iterators
+    using difference_type = std::ptrdiff_t;
+    /// A pointer of the element type
+    using pointer = T*;
+    /// A reference of the element type
+    using reference = T&;
+
+    /// Constructor
+    VectorIterator() = default;
+
+    /// Constructor
+    /// @param p the pointer to the vector element
+    explicit VectorIterator(T* p) : ptr(p) {}
+
+    /// @return the element this iterator currently points at
+    operator T*() const { return ptr; }
+
+    /// @return the element this iterator currently points at
+    T& operator*() const { return *ptr; }
+
+    /// @return the element this iterator currently points at
+    T* operator->() const { return ptr; }
+
+    /// Equality operator
+    /// @param other the other VectorIterator
+    /// @return true if this iterator is equal to @p other
+    bool operator==(const VectorIterator& other) const { return ptr == other.ptr; }
+
+    /// Inequality operator
+    /// @param other the other VectorIterator
+    /// @return true if this iterator is not equal to @p other
+    bool operator!=(const VectorIterator& other) const { return ptr != other.ptr; }
+
+    /// Less-than operator
+    /// @param other the other iterator
+    /// @returns true if this iterator comes before @p other
+    bool operator<(const VectorIterator& other) const { return other - *this > 0; }
+
+    /// Greater-than operator
+    /// @param other the other iterator
+    /// @returns true if this iterator comes after @p other
+    bool operator>(const VectorIterator& other) const { return *this - other > 0; }
+
+    /// Index operator
+    /// @param i the number of elements from the element this iterator points to
+    /// @return the element
+    T& operator[](std::ptrdiff_t i) const { return *(*this + i); }
+
+    /// Increments the iterator (prefix)
+    /// @returns this VectorIterator
+    VectorIterator& operator++() {
+        *this = *this + 1;
+        return *this;
+    }
+
+    /// Decrements the iterator (prefix)
+    /// @returns this VectorIterator
+    VectorIterator& operator--() {
+        *this = *this - 1;
+        return *this;
+    }
+
+    /// Increments the iterator (postfix)
+    /// @returns a VectorIterator that points to the element before the increment
+    VectorIterator operator++(int) {
+        VectorIterator res = *this;
+        *this = *this + 1;
+        return res;
+    }
+
+    /// Decrements the iterator (postfix)
+    /// @returns a VectorIterator that points to the element before the decrement
+    VectorIterator operator--(int) {
+        VectorIterator res = *this;
+        *this = *this - 1;
+        return res;
+    }
+
+    /// Moves the iterator forward by @p n elements
+    /// @param n the number of elements
+    /// @returns this VectorIterator
+    VectorIterator operator+=(std::ptrdiff_t n) {
+        *this = *this + n;
+        return *this;
+    }
+
+    /// Moves the iterator backwards by @p n elements
+    /// @param n the number of elements
+    /// @returns this VectorIterator
+    VectorIterator operator-=(std::ptrdiff_t n) {
+        *this = *this - n;
+        return *this;
+    }
+
+    /// @param n the number of elements
+    /// @returns a new VectorIterator progressed by @p n elements
+    VectorIterator operator+(std::ptrdiff_t n) const {
+        return VectorIterator{FORWARD ? ptr + n : ptr - n};
+    }
+
+    /// @param n the number of elements
+    /// @returns a new VectorIterator regressed by @p n elements
+    VectorIterator operator-(std::ptrdiff_t n) const {
+        return VectorIterator{FORWARD ? ptr - n : ptr + n};
+    }
+
+    /// @param other the other iterator
+    /// @returns the number of elements between this iterator and @p other
+    std::ptrdiff_t operator-(const VectorIterator& other) const {
+        return FORWARD ? ptr - other.ptr : other.ptr - ptr;
+    }
+
+  private:
+    T* ptr = nullptr;
+};
+
+/// @param out the stream to write to
+/// @param it the VectorIterator
+/// @returns @p out so calls can be chained
+template <typename STREAM, typename T, bool FORWARD, typename = traits::EnableIfIsOStream<STREAM>>
+auto& operator<<(STREAM& out, const VectorIterator<T, FORWARD>& it) {
+    return out << *it;
+}
 
 /// Vector is a small-object-optimized, dynamically-sized vector of contigious elements of type T.
 ///
@@ -58,10 +191,14 @@ namespace tint {
 template <typename T, size_t N>
 class Vector {
   public:
-    /// Alias to `T*`.
-    using iterator = T*;
-    /// Alias to `const T*`.
-    using const_iterator = const T*;
+    /// Alias to the non-const forward iterator
+    using iterator = VectorIterator<T, /* forward */ true>;
+    /// Alias to the const forward iterator
+    using const_iterator = VectorIterator<const T, /* forward */ true>;
+    /// Alias to the non-const reverse  iterator
+    using reverse_iterator = VectorIterator<T, /* forward */ false>;
+    /// Alias to the const reverse iterator
+    using const_reverse_iterator = VectorIterator<const T, /* forward */ false>;
     /// Alias to `T`.
     using value_type = T;
     /// Value of `N`
@@ -281,12 +418,10 @@ class Vector {
 
     /// Clears all elements from the vector, keeping the capacity the same.
     void Clear() {
-        TINT_BEGIN_DISABLE_WARNING(MAYBE_UNINITIALIZED);
         for (size_t i = 0; i < impl_.slice.len; i++) {
             impl_.slice.data[i].~T();
         }
         impl_.slice.len = 0;
-        TINT_END_DISABLE_WARNING(MAYBE_UNINITIALIZED);
     }
 
     /// Appends a new element to the vector.
@@ -364,6 +499,31 @@ class Vector {
         }
     }
 
+    /// Removes all the elements from the vector that match the predicate function.
+    /// @param predicate the predicate function with the signature `bool(const T&)`. This function
+    /// should return `true` for elements that should be removed from the vector.
+    template <typename PREDICATE>
+    void EraseIf(PREDICATE&& predicate) {
+        // Shuffle
+        size_t num_removed = 0;
+        for (size_t i = 0; i < impl_.slice.len; i++) {
+            auto& el = impl_.slice.data[i];
+            bool remove = predicate(const_cast<const T&>(el));
+            if (num_removed > 0) {
+                auto& dst = impl_.slice.data[i - num_removed];
+                dst = std::move(el);
+            }
+            if (remove) {
+                num_removed++;
+            }
+        }
+        // Pop
+        for (size_t i = 0; i < num_removed; i++) {
+            auto& el = impl_.slice.data[--impl_.slice.len];
+            el.~T();
+        }
+    }
+
     /// Sort sorts the vector in-place using the predicate function @p pred
     /// @param pred a function that has the signature `bool(const T& a, const T& b)` which returns
     /// true if `a` is ordered before `b`.
@@ -373,8 +533,10 @@ class Vector {
     }
 
     /// Sort sorts the vector in-place using `T::operator<()`
-    void Sort() {
+    /// @returns this vector so calls can be chained
+    Vector& Sort() {
         Sort([](auto& a, auto& b) { return a < b; });
+        return *this;
     }
 
     /// Reverse reversed the vector in-place
@@ -416,29 +578,42 @@ class Vector {
     /// @returns a reference to the last element in the vector
     const T& Back() const { return impl_.slice.Back(); }
 
-    /// @returns a pointer to the first element in the vector
-    T* begin() { return impl_.slice.begin(); }
+    /// @returns a forward iterator to the first element of the vector
+    iterator begin() { return iterator{impl_.slice.begin()}; }
 
-    /// @returns a pointer to the first element in the vector
-    const T* begin() const { return impl_.slice.begin(); }
+    /// @returns a forward iterator to the first element of the vector
+    const const_iterator begin() const { return const_iterator{impl_.slice.begin()}; }
 
-    /// @returns a pointer to one past the last element in the vector
-    T* end() { return impl_.slice.end(); }
+    /// @returns a forward iterator to one-pass the last element of the vector
+    iterator end() { return iterator{impl_.slice.end()}; }
 
-    /// @returns a pointer to one past the last element in the vector
-    const T* end() const { return impl_.slice.end(); }
+    /// @returns a forward iterator to one-pass the last element of the vector
+    const const_iterator end() const { return const_iterator{impl_.slice.end()}; }
 
-    /// @returns a reverse iterator starting with the last element in the vector
-    auto rbegin() { return impl_.slice.rbegin(); }
+    /// @returns a reverse iterator to the last element of the vector
+    reverse_iterator rbegin() { return reverse_iterator{impl_.slice.end()} + 1; }
 
-    /// @returns a reverse iterator starting with the last element in the vector
-    auto rbegin() const { return impl_.slice.rbegin(); }
+    /// @returns a reverse iterator to the last element of the vector
+    const const_reverse_iterator rbegin() const {
+        return const_reverse_iterator{impl_.slice.end()} + 1;
+    }
 
-    /// @returns the end for a reverse iterator
-    auto rend() { return impl_.slice.rend(); }
+    /// @returns a reverse iterator to one element before the first element of the vector
+    reverse_iterator rend() { return reverse_iterator{impl_.slice.begin()} + 1; }
 
-    /// @returns the end for a reverse iterator
-    auto rend() const { return impl_.slice.rend(); }
+    /// @returns a reverse iterator to one element before the first element of the vector
+    const const_reverse_iterator rend() const {
+        return const_reverse_iterator{impl_.slice.begin()} + 1;
+    }
+
+    /// @returns a hash code for this Vector
+    size_t HashCode() const {
+        auto hash = Hash(Length());
+        for (auto& el : *this) {
+            hash = HashCombine(hash, el);
+        }
+        return hash;
+    }
 
     /// Equality operator
     /// @param other the other vector
@@ -557,9 +732,9 @@ class Vector {
             }
         }
 
-        /// Frees `data`, if not nullptr and isn't a pointer to #small_arr
+        /// Frees `data`, if isn't a pointer to #small_arr
         void Free(T* data) const {
-            if (data && data != small_arr[0].Get()) {
+            if (data != small_arr[0].Get()) {
                 delete[] Bitcast<TStorage*>(data);
             }
         }
@@ -579,12 +754,8 @@ class Vector {
             slice.cap = new_cap;
         }
 
-        /// Frees `data`, if not nullptr.
-        void Free(T* data) const {
-            if (data) {
-                delete[] Bitcast<TStorage*>(data);
-            }
-        }
+        /// Frees `data`.
+        void Free(T* data) const { delete[] Bitcast<TStorage*>(data); }
 
         /// Indicates whether the slice structure can be std::move()d.
         /// @returns true
@@ -777,6 +948,15 @@ class VectorRef {
 
     /// @returns the end for a reverse iterator
     auto rend() const { return slice_.rend(); }
+
+    /// @returns a hash code of the Vector
+    size_t HashCode() const {
+        auto hash = Hash(Length());
+        for (auto& el : *this) {
+            hash = HashCombine(hash, el);
+        }
+        return hash;
+    }
 
   private:
     /// Friend class

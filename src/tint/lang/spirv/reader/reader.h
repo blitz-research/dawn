@@ -17,19 +17,19 @@
 
 #include <vector>
 
-#include "src/tint/lang/spirv/reader/options.h"
+#include "src/tint/lang/spirv/reader/common/options.h"
 #include "src/tint/lang/wgsl/program/program.h"
 
 namespace tint::spirv::reader {
 
-/// Parses the SPIR-V source data, returning the parsed program.
+/// Reads the SPIR-V source data, returning the parsed program.
 /// If the source data fails to parse then the returned
 /// `program.Diagnostics.contains_errors()` will be true, and the
 /// `program.Diagnostics()` will describe the error.
 /// @param input the source data
 /// @param options the parser options
 /// @returns the parsed program
-Program Parse(const std::vector<uint32_t>& input, const Options& options = {});
+Program Read(const std::vector<uint32_t>& input, const Options& options = {});
 
 }  // namespace tint::spirv::reader
 

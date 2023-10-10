@@ -17,13 +17,15 @@
 #include <utility>
 
 #include "src/tint/lang/core/ir/block.h"
+#include "src/tint/lang/core/ir/clone_context.h"
 #include "src/tint/lang/core/ir/loop.h"
+#include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/multi_in_block.h"
 #include "src/tint/utils/ice/ice.h"
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Continue);
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Continue);
 
-namespace tint::ir {
+namespace tint::core::ir {
 
 Continue::Continue(ir::Loop* loop, VectorRef<Value*> args) : loop_(loop) {
     TINT_ASSERT(loop_);
@@ -37,4 +39,11 @@ Continue::Continue(ir::Loop* loop, VectorRef<Value*> args) : loop_(loop) {
 
 Continue::~Continue() = default;
 
-}  // namespace tint::ir
+Continue* Continue::Clone(CloneContext& ctx) {
+    auto* loop = ctx.Remap(Loop());
+    auto args = ctx.Remap<Continue::kDefaultNumOperands>(Args());
+
+    return ctx.ir.instructions.Create<Continue>(loop, args);
+}
+
+}  // namespace tint::core::ir

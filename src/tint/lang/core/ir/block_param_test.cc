@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/core/ir/block_param.h"
-#include "gtest/gtest-spi.h"
-#include "src/tint/lang/core/ir/ir_test_helper.h"
+#include <string>
 
-namespace tint::ir {
+#include "gtest/gtest-spi.h"
+#include "src/tint/lang/core/ir/block_param.h"
+#include "src/tint/lang/core/ir/ir_helper_test.h"
+
+namespace tint::core::ir {
 namespace {
 
-using namespace tint::number_suffixes;  // NOLINT
+using namespace tint::core::number_suffixes;  // NOLINT
 using IR_BlockParamTest = IRTestHelper;
 
 TEST_F(IR_BlockParamTest, Fail_NullType) {
@@ -32,5 +34,23 @@ TEST_F(IR_BlockParamTest, Fail_NullType) {
         "");
 }
 
+TEST_F(IR_BlockParamTest, Clone) {
+    auto* inst = b.BlockParam(mod.Types().i32());
+
+    auto* new_inst = clone_ctx.Clone(inst);
+
+    EXPECT_NE(inst, new_inst);
+    EXPECT_EQ(mod.Types().i32(), new_inst->Type());
+}
+
+TEST_F(IR_BlockParamTest, CloneWithName) {
+    auto* inst = b.BlockParam("p", mod.Types().i32());
+
+    auto* new_inst = clone_ctx.Clone(inst);
+    EXPECT_EQ(mod.Types().i32(), new_inst->Type());
+
+    EXPECT_EQ(std::string("p"), mod.NameOf(new_inst).Name());
+}
+
 }  // namespace
-}  // namespace tint::ir
+}  // namespace tint::core::ir

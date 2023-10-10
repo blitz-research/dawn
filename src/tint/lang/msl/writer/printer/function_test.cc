@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/tint/lang/msl/writer/printer/test_helper.h"
+#include "src/tint/lang/msl/writer/printer/helper_test.h"
 
 namespace tint::msl::writer {
 namespace {
@@ -21,11 +21,8 @@ TEST_F(MslPrinterTest, Function_Empty) {
     auto* func = b.Function("foo", ty.void_());
     func->Block()->Append(b.Return(func));
 
-    ASSERT_TRUE(IRIsValid()) << Error();
-    generator_.EmitFunction(func);
-
-    ASSERT_TRUE(generator_.Diagnostics().empty()) << generator_.Diagnostics().str();
-    EXPECT_EQ(generator_.Result(), R"(
+    ASSERT_TRUE(Generate()) << err_ << output_;
+    EXPECT_EQ(output_, MetalHeader() + R"(
 void foo() {
 }
 )");

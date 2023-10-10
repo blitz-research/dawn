@@ -16,9 +16,12 @@
 
 #include <utility>
 
-TINT_INSTANTIATE_TYPEINFO(tint::ir::Construct);
+#include "src/tint/lang/core/ir/clone_context.h"
+#include "src/tint/lang/core/ir/module.h"
 
-namespace tint::ir {
+TINT_INSTANTIATE_TYPEINFO(tint::core::ir::Construct);
+
+namespace tint::core::ir {
 
 Construct::Construct(InstructionResult* result, VectorRef<Value*> arguments) {
     AddOperands(Construct::kArgsOperandOffset, std::move(arguments));
@@ -27,4 +30,10 @@ Construct::Construct(InstructionResult* result, VectorRef<Value*> arguments) {
 
 Construct::~Construct() = default;
 
-}  // namespace tint::ir
+Construct* Construct::Clone(CloneContext& ctx) {
+    auto* new_result = ctx.Clone(Result());
+    auto args = ctx.Remap<Construct::kDefaultNumOperands>(Args());
+    return ctx.ir.instructions.Create<Construct>(new_result, args);
+}
+
+}  // namespace tint::core::ir
