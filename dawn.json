@@ -3293,7 +3293,7 @@
             {"value": 1213, "name": "shared fence MTL shared event export info", "tags": ["dawn", "native"]},
 
             {"value": 9990, "name": "request adapter options OpenXR config", "tags":  ["dawn", "native"]}
-            
+
         ]
     },
     "texture": {
