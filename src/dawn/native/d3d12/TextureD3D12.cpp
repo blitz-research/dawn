@@ -222,9 +222,11 @@ MaybeError Texture::InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
     ComPtr<ID3D12Resource> d3d12Texture;
     DAWN_TRY(CheckHRESULT(d3dTexture.As(&d3d12Texture), "texture is not a valid ID3D12Resource"));
 
-    D3D12_RESOURCE_DESC desc = d3d12Texture->GetDesc();
-    mD3D12ResourceFlags = desc.Flags;
-    DAWN_ASSERT(mD3D12ResourceFlags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
+    if(!isSwapChainTexture) {
+        D3D12_RESOURCE_DESC desc = d3d12Texture->GetDesc();
+        mD3D12ResourceFlags = desc.Flags;
+        DAWN_ASSERT(mD3D12ResourceFlags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
+    }
 
     AllocationInfo info;
     info.mMethod = AllocationMethod::kExternal;
