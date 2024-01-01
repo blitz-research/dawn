@@ -35,7 +35,9 @@
 
 #include "dawn/common/Log.h"
 #include "dawn/common/Math.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
+#include "dawn/native/d3d12/QueueD3D12.h"
 #include "dawn/native/d3d12/ResidencyManagerD3D12.h"
 #include "dawn/native/d3d12/TextureD3D12.h"
 
@@ -44,13 +46,13 @@ namespace dawn::native::d3d12 {
 // ***** Begin OpenXR *****
 
 ComPtr<ID3D12CommandQueue> GetD3D12CommandQueue(WGPUDevice device) {
-    return ToBackend(FromAPI(device))->GetCommandQueue();
+    return ToBackend(FromAPI(device)->APIGetQueue())->GetCommandQueue();
 }
 
 WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
                                                           const WGPUTextureDescriptor* descriptor,
                                                           ID3D12Resource* d3dTexture) {
-    auto texture = Texture::CreateExternalImage(ToBackend(FromAPI(device)), FromAPI(descriptor),
+    auto texture = Texture::CreateExternalImage(ToBackend(FromAPI(device)), ValidateAndUnpack(FromAPI(descriptor)).AcquireSuccess(),
                                                 d3dTexture, {}, true, true);
     if (texture.IsSuccess()) {
         return ToAPI(texture.AcquireSuccess().Detach());
