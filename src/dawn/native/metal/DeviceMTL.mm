@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/metal/DeviceMTL.h"
 
@@ -18,9 +31,10 @@
 #include "dawn/common/Platform.h"
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BackendConnection.h"
-#include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/ErrorData.h"
+#include "dawn/native/EventManager.h"
 #include "dawn/native/metal/BindGroupLayoutMTL.h"
 #include "dawn/native/metal/BindGroupMTL.h"
 #include "dawn/native/metal/BufferMTL.h"
@@ -109,7 +123,7 @@ void API_AVAILABLE(macos(10.15), ios(14)) UpdateTimestampPeriod(id<MTLDevice> de
 // static
 ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           NSPRef<id<MTLDevice>> mtlDevice,
-                                          const DeviceDescriptor* descriptor,
+                                          const UnpackedPtr<DeviceDescriptor>& descriptor,
                                           const TogglesState& deviceToggles) {
     @autoreleasepool {
         Ref<Device> device =
@@ -121,7 +135,7 @@ ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
 
 Device::Device(AdapterBase* adapter,
                NSPRef<id<MTLDevice>> mtlDevice,
-               const DeviceDescriptor* descriptor,
+               const UnpackedPtr<DeviceDescriptor>& descriptor,
                const TogglesState& deviceToggles)
     : DeviceBase(adapter, descriptor, deviceToggles), mMtlDevice(std::move(mtlDevice)) {
     // On macOS < 11.0, we only can check whether counter sampling is supported, and the counter
@@ -135,15 +149,15 @@ Device::Device(AdapterBase* adapter,
         mCounterSamplingAtStageBoundary = false;
     }
 
-    mIsTimestampQueryEnabled =
-        HasFeature(Feature::TimestampQuery) || HasFeature(Feature::TimestampQueryInsidePasses);
+    mIsTimestampQueryEnabled = HasFeature(Feature::TimestampQuery) ||
+                               HasFeature(Feature::ChromiumExperimentalTimestampQueryInsidePasses);
 }
 
 Device::~Device() {
     Destroy();
 }
 
-MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
+MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     Ref<Queue> queue;
     DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue));
 
@@ -177,7 +191,8 @@ ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImp
     const BindGroupLayoutDescriptor* descriptor) {
     return BindGroupLayout::Create(this, descriptor);
 }
-ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
+ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(
+    const UnpackedPtr<BufferDescriptor>& descriptor) {
     return Buffer::Create(this, descriptor);
 }
 ResultOrError<Ref<CommandBufferBase>> Device::CreateCommandBuffer(
@@ -186,25 +201,25 @@ ResultOrError<Ref<CommandBufferBase>> Device::CreateCommandBuffer(
     return CommandBuffer::Create(encoder, descriptor);
 }
 Ref<ComputePipelineBase> Device::CreateUninitializedComputePipelineImpl(
-    const ComputePipelineDescriptor* descriptor) {
+    const UnpackedPtr<ComputePipelineDescriptor>& descriptor) {
     return ComputePipeline::CreateUninitialized(this, descriptor);
 }
 ResultOrError<Ref<PipelineLayoutBase>> Device::CreatePipelineLayoutImpl(
-    const PipelineLayoutDescriptor* descriptor) {
+    const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) {
     return PipelineLayout::Create(this, descriptor);
 }
 ResultOrError<Ref<QuerySetBase>> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
     return QuerySet::Create(this, descriptor);
 }
 Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
-    const RenderPipelineDescriptor* descriptor) {
+    const UnpackedPtr<RenderPipelineDescriptor>& descriptor) {
     return RenderPipeline::CreateUninitialized(this, descriptor);
 }
 ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
     return Sampler::Create(this, descriptor);
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
-    const ShaderModuleDescriptor* descriptor,
+    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
     return ShaderModule::Create(this, descriptor, parseResult, compilationMessages);
@@ -215,7 +230,8 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
-ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
+ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
+    const UnpackedPtr<TextureDescriptor>& descriptor) {
     return Texture::Create(this, descriptor);
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
@@ -244,14 +260,15 @@ ResultOrError<wgpu::TextureUsage> Device::GetSupportedSurfaceUsageImpl(
 
 ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
     const SharedTextureMemoryDescriptor* baseDescriptor) {
-    DAWN_TRY(ValidateSingleSType(baseDescriptor->nextInChain,
-                                 wgpu::SType::SharedTextureMemoryIOSurfaceDescriptor));
+    UnpackedPtr<SharedTextureMemoryDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(baseDescriptor));
 
-    const SharedTextureMemoryIOSurfaceDescriptor* descriptor = nullptr;
-    FindInChain(baseDescriptor->nextInChain, &descriptor);
-
-    DAWN_INVALID_IF(descriptor == nullptr,
-                    "SharedTextureMemoryIOSurfaceDescriptor must be chained.");
+    wgpu::SType type;
+    DAWN_TRY_ASSIGN(type,
+                    (unpacked.ValidateBranches<Branch<SharedTextureMemoryIOSurfaceDescriptor>>()));
+    DAWN_ASSERT(type == wgpu::SType::SharedTextureMemoryIOSurfaceDescriptor);
+    const auto* descriptor = unpacked.Get<SharedTextureMemoryIOSurfaceDescriptor>();
+    DAWN_ASSERT(descriptor != nullptr);
 
     DAWN_INVALID_IF(!HasFeature(Feature::SharedTextureMemoryIOSurface), "%s is not enabled.",
                     wgpu::FeatureName::SharedTextureMemoryIOSurface);
@@ -261,13 +278,15 @@ ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImp
 
 ResultOrError<Ref<SharedFenceBase>> Device::ImportSharedFenceImpl(
     const SharedFenceDescriptor* baseDescriptor) {
-    DAWN_TRY(ValidateSingleSType(baseDescriptor->nextInChain,
-                                 wgpu::SType::SharedFenceMTLSharedEventDescriptor));
+    UnpackedPtr<SharedFenceDescriptor> unpacked;
+    DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(baseDescriptor));
 
-    const SharedFenceMTLSharedEventDescriptor* descriptor = nullptr;
-    FindInChain(baseDescriptor->nextInChain, &descriptor);
-
-    DAWN_INVALID_IF(descriptor == nullptr, "SharedFenceMTLSharedEventDescriptor must be chained.");
+    wgpu::SType type;
+    DAWN_TRY_ASSIGN(type,
+                    (unpacked.ValidateBranches<Branch<SharedFenceMTLSharedEventDescriptor>>()));
+    DAWN_ASSERT(type == wgpu::SType::SharedFenceMTLSharedEventDescriptor);
+    const auto* descriptor = unpacked.Get<SharedFenceMTLSharedEventDescriptor>();
+    DAWN_ASSERT(descriptor != nullptr);
 
     DAWN_INVALID_IF(!HasFeature(Feature::SharedFenceMTLSharedEvent), "%s is not enabled.",
                     wgpu::FeatureName::SharedFenceMTLSharedEvent);
@@ -292,7 +311,7 @@ MaybeError Device::TickImpl() {
     return {};
 }
 
-id<MTLDevice> Device::GetMTLDevice() {
+id<MTLDevice> Device::GetMTLDevice() const {
     return mMtlDevice.Get();
 }
 
@@ -348,8 +367,12 @@ Ref<Texture> Device::CreateTextureWrappingIOSurface(
     const ExternalImageDescriptor* descriptor,
     IOSurfaceRef ioSurface,
     std::vector<MTLSharedEventAndSignalValue> waitEvents) {
-    const TextureDescriptor* textureDescriptor = FromAPI(descriptor->cTextureDescriptor);
+    UnpackedPtr<TextureDescriptor> textureDescriptor;
     if (ConsumedError(ValidateIsAlive())) {
+        return nullptr;
+    }
+    if (ConsumedError(ValidateAndUnpack(FromAPI(descriptor->cTextureDescriptor)),
+                      &textureDescriptor)) {
         return nullptr;
     }
     if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor,
@@ -369,9 +392,9 @@ Ref<Texture> Device::CreateTextureWrappingIOSurface(
     }
 
     Ref<Texture> result;
-    if (ConsumedError(
-            Texture::CreateFromIOSurface(this, descriptor, ioSurface, std::move(waitEvents)),
-            &result)) {
+    if (ConsumedError(Texture::CreateFromIOSurface(this, descriptor, textureDescriptor, ioSurface,
+                                                   std::move(waitEvents)),
+                      &result)) {
         return nullptr;
     }
     return result;

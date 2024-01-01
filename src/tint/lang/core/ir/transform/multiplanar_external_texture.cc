@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
 
@@ -71,7 +84,7 @@ struct State {
                 if (!var) {
                     continue;
                 }
-                auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
+                auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
                 if (ptr->StoreType()->Is<core::type::ExternalTexture>()) {
                     ReplaceVar(var);
                     to_remove.Push(var);
@@ -84,7 +97,7 @@ struct State {
 
         // Find function parameters that need to be replaced.
         auto functions = ir.functions;
-        for (auto* func : functions) {
+        for (auto& func : functions) {
             for (uint32_t index = 0; index < func->Params().Length(); index++) {
                 auto* param = func->Params()[index];
                 if (param->Type()->Is<core::type::ExternalTexture>()) {
@@ -135,8 +148,8 @@ struct State {
         }
 
         // Replace all uses of the old variable with the new ones.
-        ReplaceUses(old_var->Result(), plane_0->Result(), plane_1->Result(),
-                    external_texture_params->Result());
+        ReplaceUses(old_var->Result(0), plane_0->Result(0), plane_1->Result(0),
+                    external_texture_params->Result(0));
     }
 
     /// Replace an external texture function parameter.
@@ -195,11 +208,11 @@ struct State {
                     Value* plane_1_load = nullptr;
                     Value* params_load = nullptr;
                     b.InsertBefore(load, [&] {
-                        plane_0_load = b.Load(plane_0)->Result();
-                        plane_1_load = b.Load(plane_1)->Result();
-                        params_load = b.Load(params)->Result();
+                        plane_0_load = b.Load(plane_0)->Result(0);
+                        plane_1_load = b.Load(plane_1)->Result(0);
+                        params_load = b.Load(params)->Result(0);
                     });
-                    ReplaceUses(load->Result(), plane_0_load, plane_1_load, params_load);
+                    ReplaceUses(load->Result(0), plane_0_load, plane_1_load, params_load);
                     load->Destroy();
                 },
                 [&](CoreBuiltinCall* call) {
@@ -212,14 +225,14 @@ struct State {
                         if (coords->Type()->is_signed_integer_vector()) {
                             auto* convert = b.Convert(ty.vec2<u32>(), coords);
                             convert->InsertBefore(call);
-                            coords = convert->Result();
+                            coords = convert->Result(0);
                         }
 
                         // Call the `TextureLoadExternal()` helper function.
                         auto* helper = b.Call(ty.vec4<f32>(), TextureLoadExternal(), plane_0,
                                               plane_1, params, coords);
                         helper->InsertBefore(call);
-                        call->Result()->ReplaceAllUsesWith(helper->Result());
+                        call->Result(0)->ReplaceAllUsesWith(helper->Result(0));
                         call->Destroy();
                     } else if (call->Func() == core::BuiltinFn::kTextureSampleBaseClampToEdge) {
                         // Call the `TextureSampleExternal()` helper function.
@@ -228,7 +241,7 @@ struct State {
                         auto* helper = b.Call(ty.vec4<f32>(), TextureSampleExternal(), plane_0,
                                               plane_1, params, sampler, coords);
                         helper->InsertBefore(call);
-                        call->Result()->ReplaceAllUsesWith(helper->Result());
+                        call->Result(0)->ReplaceAllUsesWith(helper->Result(0));
                         call->Destroy();
                     } else {
                         TINT_ICE() << "unhandled texture_external builtin call: " << call->Func();
@@ -247,10 +260,8 @@ struct State {
                         }
                     }
                     call->SetOperands(std::move(operands));
-                },
-                [&](Default) {
-                    TINT_ICE() << "unhandled instruction " << use.instruction->FriendlyName();
-                });
+                },  //
+                TINT_ICE_ON_NO_MATCH);
         });
     }
 

@@ -1,27 +1,42 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/metal/RenderPipelineMTL.h"
 
 #include "dawn/native/Adapter.h"
 #include "dawn/native/CreatePipelineAsyncTask.h"
 #include "dawn/native/Instance.h"
+#include "dawn/native/metal/BackendMTL.h"
 #include "dawn/native/metal/DeviceMTL.h"
 #include "dawn/native/metal/PipelineLayoutMTL.h"
 #include "dawn/native/metal/ShaderModuleMTL.h"
 #include "dawn/native/metal/TextureMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
+#include "dawn/platform/metrics/HistogramMacros.h"
 
 namespace dawn::native::metal {
 
@@ -319,11 +334,11 @@ MTLCullMode ToMTLCullMode(wgpu::CullMode mode) {
 // static
 Ref<RenderPipelineBase> RenderPipeline::CreateUninitialized(
     Device* device,
-    const RenderPipelineDescriptor* descriptor) {
+    const UnpackedPtr<RenderPipelineDescriptor>& descriptor) {
     return AcquireRef(new RenderPipeline(device, descriptor));
 }
 
-RenderPipeline::RenderPipeline(DeviceBase* dev, const RenderPipelineDescriptor* desc)
+RenderPipeline::RenderPipeline(DeviceBase* dev, const UnpackedPtr<RenderPipelineDescriptor>& desc)
     : RenderPipelineBase(dev, desc) {}
 
 RenderPipeline::~RenderPipeline() = default;
@@ -338,7 +353,7 @@ MaybeError RenderPipeline::Initialize() {
         uint32_t mtlVertexBufferIndex =
             ToBackend(GetLayout())->GetBufferBindingCount(SingleShaderStage::Vertex);
 
-        for (VertexBufferSlot slot : IterateBitSet(GetVertexBufferSlotsUsed())) {
+        for (VertexBufferSlot slot : IterateBitSet(GetVertexBuffersUsed())) {
             mMtlVertexBufferIndices[slot] = mtlVertexBufferIndex;
             mtlVertexBufferIndex++;
         }
@@ -378,20 +393,40 @@ MaybeError RenderPipeline::Initialize() {
         ShaderModule::MetalFunctionData fragmentData;
         DAWN_TRY(ToBackend(fragmentStage.module.Get())
                      ->CreateFunction(SingleShaderStage::Fragment, fragmentStage,
-                                      ToBackend(GetLayout()), &fragmentData, GetSampleMask()));
+                                      ToBackend(GetLayout()), &fragmentData, GetSampleMask(),
+                                      this));
 
         descriptorMTL.fragmentFunction = fragmentData.function.Get();
         if (fragmentData.needsStorageBufferLength) {
             mStagesRequiringStorageBufferLength |= wgpu::ShaderStage::Fragment;
         }
 
-        const auto& fragmentOutputsWritten = fragmentStage.metadata->fragmentOutputsWritten;
-        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
+        const auto& fragmentOutputMask = fragmentStage.metadata->fragmentOutputMask;
+        for (auto i : IterateBitSet(GetColorAttachmentsMask())) {
             descriptorMTL.colorAttachments[static_cast<uint8_t>(i)].pixelFormat =
                 MetalPixelFormat(GetDevice(), GetColorAttachmentFormat(i));
             const ColorTargetState* descriptor = GetColorTargetState(i);
             ComputeBlendDesc(descriptorMTL.colorAttachments[static_cast<uint8_t>(i)], descriptor,
-                             fragmentOutputsWritten[i]);
+                             fragmentOutputMask[i]);
+        }
+
+        if (GetAttachmentState()->HasPixelLocalStorage()) {
+            const std::vector<wgpu::TextureFormat>& storageAttachmentSlots =
+                GetAttachmentState()->GetStorageAttachmentSlots();
+            std::vector<ColorAttachmentIndex> storageAttachmentPacking =
+                GetAttachmentState()->ComputeStorageAttachmentPackingInColorAttachments();
+
+            for (size_t i = 0; i < storageAttachmentSlots.size(); i++) {
+                uint8_t index = static_cast<uint8_t>(storageAttachmentPacking[i]);
+
+                if (storageAttachmentSlots[i] == wgpu::TextureFormat::Undefined) {
+                    descriptorMTL.colorAttachments[index].pixelFormat =
+                        MetalPixelFormat(GetDevice(), kImplicitPLSSlotFormat);
+                } else {
+                    descriptorMTL.colorAttachments[index].pixelFormat =
+                        MetalPixelFormat(GetDevice(), storageAttachmentSlots[i]);
+                }
+            }
         }
     }
 
@@ -422,6 +457,7 @@ MaybeError RenderPipeline::Initialize() {
     descriptorMTL.rasterSampleCount = GetSampleCount();
     descriptorMTL.alphaToCoverageEnabled = IsAlphaToCoverageEnabled();
 
+    platform::metrics::DawnHistogramTimer timer(GetDevice()->GetPlatform());
     NSError* error = nullptr;
     mMtlRenderPipelineState =
         AcquireNSPRef([mtlDevice newRenderPipelineStateWithDescriptor:descriptorMTL error:&error]);
@@ -430,6 +466,7 @@ MaybeError RenderPipeline::Initialize() {
                                    [error.localizedDescription UTF8String]);
     }
     DAWN_ASSERT(mMtlRenderPipelineState != nil);
+    timer.RecordMicroseconds("Metal.newRenderPipelineStateWithDescriptor.CacheMiss");
 
     // Create depth stencil state and cache it, fetch the cached depth stencil state when we
     // call setDepthStencilState() for a given render pipeline in CommandEncoder, in order
@@ -474,7 +511,7 @@ wgpu::ShaderStage RenderPipeline::GetStagesRequiringStorageBufferLength() const 
 NSRef<MTLVertexDescriptor> RenderPipeline::MakeVertexDesc() const {
     MTLVertexDescriptor* mtlVertexDescriptor = [MTLVertexDescriptor new];
 
-    for (VertexBufferSlot slot : IterateBitSet(GetVertexBufferSlotsUsed())) {
+    for (VertexBufferSlot slot : IterateBitSet(GetVertexBuffersUsed())) {
         const VertexBufferInfo& info = GetVertexBuffer(slot);
 
         MTLVertexBufferLayoutDescriptor* layoutDesc = [MTLVertexBufferLayoutDescriptor new];
@@ -531,7 +568,7 @@ void RenderPipeline::InitializeAsync(Ref<RenderPipelineBase> renderPipeline,
                                                         userdata);
     // Workaround a crash where the validation layers on AMD crash with partition alloc.
     // See crbug.com/dawn/1200.
-    if (physicalDevice->GetInstance()->IsBackendValidationEnabled() &&
+    if (IsMetalValidationEnabled(physicalDevice) &&
         gpu_info::IsAMD(physicalDevice->GetVendorId())) {
         asyncTask->Run();
         return;

@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/opengl/TextureGL.h"
 
@@ -20,6 +33,7 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/Math.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/EnumMaskIterator.h"
 #include "dawn/native/opengl/BufferGL.h"
 #include "dawn/native/opengl/CommandBufferGL.h"
@@ -30,7 +44,7 @@ namespace dawn::native::opengl {
 
 namespace {
 
-GLenum TargetForTexture(const TextureDescriptor* descriptor) {
+GLenum TargetForTexture(const UnpackedPtr<TextureDescriptor>& descriptor) {
     switch (descriptor->dimension) {
         case wgpu::TextureDimension::e1D:
         case wgpu::TextureDimension::e2D:
@@ -114,10 +128,6 @@ bool RequiresCreatingNewTextureView(const TextureBase* texture,
         return true;
     }
 
-    if (texture->GetNumMipLevels() != textureViewDescriptor->mipLevelCount) {
-        return true;
-    }
-
     if (ToBackend(texture)->GetGLFormat().format == GL_DEPTH_STENCIL &&
         (texture->GetUsage() & wgpu::TextureUsage::TextureBinding) != 0 &&
         textureViewDescriptor->aspect == wgpu::TextureAspect::StencilOnly) {
@@ -128,6 +138,8 @@ bool RequiresCreatingNewTextureView(const TextureBase* texture,
         return true;
     }
 
+    // TODO(dawn:2131): remove once compatibility texture binding view dimension is fully
+    // implemented.
     switch (textureViewDescriptor->dimension) {
         case wgpu::TextureViewDimension::Cube:
         case wgpu::TextureViewDimension::CubeArray:
@@ -172,7 +184,8 @@ void AllocateTexture(const OpenGLFunctions& gl,
 // Texture
 
 // static
-ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
+ResultOrError<Ref<Texture>> Texture::Create(Device* device,
+                                            const UnpackedPtr<TextureDescriptor>& descriptor) {
     Ref<Texture> texture = AcquireRef(new Texture(device, descriptor));
     if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
         DAWN_TRY(
@@ -181,7 +194,7 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device, const TextureDescrip
     return std::move(texture);
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor)
+Texture::Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor)
     : Texture(device, descriptor, 0) {
     const OpenGLFunctions& gl = device->GetGL();
 
@@ -208,7 +221,7 @@ uint32_t Texture::GetGenID() const {
     return mGenID;
 }
 
-Texture::Texture(Device* device, const TextureDescriptor* descriptor, GLuint handle)
+Texture::Texture(Device* device, const UnpackedPtr<TextureDescriptor>& descriptor, GLuint handle)
     : TextureBase(device, descriptor), mHandle(handle) {
     mTarget = TargetForTexture(descriptor);
 }
@@ -238,11 +251,6 @@ const GLFormat& Texture::GetGLFormat() const {
 
 MaybeError Texture::ClearTexture(const SubresourceRange& range,
                                  TextureBase::ClearValue clearValue) {
-    // TODO(crbug.com/dawn/850): initialize the textures with compressed formats.
-    if (GetFormat().isCompressed) {
-        return {};
-    }
-
     Device* device = ToBackend(GetDevice());
     const OpenGLFunctions& gl = device->GetGL();
 
@@ -602,7 +610,10 @@ GLenum TextureView::GetGLTarget() const {
     return mTarget;
 }
 
-void TextureView::BindToFramebuffer(GLenum target, GLenum attachment) {
+void TextureView::BindToFramebuffer(GLenum target, GLenum attachment, GLuint depthSlice) {
+    DAWN_ASSERT(depthSlice <
+                static_cast<GLuint>(GetSingleSubresourceVirtualSize().depthOrArrayLayers));
+
     const OpenGLFunctions& gl = ToBackend(GetDevice())->GetGL();
 
     // Use the base texture where possible to minimize the amount of copying required on GLES.
@@ -623,7 +634,11 @@ void TextureView::BindToFramebuffer(GLenum target, GLenum attachment) {
         handle = ToBackend(GetTexture())->GetHandle();
         textarget = ToBackend(GetTexture())->GetGLTarget();
         mipLevel = GetBaseMipLevel();
-        arrayLayer = GetBaseArrayLayer();
+        // We have validated that the depthSlice in render pass's colorAttachments must be undefined
+        // for 2d RTVs, which value is set to 0. For 3d RTVs, the baseArrayLayer must be 0. So here
+        // we can simply use baseArrayLayer + depthSlice to specify the slice in RTVs without
+        // checking the view's dimension.
+        arrayLayer = GetBaseArrayLayer() + depthSlice;
     }
 
     DAWN_ASSERT(handle != 0);

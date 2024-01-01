@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_DAWN_NATIVE_VULKAN_DEVICEVK_H_
 #define SRC_DAWN_NATIVE_VULKAN_DEVICEVK_H_
@@ -45,11 +58,11 @@ class ResourceMemoryAllocator;
 class Device final : public DeviceBase {
   public:
     static ResultOrError<Ref<Device>> Create(AdapterBase* adapter,
-                                             const DeviceDescriptor* descriptor,
+                                             const UnpackedPtr<DeviceDescriptor>& descriptor,
                                              const TogglesState& deviceToggles);
     ~Device() override;
 
-    MaybeError Initialize(const DeviceDescriptor* descriptor);
+    MaybeError Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor);
 
     // Contains all the Vulkan entry points, vkDoFoo is called via device->fn.DoFoo.
     const VulkanFunctions fn;
@@ -59,16 +72,15 @@ class Device final : public DeviceBase {
     const VulkanGlobalInfo& GetGlobalInfo() const;
     VkDevice GetVkDevice() const;
     uint32_t GetGraphicsQueueFamily() const;
-    VkQueue GetVkQueue() const;
 
     MutexProtected<FencedDeleter>& GetFencedDeleter() const;
     RenderPassCache* GetRenderPassCache() const;
     MutexProtected<ResourceMemoryAllocator>& GetResourceMemoryAllocator() const;
     external_semaphore::Service* GetExternalSemaphoreService() const;
 
+    // TODO(dawn:1413): Remove these proxy commands and use the queue directly instead.
     CommandRecordingContext* GetPendingRecordingContext(
         Device::SubmitMode submitMode = Device::SubmitMode::Normal);
-    MaybeError SplitRecordingContext(CommandRecordingContext* recordingContext);
     MaybeError SubmitPendingCommands();
 
     void EnqueueDeferredDeallocation(DescriptorSetAllocator* allocator);
@@ -116,43 +128,39 @@ class Device final : public DeviceBase {
     // Used to associate this device with validation layer messages.
     const char* GetDebugPrefix() { return mDebugPrefix.c_str(); }
 
-    // TODO(dawn:1413) move these methods the vulkan::Queue.
-    void ForceEventualFlushOfCommands();
-    bool HasPendingCommands() const;
-    ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials();
-    MaybeError WaitForIdleForDestruction();
-
   private:
     Device(AdapterBase* adapter,
-           const DeviceDescriptor* descriptor,
+           const UnpackedPtr<DeviceDescriptor>& descriptor,
            const TogglesState& deviceToggles);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
     ResultOrError<Ref<BindGroupLayoutInternalBase>> CreateBindGroupLayoutImpl(
         const BindGroupLayoutDescriptor* descriptor) override;
-    ResultOrError<Ref<BufferBase>> CreateBufferImpl(const BufferDescriptor* descriptor) override;
+    ResultOrError<Ref<BufferBase>> CreateBufferImpl(
+        const UnpackedPtr<BufferDescriptor>& descriptor) override;
     ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
-        const PipelineLayoutDescriptor* descriptor) override;
+        const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) override;
     ResultOrError<Ref<QuerySetBase>> CreateQuerySetImpl(
         const QuerySetDescriptor* descriptor) override;
     ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
-        const ShaderModuleDescriptor* descriptor,
+        const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
         ShaderModuleParseResult* parseResult,
         OwnedCompilationMessages* compilationMessages) override;
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) override;
-    ResultOrError<Ref<TextureBase>> CreateTextureImpl(const TextureDescriptor* descriptor) override;
+    ResultOrError<Ref<TextureBase>> CreateTextureImpl(
+        const UnpackedPtr<TextureDescriptor>& descriptor) override;
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
         TextureBase* texture,
         const TextureViewDescriptor* descriptor) override;
     Ref<ComputePipelineBase> CreateUninitializedComputePipelineImpl(
-        const ComputePipelineDescriptor* descriptor) override;
+        const UnpackedPtr<ComputePipelineDescriptor>& descriptor) override;
     Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
-        const RenderPipelineDescriptor* descriptor) override;
+        const UnpackedPtr<RenderPipelineDescriptor>& descriptor) override;
     Ref<PipelineCacheBase> GetOrCreatePipelineCacheImpl(const CacheKey& key) override;
     void InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
                                             WGPUCreateComputePipelineAsyncCallback callback,
@@ -164,8 +172,12 @@ class Device final : public DeviceBase {
     ResultOrError<wgpu::TextureUsage> GetSupportedSurfaceUsageImpl(
         const Surface* surface) const override;
 
+    ResultOrError<Ref<SharedTextureMemoryBase>> ImportSharedTextureMemoryImpl(
+        const SharedTextureMemoryDescriptor* baseDescriptor) override;
+    ResultOrError<Ref<SharedFenceBase>> ImportSharedFenceImpl(
+        const SharedFenceDescriptor* baseDescriptor) override;
+
     ResultOrError<VulkanDeviceKnobs> CreateDevice(VkPhysicalDevice vkPhysicalDevice);
-    void GatherQueueFromDevice();
 
     MaybeError CheckDebugLayerAndGenerateErrors();
     void AppendDebugLayerMessages(ErrorData* error) override;
@@ -179,8 +191,7 @@ class Device final : public DeviceBase {
 
     VulkanDeviceInfo mDeviceInfo = {};
     VkDevice mVkDevice = VK_NULL_HANDLE;
-    uint32_t mQueueFamily = 0;
-    VkQueue mQueue = VK_NULL_HANDLE;
+    uint32_t mMainQueueFamily = 0;
 
     SerialQueue<ExecutionSerial, Ref<DescriptorSetAllocator>>
         mDescriptorAllocatorsPendingDeallocation;
@@ -191,29 +202,9 @@ class Device final : public DeviceBase {
     std::unique_ptr<external_memory::Service> mExternalMemoryService;
     std::unique_ptr<external_semaphore::Service> mExternalSemaphoreService;
 
-    ResultOrError<VkFence> GetUnusedFence();
-
-    // We track which operations are in flight on the GPU with an increasing serial.
-    // This works only because we have a single queue. Each submit to a queue is associated
-    // to a serial and a fence, such that when the fence is "ready" we know the operations
-    // have finished.
-    std::queue<std::pair<VkFence, ExecutionSerial>> mFencesInFlight;
-    // Fences in the unused list aren't reset yet.
-    std::vector<VkFence> mUnusedFences;
-
     // For capturing messages generated by the Vulkan debug layer.
     const std::string mDebugPrefix;
     std::vector<std::string> mDebugMessages;
-
-    MaybeError PrepareRecordingContext();
-    ResultOrError<CommandPoolAndBuffer> BeginVkCommandBuffer();
-    void RecycleCompletedCommands(ExecutionSerial completedSerial);
-
-    SerialQueue<ExecutionSerial, CommandPoolAndBuffer> mCommandsInFlight;
-    // Command pools in the unused list haven't been reset yet.
-    std::vector<CommandPoolAndBuffer> mUnusedCommands;
-    // There is always a valid recording context stored in mRecordingContext
-    CommandRecordingContext mRecordingContext;
 
     MaybeError ImportExternalImage(const ExternalImageDescriptorVk* descriptor,
                                    ExternalMemoryHandle memoryHandle,

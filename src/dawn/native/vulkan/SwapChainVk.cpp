@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/vulkan/SwapChainVk.h"
 
@@ -19,12 +32,14 @@
 #include <utility>
 
 #include "dawn/common/Compiler.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Instance.h"
 #include "dawn/native/Surface.h"
 #include "dawn/native/vulkan/BackendVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "dawn/native/vulkan/QueueVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
 #include "dawn/native/vulkan/VulkanError.h"
 
@@ -541,9 +556,10 @@ MaybeError SwapChain::PresentImpl() {
         // TODO(dawn:269): ditto same as present below: eagerly transition the blit texture to
         // CopySrc.
         mBlitTexture->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopySrc,
+                                         wgpu::ShaderStage::None,
                                          mBlitTexture->GetAllSubresources());
         mTexture->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst,
-                                     mTexture->GetAllSubresources());
+                                     wgpu::ShaderStage::None, mTexture->GetAllSubresources());
 
         VkImageBlit region;
         region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -574,7 +590,7 @@ MaybeError SwapChain::PresentImpl() {
     // TODO(crbug.com/dawn/269): Remove the need for this by eagerly transitioning the
     // presentable texture to present at the end of submits that use them and ideally even
     // folding that in the free layout transition at the end of render passes.
-    mTexture->TransitionUsageNow(recordingContext, kPresentTextureUsage,
+    mTexture->TransitionUsageNow(recordingContext, kPresentTextureUsage, wgpu::ShaderStage::None,
                                  mTexture->GetAllSubresources());
 
     // Use a semaphore to make sure all rendering has finished before presenting.
@@ -597,8 +613,8 @@ MaybeError SwapChain::PresentImpl() {
     mTexture->APIDestroy();
     mTexture = nullptr;
 
-    VkResult result =
-        VkResult::WrapUnsafe(device->fn.QueuePresentKHR(device->GetVkQueue(), &presentInfo));
+    VkResult result = VkResult::WrapUnsafe(
+        device->fn.QueuePresentKHR(ToBackend(device->GetQueue())->GetVkQueue(), &presentInfo));
 
     switch (result) {
         case VK_SUCCESS:
@@ -687,7 +703,7 @@ ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureInternal(bool isReen
     textureDesc.usage = mConfig.wgpuUsage;
 
     VkImage currentImage = mSwapChainImages[mLastImageIndex];
-    mTexture = Texture::CreateForSwapChain(device, &textureDesc, currentImage);
+    mTexture = Texture::CreateForSwapChain(device, Unpack(&textureDesc), currentImage);
 
     // In the happy path we can use the swapchain image directly.
     if (!mConfig.needsBlit) {
@@ -697,7 +713,8 @@ ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureInternal(bool isReen
     // The blit texture always perfectly matches what the user requested for the swapchain.
     // We need to add the Vulkan TRANSFER_SRC flag for the vkCmdBlitImage call.
     TextureDescriptor desc = GetSwapChainBaseTextureDescriptor(this);
-    DAWN_TRY_ASSIGN(mBlitTexture, Texture::Create(device, &desc, VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
+    DAWN_TRY_ASSIGN(mBlitTexture,
+                    Texture::Create(device, Unpack(&desc), VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
     return mBlitTexture;
 }
 

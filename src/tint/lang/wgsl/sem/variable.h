@@ -1,16 +1,29 @@
-// Copyright 2021 The Tint Authors.
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0(the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_TINT_LANG_WGSL_SEM_VARIABLE_H_
 #define SRC_TINT_LANG_WGSL_SEM_VARIABLE_H_
@@ -138,6 +151,26 @@ class LocalVariable final : public Castable<LocalVariable, Variable> {
     const CastableBase* shadows_ = nullptr;
 };
 
+/// Attributes that can be applied to global variables
+struct GlobalVariableAttributes {
+    /// the pipeline constant ID associated with the variable
+    std::optional<tint::OverrideId> override_id;
+    /// the resource binding point for the variable, if set.
+    std::optional<tint::BindingPoint> binding_point;
+    /// The `location` attribute value for the variable, if set
+    /// @note a GlobalVariable generally doesn't have a `location` in WGSL, as it isn't allowed by
+    /// the spec. The location maybe attached by transforms such as CanonicalizeEntryPointIO.
+    std::optional<uint32_t> location;
+    /// The `index` attribute value for the variable, if set
+    /// @note a GlobalVariable generally doesn't have a `index` in WGSL, as it isn't allowed by
+    /// the spec. The location maybe attached by transforms such as CanonicalizeEntryPointIO.
+    std::optional<uint32_t> index;
+    /// The `color` attribute value for the variable, if set
+    /// @note a GlobalVariable generally doesn't have a `color` in WGSL, as it isn't allowed by
+    /// the spec. The location maybe attached by transforms such as CanonicalizeEntryPointIO.
+    std::optional<uint32_t> color;
+};
+
 /// GlobalVariable is a module-scope variable
 class GlobalVariable final : public Castable<GlobalVariable, Variable> {
   public:
@@ -148,34 +181,6 @@ class GlobalVariable final : public Castable<GlobalVariable, Variable> {
     /// Destructor
     ~GlobalVariable() override;
 
-    /// @param binding_point the resource binding point for the parameter
-    void SetBindingPoint(std::optional<tint::BindingPoint> binding_point) {
-        binding_point_ = binding_point;
-    }
-
-    /// @returns the resource binding point for the variable
-    std::optional<tint::BindingPoint> BindingPoint() const { return binding_point_; }
-
-    /// @param id the constant identifier to assign to this variable
-    void SetOverrideId(OverrideId id) { override_id_ = id; }
-
-    /// @returns the pipeline constant ID associated with the variable
-    tint::OverrideId OverrideId() const { return override_id_; }
-
-    /// @param location the location value for the parameter, if set
-    /// @note a GlobalVariable generally doesn't have a `location` in WGSL, as it isn't allowed by
-    /// the spec. The location maybe attached by transforms such as CanonicalizeEntryPointIO.
-    void SetLocation(std::optional<uint32_t> location) { location_ = location; }
-
-    /// @returns the location value for the parameter, if set
-    std::optional<uint32_t> Location() const { return location_; }
-
-    /// @param index the index value for the parameter, if set
-    void SetIndex(std::optional<uint32_t> index) { index_ = index; }
-
-    /// @returns the index value for the parameter, if set
-    std::optional<uint32_t> Index() const { return index_; }
-
     /// Records that this variable (transitively) references the given override variable.
     /// @param var the module-scope override variable
     void AddTransitivelyReferencedOverride(const GlobalVariable* var);
@@ -185,12 +190,32 @@ class GlobalVariable final : public Castable<GlobalVariable, Variable> {
         return transitively_referenced_overrides_;
     }
 
+    /// @return the mutable attributes for the variable
+    GlobalVariableAttributes& Attributes() { return attributes_; }
+
+    /// @return the immutable attributes for the variable
+    const GlobalVariableAttributes& Attributes() const { return attributes_; }
+
   private:
     std::optional<tint::BindingPoint> binding_point_;
     tint::OverrideId override_id_;
-    std::optional<uint32_t> location_;
-    std::optional<uint32_t> index_;
     UniqueVector<const GlobalVariable*, 4> transitively_referenced_overrides_;
+    GlobalVariableAttributes attributes_;
+};
+
+/// Attributes that can be applied to parameters
+struct ParameterAttributes {
+    /// the resource binding point for the variable, if set.
+    /// @note a Parameter generally doesn't have a `group` or `binding` attribute in WGSL, as it
+    /// isn't allowed by the spec. The binding point maybe attached by transforms such as
+    /// CanonicalizeEntryPointIO.
+    std::optional<tint::BindingPoint> binding_point;
+    /// The `location` attribute value for the variable, if set
+    std::optional<uint32_t> location;
+    /// The `index` attribute value for the variable, if set
+    std::optional<uint32_t> index;
+    /// The `color` attribute value for the variable, if set
+    std::optional<uint32_t> color;
 };
 
 /// Parameter is a function parameter
@@ -214,9 +239,6 @@ class Parameter final : public Castable<Parameter, Variable> {
         return static_cast<const ast::Parameter*>(Variable::Declaration());
     }
 
-    /// @param index the index value for the parameter, if set
-    void SetIndex(uint32_t index) { index_ = index; }
-
     /// @return the index of the parameter in the function
     uint32_t Index() const { return index_; }
 
@@ -239,27 +261,18 @@ class Parameter final : public Castable<Parameter, Variable> {
     /// @returns the Type, Function or Variable that this local variable shadows
     const CastableBase* Shadows() const { return shadows_; }
 
-    /// @param binding_point the resource binding point for the parameter
-    void SetBindingPoint(std::optional<tint::BindingPoint> binding_point) {
-        binding_point_ = binding_point;
-    }
+    /// @return the mutable attributes for the parameter
+    ParameterAttributes& Attributes() { return attributes_; }
 
-    /// @returns the resource binding point for the parameter
-    std::optional<tint::BindingPoint> BindingPoint() const { return binding_point_; }
-
-    /// @param location the location value for the parameter, if set
-    void SetLocation(std::optional<uint32_t> location) { location_ = location; }
-
-    /// @returns the location value for the parameter, if set
-    std::optional<uint32_t> Location() const { return location_; }
+    /// @return the immutable attributes for the parameter
+    const ParameterAttributes& Attributes() const { return attributes_; }
 
   private:
-    uint32_t index_ = 0;
+    const uint32_t index_ = 0;
     core::ParameterUsage usage_ = core::ParameterUsage::kNone;
     CallTarget const* owner_ = nullptr;
     const CastableBase* shadows_ = nullptr;
-    std::optional<tint::BindingPoint> binding_point_;
-    std::optional<uint32_t> location_;
+    ParameterAttributes attributes_;
 };
 
 /// VariableUser holds the semantic information for an identifier expression

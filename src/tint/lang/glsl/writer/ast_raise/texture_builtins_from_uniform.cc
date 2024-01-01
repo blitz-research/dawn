@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/glsl/writer/ast_raise/texture_builtins_from_uniform.h"
 
@@ -147,10 +160,8 @@ struct TextureBuiltinsFromUniform::State {
                                         GetAndRecordFunctionParameter(fn, variable, dataType);
                                     // Record the call and new_param to be replaced later.
                                     builtin_to_replace.Add(call_expr, new_param);
-                                },
-                                [&](Default) {
-                                    TINT_ICE() << "unexpected texture root identifier";
-                                });
+                                },  //
+                                TINT_ICE_ON_NO_MATCH);
                         },
                         [&](const sem::Function* user_fn) {
                             auto user_param_to_info = fn_to_data.Find(user_fn);
@@ -187,10 +198,8 @@ struct TextureBuiltinsFromUniform::State {
                                                 fn, variable, info->field);
                                             // Record adding extra function parameter
                                             args.Push(new_param);
-                                        },
-                                        [&](Default) {
-                                            TINT_ICE() << "unexpected texture root identifier";
-                                        });
+                                        },  //
+                                        TINT_ICE_ON_NO_MATCH);
                                 }
                             }
                         });
@@ -357,7 +366,7 @@ struct TextureBuiltinsFromUniform::State {
                 auto* global_sem = sem.Get<sem::GlobalVariable>(var);
 
                 // The original binding point
-                BindingPoint binding_point = *global_sem->BindingPoint();
+                BindingPoint binding_point = *global_sem->Attributes().binding_point;
 
                 if (binding_point == cfg->ubo_binding) {
                     // This ubo_binding struct already exists.
@@ -414,7 +423,7 @@ struct TextureBuiltinsFromUniform::State {
     /// @returns binding of the global variable.
     BindingPoint GetAndRecordGlobalBinding(const sem::GlobalVariable* global,
                                            TextureBuiltinsFromUniformOptions::Field field) {
-        auto binding = global->BindingPoint().value();
+        auto binding = global->Attributes().binding_point.value();
         auto iter = bindpoint_to_data.find(binding);
         if (iter == bindpoint_to_data.end()) {
             // First visit, recording the binding.

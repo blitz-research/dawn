@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/Adapter.h"
 
@@ -65,59 +78,53 @@ InstanceBase* AdapterBase::APIGetInstance() const {
 
 bool AdapterBase::APIGetLimits(SupportedLimits* limits) const {
     DAWN_ASSERT(limits != nullptr);
-    // TODO(dawn:1955): Revisit after deciding how to improve the validation for ChainedStructOut.
-    MaybeError result =
-        ValidateSTypes(limits->nextInChain, {{wgpu::SType::DawnExperimentalSubgroupLimits}});
-    if (mPhysicalDevice->GetInstance()->ConsumedError(std::move(result))) {
+    InstanceBase* instance = mPhysicalDevice->GetInstance();
+
+    UnpackedPtr<SupportedLimits> unpacked;
+    if (instance->ConsumedError(ValidateAndUnpack(limits), &unpacked)) {
         return false;
     }
+
     if (mUseTieredLimits) {
         limits->limits = ApplyLimitTiers(mPhysicalDevice->GetLimits().v1);
     } else {
         limits->limits = mPhysicalDevice->GetLimits().v1;
     }
-    for (auto* chain = limits->nextInChain; chain; chain = chain->nextInChain) {
-        wgpu::ChainedStructOut originalChain = *chain;
-        switch (chain->sType) {
-            case (wgpu::SType::DawnExperimentalSubgroupLimits): {
-                DawnExperimentalSubgroupLimits* subgroupLimits =
-                    reinterpret_cast<DawnExperimentalSubgroupLimits*>(chain);
-                if (!mTogglesState.IsEnabled(Toggle::AllowUnsafeAPIs)) {
-                    // If AllowUnsafeAPIs is not enabled, return the default-initialized
-                    // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
-                    // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
-                    *subgroupLimits = DawnExperimentalSubgroupLimits{};
-                } else {
-                    *subgroupLimits = mPhysicalDevice->GetLimits().experimentalSubgroupLimits;
-                }
-                break;
-            }
-            default:
-                // ValidateSTypes ensures that all chained sTypes are known.
-                DAWN_UNREACHABLE();
+
+    if (auto* subgroupLimits = unpacked.Get<DawnExperimentalSubgroupLimits>()) {
+        if (!mTogglesState.IsEnabled(Toggle::AllowUnsafeAPIs)) {
+            // If AllowUnsafeAPIs is not enabled, return the default-initialized
+            // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
+            // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
+            *subgroupLimits = DawnExperimentalSubgroupLimits{};
+        } else {
+            *subgroupLimits = mPhysicalDevice->GetLimits().experimentalSubgroupLimits;
         }
-        // Recover the original chain
-        *chain = originalChain;
     }
+
     return true;
 }
 
 void AdapterBase::APIGetProperties(AdapterProperties* properties) const {
     DAWN_ASSERT(properties != nullptr);
+    InstanceBase* instance = mPhysicalDevice->GetInstance();
 
-    MaybeError result = ValidateSingleSType(properties->nextInChain,
-                                            wgpu::SType::DawnAdapterPropertiesPowerPreference);
-    if (result.IsError()) {
-        mPhysicalDevice->GetInstance()->ConsumedError(result.AcquireError());
+    UnpackedPtr<AdapterProperties> unpacked;
+    if (instance->ConsumedError(ValidateAndUnpack(properties), &unpacked)) {
         return;
     }
 
-    DawnAdapterPropertiesPowerPreference* powerPreferenceDesc = nullptr;
-    FindInChain(properties->nextInChain, &powerPreferenceDesc);
-
-    if (powerPreferenceDesc != nullptr) {
+    if (auto* memoryHeaps = unpacked.Get<AdapterPropertiesMemoryHeaps>()) {
+        if (!mSupportedFeatures.IsEnabled(wgpu::FeatureName::AdapterPropertiesMemoryHeaps)) {
+            mPhysicalDevice->GetInstance()->ConsumedError(
+                DAWN_VALIDATION_ERROR("Feature AdapterPropertiesMemoryHeaps is not available."));
+        }
+        mPhysicalDevice->PopulateMemoryHeapInfo(memoryHeaps);
+    }
+    if (auto* powerPreferenceDesc = unpacked.Get<DawnAdapterPropertiesPowerPreference>()) {
         powerPreferenceDesc->powerPreference = mPowerPreference;
     }
+
     properties->vendorID = mPhysicalDevice->GetVendorId();
     properties->deviceID = mPhysicalDevice->GetDeviceId();
     properties->adapterType = mPhysicalDevice->GetAdapterType();
@@ -155,6 +162,11 @@ void APIAdapterPropertiesFreeMembers(WGPUAdapterProperties properties) {
     delete[] properties.vendorName;
 }
 
+void APIAdapterPropertiesMemoryHeapsFreeMembers(
+    WGPUAdapterPropertiesMemoryHeaps memoryHeapProperties) {
+    delete[] memoryHeapProperties.heapInfo;
+}
+
 bool AdapterBase::APIHasFeature(wgpu::FeatureName feature) const {
     return mSupportedFeatures.IsEnabled(feature);
 }
@@ -177,13 +189,14 @@ DeviceBase* AdapterBase::APICreateDevice(const DeviceDescriptor* descriptor) {
     return result.AcquireSuccess().Detach();
 }
 
-ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor* descriptor) {
-    DAWN_ASSERT(descriptor != nullptr);
+ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor* rawDescriptor) {
+    DAWN_ASSERT(rawDescriptor != nullptr);
 
     // Create device toggles state from required toggles descriptor and inherited adapter toggles
     // state.
-    const DawnTogglesDescriptor* deviceTogglesDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &deviceTogglesDesc);
+    UnpackedPtr<DeviceDescriptor> descriptor;
+    DAWN_TRY_ASSIGN(descriptor, ValidateAndUnpack(rawDescriptor));
+    auto* deviceTogglesDesc = descriptor.Get<DawnTogglesDescriptor>();
 
     // Create device toggles state.
     TogglesState deviceToggles =
@@ -204,7 +217,10 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDevice(const DeviceDescriptor*
     // disabled AllowUnsafeAPIS.
     for (uint32_t i = 0; i < descriptor->requiredFeatureCount; ++i) {
         wgpu::FeatureName feature = descriptor->requiredFeatures[i];
-        DAWN_TRY(mPhysicalDevice->ValidateFeatureSupportedWithToggles(feature, deviceToggles));
+        FeatureValidationResult result =
+            mPhysicalDevice->ValidateFeatureSupportedWithToggles(feature, deviceToggles);
+        DAWN_INVALID_IF(!result.success, "Invalid feature required: %s",
+                        result.errorMessage.c_str());
     }
 
     if (descriptor->requiredLimits != nullptr) {

@@ -1,16 +1,29 @@
-// Copyright 2022 The Dawn Authors
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package roll
 
@@ -44,6 +57,7 @@ import (
 	"dawn.googlesource.com/dawn/tools/src/gerrit"
 	"dawn.googlesource.com/dawn/tools/src/git"
 	"dawn.googlesource.com/dawn/tools/src/gitiles"
+	"dawn.googlesource.com/dawn/tools/src/glob"
 	"dawn.googlesource.com/dawn/tools/src/resultsdb"
 	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/auth/client/authcli"
@@ -60,8 +74,6 @@ const (
 	gitLinkPath          = "third_party/webgpu-cts"
 	tsSourcesRelPath     = "third_party/gn/webgpu-cts/ts_sources.txt"
 	testListRelPath      = "third_party/gn/webgpu-cts/test_list.txt"
-	cacheListRelPath     = "third_party/gn/webgpu-cts/cache_list.txt"
-	cacheTarGz           = "third_party/gn/webgpu-cts/cache.tar.gz"
 	resourceFilesRelPath = "third_party/gn/webgpu-cts/resource_files.txt"
 	webTestsPath         = "webgpu-cts/webtests"
 	refMain              = "refs/heads/main"
@@ -78,6 +90,7 @@ type rollerFlags struct {
 	rebuild             bool // Rebuild the expectations file from scratch
 	preserve            bool // If false, abandon past roll changes
 	sendToGardener      bool // If true, automatically send to the gardener for review
+	verbose             bool
 	parentSwarmingRunID string
 	maxAttempts         int
 }
@@ -106,6 +119,7 @@ func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, e
 	flag.BoolVar(&c.flags.rebuild, "rebuild", false, "rebuild the expectation file from scratch")
 	flag.BoolVar(&c.flags.preserve, "preserve", false, "do not abandon existing rolls")
 	flag.BoolVar(&c.flags.sendToGardener, "send-to-gardener", false, "send the CL to the WebGPU gardener for review")
+	flag.BoolVar(&c.flags.verbose, "verbose", false, "emit additional logging")
 	flag.StringVar(&c.flags.parentSwarmingRunID, "parent-swarming-run-id", "", "parent swarming run id. All triggered tasks will be children of this task and will be canceled if the parent is canceled.")
 	flag.IntVar(&c.flags.maxAttempts, "max-attempts", 3, "number of update attempts before giving up")
 	return nil, nil
@@ -229,27 +243,52 @@ func (r *roller) roll(ctx context.Context) error {
 	}
 	ctsLog = ctsLog[:len(ctsLog)-1] // Don't include the oldest change in the log
 
-	// Download and parse the expectations file
-	expectationsFile, err := r.dawn.DownloadFile(ctx, refMain, common.RelativeExpectationsPath)
-	if err != nil {
-		return err
-	}
-	ex, err := expectations.Parse(common.RelativeExpectationsPath, expectationsFile)
-	if err != nil {
-		return fmt.Errorf("failed to load expectations: %v", err)
+	type ExpectationsFileInfo struct {
+		path            string
+		expectations    expectations.Content
+		newExpectations expectations.Content
+		executionMode   result.ExecutionMode
+		results         result.List
 	}
 
-	// If the user requested a full rebuild of the expectations, strip out
-	// everything but comment chunks.
-	if r.flags.rebuild {
-		rebuilt := ex.Clone()
-		rebuilt.Chunks = rebuilt.Chunks[:0]
-		for _, c := range ex.Chunks {
-			if c.IsCommentOnly() {
-				rebuilt.Chunks = append(rebuilt.Chunks, c)
-			}
+	var exInfos = []*ExpectationsFileInfo{
+		{
+			path:          common.RelativeExpectationsPath,
+			executionMode: "core",
+			results:       result.List{},
+		},
+		{
+			path:          common.RelativeCompatExpectationsPath,
+			executionMode: "compat",
+			results:       result.List{},
+		},
+	}
+
+	// Download and parse the expectations files
+	for _, exInfo := range exInfos {
+		expectationsFile, err := r.dawn.DownloadFile(ctx, refMain, exInfo.path)
+		if err != nil {
+			return err
 		}
-		ex = rebuilt
+		ex, err := expectations.Parse(exInfo.path, expectationsFile)
+		if err != nil {
+			return fmt.Errorf("failed to load expectations: %v", err)
+		}
+
+		// If the user requested a full rebuild of the expectations, strip out
+		// everything but comment chunks.
+		if r.flags.rebuild {
+			rebuilt := ex.Clone()
+			rebuilt.Chunks = rebuilt.Chunks[:0]
+			for _, c := range ex.Chunks {
+				if c.IsCommentOnly() {
+					rebuilt.Chunks = append(rebuilt.Chunks, c)
+				}
+			}
+			ex = rebuilt
+		}
+
+		exInfo.expectations = ex
 	}
 
 	generatedFiles, err := r.generateFiles(ctx)
@@ -320,10 +359,12 @@ func (r *roller) roll(ctx context.Context) error {
 	}
 
 	// Update the DEPS, expectations, and other generated files.
-	updateExpectationUpdateTimestamp(&ex)
+	for _, exInfo := range exInfos {
+		updateExpectationUpdateTimestamp(&exInfo.expectations)
+		generatedFiles[exInfo.path] = exInfo.expectations.String()
+	}
 	generatedFiles[depsRelPath] = updatedDEPS
 	generatedFiles[gitLinkPath] = newCTSHash
-	generatedFiles[common.RelativeExpectationsPath] = ex.String()
 
 	msg := r.rollCommitMessage(oldCTSHash, newCTSHash, ctsLog, changeID)
 	ps, err := r.gerrit.EditFiles(changeID, msg, generatedFiles, deletedFiles)
@@ -332,10 +373,13 @@ func (r *roller) roll(ctx context.Context) error {
 	}
 
 	// Begin main roll loop
-	results := result.List{}
 	for attempt := 0; ; attempt++ {
 		// Kick builds
-		log.Printf("building (attempt %v)...\n", attempt)
+		if attempt == 0 {
+			log.Println("building...")
+		} else {
+			log.Printf("building (retry %v)...\n", attempt)
+		}
 		builds, err := common.GetOrStartBuildsAndWait(ctx, r.cfg, ps, r.bb, r.parentSwarmingRunID, false)
 		if err != nil {
 			return err
@@ -355,29 +399,31 @@ func (r *roller) roll(ctx context.Context) error {
 
 		// Gather the build results
 		log.Println("gathering results...")
-		psResults, err := common.CacheResults(ctx, r.cfg, ps, r.flags.cacheDir, r.rdb, builds)
+		psResultsByExecutionMode, err := common.CacheResults(ctx, r.cfg, ps, r.flags.cacheDir, r.rdb, builds)
 		if err != nil {
 			return err
 		}
-
-		// Merge the new results into the accumulated results
-		log.Println("merging results...")
-		results = result.Merge(results, psResults)
 
 		// Rebuild the expectations with the accumulated results
 		log.Println("building new expectations...")
 		// Note: The new expectations are not used if the last attempt didn't
 		// fail, but we always want to post the diagnostics
-		newExpectations := ex.Clone()
-		diags, err := newExpectations.Update(results, testlist)
-		if err != nil {
-			return err
-		}
+		for _, exInfo := range exInfos {
+			// Merge the new results into the accumulated results
+			log.Printf("merging results for %s ...\n", exInfo.executionMode)
+			exInfo.results = result.Merge(exInfo.results, psResultsByExecutionMode[exInfo.executionMode])
 
-		// Post statistics and expectation diagnostics
-		log.Println("posting stats & diagnostics...")
-		if err := r.postComments(ps, diags, results); err != nil {
-			return err
+			exInfo.newExpectations = exInfo.expectations.Clone()
+			diags, err := exInfo.newExpectations.Update(exInfo.results, testlist, r.flags.verbose)
+			if err != nil {
+				return err
+			}
+
+			// Post statistics and expectation diagnostics
+			log.Printf("posting stats & diagnostics for %s...\n", exInfo.executionMode)
+			if err := r.postComments(ps, exInfo.path, diags, exInfo.results); err != nil {
+				return err
+			}
 		}
 
 		// If all the builds attempted, then we're done!
@@ -387,16 +433,19 @@ func (r *roller) roll(ctx context.Context) error {
 
 		// Otherwise, push the updated expectations, and try again
 		log.Println("updating expectations...")
-		updateExpectationUpdateTimestamp(&newExpectations)
-		ps, err = r.gerrit.EditFiles(changeID, msg, map[string]string{
-			common.RelativeExpectationsPath: newExpectations.String(),
-		}, nil)
+
+		editedFiles := map[string]string{}
+		for _, exInfo := range exInfos {
+			updateExpectationUpdateTimestamp(&exInfo.newExpectations)
+			editedFiles[exInfo.path] = exInfo.newExpectations.String()
+		}
+		ps, err = r.gerrit.EditFiles(changeID, msg, editedFiles, nil)
 		if err != nil {
 			return fmt.Errorf("failed to update change '%v': %v", changeID, err)
 		}
 
 		if attempt >= r.flags.maxAttempts {
-			err := fmt.Errorf("CTS failed after %v attempts.\nGiving up", attempt)
+			err := fmt.Errorf("CTS failed after %v retries.\nGiving up", attempt)
 			r.gerrit.Comment(ps, err.Error(), nil)
 			return err
 		}
@@ -423,7 +472,7 @@ func (r *roller) roll(ctx context.Context) error {
 			return err
 		}
 		if len(jsonRes.Emails) < 1 {
-			return fmt.Errorf("Expected at least one email in JSON response %s", jsonRes)
+			return fmt.Errorf("expected at least one email in JSON response %s", jsonRes)
 		}
 		reviewer = jsonRes.Emails[0]
 	}
@@ -485,9 +534,9 @@ func (r *roller) rollCommitMessage(
 	msg.WriteString("\n\n")
 	msg.WriteString("Regenerated:\n")
 	msg.WriteString(" - expectations.txt\n")
+	msg.WriteString(" - compat-expectations.txt\n")
 	msg.WriteString(" - ts_sources.txt\n")
 	msg.WriteString(" - test_list.txt\n")
-	msg.WriteString(" - cache_list.txt\n")
 	msg.WriteString(" - resource_files.txt\n")
 	msg.WriteString(" - webtest .html files\n")
 	msg.WriteString("\n\n")
@@ -538,7 +587,7 @@ func (r *roller) rollCommitMessage(
 	return msg.String()
 }
 
-func (r *roller) postComments(ps gerrit.Patchset, diags []expectations.Diagnostic, results result.List) error {
+func (r *roller) postComments(ps gerrit.Patchset, path string, diags []expectations.Diagnostic, results result.List) error {
 	fc := make([]gerrit.FileComment, len(diags))
 	for i, d := range diags {
 		var prefix string
@@ -551,7 +600,7 @@ func (r *roller) postComments(ps gerrit.Patchset, diags []expectations.Diagnosti
 			prefix = "🟦"
 		}
 		fc[i] = gerrit.FileComment{
-			Path:    common.RelativeExpectationsPath,
+			Path:    path,
 			Side:    gerrit.Left,
 			Line:    d.Line,
 			Message: fmt.Sprintf("%v %v: %v", prefix, d.Severity, d.Message),
@@ -644,19 +693,12 @@ func (r *roller) checkout(project, dir, host, hash string) (*git.Repository, err
 // file path to file content for the CTS roll's change. This includes:
 // * type-script source files
 // * CTS test list
-// * CTS cache list
 // * resource file list
 // * webtest file sources
 func (r *roller) generateFiles(ctx context.Context) (map[string]string, error) {
 	// Run 'npm ci' to fetch modules and tsc
-	{
-		log.Printf("fetching npm modules with 'npm ci'...")
-		cmd := exec.CommandContext(ctx, r.flags.npmPath, "ci")
-		cmd.Dir = r.ctsDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return nil, fmt.Errorf("failed to run 'npm ci': %w\n%v", err, string(out))
-		}
+	if err := common.InstallCTSDeps(ctx, r.ctsDir, r.flags.npmPath); err != nil {
+		return nil, err
 	}
 
 	log.Printf("generating files for changelist...")
@@ -680,20 +722,6 @@ func (r *roller) generateFiles(ctx context.Context) (map[string]string, error) {
 			}
 		} else {
 			errs <- fmt.Errorf("failed to generate web tests: %v", err)
-		}
-	}()
-
-	// Generate case cache
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if caseCache, err := common.BuildCache(ctx, r.ctsDir, r.flags.nodePath); err == nil {
-			mutex.Lock()
-			defer mutex.Unlock()
-			files[cacheListRelPath] = strings.Join(caseCache.FileList, "\n") + "\n"
-			files[cacheTarGz] = string(caseCache.TarGz)
-		} else {
-			errs <- fmt.Errorf("failed to create case cache: %v", err)
 		}
 	}()
 
@@ -819,7 +847,7 @@ func (r *roller) genTestList(ctx context.Context) (string, error) {
 // This list can be used to populate the resource_files.txt file.
 func (r *roller) genResourceFilesList(ctx context.Context) (string, error) {
 	dir := filepath.Join(r.ctsDir, "src", "resources")
-	files, err := filepath.Glob(filepath.Join(dir, "*"))
+	files, err := glob.Glob(filepath.Join(dir, "**"))
 	if err != nil {
 		return "", err
 	}

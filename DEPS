@@ -18,22 +18,30 @@ vars = {
   'dawn_node': False, # Also fetches dependencies required for building NodeJS bindings.
   'dawn_cmake_version': 'version:2@3.23.3',
   'dawn_cmake_win32_sha1': 'b106d66bcdc8a71ea2cdf5446091327bfdb1bcd7',
-  'dawn_gn_version': 'git_revision:bd99dbf98cbdefe18a4128189665c5761263bcfb',
+  'dawn_gn_version': 'git_revision:182a6eb05d15cc76d2302f7928fdb4f645d52c53',
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
   'dawn_ninja_version': 'version:2@1.11.1.chromium.6',
-  'dawn_go_version': 'version:2@1.18.4',
+  'dawn_go_version': 'version:2@1.21.3',
 
-  'node_darwin_arm64_sha': '31859fc1fa0994a95f44f09c367d6ff63607cfde',
-  'node_darwin_x64_sha': '16dfd094763b71988933a31735f9dea966f9abd6',
-  'node_linux_x64_sha': 'ab9544e24e752d3d17f335fb7b2055062e582d11',
-  'node_win_x64_sha': '5ef847033c517c499f56f9d136d159b663bab717',
+  'node_darwin_arm64_sha': '523ee26632045e664cd0ddd5aef31a378a563025',
+  'node_darwin_x64_sha': 'b930bbfa9f232fe12d5fcf39b38614ae4be99e1a',
+  'node_linux_x64_sha': '179cfb7d2a0d90bbd72271481fd0bda2b297eaa9',
+  'node_win_x64_sha': '9bfd52de11d5bf9645bdabc469bded1da0bf12e7',
 
   # GN variable required by //testing that will be output in the gclient_args.gni
   'generate_location_tags': False,
 
   # Fetch clang-tidy into the same bin/ directory as our clang binary.
   'checkout_clang_tidy': False,
+
+  # Fetch the rust toolchain.
+  #
+  # Use a custom_vars section to enable it:
+  # "custom_vars": {
+  #   "checkout_rust": True,
+  # }
+  'checkout_rust': False,
 
   # Fetch configuration files required for the 'use_remoteexec' gn arg
   'download_remoteexec_cfg': False,
@@ -53,13 +61,8 @@ vars = {
 }
 
 deps = {
-  # Dependencies required to use GN/Clang in standalone
-  'build': {
-    'url': '{chromium_git}/chromium/src/build@5885d3c24833ad72845a52a1b913a2b8bc651b56',
-    'condition': 'dawn_standalone',
-  },
   'buildtools': {
-    'url': '{chromium_git}/chromium/src/buildtools@a9a6f0c49d0e8fa0cda37337430b4736ab3dc944',
+    'url': '{chromium_git}/chromium/src/buildtools@48ab3bd053bfe2fef4635d7cb1861f8923167b96',
     'condition': 'dawn_standalone',
   },
   'third_party/clang-format/script': {
@@ -92,18 +95,29 @@ deps = {
   },
 
   'third_party/libc++/src': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@84fb809dd6dae36d556dc0bb702c6cc2ce9d4b80',
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxx.git@278060665f956b98b54922e3cb5e38b07884ce7d',
     'condition': 'dawn_standalone',
   },
 
   'third_party/libc++abi/src': {
-    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@d4760c0af99ccc9bce077960d5ddde4d66146c05',
+    'url': '{chromium_git}/external/github.com/llvm/llvm-project/libcxxabi.git@0226cb1cdfe740b173394e1cebbd0dcf293e38ad',
     'condition': 'dawn_standalone',
   },
 
-  'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang@8f75392b4aa947fb55c7c206b36804229595e4da',
+  # Dependencies required to use GN, Clang, and Rust in standalone.
+  # The //build, //tools/clang, and //tools/rust deps should all be updated
+  # in unison, as there are dependencies between them.
+  'build': {
+    'url': '{chromium_git}/chromium/src/build@df6338f68f66357d27ea7f0354d50216c8c74473',
     'condition': 'dawn_standalone',
+  },
+  'tools/clang': {
+    'url': '{chromium_git}/chromium/src/tools/clang@419fc5706504be3cc8d17cc61bdc6b45226927e9',
+    'condition': 'dawn_standalone',
+  },
+  'tools/rust': {
+    'url': '{chromium_git}/chromium/src/tools/rust@c2a0e44aaa68e02826feea4a4e152bdd8b897266',
+    'condition': 'dawn_standalone and checkout_rust',
   },
   'tools/clang/dsymutil': {
     'packages': [{
@@ -158,17 +172,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@b4d87668a85981f7a2ac0cb9b43ae9c75069c1b2',
+    'url': '{chromium_git}/angle/angle@4b8573817f2a8e3358190aa01bc096318bc81eb0',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@400ac3a175a658d8157f8a363271ae7ab013c2ee',
+    'url': '{swiftshader_git}/SwiftShader@2fa7e9b99ae4e70ea5ae2cc9c8d3afb43391384f',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@457fc7591f3c285d9f07476cecf38929efd49ef5',
+    'url': '{chromium_git}/vulkan-deps@222d9442542bac0e6c7d901c689eabfa9115ddb5',
     'condition': 'dawn_standalone',
   },
 
@@ -183,7 +197,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@039094228e1dc25034542d87d3deb2befb13b93f',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@a743e97f89f929d56b3d906b611f5fba7a12e441',
   },
 
   'third_party/dxheaders': {
@@ -202,7 +216,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@8bb48275486acc5ce8ec25dcd3eabaeba80ed832',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@f20c5f7b8f53904edaa98651d764e1b8305d7c14',
     'condition': 'build_with_chromium',
   },
 
@@ -216,7 +230,7 @@ deps = {
     'condition': 'dawn_node',
   },
   'third_party/gpuweb': {
-    'url': '{github_git}/gpuweb/gpuweb.git@17f7771857dd6cf0377a99e6a63a723b80485e50',
+    'url': '{github_git}/gpuweb/gpuweb.git@a6805d5298c6979392768ed13f442e35b9a35b22',
     'condition': 'dawn_node',
   },
 
@@ -261,7 +275,19 @@ deps = {
 
   # Misc dependencies inherited from Tint
   'third_party/protobuf': {
-    'url': '{chromium_git}/external/github.com/protocolbuffers/protobuf.git@2b673bbb57e34fe1bd4570f726fc86b769a3a3d2',
+    'url': '{chromium_git}/chromium/src/third_party/protobuf@41759e11ec427e29e1a72b9401d2af3f6e02d839',
+    'condition': 'dawn_standalone',
+  },
+
+  'tools/protoc_wrapper': {
+    'url': '{chromium_git}/chromium/src/tools/protoc_wrapper@b5ea227bd88235ab3ccda964d5f3819c4e2d8032',
+    'condition': 'dawn_standalone',
+  },
+
+  # Dependencies for PartitionAlloc.
+  # Doc: https://docs.google.com/document/d/1wz45t0alQthsIU9P7_rQcfQyqnrBMXzrOjSzdQo-V-A
+  'third_party/partition_alloc': {
+    'url': '{chromium_git}/chromium/src/base/allocator/partition_allocator.git@cb18695870869cf972b76cdd27d52f86c1752d0e',
     'condition': 'dawn_standalone',
   },
 }
@@ -324,6 +350,12 @@ hooks = [
     'condition': 'dawn_standalone and checkout_clang_tidy',
     'action': ['python3', 'tools/clang/scripts/update.py',
                '--package=clang-tidy'],
+  },
+  {
+    'name': 'rust',
+    'pattern': '.',
+    'action': ['python3', 'tools/rust/update_rust.py'],
+    'condition': 'dawn_standalone and checkout_rust',
   },
   {
     # Pull rc binaries using checked-in hashes.
@@ -448,7 +480,7 @@ hooks = [
                 '--no_resume',
                 '--extract',
                 '--no_auth',
-                '--bucket', 'chromium-nodejs/16.13.0',
+                '--bucket', 'chromium-nodejs/20.9.0',
                 Var('node_linux_x64_sha'),
                 '-o', 'third_party/node/node-linux-x64.tar.gz',
     ],
@@ -461,7 +493,7 @@ hooks = [
                 '--no_resume',
                 '--extract',
                 '--no_auth',
-                '--bucket', 'chromium-nodejs/16.13.0',
+                '--bucket', 'chromium-nodejs/20.9.0',
                 Var('node_darwin_x64_sha'),
                 '-o', 'third_party/node/node-darwin-x64.tar.gz',
     ],
@@ -474,7 +506,7 @@ hooks = [
                 '--no_resume',
                 '--extract',
                 '--no_auth',
-                '--bucket', 'chromium-nodejs/16.13.0',
+                '--bucket', 'chromium-nodejs/20.9.0',
                 Var('node_darwin_arm64_sha'),
                 '-o', 'third_party/node/node-darwin-arm64.tar.gz',
     ],
@@ -486,7 +518,7 @@ hooks = [
     'action': [ 'download_from_google_storage',
                 '--no_resume',
                 '--no_auth',
-                '--bucket', 'chromium-nodejs/16.13.0',
+                '--bucket', 'chromium-nodejs/20.9.0',
                 Var('node_win_x64_sha'),
                 '-o', 'third_party/node/node.exe',
     ],

@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <algorithm>
 #include <vector>
@@ -104,9 +117,9 @@ class NonzeroTextureCreationTests : public DawnTestWithParams<Params> {
         DAWN_TEST_UNSUPPORTED_IF(GetParam().mAspect == wgpu::TextureAspect::StencilOnly &&
                                  HasToggleEnabled("disable_stencil_read"));
 
-        // GL may support the feature, but reading data back is not implemented.
-        DAWN_TEST_UNSUPPORTED_IF(GetParam().mFormat == wgpu::TextureFormat::BC1RGBAUnorm &&
-                                 (IsOpenGL() || IsOpenGLES()));
+        // You can't read compressed textures in compat mode.
+        DAWN_TEST_UNSUPPORTED_IF(utils::IsCompressedTextureFormat(GetParam().mFormat) &&
+                                 IsCompatibilityMode());
 
         // TODO(crbug.com/dawn/1637): Failures with ANGLE only with some format/aspect
         DAWN_SUPPRESS_TEST_IF(IsWindows() && IsANGLE() &&
@@ -126,6 +139,18 @@ class NonzeroTextureCreationTests : public DawnTestWithParams<Params> {
         descriptor.format = GetParam().mFormat;
         descriptor.usage = GetParam().mUsage;
         descriptor.mipLevelCount = GetParam().mMipCount;
+
+        // Only set the textureBindingViewDimension in compat mode. It's not needed
+        // nor used in non-compat.
+        wgpu::TextureBindingViewDimensionDescriptor textureBindingViewDimensionDesc;
+        if (IsCompatibilityMode()) {
+            textureBindingViewDimensionDesc.textureBindingViewDimension =
+                descriptor.dimension == wgpu::TextureDimension::e3D
+                    ? wgpu::TextureViewDimension::e3D
+                : descriptor.size.depthOrArrayLayers > 1 ? wgpu::TextureViewDimension::e2DArray
+                                                         : wgpu::TextureViewDimension::e2D;
+            descriptor.nextInChain = &textureBindingViewDimensionDesc;
+        }
 
         wgpu::Texture texture = device.CreateTexture(&descriptor);
 
@@ -268,7 +293,7 @@ TEST_P(NonzeroTextureCreationTests, TextureCreationClears) {
 
 // Test that texture clears to a non-zero value because toggle is enabled.
 TEST_P(NonzeroNonrenderableTextureCreationTests, TextureCreationClears) {
-    // TODO(dawn:1872): suppress
+    // TODO(dawn:667): suppress
     DAWN_SUPPRESS_TEST_IF(GetParam().mFormat == wgpu::TextureFormat::RGBA8Snorm &&
                           (IsOpenGL() || IsOpenGLES()));
     Run();
@@ -281,6 +306,9 @@ TEST_P(NonzeroCompressedTextureCreationTests, TextureCreationClears) {
 
 // Test that texture clears to a non-zero value because toggle is enabled.
 TEST_P(NonzeroDepthTextureCreationTests, TextureCreationClears) {
+    // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
+
     Run();
 }
 
@@ -291,6 +319,9 @@ TEST_P(NonzeroDepthStencilTextureCreationTests, TextureCreationClears) {
 
 // Test that texture clears to a non-zero value because toggle is enabled.
 TEST_P(NonzeroStencilTextureCreationTests, TextureCreationClears) {
+    // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
+
     Run();
 }
 

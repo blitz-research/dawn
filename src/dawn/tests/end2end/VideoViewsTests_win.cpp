@@ -1,16 +1,29 @@
-// Copyright 2021 The Dawn Authors
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <d3d11.h>
 #include <d3d11_4.h>
@@ -102,13 +115,13 @@ class VideoViewsTestBackendWin : public VideoViewsTestBackend {
         textureDesc.format = format;
         textureDesc.dimension = wgpu::TextureDimension::e2D;
         textureDesc.usage = usage;
-        textureDesc.size = {VideoViewsTestsBase::kYUVImageDataWidthInTexels,
-                            VideoViewsTestsBase::kYUVImageDataHeightInTexels, 1};
+        textureDesc.size = {VideoViewsTestsBase::kYUVAImageDataWidthInTexels,
+                            VideoViewsTestsBase::kYUVAImageDataHeightInTexels, 1};
 
         // Create a DX11 texture with data then wrap it in a shared handle.
         D3D11_TEXTURE2D_DESC d3dDescriptor;
-        d3dDescriptor.Width = VideoViewsTestsBase::kYUVImageDataWidthInTexels;
-        d3dDescriptor.Height = VideoViewsTestsBase::kYUVImageDataHeightInTexels;
+        d3dDescriptor.Width = VideoViewsTestsBase::kYUVAImageDataWidthInTexels;
+        d3dDescriptor.Height = VideoViewsTestsBase::kYUVAImageDataHeightInTexels;
         d3dDescriptor.MipLevels = 1;
         d3dDescriptor.ArraySize = 1;
         d3dDescriptor.Format = GetDXGITextureFormat(format);
@@ -120,15 +133,18 @@ class VideoViewsTestBackendWin : public VideoViewsTestBackend {
         d3dDescriptor.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED;
 
         D3D11_SUBRESOURCE_DATA subres;
-        subres.SysMemPitch = VideoViewsTestsBase::kYUVImageDataWidthInTexels;
+        subres.SysMemPitch = VideoViewsTestsBase::kYUVAImageDataWidthInTexels;
 
         std::variant<std::vector<uint8_t>, std::vector<uint16_t>> initialData;
         if (format == wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm) {
-            initialData = VideoViewsTestsBase::GetTestTextureData<uint16_t>(format, isCheckerboard);
+            initialData = VideoViewsTestsBase::GetTestTextureData<uint16_t>(
+                /*isMultiPlane*/ true, isCheckerboard, /*hasAlpha*/ false);
             subres.pSysMem = std::get<1>(initialData).data();
             subres.SysMemPitch *= 2;
         } else {
-            initialData = VideoViewsTestsBase::GetTestTextureData<uint8_t>(format, isCheckerboard);
+            initialData = VideoViewsTestsBase::GetTestTextureData<uint8_t>(
+                /*isMultiPlane*/ true, isCheckerboard,
+                /*hasAlpha*/ false);
             subres.pSysMem = std::get<0>(initialData).data();
         }
 

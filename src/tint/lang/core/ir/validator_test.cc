@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string>
 #include <utility>
@@ -820,7 +833,7 @@ TEST_F(IR_ValidatorTest, If_NullResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: if: instruction result is undefined
+    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: if: result is undefined
     undef = if true [t: %b2, f: %b3] {  # if_1
     ^^^^^
 
@@ -892,7 +905,7 @@ TEST_F(IR_ValidatorTest, Var_RootBlock_NullResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:2:3 error: var: instruction result is undefined
+    EXPECT_EQ(res.Failure().reason.str(), R"(:2:3 error: var: result is undefined
   undef = var
   ^^^^^
 
@@ -919,7 +932,7 @@ TEST_F(IR_ValidatorTest, Var_Function_NullResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: var: instruction result is undefined
+    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: var: result is undefined
     undef = var
     ^^^^^
 
@@ -978,7 +991,7 @@ TEST_F(IR_ValidatorTest, Let_NullResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: let: instruction result is undefined
+    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: let: result is undefined
     undef = let 1i
     ^^^^^
 
@@ -1092,18 +1105,19 @@ note: # Disassembly
     EXPECT_EQ(res.Failure().reason.str(), expected);
 }
 
-TEST_F(IR_ValidatorTest, Instruction_NullSource) {
+TEST_F(IR_ValidatorTest, Instruction_NullInstruction) {
     auto* f = b.Function("my_func", ty.void_());
 
     auto sb = b.Append(f->Block());
     auto* v = sb.Var(ty.ptr<function, f32>());
     sb.Return(f);
 
-    v->Result()->SetSource(nullptr);
+    v->Result(0)->SetInstruction(nullptr);
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: var: instruction result source is undefined
+    EXPECT_EQ(res.Failure().reason.str(),
+              R"(:3:5 error: var: instruction of result is undefined
     %2:ptr<function, f32, read_write> = var
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -1134,7 +1148,7 @@ TEST_F(IR_ValidatorTest, Instruction_DeadOperand) {
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:46 error: var: instruction operand 0 is not alive
+    EXPECT_EQ(res.Failure().reason.str(), R"(:3:46 error: var: operand is not alive
     %2:ptr<function, f32, read_write> = var, %3
                                              ^^
 
@@ -1165,7 +1179,7 @@ TEST_F(IR_ValidatorTest, Instruction_OperandUsageRemoved) {
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:46 error: var: instruction operand 0 missing usage
+    EXPECT_EQ(res.Failure().reason.str(), R"(:3:46 error: var: operand missing usage
     %2:ptr<function, f32, read_write> = var, %3
                                              ^^
 
@@ -1261,8 +1275,8 @@ note: # Disassembly
 }
 
 TEST_F(IR_ValidatorTest, Binary_Result_Nullptr) {
-    auto* bin = mod.instructions.Create<ir::Binary>(nullptr, ir::Binary::Kind::kAdd,
-                                                    b.Constant(3_i), b.Constant(2_i));
+    auto* bin = mod.instructions.Create<ir::Binary>(nullptr, BinaryOp::kAdd, b.Constant(3_i),
+                                                    b.Constant(2_i));
 
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1272,7 +1286,7 @@ TEST_F(IR_ValidatorTest, Binary_Result_Nullptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: binary: instruction result is undefined
+    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: binary: result is undefined
     undef = add 3i, 2i
     ^^^^^
 
@@ -1319,7 +1333,7 @@ note: # Disassembly
 
 TEST_F(IR_ValidatorTest, Unary_Result_Nullptr) {
     auto* bin =
-        mod.instructions.Create<ir::Unary>(nullptr, ir::Unary::Kind::kNegation, b.Constant(2_i));
+        mod.instructions.Create<ir::Unary>(nullptr, ir::UnaryOp::kNegation, b.Constant(2_i));
 
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1329,7 +1343,7 @@ TEST_F(IR_ValidatorTest, Unary_Result_Nullptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: unary: instruction result is undefined
+    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: unary: result is undefined
     undef = negation 2i
     ^^^^^
 
@@ -1669,7 +1683,7 @@ TEST_F(IR_ValidatorTest, ExitIf_InvalidJumpOverSwitch) {
         b.ExitIf(if_outer);
     });
 
-    auto* c = b.Case(switch_inner, {Switch::CaseSelector{b.Constant(1_i)}});
+    auto* c = b.Case(switch_inner, {b.Constant(1_i)});
     b.Append(c, [&] { b.ExitIf(if_outer); });
 
     b.Append(f->Block(), [&] {
@@ -1766,7 +1780,7 @@ note: # Disassembly
 TEST_F(IR_ValidatorTest, ExitSwitch) {
     auto* switch_ = b.Switch(true);
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     def->Append(b.ExitSwitch(switch_));
 
     auto* f = b.Function("my_func", ty.void_());
@@ -1781,7 +1795,7 @@ TEST_F(IR_ValidatorTest, ExitSwitch) {
 TEST_F(IR_ValidatorTest, ExitSwitch_NullSwitch) {
     auto* switch_ = b.Switch(true);
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     def->Append(mod.instructions.Create<ExitSwitch>(nullptr));
 
     auto* f = b.Function("my_func", ty.void_());
@@ -1821,7 +1835,7 @@ TEST_F(IR_ValidatorTest, ExitSwitch_LessOperandsThenSwitchParams) {
     auto* r2 = b.InstructionResult(ty.f32());
     switch_->SetResults(Vector{r1, r2});
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     def->Append(b.ExitSwitch(switch_, 1_i));
 
     auto* f = b.Function("my_func", ty.void_());
@@ -1865,7 +1879,7 @@ TEST_F(IR_ValidatorTest, ExitSwitch_MoreOperandsThenSwitchParams) {
     auto* r2 = b.InstructionResult(ty.f32());
     switch_->SetResults(Vector{r1, r2});
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     def->Append(b.ExitSwitch(switch_, 1_i, 2_f, 3_i));
 
     auto* f = b.Function("my_func", ty.void_());
@@ -1909,7 +1923,7 @@ TEST_F(IR_ValidatorTest, ExitSwitch_WithResult) {
     auto* r2 = b.InstructionResult(ty.f32());
     switch_->SetResults(Vector{r1, r2});
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     def->Append(b.ExitSwitch(switch_, 1_i, 2_f));
 
     auto* f = b.Function("my_func", ty.void_());
@@ -1927,7 +1941,7 @@ TEST_F(IR_ValidatorTest, ExitSwitch_IncorrectResultType) {
     auto* r2 = b.InstructionResult(ty.f32());
     switch_->SetResults(Vector{r1, r2});
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     def->Append(b.ExitSwitch(switch_, 1_i, 2_i));
 
     auto* f = b.Function("my_func", ty.void_());
@@ -1970,7 +1984,7 @@ TEST_F(IR_ValidatorTest, ExitSwitch_NotInParentSwitch) {
 
     auto* f = b.Function("my_func", ty.void_());
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     def->Append(b.Return(f));
 
     auto sb = b.Append(f->Block());
@@ -2024,7 +2038,7 @@ TEST_F(IR_ValidatorTest, ExitSwitch_JumpsOverIfs) {
 
     auto* f = b.Function("my_func", ty.void_());
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     b.Append(def, [&] {
         auto* if_ = b.If(true);
         b.Append(if_->True(), [&] {
@@ -2046,12 +2060,12 @@ TEST_F(IR_ValidatorTest, ExitSwitch_JumpsOverIfs) {
 TEST_F(IR_ValidatorTest, ExitSwitch_InvalidJumpOverSwitch) {
     auto* switch_ = b.Switch(true);
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     b.Append(def, [&] {
         auto* inner = b.Switch(false);
         b.ExitSwitch(switch_);
 
-        auto* inner_def = b.Case(inner, {Switch::CaseSelector{}});
+        auto* inner_def = b.DefaultCase(inner);
         b.Append(inner_def, [&] { b.ExitSwitch(switch_); });
     });
 
@@ -2099,7 +2113,7 @@ note: # Disassembly
 TEST_F(IR_ValidatorTest, ExitSwitch_InvalidJumpOverLoop) {
     auto* switch_ = b.Switch(true);
 
-    auto* def = b.Case(switch_, {Switch::CaseSelector{}});
+    auto* def = b.DefaultCase(switch_);
     b.Append(def, [&] {
         auto* loop = b.Loop();
         b.Append(loop->Body(), [&] { b.ExitSwitch(switch_); });
@@ -2445,7 +2459,7 @@ TEST_F(IR_ValidatorTest, ExitLoop_InvalidJumpOverSwitch) {
         auto* inner = b.Switch(false);
         b.ExitLoop(loop);
 
-        auto* inner_def = b.Case(inner, {Switch::CaseSelector{}});
+        auto* inner_def = b.DefaultCase(inner);
         b.Append(inner_def, [&] { b.ExitLoop(loop); });
     });
 
@@ -2903,7 +2917,7 @@ TEST_F(IR_ValidatorTest, Store_NullFrom) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, i32>());
-        b.Append(mod.instructions.Create<ir::Store>(var->Result(), nullptr));
+        b.Append(mod.instructions.Create<ir::Store>(var->Result(0), nullptr));
         b.Return(f);
     });
 
@@ -2933,7 +2947,7 @@ TEST_F(IR_ValidatorTest, Store_TypeMismatch) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, i32>());
-        b.Append(mod.instructions.Create<ir::Store>(var->Result(), b.Constant(42_u)));
+        b.Append(mod.instructions.Create<ir::Store>(var->Result(0), b.Constant(42_u)));
         b.Return(f);
     });
 
@@ -2964,7 +2978,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_NullResult) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, vec3<f32>>());
-        b.Append(mod.instructions.Create<ir::LoadVectorElement>(nullptr, var->Result(),
+        b.Append(mod.instructions.Create<ir::LoadVectorElement>(nullptr, var->Result(0),
                                                                 b.Constant(1_i)));
         b.Return(f);
     });
@@ -2972,7 +2986,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_NullResult) {
     auto res = ir::Validate(mod);
     ASSERT_FALSE(res);
     EXPECT_EQ(res.Failure().reason.str(),
-              R"(:4:5 error: load_vector_element: instruction result is undefined
+              R"(:4:5 error: load_vector_element: result is undefined
     undef = load_vector_element %2, 1i
     ^^^^^
 
@@ -3026,7 +3040,7 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_NullIndex) {
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, vec3<f32>>());
         b.Append(mod.instructions.Create<ir::LoadVectorElement>(b.InstructionResult(ty.f32()),
-                                                                var->Result(), nullptr));
+                                                                var->Result(0), nullptr));
         b.Return(f);
     });
 
@@ -3085,7 +3099,7 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_NullIndex) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, vec3<f32>>());
-        b.Append(mod.instructions.Create<ir::StoreVectorElement>(var->Result(), nullptr,
+        b.Append(mod.instructions.Create<ir::StoreVectorElement>(var->Result(0), nullptr,
                                                                  b.Constant(2_i)));
         b.Return(f);
     });
@@ -3124,7 +3138,7 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_NullValue) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, vec3<f32>>());
-        b.Append(mod.instructions.Create<ir::StoreVectorElement>(var->Result(), b.Constant(1_i),
+        b.Append(mod.instructions.Create<ir::StoreVectorElement>(var->Result(0), b.Constant(1_i),
                                                                  nullptr));
         b.Return(f);
     });

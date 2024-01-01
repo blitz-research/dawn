@@ -1,16 +1,31 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+// GEN_BUILD:CONDITION(tint_build_wgsl_reader)
 
 #include <memory>
 #include <string>
@@ -57,8 +72,10 @@ class UniformityAnalysisTestBase {
     /// @param src the WGSL source code
     /// @param should_pass true if `src` should pass the analysis, otherwise false
     void RunTest(std::string src, bool should_pass) {
+        wgsl::reader::Options options;
+        options.allowed_features = wgsl::AllowedFeatures::Everything();
         auto file = std::make_unique<Source::File>("test", src);
-        auto program = wgsl::reader::Parse(file.get());
+        auto program = wgsl::reader::Parse(file.get(), options);
         return RunTest(std::move(program), should_pass);
     }
 
@@ -288,8 +305,6 @@ TEST_P(BasicTest, ConditionalFunctionCall) {
     auto condition = static_cast<Condition>(std::get<0>(GetParam()));
     auto function = static_cast<Function>(std::get<1>(GetParam()));
     std::string src = R"(
-enable chromium_experimental_read_write_storage_texture;
-
 var<private> p : i32;
 var<workgroup> w : i32;
 @group(0) @binding(0) var<uniform> u : i32;
@@ -8230,8 +8245,6 @@ test:5:7 note: return value of 'atomicAdd' may be non-uniform
 
 TEST_F(UniformityAnalysisTest, StorageTextureLoad_ReadOnly) {
     std::string src = R"(
-enable chromium_experimental_read_write_storage_texture;
-
 @group(0) @binding(0) var t : texture_storage_2d<r32sint, read>;
 
 fn foo() {
@@ -8246,8 +8259,6 @@ fn foo() {
 
 TEST_F(UniformityAnalysisTest, StorageTextureLoad_ReadWrite) {
     std::string src = R"(
-enable chromium_experimental_read_write_storage_texture;
-
 @group(0) @binding(0) var t : texture_storage_2d<r32sint, read_write>;
 
 fn foo() {
@@ -8259,15 +8270,15 @@ fn foo() {
 
     RunTest(src, false);
     EXPECT_EQ(error_,
-              R"(test:8:5 error: 'storageBarrier' must only be called from uniform control flow
+              R"(test:6:5 error: 'storageBarrier' must only be called from uniform control flow
     storageBarrier();
     ^^^^^^^^^^^^^^
 
-test:7:3 note: control flow depends on possibly non-uniform value
+test:5:3 note: control flow depends on possibly non-uniform value
   if (textureLoad(t, vec2()).r == 0) {
   ^^
 
-test:7:7 note: return value of 'textureLoad' may be non-uniform
+test:5:7 note: return value of 'textureLoad' may be non-uniform
   if (textureLoad(t, vec2()).r == 0) {
       ^^^^^^^^^^^^^^^^^^^^^^
 )");

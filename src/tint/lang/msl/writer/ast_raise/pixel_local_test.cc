@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/msl/writer/ast_raise/pixel_local.h"
 
@@ -57,7 +70,7 @@ var<pixel_local> P : PixelLocal;
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct PixelLocal {
   a : i32,
@@ -89,7 +102,7 @@ fn F() {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -104,7 +117,7 @@ fn F(pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -142,7 +155,7 @@ fn F() {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -157,7 +170,7 @@ fn F(pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -198,7 +211,7 @@ fn F() {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -217,11 +230,11 @@ fn F(pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
-  @internal(attachment(0)) @internal(disable_validation__entry_point_parameter)
+  @color(0u) @internal(disable_validation__entry_point_parameter)
   b : i32,
-  @internal(attachment(10)) @internal(disable_validation__entry_point_parameter)
+  @color(10u) @internal(disable_validation__entry_point_parameter)
   c : f32,
 }
 
@@ -256,7 +269,7 @@ fn F(@builtin(position) pos : vec4f) {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -271,7 +284,7 @@ fn F(@builtin(position) pos : vec4f, pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -305,7 +318,7 @@ fn F(@invariant @builtin(position) pos : vec4f) {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -320,7 +333,7 @@ fn F(@invariant @builtin(position) pos : vec4f, pixel_local_1 : PixelLocal) -> F
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -358,7 +371,7 @@ fn F(in : In) {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -373,7 +386,7 @@ fn F(in : In, pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -416,7 +429,7 @@ fn F(in : In) {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -431,7 +444,7 @@ fn F(in : In, pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -470,7 +483,7 @@ fn F(@location(0) a : vec4f, @interpolate(flat) @location(1) b : vec4f) {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -485,7 +498,7 @@ fn F(@location(0) a : vec4f, @interpolate(flat) @location(1) b : vec4f, pixel_lo
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -524,7 +537,7 @@ fn F(in : In) {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -539,7 +552,7 @@ fn F(in : In, pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -580,7 +593,7 @@ fn F(@builtin(position) pos : vec4f, @location(0) uv : vec4f) {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -595,7 +608,7 @@ fn F(@builtin(position) pos : vec4f, @location(0) uv : vec4f, pixel_local_1 : Pi
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -634,7 +647,7 @@ fn F(in : In) {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -649,7 +662,7 @@ fn F(in : In, pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -691,7 +704,7 @@ fn F() -> @location(0) vec4f {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -708,7 +721,7 @@ fn F(pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
 }
 
@@ -750,7 +763,7 @@ fn F() -> Output {
 
     auto* expect =
         R"(
-enable chromium_experimental_pixel_local;
+enable chromium_experimental_framebuffer_fetch;
 
 struct F_res {
   @location(1)
@@ -771,9 +784,9 @@ fn F(pixel_local_1 : PixelLocal) -> F_res {
 }
 
 struct PixelLocal {
-  @internal(attachment(1)) @internal(disable_validation__entry_point_parameter)
+  @color(1u) @internal(disable_validation__entry_point_parameter)
   a : u32,
-  @internal(attachment(5)) @internal(disable_validation__entry_point_parameter)
+  @color(5u) @internal(disable_validation__entry_point_parameter)
   b : u32,
 }
 

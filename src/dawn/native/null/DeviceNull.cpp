@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/null/DeviceNull.h"
 
@@ -18,6 +31,7 @@
 #include <utility>
 
 #include "dawn/native/BackendConnection.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Instance.h"
@@ -64,6 +78,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     GetDefaultLimitsForSupportedFeatureLevel(&limits->v1);
+    // Set the subgroups limit, as DeviceNull should support subgroups feature.
+    limits->experimentalSubgroupLimits.minSubgroupSize = 4;
+    limits->experimentalSubgroupLimits.maxSubgroupSize = 128;
     return {};
 }
 
@@ -71,13 +88,25 @@ void PhysicalDevice::SetupBackendAdapterToggles(TogglesState* adpterToggles) con
 
 void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) const {}
 
-ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(AdapterBase* adapter,
-                                                                const DeviceDescriptor* descriptor,
-                                                                const TogglesState& deviceToggles) {
+ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
+    AdapterBase* adapter,
+    const UnpackedPtr<DeviceDescriptor>& descriptor,
+    const TogglesState& deviceToggles) {
     return Device::Create(adapter, descriptor, deviceToggles);
 }
 
-MaybeError PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
+void PhysicalDevice::PopulateMemoryHeapInfo(
+    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
+    auto* heapInfo = new MemoryHeapInfo[1];
+    memoryHeapProperties->heapCount = 1;
+    memoryHeapProperties->heapInfo = heapInfo;
+
+    heapInfo[0].size = 1024 * 1024 * 1024;
+    heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                             wgpu::HeapProperty::HostCached;
+}
+
+FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     wgpu::FeatureName feature,
     const TogglesState& toggles) const {
     return {};
@@ -89,7 +118,7 @@ class Backend : public BackendConnection {
         : BackendConnection(instance, wgpu::BackendType::Null) {}
 
     std::vector<Ref<PhysicalDeviceBase>> DiscoverPhysicalDevices(
-        const RequestAdapterOptions* options) override {
+        const UnpackedPtr<RequestAdapterOptions>& options) override {
         if (options->forceFallbackAdapter) {
             return {};
         }
@@ -130,7 +159,7 @@ struct CopyFromStagingToBufferOperation : PendingOperation {
 
 // static
 ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
-                                          const DeviceDescriptor* descriptor,
+                                          const UnpackedPtr<DeviceDescriptor>& descriptor,
                                           const TogglesState& deviceToggles) {
     Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
     DAWN_TRY(device->Initialize(descriptor));
@@ -141,7 +170,7 @@ Device::~Device() {
     Destroy();
 }
 
-MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
+MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     return DeviceBase::Initialize(AcquireRef(new Queue(this, &descriptor->defaultQueue)));
 }
 
@@ -153,7 +182,8 @@ ResultOrError<Ref<BindGroupLayoutInternalBase>> Device::CreateBindGroupLayoutImp
     const BindGroupLayoutDescriptor* descriptor) {
     return AcquireRef(new BindGroupLayout(this, descriptor));
 }
-ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
+ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(
+    const UnpackedPtr<BufferDescriptor>& descriptor) {
     DAWN_TRY(IncrementMemoryUsage(descriptor->size));
     return AcquireRef(new Buffer(this, descriptor));
 }
@@ -163,25 +193,25 @@ ResultOrError<Ref<CommandBufferBase>> Device::CreateCommandBuffer(
     return AcquireRef(new CommandBuffer(encoder, descriptor));
 }
 Ref<ComputePipelineBase> Device::CreateUninitializedComputePipelineImpl(
-    const ComputePipelineDescriptor* descriptor) {
+    const UnpackedPtr<ComputePipelineDescriptor>& descriptor) {
     return AcquireRef(new ComputePipeline(this, descriptor));
 }
 ResultOrError<Ref<PipelineLayoutBase>> Device::CreatePipelineLayoutImpl(
-    const PipelineLayoutDescriptor* descriptor) {
+    const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) {
     return AcquireRef(new PipelineLayout(this, descriptor));
 }
 ResultOrError<Ref<QuerySetBase>> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
     return AcquireRef(new QuerySet(this, descriptor));
 }
 Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
-    const RenderPipelineDescriptor* descriptor) {
+    const UnpackedPtr<RenderPipelineDescriptor>& descriptor) {
     return AcquireRef(new RenderPipeline(this, descriptor));
 }
 ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
     return AcquireRef(new Sampler(this, descriptor));
 }
 ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
-    const ShaderModuleDescriptor* descriptor,
+    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(this, descriptor));
@@ -194,7 +224,8 @@ ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
     const SwapChainDescriptor* descriptor) {
     return SwapChain::Create(this, surface, previousSwapChain, descriptor);
 }
-ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
+ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
+    const UnpackedPtr<TextureDescriptor>& descriptor) {
     return AcquireRef(new Texture(this, descriptor));
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
@@ -314,7 +345,7 @@ BindGroupLayout::BindGroupLayout(DeviceBase* device, const BindGroupLayoutDescri
 
 // Buffer
 
-Buffer::Buffer(Device* device, const BufferDescriptor* descriptor)
+Buffer::Buffer(Device* device, const UnpackedPtr<BufferDescriptor>& descriptor)
     : BufferBase(device, descriptor) {
     mBackingData = std::unique_ptr<uint8_t[]>(new uint8_t[GetSize()]);
     mAllocatedSize = GetSize();
@@ -408,6 +439,10 @@ bool Queue::HasPendingCommands() const {
     return false;
 }
 
+ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) {
+    return true;
+}
+
 MaybeError Queue::WaitForIdleForDestruction() {
     ToBackend(GetDevice())->ForgetPendingOperations();
     return {};
@@ -437,12 +472,17 @@ MaybeError ComputePipeline::Initialize() {
                     RunTransforms(&transformManager, computeStage.module->GetTintProgram(),
                                   transformInputs, nullptr, nullptr));
 
-    // Do the workgroup size validation as it is actually backend agnostic.
+    // Do the workgroup size validation, although different backend will have different
+    // fullSubgroups parameter.
     const CombinedLimits& limits = GetDevice()->GetLimits();
     Extent3D _;
     DAWN_TRY_ASSIGN(
-        _, ValidateComputeStageWorkgroupSize(transformedProgram, computeStage.entryPoint.c_str(),
-                                             LimitsForCompilationRequest::Create(limits.v1)));
+        _, ValidateComputeStageWorkgroupSize(
+               transformedProgram, computeStage.entryPoint.c_str(),
+               LimitsForCompilationRequest::Create(limits.v1), /* maxSubgroupSizeForFullSubgroups */
+               IsFullSubgroupsRequired()
+                   ? std::make_optional(limits.experimentalSubgroupLimits.maxSubgroupSize)
+                   : std::nullopt));
 
     return {};
 }
@@ -486,7 +526,7 @@ MaybeError SwapChain::PresentImpl() {
 
 ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureImpl() {
     TextureDescriptor textureDesc = GetSwapChainBaseTextureDescriptor(this);
-    mTexture = AcquireRef(new Texture(GetDevice(), &textureDesc));
+    mTexture = AcquireRef(new Texture(GetDevice(), Unpack(&textureDesc)));
     return mTexture;
 }
 
@@ -520,7 +560,7 @@ bool Device::IsResolveTextureBlitWithDrawSupported() const {
     return true;
 }
 
-Texture::Texture(DeviceBase* device, const TextureDescriptor* descriptor)
+Texture::Texture(DeviceBase* device, const UnpackedPtr<TextureDescriptor>& descriptor)
     : TextureBase(device, descriptor) {}
 
 }  // namespace dawn::native::null

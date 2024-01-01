@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <sstream>
 #include <string>
@@ -250,10 +263,11 @@ TEST_F(ShaderModuleValidationTest, GetCompilationMessages) {
     native::ShaderModuleBase* shaderModuleBase = native::FromAPI(shaderModule.Get());
     native::OwnedCompilationMessages* messages = shaderModuleBase->GetCompilationMessages();
     messages->ClearMessages();
-    messages->AddMessage("Info Message");
-    messages->AddMessage("Warning Message", wgpu::CompilationMessageType::Warning);
-    messages->AddMessage("Error Message", wgpu::CompilationMessageType::Error, 3, 4);
-    messages->AddMessage("Complete Message", wgpu::CompilationMessageType::Info, 3, 4, 5, 6);
+    messages->AddMessageForTesting("Info Message");
+    messages->AddMessageForTesting("Warning Message", wgpu::CompilationMessageType::Warning);
+    messages->AddMessageForTesting("Error Message", wgpu::CompilationMessageType::Error, 3, 4);
+    messages->AddMessageForTesting("Complete Message", wgpu::CompilationMessageType::Info, 3, 4, 5,
+                                   6);
 
     auto callback = [](WGPUCompilationInfoRequestStatus status, const WGPUCompilationInfo* info,
                        void* userdata) {
@@ -771,20 +785,21 @@ class ShaderModuleExtensionValidationTestBase : public ValidationTest {
 };
 
 struct WGSLExtensionInfo {
-    const char* WGSLName;
+    const char* wgslName;
     // Is this WGSL extension experimental, i.e. guarded by AllowUnsafeAPIs toggle
     bool isExperimental;
     // The WebGPU feature that required to enable this extension, set to nullptr if no feature
     // required.
-    const char* RequiredFeatureName;
+    const char* requiredFeatureName;
 };
 
 constexpr struct WGSLExtensionInfo kExtensions[] = {
-    {"f16", true, "shader-f16"},
-    {"chromium_experimental_dp4a", true, "chromium-experimental-dp4a"},
+    {"f16", false, "shader-f16"},
     {"chromium_experimental_subgroups", true, "chromium-experimental-subgroups"},
+    {"chromium_experimental_pixel_local", true, "pixel-local-storage-coherent"},
     {"chromium_disable_uniformity_analysis", true, nullptr},
     {"chromium_internal_dual_source_blending", true, "dual-source-blending"},
+    {"chromium_experimental_framebuffer_fetch", true, "framebuffer-fetch"},
 
     // Currently the following WGSL extensions are not enabled under any situation.
     /*
@@ -812,13 +827,13 @@ class ShaderModuleExtensionValidationTestSafeNoFeature
 TEST_F(ShaderModuleExtensionValidationTestSafeNoFeature,
        OnlyStableExtensionsRequiringNoFeatureAllowed) {
     for (auto& extension : kExtensions) {
-        std::string wgsl = std::string("enable ") + extension.WGSLName + R"(;
+        std::string wgsl = std::string("enable ") + extension.wgslName + R"(;
 
 @compute @workgroup_size(1) fn main() {})";
 
         // On a safe device with no feature required, only stable extensions requiring no features
         // are allowed.
-        if (!extension.isExperimental && !extension.RequiredFeatureName) {
+        if (!extension.isExperimental && !extension.requiredFeatureName) {
             utils::CreateShaderModule(device, wgsl.c_str());
         } else {
             ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, wgsl.c_str()));
@@ -844,13 +859,13 @@ class ShaderModuleExtensionValidationTestUnsafeNoFeature
 TEST_F(ShaderModuleExtensionValidationTestUnsafeNoFeature,
        OnlyExtensionsRequiringNoFeatureAllowed) {
     for (auto& extension : kExtensions) {
-        std::string wgsl = std::string("enable ") + extension.WGSLName + R"(;
+        std::string wgsl = std::string("enable ") + extension.wgslName + R"(;
 
 @compute @workgroup_size(1) fn main() {})";
 
         // On an unsafe device with no feature required, only extensions requiring no features are
         // allowed.
-        if (!extension.RequiredFeatureName) {
+        if (!extension.requiredFeatureName) {
             utils::CreateShaderModule(device, wgsl.c_str());
         } else {
             ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, wgsl.c_str()));
@@ -875,7 +890,7 @@ class ShaderModuleExtensionValidationTestSafeAllFeatures
 
 TEST_F(ShaderModuleExtensionValidationTestSafeAllFeatures, OnlyStableExtensionsAllowed) {
     for (auto& extension : kExtensions) {
-        std::string wgsl = std::string("enable ") + extension.WGSLName + R"(;
+        std::string wgsl = std::string("enable ") + extension.wgslName + R"(;
 
 @compute @workgroup_size(1) fn main() {})";
 
@@ -905,7 +920,7 @@ class ShaderModuleExtensionValidationTestUnsafeAllFeatures
 
 TEST_F(ShaderModuleExtensionValidationTestUnsafeAllFeatures, AllExtensionsAllowed) {
     for (auto& extension : kExtensions) {
-        std::string wgsl = std::string("enable ") + extension.WGSLName + R"(;
+        std::string wgsl = std::string("enable ") + extension.wgslName + R"(;
 
 @compute @workgroup_size(1) fn main() {})";
 

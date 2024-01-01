@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/ast/transform/builtin_polyfill.h"
 
@@ -875,6 +888,111 @@ struct BuiltinPolyfill::State {
         return name;
     }
 
+    /// Builds the polyfill function for the `dot4I8Packed` builtin
+    /// @return the polyfill function name
+    Symbol Dot4I8Packed() {
+        using vec4i = vec4<i32>;
+        using vec4u = vec4<u32>;
+
+        auto name = b.Symbols().New("tint_dot4_i8_packed");
+
+        auto body = tint::Vector{
+            // const n = vec4u(24, 16, 8, 0);
+            // let a_i8 = bitcast<vec4i>(vec4u(a) << n) >> vec4u(24);
+            // let b_i8 = bitcast<vec4i>(vec4u(b) << n) >> vec4u(24);
+            // return dot(a_i8, b_i8);
+            b.Decl(b.Const("n", b.Call<vec4u>(24_a, 16_a, 8_a, 0_a))),
+            b.Decl(b.Let("a_i8", b.Shr(b.Bitcast<vec4i>(b.Shl(b.Call<vec4u>("a"), "n")),
+                                       b.Call<vec4u>(24_a)))),
+            b.Decl(b.Let("b_i8", b.Shr(b.Bitcast<vec4i>(b.Shl(b.Call<vec4u>("b"), "n")),
+                                       b.Call<vec4u>(24_a)))),
+            b.Return(b.Call("dot", "a_i8", "b_i8")),
+        };
+        b.Func(name,
+               tint::Vector{
+                   b.Param("a", b.ty.u32()),
+                   b.Param("b", b.ty.u32()),
+               },
+               b.ty.i32(), body);
+
+        return name;
+    }
+
+    /// Builds the polyfill function for the `dot4U8Packed` builtin
+    /// @return the polyfill function name
+    Symbol Dot4U8Packed() {
+        using vec4u = vec4<u32>;
+        auto name = b.Symbols().New("tint_dot4_u8_packed");
+
+        auto body = tint::Vector{
+            // const n = vec4u(24, 16, 8, 0);
+            // let a_u8 = (vec4u(a) >> n) & vec4u(0xff);
+            // let b_u8 = (vec4u(b) >> n) & vec4u(0xff);
+            // return dot(a_u8, b_u8);
+            b.Decl(b.Const("n", b.Call<vec4u>(24_a, 16_a, 8_a, 0_a))),
+            b.Decl(b.Let("a_u8", b.And(b.Shr(b.Call<vec4u>("a"), "n"), b.Call<vec4u>(0xff_a)))),
+            b.Decl(b.Let("b_u8", b.And(b.Shr(b.Call<vec4u>("b"), "n"), b.Call<vec4u>(0xff_a)))),
+            b.Return(b.Call("dot", "a_u8", "b_u8")),
+        };
+        b.Func(name,
+               tint::Vector{
+                   b.Param("a", b.ty.u32()),
+                   b.Param("b", b.ty.u32()),
+               },
+               b.ty.u32(), body);
+
+        return name;
+    }
+
+    /// Builds the polyfill function for the `pack4xI8` builtin
+    /// @return the polyfill function name
+    Symbol Pack4xI8() {
+        using vec4i = vec4<i32>;
+        using vec4u = vec4<u32>;
+
+        auto name = b.Symbols().New("tint_pack_4xi8");
+
+        auto body = tint::Vector{
+            // const n = vec4u(0, 8, 16, 24);
+            // let a_i8 = vec4u((a & vec4i(0xff)) << n);
+            // return dot(a_i8, vec4u(1));
+            b.Decl(b.Const("n", b.Call<vec4u>(0_a, 8_a, 16_a, 24_a))),
+            b.Decl(b.Let("a_i8", b.Call<vec4u>(b.Shl(b.And("a", b.Call<vec4i>(0xff_a)), "n")))),
+            b.Return(b.Call("dot", "a_i8", b.Call<vec4u>(1_a))),
+        };
+        b.Func(name,
+               tint::Vector{
+                   b.Param("a", b.ty.vec4<i32>()),
+               },
+               b.ty.u32(), body);
+
+        return name;
+    }
+
+    /// Builds the polyfill function for the `pack4xU8` builtin
+    /// @return the polyfill function name
+    Symbol Pack4xU8() {
+        using vec4u = vec4<u32>;
+
+        auto name = b.Symbols().New("tint_pack_4xu8");
+
+        auto body = tint::Vector{
+            // const n = vec4u(0, 8, 16, 24);
+            // let a_u8 = (a & vec4u(0xff)) << n;
+            // return dot(a_u8, vec4u(1));
+            b.Decl(b.Const("n", b.Call<vec4u>(0_a, 8_a, 16_a, 24_a))),
+            b.Decl(b.Let("a_u8", b.Shl(b.And("a", b.Call<vec4u>(0xff_a)), "n"))),
+            b.Return(b.Call("dot", "a_u8", b.Call<vec4u>(1_a))),
+        };
+        b.Func(name,
+               tint::Vector{
+                   b.Param("a", b.ty.vec4<u32>()),
+               },
+               b.ty.u32(), body);
+
+        return name;
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Inline polyfills
     ////////////////////////////////////////////////////////////////////////////
@@ -1256,6 +1374,38 @@ struct BuiltinPolyfill::State {
                             });
                         }
                         return Symbol{};
+
+                    case wgsl::BuiltinFn::kDot4I8Packed: {
+                        if (cfg.builtins.dot_4x8_packed) {
+                            return builtin_polyfills.GetOrCreate(builtin,
+                                                                 [&] { return Dot4I8Packed(); });
+                        }
+                        return Symbol{};
+                    }
+
+                    case wgsl::BuiltinFn::kDot4U8Packed: {
+                        if (cfg.builtins.dot_4x8_packed) {
+                            return builtin_polyfills.GetOrCreate(builtin,
+                                                                 [&] { return Dot4U8Packed(); });
+                        }
+                        return Symbol{};
+                    }
+
+                    case wgsl::BuiltinFn::kPack4XI8: {
+                        if (cfg.builtins.pack_unpack_4x8) {
+                            return builtin_polyfills.GetOrCreate(builtin,
+                                                                 [&] { return Pack4xI8(); });
+                        }
+                        return Symbol{};
+                    }
+
+                    case wgsl::BuiltinFn::kPack4XU8: {
+                        if (cfg.builtins.pack_unpack_4x8) {
+                            return builtin_polyfills.GetOrCreate(builtin,
+                                                                 [&] { return Pack4xU8(); });
+                        }
+                        return Symbol{};
+                    }
 
                     default:
                         return Symbol{};

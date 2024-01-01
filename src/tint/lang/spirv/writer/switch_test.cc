@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/common/helper_test.h"
 
@@ -24,7 +37,7 @@ TEST_F(SpirvWriterTest, Switch_Basic) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector()});
+        auto* def_case = b.DefaultCase(swtch);
         b.Append(def_case, [&] {  //
             b.ExitSwitch(swtch);
         });
@@ -50,17 +63,17 @@ TEST_F(SpirvWriterTest, Switch_MultipleCases) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* case_a = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)}});
+        auto* case_a = b.Case(swtch, Vector{b.Constant(1_i)});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(swtch);
         });
 
-        auto* case_b = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(swtch, Vector{b.Constant(2_i)});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(swtch);
         });
 
-        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector()});
+        auto* def_case = b.DefaultCase(swtch);
         b.Append(def_case, [&] {  //
             b.ExitSwitch(swtch);
         });
@@ -90,20 +103,17 @@ TEST_F(SpirvWriterTest, Switch_MultipleSelectorsPerCase) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* case_a = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                                            core::ir::Switch::CaseSelector{b.Constant(3_i)}});
+        auto* case_a = b.Case(swtch, Vector{b.Constant(1_i), b.Constant(3_i)});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(swtch);
         });
 
-        auto* case_b = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)},
-                                            core::ir::Switch::CaseSelector{b.Constant(4_i)}});
+        auto* case_b = b.Case(swtch, Vector{b.Constant(2_i), b.Constant(4_i)});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(swtch);
         });
 
-        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(5_i)},
-                                              core::ir::Switch::CaseSelector()});
+        auto* def_case = b.Case(swtch, Vector{b.Constant(5_i), nullptr});
         b.Append(def_case, [&] {  //
             b.ExitSwitch(swtch);
         });
@@ -133,17 +143,17 @@ TEST_F(SpirvWriterTest, Switch_AllCasesReturn) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* case_a = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)}});
+        auto* case_a = b.Case(swtch, Vector{b.Constant(1_i)});
         b.Append(case_a, [&] {  //
             b.Return(func);
         });
 
-        auto* case_b = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(swtch, Vector{b.Constant(2_i)});
         b.Append(case_b, [&] {  //
             b.Return(func);
         });
 
-        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector()});
+        auto* def_case = b.DefaultCase(swtch);
         b.Append(def_case, [&] {  //
             b.Return(func);
         });
@@ -173,7 +183,7 @@ TEST_F(SpirvWriterTest, Switch_ConditionalBreak) {
     b.Append(func->Block(), [&] {
         auto* swtch = b.Switch(42_i);
 
-        auto* case_a = b.Case(swtch, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)}});
+        auto* case_a = b.Case(swtch, Vector{b.Constant(1_i)});
         b.Append(case_a, [&] {
             auto* cond_break = b.If(true);
             b.Append(cond_break->True(), [&] {  //
@@ -186,7 +196,7 @@ TEST_F(SpirvWriterTest, Switch_ConditionalBreak) {
             b.Return(func);
         });
 
-        auto* def_case = b.Case(swtch, Vector{core::ir::Switch::CaseSelector()});
+        auto* def_case = b.DefaultCase(swtch);
         b.Append(def_case, [&] {  //
             b.ExitSwitch(swtch);
         });
@@ -219,13 +229,12 @@ TEST_F(SpirvWriterTest, Switch_Phi_SingleValue) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(42_i);
         s->SetResults(b.InstructionResult(ty.i32()));
-        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        core::ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{b.Constant(1_i), nullptr});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(s, 10_i);
         });
 
-        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{b.Constant(2_i)});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i);
         });
@@ -254,13 +263,12 @@ TEST_F(SpirvWriterTest, Switch_Phi_SingleValue_CaseReturn) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(42_i);
         s->SetResults(b.InstructionResult(ty.i32()));
-        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        core::ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{b.Constant(1_i), nullptr});
         b.Append(case_a, [&] {  //
             b.Return(func, 10_i);
         });
 
-        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{b.Constant(2_i)});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i);
         });
@@ -302,13 +310,12 @@ TEST_F(SpirvWriterTest, Switch_Phi_MultipleValue_0) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(42_i);
         s->SetResults(b.InstructionResult(ty.i32()), b.InstructionResult(ty.bool_()));
-        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        core::ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{b.Constant(1_i), nullptr});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(s, 10_i, true);
         });
 
-        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{b.Constant(2_i)});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i, false);
         });
@@ -338,13 +345,12 @@ TEST_F(SpirvWriterTest, Switch_Phi_MultipleValue_1) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(b.Constant(42_i));
         s->SetResults(b.InstructionResult(ty.i32()), b.InstructionResult(ty.bool_()));
-        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        core::ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{b.Constant(1_i), nullptr});
         b.Append(case_a, [&] {  //
             b.ExitSwitch(s, 10_i, true);
         });
 
-        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{b.Constant(2_i)});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i, false);
         });
@@ -374,8 +380,7 @@ TEST_F(SpirvWriterTest, Switch_Phi_NestedIf) {
     b.Append(func->Block(), [&] {
         auto* s = b.Switch(42_i);
         s->SetResults(b.InstructionResult(ty.i32()));
-        auto* case_a = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                                        core::ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(s, Vector{b.Constant(1_i), nullptr});
         b.Append(case_a, [&] {  //
             auto* inner = b.If(true);
             inner->SetResults(b.InstructionResult(ty.i32()));
@@ -386,10 +391,10 @@ TEST_F(SpirvWriterTest, Switch_Phi_NestedIf) {
                 b.ExitIf(inner, 20_i);
             });
 
-            b.ExitSwitch(s, inner->Result());
+            b.ExitSwitch(s, inner->Result(0));
         });
 
-        auto* case_b = b.Case(s, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(s, Vector{b.Constant(2_i)});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(s, 20_i);
         });
@@ -426,12 +431,10 @@ TEST_F(SpirvWriterTest, Switch_Phi_NestedSwitch) {
     b.Append(func->Block(), [&] {
         auto* outer = b.Switch(42_i);
         outer->SetResults(b.InstructionResult(ty.i32()));
-        auto* case_a = b.Case(outer, Vector{core::ir::Switch::CaseSelector{b.Constant(1_i)},
-                                            core::ir::Switch::CaseSelector{nullptr}});
+        auto* case_a = b.Case(outer, Vector{b.Constant(1_i), nullptr});
         b.Append(case_a, [&] {  //
             auto* inner = b.Switch(42_i);
-            auto* case_inner = b.Case(inner, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)},
-                                                    core::ir::Switch::CaseSelector{nullptr}});
+            auto* case_inner = b.Case(inner, Vector{b.Constant(2_i), nullptr});
             b.Append(case_inner, [&] {  //
                 b.ExitSwitch(inner);
             });
@@ -439,7 +442,7 @@ TEST_F(SpirvWriterTest, Switch_Phi_NestedSwitch) {
             b.ExitSwitch(outer, 10_i);
         });
 
-        auto* case_b = b.Case(outer, Vector{core::ir::Switch::CaseSelector{b.Constant(2_i)}});
+        auto* case_b = b.Case(outer, Vector{b.Constant(2_i)});
         b.Append(case_b, [&] {  //
             b.ExitSwitch(outer, 20_i);
         });

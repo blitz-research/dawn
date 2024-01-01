@@ -6,6 +6,7 @@
 /.gclient_entries
 /.gclient_previous_custom_vars
 /.gclient_previous_sync_commits
+/.reproxy_cache
 /bazel-*
 /build
 /buildtools
@@ -34,7 +35,9 @@
 /third_party/node
 /third_party/node-addon-api
 /third_party/node-api-headers
+/third_party/partition_alloc
 /third_party/protobuf
+/third_party/rust-toolchain
 /third_party/swiftshader
 /third_party/vulkan-deps
 /third_party/vulkan_memory_allocator
@@ -44,6 +47,7 @@
 /tools/cmake*
 /tools/golang
 /tools/memory
+/tools/rust
 /out
 
 # Tint test validation cache file

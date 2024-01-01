@@ -110,6 +110,20 @@ For example, on Windows, to use the d3dcompiler_47.dll from a Chromium checkout,
 
 Note that we pass `--verbose` above so that all test output, including the dumped shader, is written to stdout.
 
+### Testing with Chrome instead of dawn.node
+
+`run-cts` can also run CTS using a Chrome instance. Just add `chrome` after `run-cts`:
+
+```sh
+./tools/run run-cts chrome [WebGPU CTS query]
+```
+
+To see additional options, run:
+
+```sh
+./tools/run run-cts help chrome
+```
+
 ### Testing against a `run-cts` expectations file
 
 You can write out an expectations file with the `--output <path>` command line flag, and then compare this snapshot to a later run with `--expect <path>`.
@@ -190,9 +204,9 @@ Replacing:
 - `[cts.js]` this is the path to the `cts.js` file that should be copied to the output directory by the [build step](#build)
 - `test-query` with the test query string. Example: `webgpu:shader,execution,builtin,abs:*`
 
-## Debugging dawn-node issues in gdb/lldb
+## Debugging C++
 
-It is possible to run the CTS with dawn-node directly similarly to Debugging TypeScript with VSCode:
+It is possible to run the CTS with dawn-node from the command line:
 
 ```sh
 cd <cts-root-dir>
@@ -204,7 +218,52 @@ cd <cts-root-dir>
     [test-query]
 ```
 
-This command is then possible to run in your debugger of choice.
+You can use this to configure a debugger (gdb, lldb, MSVC) to launch the CTS, and be able to debug Dawn's C++ source,
+including the dawn-node C++ bindings layer, dawn_native, Tint, etc.
+
+To make this easier, executing `run-cts` with the `--verbose` flag will output the command it runs, along with
+the working directory. It also conveniently outputs the JSON fields that you can copy directly into VS Code's
+launch.json. For example:
+
+```sh
+./tools/run run-cts --verbose --isolate --bin=./build-clang 'webgpu:shader,execution,flow_control,
+loop:nested_loops:preventValueOptimizations=false'
+<SNIP>
+Running:
+  Cmd: /home/user/src/dawn/third_party/node/node-linux-x64/bin/node -e "require('./out-node/common/runtime/cmdline.js');" -- placeholder-arg --gpu-provider /home/user/src/dawn/build-clang/cts.js --verbose --quiet --gpu-provider-flag verbose=1 --colors --unroll-const-eval-loops --gpu-provider-flag enable-dawn-features=allow_unsafe_apis "webgpu:shader,execution,flow_control,loop:nested_loops:preventValueOptimizations=false"
+  Dir: /home/user/src/dawn/third_party/webgpu-cts
+
+  For VS Code launch.json:
+    "program": "/home/user/src/dawn/third_party/node/node-linux-x64/bin/node",
+    "args": [
+        "-e",
+        "require('./out-node/common/runtime/cmdline.js');",
+        "--",
+        "placeholder-arg",
+        "--gpu-provider",
+        "/home/user/src/dawn/build-clang/cts.js",
+        "--verbose",
+        "--quiet",
+        "--gpu-provider-flag",
+        "verbose=1",
+        "--colors",
+        "--unroll-const-eval-loops",
+        "--gpu-provider-flag",
+        "enable-dawn-features=allow_unsafe_apis",
+        "webgpu:shader,execution,flow_control,loop:nested_loops:preventValueOptimizations=false"
+    ],
+    "cwd": "/home/user/src/dawn/third_party/webgpu-cts",
+
+webgpu:shader,execution,flow_control,loop:nested_loops:preventValueOptimizations=false - pass:
+<SNIP>
+```
+
+Note that as in the example above, we also pass in `--isolate`, otherwise the output command will be the one
+used to run CTS in server mode, requiring a client to send it the tests to run.
+
+Also note that the debugger must support debugging forked child processes. You may need to enable this
+feature depending on your debugger (see [here for gdb](https://ftp.gnu.org/old-gnu/Manuals/gdb/html_node/gdb_25.html)
+and [this extension for MSVC](https://marketplace.visualstudio.com/items?itemName=vsdbgplat.MicrosoftChildProcessDebuggingPowerTool)).
 
 ## Recipes for building software GPUs
 

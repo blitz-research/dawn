@@ -1,16 +1,29 @@
-// Copyright 2020 The Dawn Authors
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/tests/DawnTest.h"
 
@@ -35,13 +48,25 @@ class TextureSubresourceTest : public DawnTest {
         texDesc.mipLevelCount = mipLevelCount;
         texDesc.usage = usage;
         texDesc.format = kFormat;
+
+        // Only set the textureBindingViewDimension in compat mode. It's not needed
+        // nor used in non-compat.
+        wgpu::TextureBindingViewDimensionDescriptor textureBindingViewDimensionDesc;
+        if (IsCompatibilityMode()) {
+            textureBindingViewDimensionDesc.textureBindingViewDimension =
+                wgpu::TextureViewDimension::e2D;
+            texDesc.nextInChain = &textureBindingViewDimensionDesc;
+        }
+
         return device.CreateTexture(&texDesc);
     }
 
-    wgpu::TextureView CreateTextureView(wgpu::Texture texture,
+    wgpu::TextureView CreateTextureView(const char* label,
+                                        wgpu::Texture texture,
                                         uint32_t baseMipLevel,
                                         uint32_t baseArrayLayer) {
         wgpu::TextureViewDescriptor viewDesc;
+        viewDesc.label = label;
         viewDesc.format = kFormat;
         viewDesc.baseArrayLayer = baseArrayLayer;
         viewDesc.arrayLayerCount = 1;
@@ -148,8 +173,8 @@ TEST_P(TextureSubresourceTest, MipmapLevelsTest) {
                           wgpu::TextureUsage::CopySrc);
 
     // Create two views on different mipmap levels.
-    wgpu::TextureView samplerView = CreateTextureView(texture, 0, 0);
-    wgpu::TextureView renderView = CreateTextureView(texture, 1, 0);
+    wgpu::TextureView samplerView = CreateTextureView("samplerView", texture, 0, 0);
+    wgpu::TextureView renderView = CreateTextureView("renderView", texture, 1, 0);
 
     // Draw a red triangle at the bottom-left half
     DrawTriangle(samplerView);
@@ -167,6 +192,8 @@ TEST_P(TextureSubresourceTest, MipmapLevelsTest) {
 
 // Test different array layers
 TEST_P(TextureSubresourceTest, ArrayLayersTest) {
+    DAWN_TEST_UNSUPPORTED_IF(IsCompatibilityMode());
+
     // Create a texture with 1 mipmap level and 2 layers
     wgpu::Texture texture =
         CreateTexture(1, 2,
@@ -174,8 +201,8 @@ TEST_P(TextureSubresourceTest, ArrayLayersTest) {
                           wgpu::TextureUsage::CopySrc);
 
     // Create two views on different layers
-    wgpu::TextureView samplerView = CreateTextureView(texture, 0, 0);
-    wgpu::TextureView renderView = CreateTextureView(texture, 0, 1);
+    wgpu::TextureView samplerView = CreateTextureView("samplerView", texture, 0, 0);
+    wgpu::TextureView renderView = CreateTextureView("renderView", texture, 0, 1);
 
     // Draw a red triangle at the bottom-left half
     DrawTriangle(samplerView);

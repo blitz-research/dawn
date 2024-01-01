@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "gmock/gmock.h"
 #include "src/tint/lang/core/constant/scalar.h"
@@ -41,7 +54,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Add) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = add %3, 4u
+    %4:u32 = add %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -110,7 +124,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Subtract) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = sub %3, 4u
+    %4:u32 = sub %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -179,7 +194,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Multiply) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = mul %3, 4u
+    %4:u32 = mul %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -225,7 +241,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Div) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = div %3, 4u
+    %4:u32 = div %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -271,7 +288,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Modulo) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = mod %3, 4u
+    %4:u32 = mod %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -317,7 +335,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_And) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = and %3, 4u
+    %4:u32 = and %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -363,7 +382,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Or) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = or %3, 4u
+    %4:u32 = or %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -409,7 +429,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Xor) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = xor %3, 4u
+    %4:u32 = xor %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -456,7 +477,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LogicalAnd) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:bool = call %my_func
-    %logical_and:bool = if %3 [t: %b3, f: %b4] {  # if_1
+    %4:bool = if %3 [t: %b3, f: %b4] {  # if_1
       %b3 = block {  # true
         exit_if false  # if_1
       }
@@ -464,6 +485,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LogicalAnd) {
         exit_if false  # if_1
       }
     }
+    %logical_and:bool = let %4
     if %logical_and [t: %b5] {  # if_2
       %b5 = block {  # true
         exit_if  # if_2
@@ -492,7 +514,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LogicalOr) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:bool = call %my_func
-    %logical_or:bool = if %3 [t: %b3, f: %b4] {  # if_1
+    %4:bool = if %3 [t: %b3, f: %b4] {  # if_1
       %b3 = block {  # true
         exit_if true  # if_1
       }
@@ -500,6 +522,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LogicalOr) {
         exit_if true  # if_1
       }
     }
+    %logical_or:bool = let %4
     if %logical_or [t: %b5] {  # if_2
       %b5 = block {  # true
         exit_if  # if_2
@@ -527,7 +550,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Equal) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:bool = eq %3, 4u
+    %4:bool = eq %3, 4u
+    %tint_symbol:bool = let %4
     ret
   }
 }
@@ -550,7 +574,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_NotEqual) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:bool = neq %3, 4u
+    %4:bool = neq %3, 4u
+    %tint_symbol:bool = let %4
     ret
   }
 }
@@ -573,7 +598,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LessThan) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:bool = lt %3, 4u
+    %4:bool = lt %3, 4u
+    %tint_symbol:bool = let %4
     ret
   }
 }
@@ -596,7 +622,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_GreaterThan) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:bool = gt %3, 4u
+    %4:bool = gt %3, 4u
+    %tint_symbol:bool = let %4
     ret
   }
 }
@@ -619,7 +646,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_LessThanEqual) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:bool = lte %3, 4u
+    %4:bool = lte %3, 4u
+    %tint_symbol:bool = let %4
     ret
   }
 }
@@ -642,7 +670,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_GreaterThanEqual) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:bool = gte %3, 4u
+    %4:bool = gte %3, 4u
+    %tint_symbol:bool = let %4
     ret
   }
 }
@@ -665,7 +694,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_ShiftLeft) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = shiftl %3, 4u
+    %4:u32 = shiftl %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -711,7 +741,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_ShiftRight) {
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
     %3:u32 = call %my_func
-    %tint_symbol:u32 = shiftr %3, 4u
+    %4:u32 = shiftr %3, 4u
+    %tint_symbol:u32 = let %4
     ret
   }
 }
@@ -760,7 +791,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Compound) {
   %b2 = block {
     %3:f32 = call %my_func
     %4:bool = lt %3, 2.0f
-    %tint_symbol:bool = if %4 [t: %b3, f: %b4] {  # if_1
+    %5:bool = if %4 [t: %b3, f: %b4] {  # if_1
       %b3 = block {  # true
         %6:f32 = call %my_func
         %7:f32 = call %my_func
@@ -773,6 +804,7 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Compound) {
         exit_if false  # if_1
       }
     }
+    %tint_symbol:bool = let %5
     ret
   }
 }
@@ -795,7 +827,8 @@ TEST_F(ProgramToIRBinaryTest, EmitExpression_Binary_Compound_WithConstEval) {
 }
 %test_function = @compute @workgroup_size(1, 1, 1) func():void -> %b2 {
   %b2 = block {
-    %tint_symbol:bool = call %my_func, false
+    %4:bool = call %my_func, false
+    %tint_symbol:bool = let %4
     ret
   }
 }

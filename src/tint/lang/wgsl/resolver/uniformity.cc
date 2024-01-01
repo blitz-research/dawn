@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/resolver/uniformity.h"
 
@@ -197,7 +210,7 @@ struct FunctionInfo {
         for (size_t i = 0; i < func->params.Length(); i++) {
             auto* param = func->params[i];
             auto param_name = param->name->symbol.Name();
-            auto* sem = b.Sem().Get<sem::Parameter>(param);
+            auto* sem = b.Sem().Get(param);
             parameters[i].sem = sem;
 
             parameters[i].value = CreateNode({"param_", param_name});
@@ -530,7 +543,7 @@ class UniformityGraph {
             // we do not skip the `i==j` case.
             for (size_t j = 0; j < func->params.Length(); j++) {
                 auto tag = get_param_tag(reachable, j);
-                auto* source_param = sem_.Get<sem::Parameter>(func->params[j]);
+                auto* source_param = sem_.Get(func->params[j]);
                 if (tag == ParameterTag::ParameterContentsRequiredToBeUniform) {
                     param_info.ptr_output_source_param_contents.Push(source_param);
                 } else if (tag == ParameterTag::ParameterValueRequiredToBeUniform) {
@@ -1161,10 +1174,7 @@ class UniformityGraph {
                 return cf;  // No impact on uniformity
             },
 
-            [&](Default) {
-                TINT_ICE() << "unknown statement type: " << std::string(stmt->TypeInfo().name);
-                return nullptr;
-            });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Process an identifier expression.
@@ -1293,11 +1303,7 @@ class UniformityGraph {
                 return std::make_pair(cf, node);
             },
 
-            [&](Default) {
-                TINT_ICE() << "unknown identifier expression type: "
-                           << std::string(sem->TypeInfo().name);
-                return std::pair<Node*, Node*>(nullptr, nullptr);
-            });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Process an expression.
@@ -1366,10 +1372,7 @@ class UniformityGraph {
                 return ProcessExpression(cf, u->expr, load_rule);
             },
 
-            [&](Default) {
-                TINT_ICE() << "unknown expression type: " << std::string(expr->TypeInfo().name);
-                return std::pair<Node*, Node*>(nullptr, nullptr);
-            });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// @param u unary expression with op == kIndirection
@@ -1473,11 +1476,7 @@ class UniformityGraph {
                 return ProcessLValueExpression(cf, u->expr, is_partial_reference);
             },
 
-            [&](Default) {
-                TINT_ICE() << "unknown lvalue expression type: "
-                           << std::string(expr->TypeInfo().name);
-                return LValue{};
-            });
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Process a function call expression.
@@ -1595,8 +1594,8 @@ class UniformityGraph {
             [&](const sem::ValueConversion*) {
                 callsite_tag = {CallSiteTag::CallSiteNoRestriction};
                 function_tag = NoRestriction;
-            },
-            [&](Default) { TINT_ICE() << "unhandled function call target: " << name; });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
 
         cf_after->AddEdge(call_node);
 
@@ -1886,8 +1885,8 @@ class UniformityGraph {
             [&](const ast::Expression* e) {
                 diagnostics_.add_note(diag::System::Resolver,
                                       "result of expression may be non-uniform", e->source);
-            },
-            [&](Default) { TINT_ICE() << "unhandled source of non-uniformity"; });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Generate a diagnostic message for a uniformity issue.

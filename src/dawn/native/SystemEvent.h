@@ -1,52 +1,47 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_DAWN_NATIVE_SYSTEMEVENT_H_
 #define SRC_DAWN_NATIVE_SYSTEMEVENT_H_
 
+#include <optional>
 #include <utility>
 
+#include "dawn/common/MutexProtected.h"
 #include "dawn/common/NonCopyable.h"
 #include "dawn/common/Platform.h"
+#include "dawn/common/RefCounted.h"
 #include "dawn/native/IntegerTypes.h"
+#include "dawn/native/SystemHandle.h"
 
 namespace dawn::native {
 
 struct TrackedFutureWaitInfo;
 class SystemEventPipeSender;
-
-// Either a Win32 HANDLE or a POSIX fd (int) depending on OS, represented as a uintptr_t with
-// necessary conversions.
-class SystemEventPrimitive : NonCopyable {
-  public:
-    SystemEventPrimitive() = default;
-    // void* is the typedef of HANDLE in Win32.
-    explicit SystemEventPrimitive(void* win32Handle);
-    explicit SystemEventPrimitive(int posixFd);
-    ~SystemEventPrimitive();
-
-    SystemEventPrimitive(SystemEventPrimitive&&);
-    SystemEventPrimitive& operator=(SystemEventPrimitive&&);
-
-    bool IsValid() const;
-    void Close();
-
-    static constexpr uintptr_t kInvalid = 0;
-    // The underlying primitive, either a Win32 HANDLE (void*) or a POSIX fd (int), cast to
-    // uintptr_t. We treat 0 as the "invalid" value, even for POSIX.
-    uintptr_t value = kInvalid;
-};
 
 // SystemEventReceiver holds an OS event primitive (Win32 Event Object or POSIX file descriptor (fd)
 // that will be signalled by some other thing: either an OS integration like SetEventOnCompletion(),
@@ -61,13 +56,15 @@ class SystemEventReceiver final : NonCopyable {
     static SystemEventReceiver CreateAlreadySignaled();
 
     SystemEventReceiver() = default;
+    explicit SystemEventReceiver(SystemHandle primitive);
     SystemEventReceiver(SystemEventReceiver&&) = default;
     SystemEventReceiver& operator=(SystemEventReceiver&&) = default;
 
   private:
-    friend bool WaitAnySystemEvent(size_t, TrackedFutureWaitInfo*, Nanoseconds);
+    template <typename It>
+    friend bool WaitAnySystemEvent(It begin, It end, Nanoseconds timeout);
     friend std::pair<SystemEventPipeSender, SystemEventReceiver> CreateSystemEventPipe();
-    SystemEventPrimitive mPrimitive;
+    SystemHandle mPrimitive;
 };
 
 // See CreateSystemEventPipe.
@@ -78,18 +75,13 @@ class SystemEventPipeSender final : NonCopyable {
     SystemEventPipeSender& operator=(SystemEventPipeSender&&) = default;
     ~SystemEventPipeSender();
 
+    bool IsValid() const;
     void Signal() &&;
 
   private:
     friend std::pair<SystemEventPipeSender, SystemEventReceiver> CreateSystemEventPipe();
-    SystemEventPrimitive mPrimitive;
+    SystemHandle mPrimitive;
 };
-
-// Implementation of WaitAny when backed by SystemEventReceiver.
-// Returns true if some future is now ready, false if not (it timed out).
-[[nodiscard]] bool WaitAnySystemEvent(size_t count,
-                                      TrackedFutureWaitInfo* futures,
-                                      Nanoseconds timeout);
 
 // CreateSystemEventPipe provides an SystemEventReceiver that can be signalled by Dawn code. This is
 // useful for queue completions on Metal (where Metal signals us by calling a callback) and for
@@ -109,6 +101,23 @@ class SystemEventPipeSender final : NonCopyable {
 // - On POSIX, SystemEventReceiver is a file descriptor (fd), so we can create one with pipe(), and
 //   signal it by write()ing into the pipe (to make it become readable, though we won't read() it).
 std::pair<SystemEventPipeSender, SystemEventReceiver> CreateSystemEventPipe();
+
+class SystemEvent : public RefCounted {
+  public:
+    bool IsSignaled() const;
+    void Signal();
+
+    // Lazily create a system event receiver. Immediately after this receiver
+    // is signaled, IsSignaled should always return true.
+    const SystemEventReceiver& GetOrCreateSystemEventReceiver();
+
+  private:
+    // mSignaled indicates whether the event has already been signaled.
+    // It is stored outside the mPipe mutex so its status can quickly be checked without
+    // acquiring a lock.
+    std::atomic<bool> mSignaled{false};
+    MutexProtected<std::optional<std::pair<SystemEventPipeSender, SystemEventReceiver>>> mPipe;
+};
 
 }  // namespace dawn::native
 

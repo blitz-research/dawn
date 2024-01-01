@@ -1,16 +1,29 @@
-// Copyright 2022 The Dawn Authors
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package expectations
 
@@ -44,7 +57,7 @@ import (
 // Note: Validate() should be called before attempting to update the
 // expectations. If Validate() returns errors, then Update() behaviour is
 // undefined.
-func (c *Content) Update(results result.List, testlist []query.Query) (Diagnostics, error) {
+func (c *Content) Update(results result.List, testlist []query.Query, verbose bool) (Diagnostics, error) {
 	// Make a copy of the results. This code mutates the list.
 	results = append(result.List{}, results...)
 
@@ -63,6 +76,13 @@ func (c *Content) Update(results result.List, testlist []query.Query) (Diagnosti
 	// Scan the full result list to obtain all the test variants
 	// (unique tag combinations).
 	variants := results.Variants()
+
+	if verbose {
+		fmt.Println("result variants:")
+		for i, tags := range variants {
+			fmt.Printf(" (%.2d) %v\n", i, tags.List())
+		}
+	}
 
 	// Add 'consumed' results for tests that were skipped.
 	// This ensures that skipped results are not included in reduced trees.
@@ -501,7 +521,8 @@ func (u *updater) addNewExpectations() error {
 		}
 
 		// Build a tree from the results matching the given variant.
-		tree, err := u.qt.results.FilterByVariant(variant).StatusTree()
+		filtered := u.qt.results.FilterByVariant(variant)
+		tree, err := filtered.StatusTree()
 		if err != nil {
 			return fmt.Errorf("while building tree for tags '%v': %w", variant, err)
 		}
@@ -509,8 +530,10 @@ func (u *updater) addNewExpectations() error {
 		tree.Reduce(treeReducer)
 		// Add all the reduced leaf nodes to 'roots'.
 		for _, qd := range tree.List() {
-			// Use Split() to ensure that only the leaves have data (true) in the tree
-			roots.Split(qd.Query, true)
+			if qd.Data != result.Pass {
+				// Use Split() to ensure that only the leaves have data (true) in the tree
+				roots.Split(qd.Query, true)
+			}
 		}
 	}
 
@@ -584,7 +607,7 @@ func (u *updater) expectationsForRoot(
 	// Using the full list of unfiltered tests, generate the minimal set of
 	// variants (tags) that uniquely classify the results with differing status.
 	minimalVariants := u.
-		cleanupTags(results).
+		removeUnknownTags(results).
 		MinimalVariantTags(u.tagSets)
 
 	// For each minimized variant...
@@ -646,7 +669,7 @@ func (u *updater) resultsToExpectations(results result.List, bug, comment string
 		}
 		out[i] = Expectation{
 			Bug:     bug,
-			Tags:    r.Tags,
+			Tags:    u.in.Tags.RemoveLowerPriorityTags(r.Tags),
 			Query:   q,
 			Status:  []string{string(r.Status)},
 			Comment: comment,
@@ -656,32 +679,17 @@ func (u *updater) resultsToExpectations(results result.List, bug, comment string
 	return out
 }
 
-// cleanupTags returns a copy of the provided results with:
-//   - All tags not found in the expectations list removed
-//   - All but the highest priority tag for any tag-set.
-//     The tag sets are defined by the `BEGIN TAG HEADER` / `END TAG HEADER`
-//     section at the top of the expectations file.
-func (u *updater) cleanupTags(results result.List) result.List {
+// removeUnknownTags returns a copy of the provided results with all tags not
+// found in the expectations list removed
+func (u *updater) removeUnknownTags(results result.List) result.List {
 	return results.TransformTags(func(t result.Tags) result.Tags {
-		type HighestPrioritySetTag struct {
-			tag      string
-			priority int
-		}
-		// Set name to highest priority tag for that set
-		best := map[string]HighestPrioritySetTag{}
+		filtered := result.NewTags()
 		for tag := range t {
-			sp, ok := u.in.Tags.ByName[tag]
-			if ok {
-				if set := best[sp.Set]; sp.Priority >= set.priority {
-					best[sp.Set] = HighestPrioritySetTag{tag, sp.Priority}
-				}
+			if _, ok := u.in.Tags.ByName[tag]; ok {
+				filtered.Add(tag)
 			}
 		}
-		t = result.NewTags()
-		for _, ts := range best {
-			t.Add(ts.tag)
-		}
-		return t
+		return filtered
 	})
 }
 

@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/direct_variable_access.h"
 
@@ -40,7 +53,7 @@ struct RootModuleScopeVar {
     Var* var = nullptr;
 
     /// @return a hash value for this object
-    uint64_t HashCode() const { return Hash(var); }
+    size_t HashCode() const { return Hash(var); }
 
     /// Inequality operator
     bool operator!=(const RootModuleScopeVar& other) const { return var != other.var; }
@@ -53,7 +66,7 @@ struct RootPtrParameter {
     const type::Pointer* type = nullptr;
 
     /// @return a hash value for this object
-    uint64_t HashCode() const { return Hash(type); }
+    size_t HashCode() const { return Hash(type); }
 
     /// Inequality operator
     bool operator!=(const RootPtrParameter& other) const { return type != other.type; }
@@ -68,7 +81,7 @@ struct MemberAccess {
     const type::StructMember* member;
 
     /// @return a hash member for this object
-    uint64_t HashCode() const { return Hash(member); }
+    size_t HashCode() const { return Hash(member); }
 
     /// Inequality operator
     bool operator!=(const MemberAccess& other) const { return member != other.member; }
@@ -78,7 +91,7 @@ struct MemberAccess {
 /// The ordered list of indices is passed by parameter.
 struct IndexAccess {
     /// @return a hash value for this object
-    uint64_t HashCode() const { return 42; }
+    size_t HashCode() const { return 42; }
 
     /// Inequality operator
     bool operator!=(const IndexAccess&) const { return false; }
@@ -153,7 +166,7 @@ struct AccessShape {
     }
 
     /// @return a hash value for this object
-    uint64_t HashCode() const { return Hash(root, ops); }
+    size_t HashCode() const { return Hash(root, ops); }
 
     /// Inequality operator
     bool operator!=(const AccessShape& other) const {
@@ -226,7 +239,8 @@ struct State {
     /// Process the module.
     void Process() {
         // Make a copy of all the functions in the IR module.
-        auto input_fns = ir.functions;
+        // Use transform to convert from ConstPropagatingPtr<Function> to Function*
+        auto input_fns = Transform<8>(ir.functions.Slice(), [](auto& fn) { return fn.Get(); });
 
         // Populate #need_forking
         GatherFnsThatNeedForking();
@@ -245,7 +259,7 @@ struct State {
     /// Populates #need_forking with all the functions that have pointer parameters which need
     /// transforming. These functions will be replaced with variants based on the access shapes.
     void GatherFnsThatNeedForking() {
-        for (auto* fn : ir.functions) {
+        for (auto& fn : ir.functions) {
             for (auto* param : fn->Params()) {
                 if (ParamNeedsTransforming(param)) {
                     need_forking.Add(fn, fn_info_allocator.Create());
@@ -258,7 +272,7 @@ struct State {
     /// Adjusts the calls of all the functions that make calls to #need_forking, which aren't in
     /// #need_forking themselves. This populates #variants_to_build with the called functions.
     void BuildRootFns() {
-        for (auto* fn : ir.functions) {
+        for (auto& fn : ir.functions) {
             if (!need_forking.Contains(fn)) {
                 TransformCalls(fn);
             }
@@ -317,7 +331,7 @@ struct State {
                         if (size_t array_len = chain.indices.Length(); array_len > 0) {
                             auto* array = ty.array(ty.u32(), static_cast<uint32_t>(array_len));
                             auto* indices = b.Construct(array, std::move(chain.indices));
-                            new_args.Push(indices->Result());
+                            new_args.Push(indices->Result(0));
                         }
                         // Record the parameter shape for the variant's signature.
                         signature.Add(i, chain.shape);
@@ -396,7 +410,7 @@ struct State {
                 value,  //
                 [&](InstructionResult* res) {
                     // value was emitted by an instruction
-                    auto* inst = res->Source();
+                    auto* inst = res->Instruction();
                     return tint::Switch(
                         inst,
                         [&](Access* access) {
@@ -423,7 +437,7 @@ struct State {
                                 // Array or matrix access.
                                 // Convert index to u32 if it isn't already.
                                 if (!idx->Type()->Is<type::U32>()) {
-                                    idx = b.Convert(ty.u32(), idx)->Result();
+                                    idx = b.Convert(ty.u32(), idx)->Result(0);
                                 }
 
                                 ops.Push(IndexAccess{});
@@ -442,7 +456,7 @@ struct State {
                                 chain.indices.Push(idx);
                             }
 
-                            TINT_ASSERT(obj_ty == access->Result()->Type()->UnwrapPtr());
+                            TINT_ASSERT(obj_ty == access->Result(0)->Type()->UnwrapPtr());
                             return access->Object();
                         },
                         [&](Var* var) {
@@ -453,29 +467,21 @@ struct State {
                             } else {
                                 // Root pointer is a function-scope 'var'
                                 chain.shape.root =
-                                    RootPtrParameter{var->Result()->Type()->As<type::Pointer>()};
+                                    RootPtrParameter{var->Result(0)->Type()->As<type::Pointer>()};
                             }
-                            chain.root_ptr = var->Result();
+                            chain.root_ptr = var->Result(0);
                             return nullptr;
                         },
-                        [&](Let* let) { return let->Value(); },
-                        [&](Default) {
-                            TINT_ICE() << "unhandled instruction type: "
-                                       << (inst ? inst->TypeInfo().name : "<null>");
-                            return nullptr;
-                        });
+                        [&](Let* let) { return let->Value(); },  //
+                        TINT_ICE_ON_NO_MATCH);
                 },
                 [&](FunctionParam* param) {
                     // Root pointer is a parameter of the caller
                     chain.shape.root = RootPtrParameter{param->Type()->As<type::Pointer>()};
                     chain.root_ptr = param;
                     return nullptr;
-                },
-                [&](Default) {
-                    TINT_ICE() << "unhandled value type: "
-                               << (value ? value->TypeInfo().name : "<null>");
-                    return nullptr;
-                });
+                },  //
+                TINT_ICE_ON_NO_MATCH);
         }
 
         // Reverse the chain's ops and indices. See above for why.
@@ -519,7 +525,7 @@ struct State {
                     root_ptr = root_ptr_param;
                 } else if (auto* global = std::get_if<RootModuleScopeVar>(&shape->root)) {
                     // Root pointer is a module-scope var
-                    root_ptr = global->var->Result();
+                    root_ptr = global->var->Result(0);
                 } else {
                     TINT_ICE() << "unhandled AccessShape root variant";
                 }
@@ -550,12 +556,12 @@ struct State {
                         return b.Constant(u32(m->member->Index()));
                     }
                     auto* access = b.Access(ty.u32(), indices_param, u32(index_index++));
-                    return access->Result();
+                    return access->Result(0);
                 });
                 auto* access = b.Access(old_param->Type(), root_ptr, std::move(chain));
 
                 // Replace the now removed parameter value with the access instruction
-                old_param->ReplaceAllUsesWith(access->Result());
+                old_param->ReplaceAllUsesWith(access->Result(0));
                 old_param->Destroy();
             }
 
@@ -569,7 +575,7 @@ struct State {
     /// @param input_fns the content of #ir.functions before transformation began.
     void EmitFunctions(VectorRef<Function*> input_fns) {
         ir.functions.Clear();
-        for (auto* fn : input_fns) {
+        for (auto& fn : input_fns) {
             if (auto info = need_forking.Get(fn)) {
                 fn->Destroy();
                 for (auto variant : (*info)->ordered_variants) {
@@ -643,7 +649,7 @@ struct State {
                 return;  // Only instructions can be removed.
             }
             value = tint::Switch(
-                inst_res->Source(),  //
+                inst_res->Instruction(),  //
                 [&](Access* access) {
                     TINT_DEFER(access->Destroy());
                     return access->Object();

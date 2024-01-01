@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/BindGroup.h"
 
@@ -166,6 +179,14 @@ MaybeError ValidateTextureBinding(DeviceBase* device,
                             "Dimension (%s) of %s doesn't match the expected dimension (%s).",
                             entry.textureView->GetDimension(), entry.textureView,
                             bindingInfo.texture.viewDimension);
+
+            DAWN_INVALID_IF(device->IsCompatibilityMode() &&
+                                entry.textureView->GetDimension() !=
+                                    texture->GetCompatibilityTextureBindingViewDimension(),
+                            "Dimension (%s) of %s must match textureBindingViewDimension (%s) of "
+                            "%s in compatibility mode.",
+                            entry.textureView->GetDimension(), entry.textureView,
+                            texture->GetCompatibilityTextureBindingViewDimension(), texture);
             break;
         }
         case BindingInfoType::StorageTexture: {
@@ -253,9 +274,6 @@ MaybeError ValidateExternalTextureBinding(
                     "External texture binding entry %u is not present in the bind group layout.",
                     entry.binding);
 
-    DAWN_TRY(ValidateSingleSType(externalTextureBindingEntry->nextInChain,
-                                 wgpu::SType::ExternalTextureBindingEntry));
-
     DAWN_TRY(device->ValidateObject(externalTextureBindingEntry->externalTexture));
 
     return {};
@@ -317,9 +335,9 @@ MaybeError ValidateBindGroupDescriptor(DeviceBase* device,
         // TODO(dawn:1293): Store external textures in
         // BindGroupLayoutBase::BindingDataPointers::bindings so checking external textures can
         // be moved in the switch below.
-        const ExternalTextureBindingEntry* externalTextureBindingEntry = nullptr;
-        FindInChain(entry.nextInChain, &externalTextureBindingEntry);
-        if (externalTextureBindingEntry != nullptr) {
+        UnpackedPtr<BindGroupEntry> unpacked;
+        DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(&entry));
+        if (auto* externalTextureBindingEntry = unpacked.Get<ExternalTextureBindingEntry>()) {
             DAWN_TRY(
                 ValidateExternalTextureBinding(device, entry, externalTextureBindingEntry,
                                                layout->GetExternalTextureBindingExpansionMap()));
@@ -389,34 +407,34 @@ BindGroupBase::BindGroupBase(DeviceBase* device,
     }
 
     for (uint32_t i = 0; i < descriptor->entryCount; ++i) {
-        const BindGroupEntry& entry = descriptor->entries[i];
+        UnpackedPtr<BindGroupEntry> entry = Unpack(&descriptor->entries[i]);
 
-        BindingIndex bindingIndex = layout->GetBindingIndex(BindingNumber(entry.binding));
+        BindingIndex bindingIndex = layout->GetBindingIndex(BindingNumber(entry->binding));
         DAWN_ASSERT(bindingIndex < layout->GetBindingCount());
 
         // Only a single binding type should be set, so once we found it we can skip to the
         // next loop iteration.
 
-        if (entry.buffer != nullptr) {
+        if (entry->buffer != nullptr) {
             DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
-            mBindingData.bindings[bindingIndex] = entry.buffer;
-            mBindingData.bufferData[bindingIndex].offset = entry.offset;
-            uint64_t bufferSize = (entry.size == wgpu::kWholeSize)
-                                      ? entry.buffer->GetSize() - entry.offset
-                                      : entry.size;
+            mBindingData.bindings[bindingIndex] = entry->buffer;
+            mBindingData.bufferData[bindingIndex].offset = entry->offset;
+            uint64_t bufferSize = (entry->size == wgpu::kWholeSize)
+                                      ? entry->buffer->GetSize() - entry->offset
+                                      : entry->size;
             mBindingData.bufferData[bindingIndex].size = bufferSize;
             continue;
         }
 
-        if (entry.textureView != nullptr) {
+        if (entry->textureView != nullptr) {
             DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
-            mBindingData.bindings[bindingIndex] = entry.textureView;
+            mBindingData.bindings[bindingIndex] = entry->textureView;
             continue;
         }
 
-        if (entry.sampler != nullptr) {
+        if (entry->sampler != nullptr) {
             DAWN_ASSERT(mBindingData.bindings[bindingIndex] == nullptr);
-            mBindingData.bindings[bindingIndex] = entry.sampler;
+            mBindingData.bindings[bindingIndex] = entry->sampler;
             continue;
         }
 
@@ -424,15 +442,13 @@ BindGroupBase::BindGroupBase(DeviceBase* device,
         // external texture's contents. New binding locations previously determined in the bind
         // group layout are created in this bind group and filled with the external texture's
         // underlying resources.
-        const ExternalTextureBindingEntry* externalTextureBindingEntry = nullptr;
-        FindInChain(entry.nextInChain, &externalTextureBindingEntry);
-        if (externalTextureBindingEntry != nullptr) {
+        if (auto* externalTextureBindingEntry = entry.Get<ExternalTextureBindingEntry>()) {
             mBoundExternalTextures.push_back(externalTextureBindingEntry->externalTexture);
 
             ExternalTextureBindingExpansionMap expansions =
                 layout->GetExternalTextureBindingExpansionMap();
             ExternalTextureBindingExpansionMap::iterator it =
-                expansions.find(BindingNumber(entry.binding));
+                expansions.find(BindingNumber(entry->binding));
 
             DAWN_ASSERT(it != expansions.end());
 

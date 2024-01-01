@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/glsl/writer/ast_raise/combine_samplers.h"
 
@@ -33,8 +46,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::glsl::writer::CombineSamplers::BindingInfo);
 namespace {
 
 bool IsGlobal(const tint::sem::VariablePair& pair) {
-    return pair.first->Is<tint::sem::GlobalVariable>() &&
-           (!pair.second || pair.second->Is<tint::sem::GlobalVariable>());
+    return (!pair.first || tint::Is<tint::sem::GlobalVariable>(pair.first)) &&
+           (!pair.second || tint::Is<tint::sem::GlobalVariable>(pair.second));
 }
 
 }  // namespace
@@ -104,9 +117,11 @@ struct CombineSamplers::State {
                                               const sem::Variable* sampler_var,
                                               std::string name) {
         SamplerTexturePair bp_pair;
-        bp_pair.texture_binding_point = *texture_var->As<sem::GlobalVariable>()->BindingPoint();
+        bp_pair.texture_binding_point =
+            texture_var ? *texture_var->As<sem::GlobalVariable>()->Attributes().binding_point
+                        : binding_info->placeholder_binding_point;
         bp_pair.sampler_binding_point =
-            sampler_var ? *sampler_var->As<sem::GlobalVariable>()->BindingPoint()
+            sampler_var ? *sampler_var->As<sem::GlobalVariable>()->Attributes().binding_point
                         : binding_info->placeholder_binding_point;
         auto it = binding_info->binding_map.find(bp_pair);
         if (it != binding_info->binding_map.end()) {
@@ -132,16 +147,24 @@ struct CombineSamplers::State {
     /// Creates Identifier for a given texture and sampler variable pair.
     /// Depth textures with no samplers are turned into the corresponding
     /// f32 texture (e.g., texture_depth_2d -> texture_2d<f32>).
+    /// Either texture or sampler could be nullptr, but cannot be nullptr at the same time.
+    /// The texture can only be nullptr, when the sampler is a dangling function parameter.
     /// @param texture the texture variable of interest
     /// @param sampler the texture variable of interest
     /// @returns the newly-created type
     ast::Type CreateCombinedASTTypeFor(const sem::Variable* texture, const sem::Variable* sampler) {
-        const core::type::Type* texture_type = texture->Type()->UnwrapRef();
-        const core::type::DepthTexture* depth = texture_type->As<core::type::DepthTexture>();
-        if (depth && !sampler) {
-            return ctx.dst->ty.sampled_texture(depth->dim(), ctx.dst->ty.f32());
+        if (texture) {
+            const core::type::Type* texture_type = texture->Type()->UnwrapRef();
+            const core::type::DepthTexture* depth = texture_type->As<core::type::DepthTexture>();
+            if (depth && !sampler) {
+                return ctx.dst->ty.sampled_texture(depth->dim(), ctx.dst->ty.f32());
+            } else {
+                return CreateASTTypeFor(ctx, texture_type);
+            }
         } else {
-            return CreateASTTypeFor(ctx, texture_type);
+            TINT_ASSERT(sampler != nullptr);
+            const core::type::Type* sampler_type = sampler->Type()->UnwrapRef();
+            return CreateASTTypeFor(ctx, sampler_type);
         }
     }
 
@@ -155,9 +178,15 @@ struct CombineSamplers::State {
                     tint::Vector<const ast::Parameter*, 8>* params) {
         const sem::Variable* texture_var = pair.first;
         const sem::Variable* sampler_var = pair.second;
-        std::string name = texture_var->Declaration()->name->symbol.Name();
+        std::string name = "";
+        if (texture_var) {
+            name = texture_var->Declaration()->name->symbol.Name();
+        }
         if (sampler_var) {
-            name += "_" + sampler_var->Declaration()->name->symbol.Name();
+            if (!name.empty()) {
+                name += "_";
+            }
+            name += sampler_var->Declaration()->name->symbol.Name();
         }
         if (IsGlobal(pair)) {
             // Both texture and sampler are global; add a new global variable
@@ -203,7 +232,7 @@ struct CombineSamplers::State {
             if (tint::IsAnyOf<core::type::Texture, core::type::Sampler>(type) &&
                 !type->Is<core::type::StorageTexture>()) {
                 ctx.Remove(ctx.src->AST().GlobalDeclarations(), global);
-            } else if (auto binding_point = global_sem->BindingPoint()) {
+            } else if (auto binding_point = global_sem->Attributes().binding_point) {
                 if (binding_point->group == 0 && binding_point->binding == 0) {
                     auto* attribute =
                         ctx.dst->Disable(ast::DisabledValidation::kBindingPointCollision);
@@ -329,32 +358,17 @@ struct CombineSamplers::State {
                 }
                 // Replace all function calls.
                 if (auto* callee = call->Target()->As<sem::Function>()) {
-                    for (auto pair : callee->TextureSamplerPairs()) {
-                        // Global pairs used by the callee do not require a function
-                        // parameter at the call site.
-                        if (IsGlobal(pair)) {
-                            continue;
-                        }
-                        // Texture-only pairs do not require a function parameter if they've been
-                        // replaced by a real pair.
-                        if (!pair.second && FindFullTextureSamplerPair(pair.first, callee)) {
-                            continue;
-                        }
-
-                        const sem::Variable* texture_var = pair.first;
-                        const sem::Variable* sampler_var = pair.second;
-                        if (auto* param = texture_var->As<sem::Parameter>()) {
+                    auto make_arg = [&](const sem::Variable* texture_var,
+                                        const sem::Variable* sampler_var) {
+                        if (auto* param = tint::As<sem::Parameter>(texture_var)) {
                             const sem::ValueExpression* texture = call->Arguments()[param->Index()];
                             texture_var =
                                 texture->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                         }
-                        if (sampler_var) {
-                            if (auto* param = sampler_var->As<sem::Parameter>()) {
-                                const sem::ValueExpression* sampler =
-                                    call->Arguments()[param->Index()];
-                                sampler_var =
-                                    sampler->UnwrapLoad()->As<sem::VariableUser>()->Variable();
-                            }
+                        if (auto* param = tint::As<sem::Parameter>(sampler_var)) {
+                            const sem::ValueExpression* sampler = call->Arguments()[param->Index()];
+                            sampler_var =
+                                sampler->UnwrapLoad()->As<sem::VariableUser>()->Variable();
                         }
                         sem::VariablePair new_pair(texture_var, sampler_var);
                         // If both texture and sampler are (now) global, pass that
@@ -365,8 +379,37 @@ struct CombineSamplers::State {
                                 ? global_combined_texture_samplers_[new_pair]
                                 : function_combined_texture_samplers_[call->Stmt()->Function()]
                                                                      [new_pair];
-                        auto* arg = ctx.dst->Expr(var->name->symbol);
-                        args.Push(arg);
+                        return ctx.dst->Expr(var->name->symbol);
+                    };
+
+                    for (auto pair : callee->TextureSamplerPairs()) {
+                        if (!pair.second) {
+                            continue;
+                        }
+                        // Global pairs used by the callee do not require a function
+                        // parameter at the call site.
+                        if (IsGlobal(pair)) {
+                            continue;
+                        }
+
+                        args.Push(make_arg(pair.first, pair.second));
+                    }
+                    for (auto pair : callee->TextureSamplerPairs()) {
+                        if (pair.second) {
+                            continue;
+                        }
+                        // Global pairs used by the callee do not require a function
+                        // parameter at the call site.
+                        if (IsGlobal(pair)) {
+                            continue;
+                        }
+                        // Texture-only pairs do not require a function parameter if they've been
+                        // replaced by a real pair.
+                        if (FindFullTextureSamplerPair(pair.first, callee)) {
+                            continue;
+                        }
+
+                        args.Push(make_arg(pair.first, nullptr));
                     }
                     // Append all of the remaining non-texture and non-sampler
                     // parameters.

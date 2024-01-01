@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/vulkan/BufferVk.h"
 
@@ -36,8 +49,6 @@
 namespace dawn::native::vulkan {
 
 namespace {
-
-constexpr wgpu::BufferUsage kMapUsages = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite;
 
 VkBufferUsageFlags VulkanBufferUsage(wgpu::BufferUsage usage) {
     VkBufferUsageFlags flags = 0;
@@ -70,7 +81,7 @@ VkBufferUsageFlags VulkanBufferUsage(wgpu::BufferUsage usage) {
     return flags;
 }
 
-VkPipelineStageFlags VulkanPipelineStage(wgpu::BufferUsage usage) {
+VkPipelineStageFlags VulkanPipelineStage(wgpu::BufferUsage usage, wgpu::ShaderStage shaderStage) {
     VkPipelineStageFlags flags = 0;
 
     if (usage & kMappableBufferUsages) {
@@ -82,10 +93,16 @@ VkPipelineStageFlags VulkanPipelineStage(wgpu::BufferUsage usage) {
     if (usage & (wgpu::BufferUsage::Index | wgpu::BufferUsage::Vertex)) {
         flags |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
     }
-    if (usage & (wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage | kInternalStorageBuffer |
-                 kReadOnlyStorageBuffer)) {
-        flags |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    if (usage & kShaderBufferUsages) {
+        if (shaderStage & wgpu::ShaderStage::Vertex) {
+            flags |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+        }
+        if (shaderStage & wgpu::ShaderStage::Fragment) {
+            flags |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        }
+        if (shaderStage & wgpu::ShaderStage::Compute) {
+            flags |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        }
     }
     if (usage & wgpu::BufferUsage::Indirect) {
         flags |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
@@ -140,13 +157,11 @@ VkAccessFlags VulkanAccessFlags(wgpu::BufferUsage usage) {
 }  // namespace
 
 // static
-ResultOrError<Ref<Buffer>> Buffer::Create(Device* device, const BufferDescriptor* descriptor) {
+ResultOrError<Ref<Buffer>> Buffer::Create(Device* device,
+                                          const UnpackedPtr<BufferDescriptor>& descriptor) {
     Ref<Buffer> buffer = AcquireRef(new Buffer(device, descriptor));
 
-    const BufferHostMappedPointer* hostMappedDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &hostMappedDesc);
-
-    if (hostMappedDesc != nullptr) {
+    if (auto* hostMappedDesc = descriptor.Get<BufferHostMappedPointer>()) {
         DAWN_TRY(buffer->InitializeHostMapped(hostMappedDesc));
     } else {
         DAWN_TRY(buffer->Initialize(descriptor->mappedAtCreation));
@@ -355,12 +370,13 @@ VkBuffer Buffer::GetHandle() const {
 }
 
 void Buffer::TransitionUsageNow(CommandRecordingContext* recordingContext,
-                                wgpu::BufferUsage usage) {
+                                wgpu::BufferUsage usage,
+                                wgpu::ShaderStage shaderStage) {
     VkBufferMemoryBarrier barrier;
     VkPipelineStageFlags srcStages = 0;
     VkPipelineStageFlags dstStages = 0;
 
-    if (TrackUsageAndGetResourceBarrier(recordingContext, usage, &barrier, &srcStages,
+    if (TrackUsageAndGetResourceBarrier(recordingContext, usage, shaderStage, &barrier, &srcStages,
                                         &dstStages)) {
         DAWN_ASSERT(srcStages != 0 && dstStages != 0);
         ToBackend(GetDevice())
@@ -371,56 +387,109 @@ void Buffer::TransitionUsageNow(CommandRecordingContext* recordingContext,
 
 bool Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingContext,
                                              wgpu::BufferUsage usage,
+                                             wgpu::ShaderStage shaderStage,
                                              VkBufferMemoryBarrier* barrier,
                                              VkPipelineStageFlags* srcStages,
                                              VkPipelineStageFlags* dstStages) {
-    if (usage & kMapUsages) {
-        // The pipeline barrier isn't needed, the buffer can be mapped immediately.
-        if (mLastUsage == usage) {
-            return false;
-        }
+    if (shaderStage == wgpu::ShaderStage::None) {
+        // If the buffer isn't used in any shader stages, ignore shader usages. Eg. ignore a uniform
+        // buffer that isn't actually read in any shader.
+        usage &= ~kShaderBufferUsages;
+    }
 
-        // Special-case for the initial transition: the pipeline barrier isn't needed.
-        if (mLastUsage == wgpu::BufferUsage::None) {
-            mLastUsage = usage;
-            return false;
-        }
-
-        // For other cases, a pipeline barrier is needed, so mark the buffer is used within the
-        // pending commands.
-        MarkUsedInPendingCommands();
-    } else {
+    const bool isMapUsage = usage & kMappableBufferUsages;
+    if (!isMapUsage) {
         // Request non CPU usage, so assume the buffer will be used in pending commands.
         MarkUsedInPendingCommands();
+    }
 
-        // If the buffer is mappable and the requested usage is not map usage, we need add it into
-        // mappableBuffersForEagerTransition, so the buffer can be transitioned backed to map
+    if (!isMapUsage && (GetUsage() & kMappableBufferUsages)) {
+        // The buffer is mappable and the requested usage is not map usage, we need to add it
+        // into mappableBuffersForEagerTransition, so the buffer can be transitioned back to map
         // usages at end of the submit.
-        if (GetUsage() & kMapUsages) {
-            recordingContext->mappableBuffersForEagerTransition.insert(this);
+        recordingContext->mappableBuffersForEagerTransition.insert(this);
+    }
+
+    const bool readOnly = IsSubset(usage, kReadOnlyBufferUsages);
+
+    if (readOnly) {
+        if ((shaderStage & wgpu::ShaderStage::Fragment) &&
+            (mReadShaderStages & wgpu::ShaderStage::Vertex)) {
+            // There is an implicit vertex->fragment dependency, so if the vertex stage has already
+            // waited, there is no need for fragment to wait. Add the fragment usage so we know to
+            // wait for it before the next write.
+            mReadShaderStages |= wgpu::ShaderStage::Fragment;
         }
 
-        // Special-case for the initial transition: Vulkan doesn't allow access flags to be 0.
-        if (mLastUsage == wgpu::BufferUsage::None) {
-            mLastUsage = usage;
+        if (IsSubset(usage, mReadUsage) && IsSubset(shaderStage, mReadShaderStages)) {
+            // This usage and shader stage has already waited for the last write.
+            // No need for another barrier.
             return false;
         }
 
-        bool lastIncludesTarget = IsSubset(usage, mLastUsage);
-        bool lastReadOnly = IsSubset(mLastUsage, kReadOnlyBufferUsages);
+        if (usage & kReadOnlyShaderBufferUsages) {
+            // Pre-emptively transition to all read-only shader buffer usages if one is used to
+            // avoid unnecessary barriers later.
+            usage |= GetUsage() & kReadOnlyShaderBufferUsages;
+        }
 
-        // We can skip transitions to already current read-only usages.
-        if (lastIncludesTarget && lastReadOnly) {
+        mReadUsage |= usage;
+        mReadShaderStages |= shaderStage;
+
+        if (mLastWriteUsage == wgpu::BufferUsage::None) {
+            // Read dependency with no prior writes. No barrier needed.
+            return false;
+        }
+
+        // Write -> read barrier.
+        *srcStages |= VulkanPipelineStage(mLastWriteUsage, mLastWriteShaderStage);
+        barrier->srcAccessMask = VulkanAccessFlags(mLastWriteUsage);
+    } else {
+        bool skipBarrier = false;
+
+        // vkQueueSubmit does an implicit domain and visibility operation. For HOST_COHERENT
+        // memory, we can ignore read (host)->write barriers. However, we can't necessarily
+        // skip the barrier if mReadUsage == MapRead, as we could still need a barrier for
+        // the last write. Instead, pretend the last host read didn't happen.
+        mReadUsage &= ~wgpu::BufferUsage::MapRead;
+
+        if ((mLastWriteUsage == wgpu::BufferUsage::None && mReadUsage == wgpu::BufferUsage::None) ||
+            IsSubset(usage | mLastWriteUsage | mReadUsage, kMappableBufferUsages)) {
+            // The buffer has never been used before, or the dependency is map->map. We don't need a
+            // barrier.
+            skipBarrier = true;
+        } else if (mReadUsage == wgpu::BufferUsage::None) {
+            // No reads since the last write.
+            // Write -> write barrier.
+            *srcStages |= VulkanPipelineStage(mLastWriteUsage, mLastWriteShaderStage);
+            barrier->srcAccessMask = VulkanAccessFlags(mLastWriteUsage);
+        } else {
+            // Read -> write barrier.
+            *srcStages |= VulkanPipelineStage(mReadUsage, mReadShaderStages);
+            barrier->srcAccessMask = VulkanAccessFlags(mReadUsage);
+        }
+
+        mLastWriteUsage = usage;
+        mLastWriteShaderStage = shaderStage;
+
+        mReadUsage = wgpu::BufferUsage::None;
+        mReadShaderStages = wgpu::ShaderStage::None;
+
+        if (skipBarrier) {
             return false;
         }
     }
 
-    *srcStages |= VulkanPipelineStage(mLastUsage);
-    *dstStages |= VulkanPipelineStage(usage);
+    if (isMapUsage) {
+        // CPU usage, but a pipeline barrier is needed, so mark the buffer as used within the
+        // pending commands.
+        MarkUsedInPendingCommands();
+    }
+
+    *dstStages |= VulkanPipelineStage(usage, shaderStage);
 
     barrier->sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     barrier->pNext = nullptr;
-    barrier->srcAccessMask = VulkanAccessFlags(mLastUsage);
     barrier->dstAccessMask = VulkanAccessFlags(usage);
     barrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -428,8 +497,6 @@ bool Buffer::TrackUsageAndGetResourceBarrier(CommandRecordingContext* recordingC
     barrier->offset = 0;
     // VK_WHOLE_SIZE doesn't work on old Windows Intel Vulkan drivers, so we don't use it.
     barrier->size = GetAllocatedSize();
-
-    mLastUsage = usage;
 
     return true;
 }
@@ -567,13 +634,14 @@ void Buffer::TransitionMappableBuffersEagerly(const VulkanFunctions& fn,
 
     size_t originalBufferCount = buffers.size();
     for (const Ref<Buffer>& buffer : buffers) {
-        wgpu::BufferUsage mapUsage = buffer->GetUsage() & kMapUsages;
+        wgpu::BufferUsage mapUsage = buffer->GetUsage() & kMappableBufferUsages;
         DAWN_ASSERT(mapUsage == wgpu::BufferUsage::MapRead ||
                     mapUsage == wgpu::BufferUsage::MapWrite);
         VkBufferMemoryBarrier barrier;
 
-        if (buffer->TrackUsageAndGetResourceBarrier(recordingContext, mapUsage, &barrier,
-                                                    &srcStages, &dstStages)) {
+        if (buffer->TrackUsageAndGetResourceBarrier(recordingContext, mapUsage,
+                                                    wgpu::ShaderStage::None, &barrier, &srcStages,
+                                                    &dstStages)) {
             barriers.push_back(barrier);
         }
     }

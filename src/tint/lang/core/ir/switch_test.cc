@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/switch.h"
 
@@ -34,21 +47,19 @@ TEST_F(IR_SwitchTest, Usage) {
 TEST_F(IR_SwitchTest, Results) {
     auto* cond = b.Constant(true);
     auto* switch_ = b.Switch(cond);
-    EXPECT_FALSE(switch_->HasResults());
-    EXPECT_FALSE(switch_->HasMultiResults());
+    EXPECT_TRUE(switch_->Results().IsEmpty());
 }
 
 TEST_F(IR_SwitchTest, Parent) {
     auto* switch_ = b.Switch(1_i);
-    b.Case(switch_, {Switch::CaseSelector{nullptr}});
-    EXPECT_THAT(switch_->Cases().Front().Block()->Parent(), switch_);
+    b.DefaultCase(switch_);
+    EXPECT_THAT(switch_->Cases().Front().block->Parent(), switch_);
 }
 
 TEST_F(IR_SwitchTest, Clone) {
     auto* switch_ = b.Switch(1_i);
-    switch_->Cases().Push(
-        Switch::Case{{Switch::CaseSelector{}, Switch::CaseSelector{b.Constant(2_i)}}, b.Block()});
-    switch_->Cases().Push(Switch::Case{{Switch::CaseSelector{b.Constant(3_i)}}, b.Block()});
+    b.Case(switch_, {nullptr, b.Constant(2_i)});
+    b.Case(switch_, {b.Constant(3_i)});
 
     auto* new_switch = clone_ctx.Clone(switch_);
 
@@ -90,15 +101,38 @@ TEST_F(IR_SwitchTest, CloneWithExits) {
     {
         auto* switch_ = b.Switch(1_i);
 
-        auto* blk = b.Block();
+        auto* blk = b.Case(switch_, {b.Constant(3_i)});
         b.Append(blk, [&] { b.ExitSwitch(switch_); });
-        switch_->Cases().Push(Switch::Case{{Switch::CaseSelector{b.Constant(3_i)}}, blk});
         new_switch = clone_ctx.Clone(switch_);
     }
 
     auto& case_ = new_switch->Cases().Front();
     ASSERT_TRUE(case_.block->Front()->Is<ExitSwitch>());
     EXPECT_EQ(new_switch, case_.block->Front()->As<ExitSwitch>()->Switch());
+}
+
+TEST_F(IR_SwitchTest, CloneWithResults) {
+    Switch* new_switch = nullptr;
+    auto* r0 = b.InstructionResult(ty.i32());
+    auto* r1 = b.InstructionResult(ty.f32());
+    {
+        auto* switch_ = b.Switch(1_i);
+        switch_->SetResults(Vector{r0, r1});
+
+        auto* blk = b.Case(switch_, Vector{b.Constant(3_i)});
+        b.Append(blk, [&] { b.ExitSwitch(switch_, b.Constant(42_i), b.Constant(42_f)); });
+        new_switch = clone_ctx.Clone(switch_);
+    }
+
+    ASSERT_EQ(2u, new_switch->Results().Length());
+    auto* new_r0 = new_switch->Results()[0]->As<InstructionResult>();
+    ASSERT_NE(new_r0, nullptr);
+    ASSERT_NE(new_r0, r0);
+    EXPECT_EQ(new_r0->Type(), ty.i32());
+    auto* new_r1 = new_switch->Results()[1]->As<InstructionResult>();
+    ASSERT_NE(new_r1, nullptr);
+    ASSERT_NE(new_r1, r1);
+    EXPECT_EQ(new_r1->Type(), ty.f32());
 }
 
 }  // namespace

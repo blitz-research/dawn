@@ -1,21 +1,36 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package build
 
 import (
 	"strings"
+
+	"dawn.googlesource.com/dawn/tools/src/fileutils"
 )
 
 // TargetKind is an enumerator of target kinds
@@ -24,6 +39,8 @@ type TargetKind string
 const (
 	// A library target, used for production code.
 	targetLib TargetKind = "lib"
+	// A library target generated from a proto file, used for production code.
+	targetProto TargetKind = "proto"
 	// A library target, used for test binaries.
 	targetTest TargetKind = "test"
 	// A library target, used for benchmark binaries.
@@ -45,13 +62,16 @@ const (
 // IsLib returns true if the TargetKind is 'lib'
 func (k TargetKind) IsLib() bool { return k == targetLib }
 
+// IsProto returns true if the TargetKind is 'proto'
+func (k TargetKind) IsProto() bool { return k == targetProto }
+
 // IsTest returns true if the TargetKind is 'test'
 func (k TargetKind) IsTest() bool { return k == targetTest }
 
 // IsBench returns true if the TargetKind is 'bench'
 func (k TargetKind) IsBench() bool { return k == targetBench }
 
-// IsBench returns true if the TargetKind is 'fuzz'
+// IsFuzz returns true if the TargetKind is 'fuzz'
 func (k TargetKind) IsFuzz() bool { return k == targetFuzz }
 
 // IsCmd returns true if the TargetKind is 'cmd'
@@ -72,9 +92,10 @@ func (k TargetKind) IsTestOrTestCmd() bool { return k.IsTest() || k.IsTestCmd() 
 // IsBenchOrBenchCmd returns true if the TargetKind is 'bench' or 'bench_cmd'
 func (k TargetKind) IsBenchOrBenchCmd() bool { return k.IsBench() || k.IsBenchCmd() }
 
-// All the target kinds
+// AllTargetKinds is a list of all the target kinds
 var AllTargetKinds = []TargetKind{
 	targetLib,
+	targetProto,
 	targetTest,
 	targetBench,
 	targetFuzz,
@@ -86,10 +107,10 @@ var AllTargetKinds = []TargetKind{
 
 // targetKindFromFilename returns the target kind my pattern matching the filename
 func targetKindFromFilename(filename string) TargetKind {
-	noExt, ext := filename, ""
-	if i := strings.LastIndex(filename, "."); i >= 0 {
-		noExt = filename[:i]
-		ext = filename[i+1:]
+	noExt, ext := fileutils.SplitExt(filename)
+
+	if ext == "proto" {
+		return targetProto
 	}
 
 	if ext != "cc" && ext != "mm" && ext != "h" {
@@ -121,13 +142,13 @@ func targetKindFromFilename(filename string) TargetKind {
 func isValidDependency(from, to TargetKind) bool {
 	switch from {
 	case targetLib, targetCmd:
-		return to == targetLib
+		return to == targetLib || to == targetProto
 	case targetTest, targetTestCmd:
-		return to == targetLib || to == targetTest
+		return to == targetLib || to == targetProto || to == targetTest
 	case targetBench, targetBenchCmd:
-		return to == targetLib || to == targetBench
+		return to == targetLib || to == targetProto || to == targetBench
 	case targetFuzz, targetFuzzCmd:
-		return to == targetLib || to == targetFuzz
+		return to == targetLib || to == targetProto || to == targetFuzz
 	default:
 		return false
 	}

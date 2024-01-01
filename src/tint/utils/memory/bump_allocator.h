@@ -1,24 +1,40 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_TINT_UTILS_MEMORY_BUMP_ALLOCATOR_H_
 #define SRC_TINT_UTILS_MEMORY_BUMP_ALLOCATOR_H_
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstring>
 #include <utility>
 
+#include "src/tint/utils/macros/compiler.h"
 #include "src/tint/utils/math/math.h"
 #include "src/tint/utils/memory/bitcast.h"
 
@@ -27,16 +43,17 @@ namespace tint {
 /// A allocator for chunks of memory. The memory is owned by the BumpAllocator. When the
 /// BumpAllocator is freed all of the allocated memory is freed.
 class BumpAllocator {
-    static constexpr size_t kBlockSize = 64 * 1024;
-
-    /// Block is linked list of memory blocks.
+    /// BlockHeader is linked list of memory blocks.
     /// Blocks are allocated out of heap memory.
-    struct Block {
-        uint8_t data[kBlockSize];
-        Block* next;
+    struct BlockHeader {
+        BlockHeader* next;
     };
 
   public:
+    /// The default size for a block's data. Allocations can be greater than this, but smaller
+    /// allocations will use this size.
+    static constexpr size_t kDefaultBlockDataSize = 64 * 1024;
+
     /// Constructor
     BumpAllocator() = default;
 
@@ -61,38 +78,43 @@ class BumpAllocator {
     /// Allocates @p size_in_bytes from the current block, or from a newly allocated block if the
     /// current block is full.
     /// @param size_in_bytes the number of bytes to allocate
-    /// @returns the pointer to the allocated memory or |nullptr| if the memory can not be allocated
-    char* Allocate(size_t size_in_bytes) {
-        auto& block = data.block;
-        if (block.current_offset + size_in_bytes > kBlockSize) {
+    /// @returns the pointer to the allocated memory or `nullptr` if the memory can not be allocated
+    std::byte* Allocate(size_t size_in_bytes) {
+        if (TINT_UNLIKELY(data.current_offset + size_in_bytes < size_in_bytes)) {
+            return nullptr;  // integer overflow
+        }
+        if (data.current_offset + size_in_bytes > data.current_data_size) {
             // Allocate a new block from the heap
-            auto* prev_block = block.current;
-            block.current = new Block;
-            if (!block.current) {
+            auto* prev_block = data.current;
+            size_t data_size = std::max(size_in_bytes, kDefaultBlockDataSize);
+            data.current = Bitcast<BlockHeader*>(new (std::nothrow)
+                                                     std::byte[sizeof(BlockHeader) + data_size]);
+            if (TINT_UNLIKELY(!data.current)) {
                 return nullptr;  // out of memory
             }
-            block.current->next = nullptr;
-            block.current_offset = 0;
+            data.current->next = nullptr;
+            data.current_data_size = data_size;
+            data.current_offset = 0;
             if (prev_block) {
-                prev_block->next = block.current;
+                prev_block->next = data.current;
             } else {
-                block.root = block.current;
+                data.root = data.current;
             }
         }
 
-        auto* base = &block.current->data[0];
-        auto* ptr = reinterpret_cast<char*>(base + block.current_offset);
-        block.current_offset += size_in_bytes;
+        auto* base = Bitcast<std::byte*>(data.current) + sizeof(BlockHeader);
+        auto* ptr = base + data.current_offset;
+        data.current_offset += size_in_bytes;
         data.count++;
         return ptr;
     }
 
     /// Frees all allocations from the allocator.
     void Reset() {
-        auto* block = data.block.root;
+        auto* block = data.root;
         while (block != nullptr) {
             auto* next = block->next;
-            delete block;
+            delete[] Bitcast<std::byte*>(block);
             block = next;
         }
         data = {};
@@ -106,18 +128,16 @@ class BumpAllocator {
     BumpAllocator& operator=(const BumpAllocator&) = delete;
 
     struct {
-        struct {
-            /// The root block of the block linked list
-            Block* root = nullptr;
-            /// The current (end) block of the blocked linked list.
-            /// New allocations come from this block
-            Block* current = nullptr;
-            /// The byte offset in #current for the next allocation.
-            /// Initialized with kBlockSize so that the first allocation triggers a block
-            /// allocation.
-            size_t current_offset = kBlockSize;
-        } block;
-
+        /// The root block of the block linked list
+        BlockHeader* root = nullptr;
+        /// The current (end) block of the blocked linked list.
+        /// New allocations come from this block
+        BlockHeader* current = nullptr;
+        /// The byte offset in #current for the next allocation.
+        size_t current_offset = 0;
+        /// The size of the #current, excluding the header size
+        size_t current_data_size = 0;
+        /// Total number of allocations
         size_t count = 0;
     } data;
 };

@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_DAWN_NATIVE_SHADERMODULE_H_
 #define SRC_DAWN_NATIVE_SHADERMODULE_H_
@@ -107,20 +120,27 @@ struct ShaderModuleParseResult {
     std::unique_ptr<TintSource> tintSource;
 };
 
+struct ShaderModuleEntryPoint {
+    bool defaulted;
+    std::string name;
+};
+
 MaybeError ValidateAndParseShaderModule(DeviceBase* device,
-                                        const ShaderModuleDescriptor* descriptor,
+                                        const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
                                         ShaderModuleParseResult* parseResult,
                                         OwnedCompilationMessages* outMessages);
 MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
                                                    const EntryPointMetadata& entryPoint,
                                                    const PipelineLayoutBase* layout);
 
-// Return extent3D with workgroup size dimension info if it is valid
-// width = x, height = y, depthOrArrayLength = z
+// Return extent3D with workgroup size dimension info if it is valid. Also validate workgroup_size.x
+// is a multiple of maxSubgroupSizeForFullSubgroups if it holds a value.
+// width = x, height = y, depthOrArrayLength = z.
 ResultOrError<Extent3D> ValidateComputeStageWorkgroupSize(
     const tint::Program& program,
     const char* entryPointName,
-    const LimitsForCompilationRequest& limits);
+    const LimitsForCompilationRequest& limits,
+    std::optional<uint32_t> maxSubgroupSizeForFullSubgroups);
 
 RequiredBufferSizes ComputeRequiredBufferSizesForLayout(const EntryPointMetadata& entryPoint,
                                                         const PipelineLayoutBase* layout);
@@ -153,6 +173,9 @@ struct ShaderBindingInfo {
 
     BindingNumber binding;
     BindingInfoType bindingType;
+
+    // The variable name of the binding resource.
+    std::string name;
 
     BufferBindingLayout buffer;
     ShaderSamplerBindingInfo sampler;
@@ -194,20 +217,23 @@ struct EntryPointMetadata {
     std::vector<SamplerTexturePair> samplerTexturePairs;
 
     // The set of vertex attributes this entryPoint uses.
-    ityp::array<VertexAttributeLocation, VertexFormatBaseType, kMaxVertexAttributes>
-        vertexInputBaseTypes;
-    ityp::bitset<VertexAttributeLocation, kMaxVertexAttributes> usedVertexInputs;
+    PerVertexAttribute<VertexFormatBaseType> vertexInputBaseTypes;
+    VertexAttributeMask usedVertexInputs;
 
-    // An array to record the basic types (float, int and uint) of the fragment shader outputs.
-    struct FragmentOutputVariableInfo {
+    // An array to record the basic types (float, int and uint) of the fragment shader framebuffer
+    // input/outputs (inputs being "framebuffer fetch").
+    struct FragmentRenderAttachmentInfo {
         TextureComponentType baseType;
         uint8_t componentCount;
     };
-    ityp::array<ColorAttachmentIndex, FragmentOutputVariableInfo, kMaxColorAttachments>
-        fragmentOutputVariables;
-    ityp::bitset<ColorAttachmentIndex, kMaxColorAttachments> fragmentOutputsWritten;
+    PerColorAttachment<FragmentRenderAttachmentInfo> fragmentOutputVariables;
+    ColorAttachmentMask fragmentOutputMask;
+
+    PerColorAttachment<FragmentRenderAttachmentInfo> fragmentInputVariables;
+    ColorAttachmentMask fragmentInputMask;
 
     struct InterStageVariableInfo {
+        std::string name;
         InterStageComponentType baseType;
         uint32_t componentCount;
         InterpolationType interpolationType;
@@ -215,8 +241,8 @@ struct EntryPointMetadata {
     };
     // Now that we only support vertex and fragment stages, there can't be both inter-stage
     // inputs and outputs in one shader stage.
-    std::bitset<kMaxInterStageShaderVariables> usedInterStageVariables;
-    std::array<InterStageVariableInfo, kMaxInterStageShaderVariables> interStageVariables;
+    std::vector<bool> usedInterStageVariables;
+    std::vector<InterStageVariableInfo> interStageVariables;
     uint32_t totalInterStageShaderComponents;
 
     // The shader stage for this entry point.
@@ -267,9 +293,9 @@ class ShaderModuleBase : public ApiObjectBase,
                          public ContentLessObjectCacheable<ShaderModuleBase> {
   public:
     ShaderModuleBase(DeviceBase* device,
-                     const ShaderModuleDescriptor* descriptor,
+                     const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
                      ApiObjectBase::UntrackedByDeviceTag tag);
-    ShaderModuleBase(DeviceBase* device, const ShaderModuleDescriptor* descriptor);
+    ShaderModuleBase(DeviceBase* device, const UnpackedPtr<ShaderModuleDescriptor>& descriptor);
     ~ShaderModuleBase() override;
 
     static Ref<ShaderModuleBase> MakeError(DeviceBase* device, const char* label);
@@ -278,6 +304,13 @@ class ShaderModuleBase : public ApiObjectBase,
 
     // Return true iff the program has an entrypoint called `entryPoint`.
     bool HasEntryPoint(const std::string& entryPoint) const;
+
+    // Return the number of entry points for a stage.
+    size_t GetEntryPointCount(SingleShaderStage stage) const { return mEntryPointCounts[stage]; }
+
+    // Return the entry point for a stage. If no entry point name, returns the default one.
+    ShaderModuleEntryPoint ReifyEntryPointName(const char* entryPointName,
+                                               SingleShaderStage stage) const;
 
     // Return the metadata for the given `entryPoint`. HasEntryPoint with the same argument
     // must be true.
@@ -315,6 +348,8 @@ class ShaderModuleBase : public ApiObjectBase,
     std::string mWgsl;
 
     EntryPointMetadataTable mEntryPoints;
+    PerStage<std::string> mDefaultEntryPointNames;
+    PerStage<size_t> mEntryPointCounts;
     WGSLExtensionSet mEnabledWGSLExtensions;
     std::unique_ptr<tint::Program> mTintProgram;
     std::unique_ptr<TintSource> mTintSource;  // Keep the tint::Source::File alive

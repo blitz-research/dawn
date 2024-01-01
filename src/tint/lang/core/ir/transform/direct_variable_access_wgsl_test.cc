@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // GEN_BUILD:CONDITION(tint_build_wgsl_reader && tint_build_wgsl_writer)
 
@@ -46,8 +59,10 @@ static constexpr DirectVariableAccessOptions kTransformFunction = {
 class DirectVariableAccessTest : public TransformTestBase<testing::Test> {
   public:
     std::string Run(std::string in, const DirectVariableAccessOptions& options = {}) {
+        wgsl::reader::Options parser_options;
+        parser_options.allowed_features = wgsl::AllowedFeatures::Everything();
         Source::File file{"test", in};
-        auto program = wgsl::reader::Parse(&file);
+        auto program = wgsl::reader::Parse(&file, parser_options);
         if (!program.IsValid()) {
             return "wgsl::reader::Parse() failed: \n" + program.Diagnostics().str();
         }
@@ -62,7 +77,10 @@ class DirectVariableAccessTest : public TransformTestBase<testing::Test> {
             return "DirectVariableAccess failed:\n" + res.Failure().reason.str();
         }
 
-        auto transformed = wgsl::writer::IRToProgram(module.Get());
+        wgsl::writer::ProgramOptions program_options;
+        program_options.allowed_features.extensions.insert(
+            wgsl::Extension::kChromiumExperimentalFullPtrParameters);
+        auto transformed = wgsl::writer::IRToProgram(module.Get(), program_options);
         if (!transformed.IsValid()) {
             return "wgsl::writer::IRToProgram() failed: \n" + transformed.Diagnostics().str() +
                    "\n\nIR:\n" + ir::Disassemble(module.Get()) +  //
@@ -603,7 +621,7 @@ fn b() {
 fn c_U() {
   let v_2 = first();
   let v_3 = second();
-  for(var i : i32; (i < 3i); a_U_X_X(10i, array<u32, 2u>(u32(v_2), u32(v_3)), 20i)) {
+  for(var i : i32 = 0i; (i < 3i); a_U_X_X(10i, array<u32, 2u>(u32(v_2), u32(v_3)), 20i)) {
     i = (i + 1i);
   }
 }
@@ -2153,7 +2171,7 @@ fn len_S() -> u32 {
 }
 
 fn f() {
-  len_S();
+  let n = len_S();
 }
 )";
 
@@ -2185,7 +2203,7 @@ fn load_W() -> f32 {
 }
 
 fn f() {
-  load_W();
+  let v = load_W();
 }
 )";
 
@@ -2354,33 +2372,33 @@ fn fn_w_W_arr_arr_X_X(p_indices : array<u32, 2u>) -> vec4<i32> {
 fn b() {
   let I = 3i;
   let J = 4i;
-  fn_u_U();
-  fn_u_U_str_i();
-  fn_u_U_arr_X(array<u32, 1u>(u32(0i)));
-  fn_u_U_arr_X(array<u32, 1u>(u32(1i)));
-  fn_u_U_arr_X(array<u32, 1u>(u32(I)));
-  fn_u_U_arr_arr_X_X(array<u32, 2u>(u32(1i), u32(0i)));
-  fn_u_U_arr_arr_X_X(array<u32, 2u>(u32(2i), u32(I)));
-  fn_u_U_arr_arr_X_X(array<u32, 2u>(u32(I), u32(2i)));
-  fn_u_U_arr_arr_X_X(array<u32, 2u>(u32(I), u32(J)));
-  fn_s_S();
-  fn_s_S_str_i();
-  fn_s_S_arr_X(array<u32, 1u>(u32(0i)));
-  fn_s_S_arr_X(array<u32, 1u>(u32(1i)));
-  fn_s_S_arr_X(array<u32, 1u>(u32(I)));
-  fn_s_S_arr_arr_X_X(array<u32, 2u>(u32(1i), u32(0i)));
-  fn_s_S_arr_arr_X_X(array<u32, 2u>(u32(2i), u32(I)));
-  fn_s_S_arr_arr_X_X(array<u32, 2u>(u32(I), u32(2i)));
-  fn_s_S_arr_arr_X_X(array<u32, 2u>(u32(I), u32(J)));
-  fn_w_W();
-  fn_w_W_str_i();
-  fn_w_W_arr_X(array<u32, 1u>(u32(0i)));
-  fn_w_W_arr_X(array<u32, 1u>(u32(1i)));
-  fn_w_W_arr_X(array<u32, 1u>(u32(I)));
-  fn_w_W_arr_arr_X_X(array<u32, 2u>(u32(1i), u32(0i)));
-  fn_w_W_arr_arr_X_X(array<u32, 2u>(u32(2i), u32(I)));
-  fn_w_W_arr_arr_X_X(array<u32, 2u>(u32(I), u32(2i)));
-  fn_w_W_arr_arr_X_X(array<u32, 2u>(u32(I), u32(J)));
+  let u = fn_u_U();
+  let u_str = fn_u_U_str_i();
+  let u_arr0 = fn_u_U_arr_X(array<u32, 1u>(u32(0i)));
+  let u_arr1 = fn_u_U_arr_X(array<u32, 1u>(u32(1i)));
+  let u_arrI = fn_u_U_arr_X(array<u32, 1u>(u32(I)));
+  let u_arr1_arr0 = fn_u_U_arr_arr_X_X(array<u32, 2u>(u32(1i), u32(0i)));
+  let u_arr2_arrI = fn_u_U_arr_arr_X_X(array<u32, 2u>(u32(2i), u32(I)));
+  let u_arrI_arr2 = fn_u_U_arr_arr_X_X(array<u32, 2u>(u32(I), u32(2i)));
+  let u_arrI_arrJ = fn_u_U_arr_arr_X_X(array<u32, 2u>(u32(I), u32(J)));
+  let s = fn_s_S();
+  let s_str = fn_s_S_str_i();
+  let s_arr0 = fn_s_S_arr_X(array<u32, 1u>(u32(0i)));
+  let s_arr1 = fn_s_S_arr_X(array<u32, 1u>(u32(1i)));
+  let s_arrI = fn_s_S_arr_X(array<u32, 1u>(u32(I)));
+  let s_arr1_arr0 = fn_s_S_arr_arr_X_X(array<u32, 2u>(u32(1i), u32(0i)));
+  let s_arr2_arrI = fn_s_S_arr_arr_X_X(array<u32, 2u>(u32(2i), u32(I)));
+  let s_arrI_arr2 = fn_s_S_arr_arr_X_X(array<u32, 2u>(u32(I), u32(2i)));
+  let s_arrI_arrJ = fn_s_S_arr_arr_X_X(array<u32, 2u>(u32(I), u32(J)));
+  let w = fn_w_W();
+  let w_str = fn_w_W_str_i();
+  let w_arr0 = fn_w_W_arr_X(array<u32, 1u>(u32(0i)));
+  let w_arr1 = fn_w_W_arr_X(array<u32, 1u>(u32(1i)));
+  let w_arrI = fn_w_W_arr_X(array<u32, 1u>(u32(I)));
+  let w_arr1_arr0 = fn_w_W_arr_arr_X_X(array<u32, 2u>(u32(1i), u32(0i)));
+  let w_arr2_arrI = fn_w_W_arr_arr_X_X(array<u32, 2u>(u32(2i), u32(I)));
+  let w_arrI_arr2 = fn_w_W_arr_arr_X_X(array<u32, 2u>(u32(I), u32(2i)));
+  let w_arrI_arrJ = fn_w_W_arr_arr_X_X(array<u32, 2u>(u32(I), u32(J)));
 }
 )";
 
@@ -2421,7 +2439,7 @@ fn b_S_X(p_indices : array<u32, 1u>) -> i32 {
 }
 
 fn c() {
-  b_S_X(array<u32, 1u>(u32(42i)));
+  let v = b_S_X(array<u32, 1u>(u32(42i)));
 }
 )";
 
@@ -2466,7 +2484,7 @@ fn b_S_X(p_indices : array<u32, 1u>) -> i32 {
 }
 
 fn c() {
-  b_S_X(array<u32, 1u>(u32(42i)));
+  let v = b_S_X(array<u32, 1u>(u32(42i)));
 }
 )";
 
@@ -2510,7 +2528,7 @@ fn b_S_X_U_X(s_indices : array<u32, 1u>, u_indices : array<u32, 1u>) -> i32 {
 }
 
 fn c() {
-  b_S_X_U_X(array<u32, 1u>(u32(42i)), array<u32, 1u>(u32(24i)));
+  let v = b_S_X_U_X(array<u32, 1u>(u32(42i)), array<u32, 1u>(u32(24i)));
 }
 )";
 

@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/Texture.h"
 
@@ -45,6 +58,10 @@ MaybeError ValidateTextureViewFormatCompatibility(const DeviceBase* device,
                     "The texture view format (%s) is not texture view format compatible "
                     "with the texture format (%s).",
                     viewFormatEnum, format.format);
+
+    DAWN_INVALID_IF(device->IsCompatibilityMode() && viewFormat->format != format.format,
+                    "viewFormat (%s) must match format (%s) in compatibility mode.",
+                    viewFormat->format, format.format);
     return {};
 }
 
@@ -118,6 +135,30 @@ bool IsTextureViewDimensionCompatibleWithTextureDimension(
             break;
     }
     DAWN_UNREACHABLE();
+}
+
+MaybeError ValidateDepthOrArrayLayersIsCompatibleWithTextureBindingViewDimension(
+    wgpu::TextureViewDimension textureBindingViewDimension,
+    uint32_t depthOrArrayLayers) {
+    switch (textureBindingViewDimension) {
+        case wgpu::TextureViewDimension::e2D:
+            if (depthOrArrayLayers != 1) {
+                return DAWN_VALIDATION_ERROR(
+                    "A resolved TextureViewDimension of e2D is only "
+                    "compatible with depthOrArrayLayers equals 1.");
+            }
+            break;
+        case wgpu::TextureViewDimension::Cube:
+            if (depthOrArrayLayers != 6) {
+                return DAWN_VALIDATION_ERROR(
+                    "A resolved TextureViewDimension of Cube is only "
+                    "compatible with depthOrArrayLayers equals 6.");
+            }
+            break;
+        default:
+            break;
+    }
+    return {};
 }
 
 bool IsArrayLayerValidForTextureViewDimension(wgpu::TextureViewDimension textureViewDimension,
@@ -418,7 +459,7 @@ bool CopySrcNeedsInternalTextureBindingUsage(const DeviceBase* device, const For
     }
     // RGB9E5Ufloat
     if (format.format == wgpu::TextureFormat::RGB9E5Ufloat &&
-        device->IsToggleEnabled(Toggle::UseBlitForRGB9E5UfloatTextureToBufferCopy)) {
+        device->IsToggleEnabled(Toggle::UseBlitForRGB9E5UfloatTextureCopy)) {
         return true;
     }
     // Depth
@@ -438,35 +479,67 @@ bool CopySrcNeedsInternalTextureBindingUsage(const DeviceBase* device, const For
     return false;
 }
 
+wgpu::TextureViewDimension ResolveDefaultCompatiblityTextureBindingViewDimension(
+    const DeviceBase* device,
+    const UnpackedPtr<TextureDescriptor>& descriptor) {
+    // In non-compatibility mode this value is not used so return undefined so that it is not
+    // used by mistake.
+    if (!device->IsCompatibilityMode()) {
+        return wgpu::TextureViewDimension::Undefined;
+    }
+
+    auto textureBindingViewDimension = wgpu::TextureViewDimension::Undefined;
+    if (auto* subDesc = descriptor.Get<TextureBindingViewDimensionDescriptor>()) {
+        textureBindingViewDimension = subDesc->textureBindingViewDimension;
+    }
+    if (textureBindingViewDimension != wgpu::TextureViewDimension::Undefined) {
+        return textureBindingViewDimension;
+    }
+
+    switch (descriptor->dimension) {
+        case wgpu::TextureDimension::e1D:
+            return wgpu::TextureViewDimension::e1D;
+        case wgpu::TextureDimension::e2D:
+            return descriptor->size.depthOrArrayLayers == 1 ? wgpu::TextureViewDimension::e2D
+                                                            : wgpu::TextureViewDimension::e2DArray;
+        case wgpu::TextureDimension::e3D:
+            return wgpu::TextureViewDimension::e3D;
+    }
+}
+
 }  // anonymous namespace
 
 MaybeError ValidateTextureDescriptor(
     const DeviceBase* device,
-    const TextureDescriptor* descriptor,
+    const UnpackedPtr<TextureDescriptor>& descriptor,
     AllowMultiPlanarTextureFormat allowMultiPlanar,
     std::optional<wgpu::TextureUsage> allowedSharedTextureMemoryUsage) {
-    DAWN_TRY(ValidateSingleSType(descriptor->nextInChain,
-                                 wgpu::SType::DawnTextureInternalUsageDescriptor));
-
-    const DawnTextureInternalUsageDescriptor* internalUsageDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &internalUsageDesc);
-
-    DAWN_INVALID_IF(
-        internalUsageDesc != nullptr && !device->HasFeature(Feature::DawnInternalUsages),
-        "The internalUsageDesc is not empty while the dawn-internal-usages feature is not "
-        "enabled");
+    wgpu::TextureUsage usage = descriptor->usage;
+    if (auto* internalUsageDesc = descriptor.Get<DawnTextureInternalUsageDescriptor>()) {
+        DAWN_INVALID_IF(
+            !device->HasFeature(Feature::DawnInternalUsages),
+            "The internalUsageDesc is not empty while the dawn-internal-usages feature is not "
+            "enabled");
+        usage |= internalUsageDesc->internalUsage;
+    }
 
     const Format* format;
     DAWN_TRY_ASSIGN(format, device->GetInternalFormat(descriptor->format));
 
-    switch (allowMultiPlanar) {
-        case AllowMultiPlanarTextureFormat::Yes:
-            break;
-        case AllowMultiPlanarTextureFormat::No:
-            DAWN_INVALID_IF(format->IsMultiPlanar(),
-                            "Creation of multiplanar texture format %s is not allowed.",
-                            descriptor->format);
-            break;
+    if (format->IsMultiPlanar()) {
+        switch (allowMultiPlanar) {
+            case AllowMultiPlanarTextureFormat::Yes:
+                DAWN_INVALID_IF(descriptor->dimension != wgpu::TextureDimension::e2D ||
+                                    descriptor->mipLevelCount != 1 ||
+                                    descriptor->size.depthOrArrayLayers != 1,
+                                "Multiplanar texture must be non-mipmapped & 2D in order to be "
+                                "created directly.");
+                break;
+            case AllowMultiPlanarTextureFormat::No:
+                return DAWN_VALIDATION_ERROR(
+                    "Creation of multiplanar texture format %s is not allowed.",
+                    descriptor->format);
+        }
     }
 
     for (uint32_t i = 0; i < descriptor->viewFormatCount; ++i) {
@@ -475,15 +548,23 @@ MaybeError ValidateTextureDescriptor(
             "validating viewFormats[%u]", i);
     }
 
-    wgpu::TextureUsage usage = descriptor->usage;
-    if (internalUsageDesc != nullptr) {
-        usage |= internalUsageDesc->internalUsage;
-    }
-
-    DAWN_TRY(ValidateTextureUsage(device, descriptor, usage, format,
+    DAWN_TRY(ValidateTextureUsage(device, *descriptor, usage, format,
                                   std::move(allowedSharedTextureMemoryUsage)));
     DAWN_TRY(ValidateTextureDimension(descriptor->dimension));
-    DAWN_TRY(ValidateSampleCount(descriptor, usage, format));
+    if (device->IsCompatibilityMode()) {
+        const auto textureBindingViewDimension =
+            ResolveDefaultCompatiblityTextureBindingViewDimension(device, descriptor);
+
+        DAWN_INVALID_IF(
+            !IsTextureViewDimensionCompatibleWithTextureDimension(textureBindingViewDimension,
+                                                                  descriptor->dimension),
+            "The textureBindingViewDimension (%s) is not compatible with the dimension (%s)",
+            textureBindingViewDimension, descriptor->dimension);
+
+        DAWN_TRY(ValidateDepthOrArrayLayersIsCompatibleWithTextureBindingViewDimension(
+            textureBindingViewDimension, descriptor->size.depthOrArrayLayers));
+    }
+    DAWN_TRY(ValidateSampleCount(*descriptor, usage, format));
 
     DAWN_INVALID_IF(descriptor->size.width == 0 || descriptor->size.height == 0 ||
                         descriptor->size.depthOrArrayLayers == 0 || descriptor->mipLevelCount == 0,
@@ -501,7 +582,7 @@ MaybeError ValidateTextureDescriptor(
                     "The dimension (%s) of a texture with a depth/stencil format (%s) is not 2D.",
                     descriptor->dimension, format->format);
 
-    DAWN_TRY(ValidateTextureSize(device, descriptor, format));
+    DAWN_TRY(ValidateTextureSize(device, *descriptor, format));
     return {};
 }
 
@@ -641,9 +722,11 @@ bool IsValidSampleCount(uint32_t sampleCount) {
 
 TextureBase::TextureState::TextureState() : hasAccess(true), destroyed(false) {}
 
-TextureBase::TextureBase(DeviceBase* device, const TextureDescriptor* descriptor)
+TextureBase::TextureBase(DeviceBase* device, const UnpackedPtr<TextureDescriptor>& descriptor)
     : ApiObjectBase(device, descriptor->label),
       mDimension(descriptor->dimension),
+      mCompatibilityTextureBindingViewDimension(
+          ResolveDefaultCompatiblityTextureBindingViewDimension(device, descriptor)),
       mFormat(device->GetValidInternalFormat(descriptor->format)),
       mBaseSize(descriptor->size),
       mMipLevelCount(descriptor->mipLevelCount),
@@ -663,9 +746,7 @@ TextureBase::TextureBase(DeviceBase* device, const TextureDescriptor* descriptor
         mViewFormats[device->GetValidInternalFormat(descriptor->viewFormats[i])] = true;
     }
 
-    const DawnTextureInternalUsageDescriptor* internalUsageDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &internalUsageDesc);
-    if (internalUsageDesc != nullptr) {
+    if (auto* internalUsageDesc = descriptor.Get<DawnTextureInternalUsageDescriptor>()) {
         mInternalUsage |= internalUsageDesc->internalUsage;
     }
     GetObjectTrackingList()->Track(this);
@@ -705,6 +786,8 @@ TextureBase::TextureBase(DeviceBase* device,
                          ObjectBase::ErrorTag tag)
     : ApiObjectBase(device, tag, descriptor->label),
       mDimension(descriptor->dimension),
+      mCompatibilityTextureBindingViewDimension(
+          ResolveDefaultCompatiblityTextureBindingViewDimension(device, Unpack(descriptor))),
       mFormat(kUnusedFormat),
       mBaseSize(descriptor->size),
       mMipLevelCount(descriptor->mipLevelCount),
@@ -743,6 +826,11 @@ wgpu::TextureDimension TextureBase::GetDimension() const {
     return mDimension;
 }
 
+wgpu::TextureViewDimension TextureBase::GetCompatibilityTextureBindingViewDimension() const {
+    DAWN_ASSERT(!IsError());
+    return mCompatibilityTextureBindingViewDimension;
+}
+
 const Format& TextureBase::GetFormat() const {
     DAWN_ASSERT(!IsError());
     return mFormat;
@@ -766,6 +854,7 @@ Extent3D TextureBase::GetSize(Aspect aspect) const {
         case Aspect::CombinedDepthStencil:
             return mBaseSize;
         case Aspect::Plane0:
+        case Aspect::Plane2:
             DAWN_ASSERT(GetFormat().IsMultiPlanar());
             return mBaseSize;
         case Aspect::Plane1: {
@@ -774,6 +863,7 @@ Extent3D TextureBase::GetSize(Aspect aspect) const {
             switch (GetFormat().format) {
                 case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
                 case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+                case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
                     if (planeSize.width > 1) {
                         planeSize.width >>= 1;
                     }

@@ -1,16 +1,29 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/PassResourceUsageTracker.h"
 
@@ -34,56 +47,61 @@ SyncScopeUsageTracker::~SyncScopeUsageTracker() = default;
 
 SyncScopeUsageTracker& SyncScopeUsageTracker::operator=(SyncScopeUsageTracker&&) = default;
 
-void SyncScopeUsageTracker::BufferUsedAs(BufferBase* buffer, wgpu::BufferUsage usage) {
-    // std::map's operator[] will create the key and return 0 if the key didn't exist
-    // before.
-    mBufferUsages[buffer] |= usage;
+void SyncScopeUsageTracker::BufferUsedAs(BufferBase* buffer,
+                                         wgpu::BufferUsage usage,
+                                         wgpu::ShaderStage shaderStages) {
+    // std::map's operator[] will create a new element using the default constructor
+    // if the key didn't exist before.
+    BufferSyncInfo& bufferSyncInfo = mBufferSyncInfos[buffer];
+
+    bufferSyncInfo.usage |= usage;
+    bufferSyncInfo.shaderStages |= shaderStages;
 }
 
-void SyncScopeUsageTracker::TextureViewUsedAs(TextureViewBase* view, wgpu::TextureUsage usage) {
-    TextureBase* texture = view->GetTexture();
-    const SubresourceRange& range = view->GetSubresourceRange();
+void SyncScopeUsageTracker::TextureViewUsedAs(TextureViewBase* view,
+                                              wgpu::TextureUsage usage,
+                                              wgpu::ShaderStage shaderStages) {
+    TextureRangeUsedAs(view->GetTexture(), view->GetSubresourceRange(), usage, shaderStages);
+}
 
-    // Get or create a new TextureSubresourceUsage for that texture (initially filled with
-    // wgpu::TextureUsage::None)
-    auto it = mTextureUsages.emplace(
+void SyncScopeUsageTracker::TextureRangeUsedAs(TextureBase* texture,
+                                               const SubresourceRange& range,
+                                               wgpu::TextureUsage usage,
+                                               wgpu::ShaderStage shaderStages) {
+    // Get or create a new TextureSubresourceSyncInfo for that texture (initially filled with
+    // wgpu::TextureUsage::None and WGPUShaderStage_None)
+    auto it = mTextureSyncInfos.emplace(
         std::piecewise_construct, std::forward_as_tuple(texture),
         std::forward_as_tuple(texture->GetFormat().aspects, texture->GetArrayLayers(),
-                              texture->GetNumMipLevels(), wgpu::TextureUsage::None));
-    TextureSubresourceUsage& textureUsage = it.first->second;
+                              texture->GetNumMipLevels(),
+                              TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None}));
+    TextureSubresourceSyncInfo& textureSyncInfo = it.first->second;
 
-    textureUsage.Update(range, [usage](const SubresourceRange&, wgpu::TextureUsage* storedUsage) {
-        // TODO(crbug.com/dawn/1001): Consider optimizing to have fewer branches.
-
-        // Using the same subresource for two different attachments is a write-write or read-write
-        // hazard. Add the internal kAgainAsAttachment usage to fail the later check that a
-        // subresource with a writable usage has a single usage.
-        constexpr wgpu::TextureUsage kWritableAttachmentUsages =
-            wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::StorageAttachment;
-        if ((usage & kWritableAttachmentUsages) && (*storedUsage & kWritableAttachmentUsages)) {
-            *storedUsage |= kAgainAsAttachment;
-        }
-
-        *storedUsage |= usage;
-    });
+    textureSyncInfo.Update(
+        range, [usage, shaderStages](const SubresourceRange&, TextureSyncInfo* storedSyncInfo) {
+            storedSyncInfo->usage |= usage;
+            storedSyncInfo->shaderStages |= shaderStages;
+        });
 }
 
 void SyncScopeUsageTracker::AddRenderBundleTextureUsage(
     TextureBase* texture,
-    const TextureSubresourceUsage& textureUsage) {
-    // Get or create a new TextureSubresourceUsage for that texture (initially filled with
-    // wgpu::TextureUsage::None)
-    auto it = mTextureUsages.emplace(
+    const TextureSubresourceSyncInfo& textureSyncInfo) {
+    // Get or create a new TextureSubresourceSyncInfo for that texture (initially filled with
+    // wgpu::TextureUsage::None and WGPUShaderStage_None)
+    auto it = mTextureSyncInfos.emplace(
         std::piecewise_construct, std::forward_as_tuple(texture),
         std::forward_as_tuple(texture->GetFormat().aspects, texture->GetArrayLayers(),
-                              texture->GetNumMipLevels(), wgpu::TextureUsage::None));
-    TextureSubresourceUsage* passTextureUsage = &it.first->second;
+                              texture->GetNumMipLevels(),
+                              TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None}));
+    TextureSubresourceSyncInfo* passTextureSyncInfo = &it.first->second;
 
-    passTextureUsage->Merge(
-        textureUsage, [](const SubresourceRange&, wgpu::TextureUsage* storedUsage,
-                         const wgpu::TextureUsage& addedUsage) {
-            DAWN_ASSERT((addedUsage & wgpu::TextureUsage::RenderAttachment) == 0);
-            *storedUsage |= addedUsage;
+    passTextureSyncInfo->Merge(
+        textureSyncInfo, [](const SubresourceRange&, TextureSyncInfo* storedSyncInfo,
+                            const TextureSyncInfo& addedSyncInfo) {
+            DAWN_ASSERT((addedSyncInfo.usage & wgpu::TextureUsage::RenderAttachment) == 0);
+            storedSyncInfo->usage |= addedSyncInfo.usage;
+            storedSyncInfo->shaderStages |= addedSyncInfo.shaderStages;
         });
 }
 
@@ -97,16 +115,16 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
                 BufferBase* buffer = group->GetBindingAsBufferBinding(bindingIndex).buffer;
                 switch (bindingInfo.buffer.type) {
                     case wgpu::BufferBindingType::Uniform:
-                        BufferUsedAs(buffer, wgpu::BufferUsage::Uniform);
+                        BufferUsedAs(buffer, wgpu::BufferUsage::Uniform, bindingInfo.visibility);
                         break;
                     case wgpu::BufferBindingType::Storage:
-                        BufferUsedAs(buffer, wgpu::BufferUsage::Storage);
+                        BufferUsedAs(buffer, wgpu::BufferUsage::Storage, bindingInfo.visibility);
                         break;
                     case kInternalStorageBufferBinding:
-                        BufferUsedAs(buffer, kInternalStorageBuffer);
+                        BufferUsedAs(buffer, kInternalStorageBuffer, bindingInfo.visibility);
                         break;
                     case wgpu::BufferBindingType::ReadOnlyStorage:
-                        BufferUsedAs(buffer, kReadOnlyStorageBuffer);
+                        BufferUsedAs(buffer, kReadOnlyStorageBuffer, bindingInfo.visibility);
                         break;
                     case wgpu::BufferBindingType::Undefined:
                         DAWN_UNREACHABLE();
@@ -118,10 +136,12 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
                 TextureViewBase* view = group->GetBindingAsTextureView(bindingIndex);
                 switch (bindingInfo.texture.sampleType) {
                     case kInternalResolveAttachmentSampleType:
-                        TextureViewUsedAs(view, kResolveAttachmentLoadingUsage);
+                        TextureViewUsedAs(view, kResolveAttachmentLoadingUsage,
+                                          bindingInfo.visibility);
                         break;
                     default:
-                        TextureViewUsedAs(view, wgpu::TextureUsage::TextureBinding);
+                        TextureViewUsedAs(view, wgpu::TextureUsage::TextureBinding,
+                                          bindingInfo.visibility);
                         break;
                 }
                 break;
@@ -131,13 +151,14 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
                 TextureViewBase* view = group->GetBindingAsTextureView(bindingIndex);
                 switch (bindingInfo.storageTexture.access) {
                     case wgpu::StorageTextureAccess::WriteOnly:
-                        TextureViewUsedAs(view, kWriteOnlyStorageTexture);
+                        TextureViewUsedAs(view, kWriteOnlyStorageTexture, bindingInfo.visibility);
                         break;
                     case wgpu::StorageTextureAccess::ReadWrite:
-                        TextureViewUsedAs(view, wgpu::TextureUsage::StorageBinding);
+                        TextureViewUsedAs(view, wgpu::TextureUsage::StorageBinding,
+                                          bindingInfo.visibility);
                         break;
                     case wgpu::StorageTextureAccess::ReadOnly:
-                        TextureViewUsedAs(view, kReadOnlyStorageTexture);
+                        TextureViewUsedAs(view, kReadOnlyStorageTexture, bindingInfo.visibility);
                         break;
                     case wgpu::StorageTextureAccess::Undefined:
                         DAWN_UNREACHABLE();
@@ -161,27 +182,27 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
 
 SyncScopeResourceUsage SyncScopeUsageTracker::AcquireSyncScopeUsage() {
     SyncScopeResourceUsage result;
-    result.buffers.reserve(mBufferUsages.size());
-    result.bufferUsages.reserve(mBufferUsages.size());
-    result.textures.reserve(mTextureUsages.size());
-    result.textureUsages.reserve(mTextureUsages.size());
+    result.buffers.reserve(mBufferSyncInfos.size());
+    result.bufferSyncInfos.reserve(mBufferSyncInfos.size());
+    result.textures.reserve(mTextureSyncInfos.size());
+    result.textureSyncInfos.reserve(mTextureSyncInfos.size());
 
-    for (auto& [buffer, usage] : mBufferUsages) {
+    for (auto& [buffer, syncInfo] : mBufferSyncInfos) {
         result.buffers.push_back(buffer);
-        result.bufferUsages.push_back(usage);
+        result.bufferSyncInfos.push_back(std::move(syncInfo));
     }
 
-    for (auto& [texture, usage] : mTextureUsages) {
+    for (auto& [texture, syncInfo] : mTextureSyncInfos) {
         result.textures.push_back(texture);
-        result.textureUsages.push_back(std::move(usage));
+        result.textureSyncInfos.push_back(std::move(syncInfo));
     }
 
     for (auto* const it : mExternalTextureUsages) {
         result.externalTextures.push_back(it);
     }
 
-    mBufferUsages.clear();
-    mTextureUsages.clear();
+    mBufferSyncInfos.clear();
+    mTextureSyncInfos.clear();
     mExternalTextureUsages.clear();
 
     return result;

@@ -1,15 +1,28 @@
-// Copyright 2020 The Tint Authors.
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Copyright 2020 The Dawn & Tint Authors
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/ast_printer/builder.h"
 
@@ -260,14 +273,12 @@ Builder::Builder(const Program& program,
 Builder::~Builder() = default;
 
 bool Builder::Build() {
-    if (!tint::writer::CheckSupportedExtensions(
+    if (!tint::wgsl::CheckSupportedExtensions(
             "SPIR-V", builder_.AST(), builder_.Diagnostics(),
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
-                wgsl::Extension::kChromiumExperimentalDp4A,
                 wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
-                wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
                 wgsl::Extension::kF16,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
@@ -336,11 +347,6 @@ Operand Builder::result_op() {
 
 bool Builder::GenerateExtension(wgsl::Extension extension) {
     switch (extension) {
-        case wgsl::Extension::kChromiumExperimentalDp4A:
-            module_.PushExtension("SPV_KHR_integer_dot_product");
-            module_.PushCapability(SpvCapabilityDotProductKHR);
-            module_.PushCapability(SpvCapabilityDotProductInput4x8BitPackedKHR);
-            break;
         case wgsl::Extension::kF16:
             module_.PushCapability(SpvCapabilityFloat16);
             module_.PushCapability(SpvCapabilityUniformAndStorageBuffer16BitAccess);
@@ -528,11 +534,8 @@ uint32_t Builder::GenerateExpression(const sem::Expression* expr) {
         [&](const ast::CallExpression* c) { return GenerateCallExpression(c); },
         [&](const ast::IdentifierExpression* i) { return GenerateIdentifierExpression(i); },
         [&](const ast::LiteralExpression* l) { return GenerateLiteralIfNeeded(l); },
-        [&](const ast::UnaryOpExpression* u) { return GenerateUnaryOpExpression(u); },
-        [&](Default) {
-            TINT_ICE() << "unknown expression type: " + std::string(expr->TypeInfo().name);
-            return 0;
-        });
+        [&](const ast::UnaryOpExpression* u) { return GenerateUnaryOpExpression(u); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 uint32_t Builder::GenerateExpression(const ast::Expression* expr) {
@@ -796,13 +799,13 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
             [&](const ast::LocationAttribute*) {
                 module_.PushAnnot(spv::Op::OpDecorate,
                                   {Operand(var_id), U32Operand(SpvDecorationLocation),
-                                   Operand(sem->Location().value())});
+                                   Operand(sem->Attributes().location.value())});
                 return true;
             },
             [&](const ast::IndexAttribute*) {
                 module_.PushAnnot(spv::Op::OpDecorate,
                                   {Operand(var_id), U32Operand(SpvDecorationIndex),
-                                   Operand(sem->Index().value())});
+                                   Operand(sem->Attributes().index.value())});
                 return true;
             },
             [&](const ast::InterpolateAttribute* interpolate) {
@@ -827,14 +830,14 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
                 return true;
             },
             [&](const ast::BindingAttribute*) {
-                auto bp = sem->BindingPoint();
+                auto bp = sem->Attributes().binding_point;
                 module_.PushAnnot(
                     spv::Op::OpDecorate,
                     {Operand(var_id), U32Operand(SpvDecorationBinding), Operand(bp->binding)});
                 return true;
             },
             [&](const ast::GroupAttribute*) {
-                auto bp = sem->BindingPoint();
+                auto bp = sem->Attributes().binding_point;
                 module_.PushAnnot(
                     spv::Op::OpDecorate,
                     {Operand(var_id), U32Operand(SpvDecorationDescriptorSet), Operand(bp->group)});
@@ -845,11 +848,8 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
             },
             [&](const ast::InternalAttribute*) {
                 return true;  // ignored
-            },
-            [&](Default) {
-                TINT_ICE() << "unknown attribute";
-                return false;
-            });
+            },                //
+            TINT_ICE_ON_NO_MATCH);
         if (!ok) {
             return false;
         }
@@ -1036,11 +1036,8 @@ bool Builder::GenerateMemberAccessor(const ast::MemberAccessorExpression* expr,
             info->source_id = result_id;
             info->source_type = expr_type;
             return true;
-        },
-        [&](Default) {
-            TINT_ICE() << "unhandled member index type: " << expr_sem->TypeInfo().name;
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 uint32_t Builder::GenerateAccessorExpression(const ast::AccessorExpression* expr) {
@@ -1084,11 +1081,8 @@ uint32_t Builder::GenerateAccessorExpression(const ast::AccessorExpression* expr
             },
             [&](const ast::MemberAccessorExpression* member) {
                 return GenerateMemberAccessor(member, &info);
-            },
-            [&](Default) {
-                TINT_ICE() << "invalid accessor in list: " + std::string(accessor->TypeInfo().name);
-                return false;
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
         if (!ok) {
             return false;
         }
@@ -1223,20 +1217,24 @@ uint32_t Builder::GenerateConstructorExpression(const ast::Variable* var,
     return 0;
 }
 
-bool Builder::IsConstructorConst(const ast::Expression* expr) {
+bool Builder::IsConstructorConst(const ast::CallExpression* expr) {
     bool is_const = true;
     ast::TraverseExpressions(expr, [&](const ast::Expression* e) {
+        auto* val = builder_.Sem().GetVal(e);
+        if (!val) {
+            return ast::TraverseAction::Descend;
+        }
+
         if (e->Is<ast::LiteralExpression>()) {
             return ast::TraverseAction::Descend;
         }
-        if (auto* ce = e->As<ast::CallExpression>()) {
-            auto* sem = builder_.Sem().Get(ce);
-            if (sem->Is<sem::Materialize>()) {
+        if (e->Is<ast::CallExpression>()) {
+            if (val->Is<sem::Materialize>()) {
                 // Materialize can only occur on compile time expressions, so this sub-tree must be
                 // constant.
                 return ast::TraverseAction::Skip;
             }
-            auto* call = sem->As<sem::Call>();
+            auto* call = val->As<sem::Call>();
             if (call->Target()->Is<sem::ValueConstructor>()) {
                 return ast::TraverseAction::Descend;
             }
@@ -1603,8 +1601,8 @@ uint32_t Builder::GenerateLiteralIfNeeded(const ast::LiteralExpression* lit) {
                     constant.value.f16 = {f16(static_cast<float>(f->value)).BitsRepresentation()};
                     return;
             }
-        },
-        [&](Default) { TINT_ICE() << "unknown literal type"; });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 
     if (has_error()) {
         return false;
@@ -1682,11 +1680,8 @@ uint32_t Builder::GenerateConstantIfNeeded(const core::constant::Value* constant
             }
             return composite(count.value());
         },
-        [&](const core::type::Struct* s) { return composite(s->Members().Length()); },
-        [&](Default) {
-            TINT_ICE() << "unhandled constant type: " + ty->FriendlyName();
-            return 0;
-        });
+        [&](const core::type::Struct* s) { return composite(s->Members().Length()); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 uint32_t Builder::GenerateConstantIfNeeded(const ScalarConstant& constant) {
@@ -2215,11 +2210,8 @@ uint32_t Builder::GenerateCallExpression(const ast::CallExpression* expr) {
         },
         [&](const sem::ValueConstructor*) {
             return GenerateValueConstructorOrConversion(call, nullptr);
-        },
-        [&](Default) {
-            TINT_ICE() << "unhandled call target: " << target->TypeInfo().name;
-            return 0;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 uint32_t Builder::GenerateFunctionCall(const sem::Call* call, const sem::Function* fn) {
@@ -2536,6 +2528,7 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
             }
             break;
         case wgsl::BuiltinFn::kDot4I8Packed: {
+            DeclarePacked4x8IntegerDotProductCapabilitiesAndExtensions();
             auto first_param_id = get_arg_as_value_id(0);
             auto second_param_id = get_arg_as_value_id(1);
             if (!push_function_inst(spv::Op::OpSDotKHR,
@@ -2548,6 +2541,7 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
             return result_id;
         }
         case wgsl::BuiltinFn::kDot4U8Packed: {
+            DeclarePacked4x8IntegerDotProductCapabilitiesAndExtensions();
             auto first_param_id = get_arg_as_value_id(0);
             auto second_param_id = get_arg_as_value_id(1);
             if (!push_function_inst(spv::Op::OpUDotKHR,
@@ -2750,8 +2744,8 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
     auto append_coords_to_spirv_params = [&]() -> bool {
         if (auto* array_index = arg(Usage::kArrayIndex)) {
             // Array index needs to be appended to the coordinates.
-            auto* packed = tint::writer::AppendVector(&builder_, arg(Usage::kCoords)->Declaration(),
-                                                      array_index->Declaration());
+            auto* packed = tint::wgsl::AppendVector(&builder_, arg(Usage::kCoords)->Declaration(),
+                                                    array_index->Declaration());
             auto param = GenerateExpression(packed);
             if (param == 0) {
                 return false;
@@ -3003,8 +2997,10 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
     }
 
     if (!image_operands.empty()) {
-        std::sort(image_operands.begin(), image_operands.end(),
-                  [](auto& a, auto& b) { return a.mask < b.mask; });
+        // Use a stable sort to preserve the order of the Grad dpdx and dpdy
+        // operands.
+        std::stable_sort(image_operands.begin(), image_operands.end(),
+                         [](auto& a, auto& b) { return a.mask < b.mask; });
         uint32_t mask = 0;
         for (auto& image_operand : image_operands) {
             mask |= image_operand.mask;
@@ -3622,11 +3618,8 @@ bool Builder::GenerateStatement(const ast::Statement* stmt) {
         [&](const ast::VariableDeclStatement* v) { return GenerateVariableDeclStatement(v); },
         [&](const ast::ConstAssert*) {
             return true;  // Not emitted
-        },
-        [&](Default) {
-            TINT_ICE() << "unknown statement type: " + std::string(stmt->TypeInfo().name);
-            return false;
-        });
+        },                //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool Builder::GenerateVariableDeclStatement(const ast::VariableDeclStatement* stmt) {
@@ -3750,11 +3743,8 @@ uint32_t Builder::GenerateTypeIfNeeded(const core::type::Type* type) {
                         core::type::SamplerKind::kSampler)] = id;
                 }
                 return true;
-            },
-            [&](Default) {
-                TINT_ICE() << "unable to convert type: " + type->FriendlyName();
-                return false;
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
 
         if (!ok) {
             return 0;
@@ -3826,8 +3816,8 @@ bool Builder::GenerateTextureType(const core::type::Texture* texture, const Oper
         },
         [&](const core::type::SampledTexture* t) { return GenerateTypeIfNeeded(t->type()); },
         [&](const core::type::MultisampledTexture* t) { return GenerateTypeIfNeeded(t->type()); },
-        [&](const core::type::StorageTexture* t) { return GenerateTypeIfNeeded(t->type()); },
-        [&](Default) { return 0u; });
+        [&](const core::type::StorageTexture* t) { return GenerateTypeIfNeeded(t->type()); },  //
+        TINT_ICE_ON_NO_MATCH);
     if (type_id == 0u) {
         return false;
     }
@@ -4186,6 +4176,12 @@ bool Builder::InsideBasicBlock() const {
             break;
     }
     return true;
+}
+
+void Builder::DeclarePacked4x8IntegerDotProductCapabilitiesAndExtensions() {
+    module_.PushExtension("SPV_KHR_integer_dot_product");
+    module_.PushCapability(SpvCapabilityDotProductKHR);
+    module_.PushCapability(SpvCapabilityDotProductInput4x8BitPackedKHR);
 }
 
 Builder::ContinuingInfo::ContinuingInfo(const ast::Statement* the_last_statement,

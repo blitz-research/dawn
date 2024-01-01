@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/metal/CommandBufferMTL.h"
 
@@ -166,8 +179,7 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
     NSRef<MTLRenderPassDescriptor> descriptorRef = [MTLRenderPassDescriptor renderPassDescriptor];
     MTLRenderPassDescriptor* descriptor = descriptorRef.Get();
 
-    for (ColorAttachmentIndex attachment :
-         IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+    for (auto attachment : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         uint8_t i = static_cast<uint8_t>(attachment);
         auto& attachmentInfo = renderPass->colorAttachments[attachment];
 
@@ -192,6 +204,8 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
         descriptor.colorAttachments[i].texture = colorAttachment.texture.Get();
         descriptor.colorAttachments[i].level = colorAttachment.baseMipLevel;
         descriptor.colorAttachments[i].slice = colorAttachment.baseArrayLayer;
+        // We'd validated that depthSlice must be undefined and set to 0 for 2d texture views.
+        descriptor.colorAttachments[i].depthPlane = attachmentInfo.depthSlice;
 
         bool hasResolveTarget = attachmentInfo.resolveTarget != nullptr;
         if (hasResolveTarget) {
@@ -312,6 +326,80 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
     if (@available(macOS 11.0, iOS 14.0, *)) {
         if (useCounterSamplingAtStageBoundary) {
             SetSampleBufferAttachments(descriptor, renderPass);
+        }
+    }
+
+    if (renderPass->attachmentState->HasPixelLocalStorage()) {
+        const std::vector<wgpu::TextureFormat>& storageAttachmentSlots =
+            renderPass->attachmentState->GetStorageAttachmentSlots();
+        std::vector<ColorAttachmentIndex> storageAttachmentPacking =
+            renderPass->attachmentState->ComputeStorageAttachmentPackingInColorAttachments();
+
+        for (size_t attachment = 0; attachment < storageAttachmentSlots.size(); attachment++) {
+            uint8_t i = static_cast<uint8_t>(storageAttachmentPacking[attachment]);
+            MTLRenderPassColorAttachmentDescriptor* mtlAttachment = descriptor.colorAttachments[i];
+
+            // For implicit pixel local storage slots use transient memoryless textures.
+            if (storageAttachmentSlots[attachment] == wgpu::TextureFormat::Undefined) {
+                NSRef<MTLTextureDescriptor> texDescRef = AcquireNSRef([MTLTextureDescriptor new]);
+                MTLTextureDescriptor* texDesc = texDescRef.Get();
+                texDesc.textureType = MTLTextureType2D;
+                texDesc.width = renderPass->width;
+                texDesc.height = renderPass->height;
+                texDesc.usage = MTLTextureUsageRenderTarget;
+                if (@available(macOS 11.0, iOS 10.0, *)) {
+                    texDesc.storageMode = MTLStorageModeMemoryless;
+                } else {
+                    DAWN_UNREACHABLE();
+                }
+                texDesc.pixelFormat =
+                    MetalPixelFormat(device, RenderPipelineBase::kImplicitPLSSlotFormat);
+
+                NSPRef<id<MTLTexture>> implicitAttachment =
+                    AcquireNSPRef([device->GetMTLDevice() newTextureWithDescriptor:texDesc]);
+
+                mtlAttachment.loadAction = MTLLoadActionClear;
+                mtlAttachment.clearColor = MTLClearColorMake(0, 0, 0, 0);
+                mtlAttachment.storeAction = MTLStoreActionDontCare;
+                mtlAttachment.texture = *implicitAttachment;
+                continue;
+            }
+
+            auto& attachmentInfo = renderPass->storageAttachments[attachment];
+
+            switch (attachmentInfo.loadOp) {
+                case wgpu::LoadOp::Clear:
+                    mtlAttachment.loadAction = MTLLoadActionClear;
+                    mtlAttachment.clearColor =
+                        MTLClearColorMake(attachmentInfo.clearColor.r, attachmentInfo.clearColor.g,
+                                          attachmentInfo.clearColor.b, attachmentInfo.clearColor.a);
+                    break;
+
+                case wgpu::LoadOp::Load:
+                    mtlAttachment.loadAction = MTLLoadActionLoad;
+                    break;
+
+                case wgpu::LoadOp::Undefined:
+                    DAWN_UNREACHABLE();
+                    break;
+            }
+
+            switch (attachmentInfo.storeOp) {
+                case wgpu::StoreOp::Store:
+                    mtlAttachment.storeAction = MTLStoreActionStore;
+                    break;
+                case wgpu::StoreOp::Discard:
+                    mtlAttachment.storeAction = MTLStoreActionDontCare;
+                    break;
+                case wgpu::StoreOp::Undefined:
+                    DAWN_UNREACHABLE();
+                    break;
+            }
+
+            auto storageAttachment = ToBackend(attachmentInfo.storage)->GetAttachmentInfo();
+            mtlAttachment.texture = storageAttachment.texture.Get();
+            mtlAttachment.level = storageAttachment.baseMipLevel;
+            mtlAttachment.slice = storageAttachment.baseArrayLayer;
         }
     }
 
@@ -597,14 +685,13 @@ class VertexBufferTracker {
         // When a new pipeline is bound we must set all the vertex buffers again because
         // they might have been offset by the pipeline layout, and they might be packed
         // differently from the previous pipeline.
-        mDirtyVertexBuffers |= pipeline->GetVertexBufferSlotsUsed();
+        mDirtyVertexBuffers |= pipeline->GetVertexBuffersUsed();
     }
 
     void Apply(id<MTLRenderCommandEncoder> encoder,
                RenderPipeline* pipeline,
                bool enableVertexPulling) {
-        const auto& vertexBuffersToApply =
-            mDirtyVertexBuffers & pipeline->GetVertexBufferSlotsUsed();
+        const auto& vertexBuffersToApply = mDirtyVertexBuffers & pipeline->GetVertexBuffersUsed();
 
         for (VertexBufferSlot slot : IterateBitSet(vertexBuffersToApply)) {
             uint32_t metalIndex = pipeline->GetMtlVertexBufferIndex(slot);
@@ -626,10 +713,10 @@ class VertexBufferTracker {
 
   private:
     // All the indices in these arrays are Dawn vertex buffer indices
-    ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mDirtyVertexBuffers;
-    ityp::array<VertexBufferSlot, id<MTLBuffer>, kMaxVertexBuffers> mVertexBuffers;
-    ityp::array<VertexBufferSlot, NSUInteger, kMaxVertexBuffers> mVertexBufferOffsets;
-    ityp::array<VertexBufferSlot, uint32_t, kMaxVertexBuffers> mVertexBufferBindingSizes;
+    VertexBufferMask mDirtyVertexBuffers;
+    PerVertexBuffer<id<MTLBuffer>> mVertexBuffers;
+    PerVertexBuffer<NSUInteger> mVertexBufferOffsets;
+    PerVertexBuffer<uint32_t> mVertexBufferBindingSizes;
 
     StorageBufferLengthTracker* mLengthTracker;
 };
@@ -662,7 +749,7 @@ void RecordCopyBufferToTexture(CommandRecordingContext* commandContext,
                       sourceBytesPerRow:copyInfo.bytesPerRow
                     sourceBytesPerImage:copyInfo.bytesPerImage
                              sourceSize:MTLSizeMake(copyInfo.copyExtent.width, 1, 1)
-                              toTexture:texture->GetMTLTexture()
+                              toTexture:texture->GetMTLTexture(aspect)
                        destinationSlice:0
                        destinationLevel:mipLevel
                       destinationOrigin:MTLOriginMake(copyInfo.textureOrigin.x, 0, 0)
@@ -682,7 +769,7 @@ void RecordCopyBufferToTexture(CommandRecordingContext* commandContext,
                                                sourceBytesPerRow:copyInfo.bytesPerRow
                                              sourceBytesPerImage:copyInfo.bytesPerImage
                                                       sourceSize:copyExtent
-                                                       toTexture:texture->GetMTLTexture()
+                                                       toTexture:texture->GetMTLTexture(aspect)
                                                 destinationSlice:z
                                                 destinationLevel:mipLevel
                                                destinationOrigin:textureOrigin
@@ -700,7 +787,7 @@ void RecordCopyBufferToTexture(CommandRecordingContext* commandContext,
                              sourceSize:MTLSizeMake(copyInfo.copyExtent.width,
                                                     copyInfo.copyExtent.height,
                                                     copyInfo.copyExtent.depthOrArrayLayers)
-                              toTexture:texture->GetMTLTexture()
+                              toTexture:texture->GetMTLTexture(aspect)
                        destinationSlice:0
                        destinationLevel:mipLevel
                       destinationOrigin:MTLOriginMake(copyInfo.textureOrigin.x,
@@ -733,16 +820,18 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
         for (size_t i = 0; i < scope.textures.size(); ++i) {
             Texture* texture = ToBackend(scope.textures[i]);
 
-            // Clear subresources that are not render attachments. Render attachments will be
-            // cleared in RecordBeginRenderPass by setting the loadop to clear when the texture
-            // subresource has not been initialized before the render pass.
-            DAWN_TRY(scope.textureUsages[i].Iterate([&](const SubresourceRange& range,
-                                                        wgpu::TextureUsage usage) -> MaybeError {
-                if (usage & ~wgpu::TextureUsage::RenderAttachment) {
-                    DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));
-                }
-                return {};
-            }));
+            // Clear subresources that are not attachments. Attachments will be cleared in
+            // RecordBeginRenderPass by setting the loadop to clear when the texture subresource
+            // has not been initialized before the render pass.
+            DAWN_TRY(scope.textureSyncInfos[i].Iterate(
+                [&](const SubresourceRange& range, const TextureSyncInfo& syncInfo) -> MaybeError {
+                    if (syncInfo.usage & ~(wgpu::TextureUsage::RenderAttachment |
+                                           wgpu::TextureUsage::StorageAttachment)) {
+                        DAWN_TRY(
+                            texture->EnsureSubresourceContentInitialized(commandContext, range));
+                    }
+                    return {};
+                }));
         }
         for (BufferBase* bufferBase : scope.buffers) {
             ToBackend(bufferBase)->EnsureDataInitialized(commandContext);
@@ -909,7 +998,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     switch (texture->GetDimension()) {
                         case wgpu::TextureDimension::e1D: {
                             [commandContext->EnsureBlit()
-                                         copyFromTexture:texture->GetMTLTexture()
+                                         copyFromTexture:texture->GetMTLTexture(src.aspect)
                                              sourceSlice:0
                                              sourceLevel:src.mipLevel
                                             sourceOrigin:MTLOriginMake(copyInfo.textureOrigin.x, 0,
@@ -935,7 +1024,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                                  copyInfo.textureOrigin.z + copyInfo.copyExtent.depthOrArrayLayers;
                                  ++z) {
                                 [commandContext->EnsureBlit()
-                                             copyFromTexture:texture->GetMTLTexture()
+                                             copyFromTexture:texture->GetMTLTexture(src.aspect)
                                                  sourceSlice:z
                                                  sourceLevel:src.mipLevel
                                                 sourceOrigin:textureOrigin
@@ -951,7 +1040,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                         }
                         case wgpu::TextureDimension::e3D: {
                             [commandContext->EnsureBlit()
-                                         copyFromTexture:texture->GetMTLTexture()
+                                         copyFromTexture:texture->GetMTLTexture(src.aspect)
                                              sourceSlice:0
                                              sourceLevel:src.mipLevel
                                             sourceOrigin:MTLOriginMake(copyInfo.textureOrigin.x,
@@ -1023,7 +1112,7 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                         dstTexture->CreateFormatView(srcTexture->GetFormat().format);
 
                     [commandContext->EnsureBlit()
-                          copyFromTexture:srcTexture->GetMTLTexture()
+                          copyFromTexture:srcTexture->GetMTLTexture(copy->source.aspect)
                               sourceSlice:sourceLayer
                               sourceLevel:copy->source.mipLevel
                              sourceOrigin:MTLOriginMake(copy->source.origin.x,

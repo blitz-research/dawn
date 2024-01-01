@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/spirv/writer/ast_printer/ast_printer.h"
 
@@ -24,7 +37,7 @@
 #include "src/tint/lang/spirv/writer/ast_raise/var_for_dynamic_index.h"
 #include "src/tint/lang/spirv/writer/ast_raise/vectorize_matrix_conversions.h"
 #include "src/tint/lang/spirv/writer/ast_raise/while_to_loop.h"
-#include "src/tint/lang/spirv/writer/common/option_builder.h"
+#include "src/tint/lang/spirv/writer/common/option_helpers.h"
 #include "src/tint/lang/wgsl/ast/transform/add_block_attribute.h"
 #include "src/tint/lang/wgsl/ast/transform/add_empty_entry_point.h"
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
@@ -132,6 +145,8 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.quantize_to_vec_f16 = true;  // crbug.com/tint/1741
         polyfills.workgroup_uniform_load = true;
+        polyfills.dot_4x8_packed = options.polyfill_dot_4x8_packed;
+        polyfills.pack_unpack_4x8 = true;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();  // Must come before DirectVariableAccess
     }

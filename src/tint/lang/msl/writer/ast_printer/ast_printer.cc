@@ -1,16 +1,29 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/msl/writer/ast_printer/ast_printer.h"
 
@@ -46,6 +59,7 @@
 #include "src/tint/lang/msl/writer/ast_raise/packed_vec3.h"
 #include "src/tint/lang/msl/writer/ast_raise/pixel_local.h"
 #include "src/tint/lang/msl/writer/ast_raise/subgroup_ballot.h"
+#include "src/tint/lang/msl/writer/common/option_helpers.h"
 #include "src/tint/lang/msl/writer/common/printer_support.h"
 #include "src/tint/lang/wgsl/ast/alias.h"
 #include "src/tint/lang/wgsl/ast/bool_literal_expression.h"
@@ -174,25 +188,39 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         polyfills.sign_int = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
+        polyfills.pack_unpack_4x8 = true;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();
     }
 
-    // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
-    data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
-        options.external_texture_options.bindings_map);
-    manager.Add<ast::transform::MultiplanarExternalTexture>();
+    ExternalTextureOptions external_texture_options{};
+    RemapperData remapper_data{};
+    PopulateRemapperAndMultiplanarOptions(options, remapper_data, external_texture_options);
 
-    // BindingRemapper must come after MultiplanarExternalTexture
     manager.Add<ast::transform::BindingRemapper>();
     data.Add<ast::transform::BindingRemapper::Remappings>(
-        options.binding_remapper_options.binding_points,
-        std::unordered_map<BindingPoint, core::Access>{}, /* allow_collisions */ true);
+        remapper_data, std::unordered_map<BindingPoint, core::Access>{},
+        /* allow_collisions */ true);
+
+    // Note: it is more efficient for MultiplanarExternalTexture to come after Robustness
+    // MultiplanarExternalTexture must come after BindingRemapper
+    data.Add<ast::transform::MultiplanarExternalTexture::NewBindingPoints>(
+        external_texture_options.bindings_map, /* allow_collisions */ true);
+    manager.Add<ast::transform::MultiplanarExternalTexture>();
 
     if (!options.disable_workgroup_init) {
         // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
         // ZeroInitWorkgroupMemory may inject new builtin parameters.
         manager.Add<ast::transform::ZeroInitWorkgroupMemory>();
+    }
+
+    {
+        PixelLocal::Config cfg;
+        for (auto it : options.pixel_local_options.attachments) {
+            cfg.attachments.Add(it.first, it.second);
+        }
+        data.Add<PixelLocal::Config>(cfg);
+        manager.Add<PixelLocal>();
     }
 
     // CanonicalizeEntryPointIO must come after Robustness
@@ -211,15 +239,6 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
 
     // SubgroupBallot() must come after CanonicalizeEntryPointIO.
     manager.Add<SubgroupBallot>();
-
-    {
-        PixelLocal::Config cfg;
-        for (auto it : options.pixel_local_options.attachments) {
-            cfg.attachments.Add(it.first, it.second);
-        }
-        data.Add<PixelLocal::Config>(cfg);
-        manager.Add<PixelLocal>();
-    }
 
     // ArrayLengthFromUniform must come after SimplifyPointers, as
     // it assumes that the form of the array length argument is &var.array.
@@ -253,16 +272,14 @@ ASTPrinter::ASTPrinter(const Program& program) : builder_(ProgramBuilder::Wrap(p
 ASTPrinter::~ASTPrinter() = default;
 
 bool ASTPrinter::Generate() {
-    if (!tint::writer::CheckSupportedExtensions(
+    if (!tint::wgsl::CheckSupportedExtensions(
             "MSL", builder_.AST(), diagnostics_,
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
-                wgsl::Extension::kChromiumExperimentalDp4A,
                 wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumExperimentalPixelLocal,
-                wgsl::Extension::kChromiumExperimentalPushConstant,
-                wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
+                wgsl::Extension::kChromiumExperimentalFramebufferFetch,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
                 wgsl::Extension::kChromiumInternalRelaxedUniformLayout,
                 wgsl::Extension::kF16,
@@ -312,14 +329,14 @@ bool ASTPrinter::Generate() {
                 // Do nothing for enabling extension in MSL
                 return true;
             },
+            [&](const ast::Requires*) {
+                // Do nothing for requiring language features in MSL.
+                return true;
+            },
             [&](const ast::ConstAssert*) {
                 return true;  // Not emitted
-            },
-            [&](Default) {
-                // These are pushed into the entry point by sanitizer transforms.
-                TINT_ICE() << "unhandled type: " << decl->TypeInfo().name;
-                return false;
-            });
+            },                //
+            TINT_ICE_ON_NO_MATCH);
         if (!ok) {
             return false;
         }
@@ -628,14 +645,12 @@ bool ASTPrinter::EmitCall(StringStream& out, const ast::CallExpression* expr) {
     auto* call = builder_.Sem().Get<sem::Call>(expr);
     auto* target = call->Target();
     return Switch(
-        target, [&](const sem::Function* func) { return EmitFunctionCall(out, call, func); },
+        target,  //
+        [&](const sem::Function* func) { return EmitFunctionCall(out, call, func); },
         [&](const sem::BuiltinFn* builtin) { return EmitBuiltinCall(out, call, builtin); },
         [&](const sem::ValueConversion* conv) { return EmitTypeConversion(out, call, conv); },
-        [&](const sem::ValueConstructor* ctor) { return EmitTypeInitializer(out, call, ctor); },
-        [&](Default) {
-            TINT_ICE() << "unhandled call target: " << target->TypeInfo().name;
-            return false;
-        });
+        [&](const sem::ValueConstructor* ctor) { return EmitTypeInitializer(out, call, ctor); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitFunctionCall(StringStream& out,
@@ -1369,8 +1384,8 @@ bool ASTPrinter::EmitDot4I8PackedCall(StringStream& out,
                                       const sem::BuiltinFn* builtin) {
     return CallBuiltinHelper(
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
-            Line(b) << "packed_char4 vec1 = as_type<packed_char4>(" << params[0] << ");";
-            Line(b) << "packed_char4 vec2 = as_type<packed_char4>(" << params[1] << ");";
+            Line(b) << "char4 vec1 = as_type<char4>(" << params[0] << ");";
+            Line(b) << "char4 vec2 = as_type<char4>(" << params[1] << ");";
             Line(b) << "return vec1[0] * vec2[0] + vec1[1] * vec2[1] + vec1[2] * vec2[2] + vec1[3] "
                        "* vec2[3];";
             return true;
@@ -1382,8 +1397,8 @@ bool ASTPrinter::EmitDot4U8PackedCall(StringStream& out,
                                       const sem::BuiltinFn* builtin) {
     return CallBuiltinHelper(
         out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
-            Line(b) << "packed_uchar4 vec1 = as_type<packed_uchar4>(" << params[0] << ");";
-            Line(b) << "packed_uchar4 vec2 = as_type<packed_uchar4>(" << params[1] << ");";
+            Line(b) << "uchar4 vec1 = as_type<uchar4>(" << params[0] << ");";
+            Line(b) << "uchar4 vec2 = as_type<uchar4>(" << params[1] << ");";
             Line(b) << "return vec1[0] * vec2[0] + vec1[1] * vec2[1] + vec1[2] * vec2[2] + vec1[3] "
                        "* vec2[3];";
             return true;
@@ -1705,12 +1720,8 @@ bool ASTPrinter::EmitZeroValue(StringStream& out, const core::type::Type* type) 
         [&](const core::type::Struct*) {
             out << "{}";
             return true;
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "Invalid type for zero emission: " + type->FriendlyName());
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitConstant(StringStream& out, const core::constant::Value* constant) {
@@ -1831,12 +1842,8 @@ bool ASTPrinter::EmitConstant(StringStream& out, const core::constant::Value* co
             }
 
             return true;
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unhandled constant type: " + constant->Type()->FriendlyName());
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* lit) {
@@ -1868,11 +1875,8 @@ bool ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
             }
             diagnostics_.add_error(diag::System::Writer, "unknown integer literal suffix type");
             return false;
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer, "unknown literal type");
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitExpression(StringStream& out, const ast::Expression* expr) {
@@ -1890,12 +1894,8 @@ bool ASTPrinter::EmitExpression(StringStream& out, const ast::Expression* expr) 
         [&](const ast::IdentifierExpression* i) { return EmitIdentifier(out, i); },
         [&](const ast::LiteralExpression* l) { return EmitLiteral(out, l); },
         [&](const ast::MemberAccessorExpression* m) { return EmitMemberAccessor(out, m); },
-        [&](const ast::UnaryOpExpression* u) { return EmitUnaryOp(out, u); },
-        [&](Default) {  //
-            diagnostics_.add_error(diag::System::Writer, "unknown expression type: " +
-                                                             std::string(expr->TypeInfo().name));
-            return false;
-        });
+        [&](const ast::UnaryOpExpression* u) { return EmitUnaryOp(out, u); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 void ASTPrinter::EmitStage(StringStream& out, ast::PipelineStage stage) {
@@ -1974,11 +1974,10 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
             TINT_ICE() << "missing binding attributes for entry point parameter";
             return kInvalidBindingIndex;
         }
-        auto* param_sem = builder_.Sem().Get<sem::Parameter>(param);
-        auto bp = param_sem->BindingPoint();
+        auto* param_sem = builder_.Sem().Get(param);
+        auto bp = param_sem->Attributes().binding_point;
         if (TINT_UNLIKELY(bp->group != 0)) {
-            TINT_ICE() << "encountered non-zero resource group index (use "
-                          "BindingRemapper to fix)";
+            TINT_ICE() << "encountered non-zero resource group index (use BindingRemapper to fix)";
             return kInvalidBindingIndex;
         }
         return bp->binding;
@@ -2011,20 +2010,8 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
 
             bool ok = Switch(
                 type,  //
-                [&](const core::type::Struct* str) {
-                    bool is_pixel_local = false;
-                    if (auto* sem_str = str->As<sem::Struct>()) {
-                        for (auto* member : sem_str->Members()) {
-                            if (ast::HasAttribute<PixelLocal::Attachment>(
-                                    member->Declaration()->attributes)) {
-                                is_pixel_local = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!is_pixel_local) {
-                        out << " [[stage_in]]";
-                    }
+                [&](const core::type::Struct*) {
+                    out << " [[stage_in]]";
                     return true;
                 },
                 [&](const core::type::Texture*) {
@@ -2136,6 +2123,7 @@ bool ASTPrinter::EmitLoop(const ast::LoopStatement* stmt) {
 
     TINT_SCOPED_ASSIGNMENT(emit_continuing_, emit_continuing);
     Line() << "while (true) {";
+    EmitLoopPreserver();
     {
         ScopedIndent si(this);
         if (!EmitStatements(stmt->body->statements)) {
@@ -2206,6 +2194,7 @@ bool ASTPrinter::EmitForLoop(const ast::ForLoopStatement* stmt) {
 
         TINT_SCOPED_ASSIGNMENT(emit_continuing_, emit_continuing);
         Line() << "while (true) {";
+        EmitLoopPreserver();
         IncrementIndent();
         TINT_DEFER({
             DecrementIndent();
@@ -2246,6 +2235,7 @@ bool ASTPrinter::EmitForLoop(const ast::ForLoopStatement* stmt) {
             }
             out << " {";
         }
+        EmitLoopPreserver();
         {
             auto emit_continuing = [] { return true; };
             TINT_SCOPED_ASSIGNMENT(emit_continuing_, emit_continuing);
@@ -2279,6 +2269,7 @@ bool ASTPrinter::EmitWhile(const ast::WhileStatement* stmt) {
     bool emit_as_loop = cond_pre.lines.size() > 0;
     if (emit_as_loop) {
         Line() << "while (true) {";
+        EmitLoopPreserver();
         IncrementIndent();
         TINT_DEFER({
             DecrementIndent();
@@ -2301,6 +2292,7 @@ bool ASTPrinter::EmitWhile(const ast::WhileStatement* stmt) {
             }
             out << " {";
         }
+        EmitLoopPreserver();
         if (!EmitStatementsWithIndent(stmt->body->statements)) {
             return false;
         }
@@ -2391,11 +2383,8 @@ bool ASTPrinter::EmitMemberAccessor(StringStream& out, const ast::MemberAccessor
             }
             out << "." << member_access->Member()->Name().Name();
             return true;
-        },
-        [&](Default) {
-            TINT_ICE() << "unknown member access type: " << sem->TypeInfo().name;
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitReturn(const ast::ReturnStatement* stmt) {
@@ -2477,20 +2466,13 @@ bool ASTPrinter::EmitStatement(const ast::Statement* stmt) {
                 [&](const ast::Let* let) { return EmitLet(let); },
                 [&](const ast::Const*) {
                     return true;  // Constants are embedded at their use
-                },
-                [&](Default) {  //
-                    TINT_ICE() << "unknown statement type: " << stmt->TypeInfo().name;
-                    return false;
-                });
+                },                //
+                TINT_ICE_ON_NO_MATCH);
         },
         [&](const ast::ConstAssert*) {
             return true;  // Not emitted
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unknown statement type: " + std::string(stmt->TypeInfo().name));
-            return false;
-        });
+        },                //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitStatements(VectorRef<const ast::Statement*> stmts) {
@@ -2698,11 +2680,8 @@ bool ASTPrinter::EmitType(StringStream& out, const core::type::Type* type) {
                     }
                     out << ", access::sample";
                     return true;
-                },
-                [&](Default) {
-                    diagnostics_.add_error(diag::System::Writer, "invalid texture type");
-                    return false;
-                });
+                },  //
+                TINT_ICE_ON_NO_MATCH);
         },
         [&](const core::type::U32*) {
             out << "uint";
@@ -2721,12 +2700,8 @@ bool ASTPrinter::EmitType(StringStream& out, const core::type::Type* type) {
         [&](const core::type::Void*) {
             out << "void";
             return true;
-        },
-        [&](Default) {
-            diagnostics_.add_error(diag::System::Writer,
-                                   "unknown type in EmitType: " + type->FriendlyName());
-            return false;
-        });
+        },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 bool ASTPrinter::EmitTypeAndName(StringStream& out,
@@ -2861,6 +2836,10 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
             }
         }
 
+        if (auto color = attributes.color) {
+            out << " [[color(" + std::to_string(color.value()) + ")]]";
+        }
+
         if (auto interpolation = attributes.interpolation) {
             auto name = InterpolationToAttribute(interpolation->type, interpolation->sampling);
             if (name.empty()) {
@@ -2873,13 +2852,6 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
         if (attributes.invariant) {
             invariant_define_name_ = UniqueIdentifier("TINT_INVARIANT");
             out << " " << invariant_define_name_;
-        }
-
-        if (auto* sem_mem = mem->As<sem::StructMember>()) {
-            if (auto* attachment =
-                    ast::GetAttribute<PixelLocal::Attachment>(sem_mem->Declaration()->attributes)) {
-                out << " [[color(" << attachment->index << ")]]";
-            }
         }
 
         out << ";";
@@ -3057,6 +3029,14 @@ bool ASTPrinter::EmitLet(const ast::Let* let) {
     out << ";";
 
     return true;
+}
+
+void ASTPrinter::EmitLoopPreserver() {
+    IncrementIndent();
+    // This statement prevents the MSL compiler from erasing a loop during
+    // optimimzations.
+    Line() << R"(__asm__("");)";
+    DecrementIndent();
 }
 
 template <typename F>

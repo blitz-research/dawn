@@ -1,16 +1,29 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 
@@ -98,14 +111,6 @@
 
 using namespace tint::core::fluent_types;  // NOLINT
 
-TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpression<tint::core::Access>);
-TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpression<tint::core::AddressSpace>);
-TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpression<tint::core::BuiltinValue>);
-TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpression<tint::core::InterpolationSampling>);
-TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpression<tint::core::InterpolationType>);
-TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpression<tint::core::TexelFormat>);
-TINT_INSTANTIATE_TYPEINFO(tint::sem::BuiltinEnumExpression<tint::wgsl::BuiltinFn>);
-
 namespace tint::resolver {
 namespace {
 
@@ -118,7 +123,7 @@ constexpr size_t kMaxNestDepthOfCompositeType = 255;
 
 }  // namespace
 
-Resolver::Resolver(ProgramBuilder* builder)
+Resolver::Resolver(ProgramBuilder* builder, const wgsl::AllowedFeatures& allowed_features)
     : b(*builder),
       diagnostics_(builder->Diagnostics()),
       const_eval_(builder->constants, diagnostics_),
@@ -127,8 +132,10 @@ Resolver::Resolver(ProgramBuilder* builder)
       validator_(builder,
                  sem_,
                  enabled_extensions_,
+                 allowed_features_,
                  atomic_composite_info_,
-                 valid_type_storage_layouts_) {}
+                 valid_type_storage_layouts_),
+      allowed_features_(allowed_features) {}
 
 Resolver::~Resolver() = default;
 
@@ -150,6 +157,10 @@ bool Resolver::Resolve() {
 
     if (TINT_UNLIKELY(!result && !diagnostics_.contains_errors())) {
         AddICE("resolving failed, but no error was raised", {});
+        return false;
+    }
+
+    if (!validator_.Enables(b.AST().Enables())) {
         return false;
     }
 
@@ -184,14 +195,12 @@ bool Resolver::ResolveInternal() {
                     return DiagnosticControl(d->control);
                 },
                 [&](const ast::Enable* e) { return Enable(e); },
+                [&](const ast::Requires* r) { return Requires(r); },
                 [&](const ast::TypeDecl* td) { return TypeDecl(td); },
                 [&](const ast::Function* func) { return Function(func); },
                 [&](const ast::Variable* var) { return GlobalVariable(var); },
-                [&](const ast::ConstAssert* ca) { return ConstAssert(ca); },
-                [&](Default) {
-                    TINT_UNREACHABLE() << "unhandled global declaration: " << decl->TypeInfo().name;
-                    return false;
-                })) {
+                [&](const ast::ConstAssert* ca) { return ConstAssert(ca); },  //
+                TINT_ICE_ON_NO_MATCH)) {
             return false;
         }
     }
@@ -236,14 +245,8 @@ sem::Variable* Resolver::Variable(const ast::Variable* v, bool is_global) {
         [&](const ast::Var* var) { return Var(var, is_global); },
         [&](const ast::Let* let) { return Let(let); },
         [&](const ast::Override* override) { return Override(override); },
-        [&](const ast::Const* const_) { return Const(const_, is_global); },
-        [&](Default) {
-            StringStream err;
-            err << "Resolver::GlobalVariable() called with a unknown variable type: "
-                << v->TypeInfo().name;
-            AddICE(err.str(), v->source);
-            return nullptr;
-        });
+        [&](const ast::Const* const_) { return Const(const_, is_global); },  //
+        TINT_ICE_ON_NO_MATCH);
 }
 
 sem::Variable* Resolver::Let(const ast::Let* v) {
@@ -390,7 +393,7 @@ sem::Variable* Resolver::Override(const ast::Override* v) {
                 }
 
                 auto o = OverrideId{static_cast<decltype(OverrideId::value)>(value)};
-                sem->SetOverrideId(o);
+                sem->Attributes().override_id = o;
 
                 // Track the constant IDs that are specified in the shader.
                 override_ids_.Add(o, sem);
@@ -627,7 +630,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
                     if (!value) {
                         return kErrored;
                     }
-                    global->SetLocation(value.Get());
+                    global->Attributes().location = value.Get();
                     return kSuccess;
                 },
                 [&](const ast::IndexAttribute* attr) {
@@ -638,7 +641,18 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
                     if (!value) {
                         return kErrored;
                     }
-                    global->SetIndex(value.Get());
+                    global->Attributes().index = value.Get();
+                    return kSuccess;
+                },
+                [&](const ast::ColorAttribute* attr) {
+                    if (!has_io_address_space) {
+                        return kInvalid;
+                    }
+                    auto value = ColorAttribute(attr);
+                    if (!value) {
+                        return kErrored;
+                    }
+                    global->Attributes().color = value.Get();
                     return kSuccess;
                 },
                 [&](const ast::BuiltinAttribute* attr) {
@@ -676,7 +690,7 @@ sem::Variable* Resolver::Var(const ast::Var* var, bool is_global) {
         }
 
         if (group && binding) {
-            global->SetBindingPoint(BindingPoint{group.value(), binding.value()});
+            global->Attributes().binding_point = BindingPoint{group.value(), binding.value()};
         }
 
     } else {
@@ -721,7 +735,15 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param,
                     if (TINT_UNLIKELY(!value)) {
                         return false;
                     }
-                    sem->SetLocation(value.Get());
+                    sem->Attributes().location = value.Get();
+                    return true;
+                },
+                [&](const ast::ColorAttribute* attr) {
+                    auto value = ColorAttribute(attr);
+                    if (TINT_UNLIKELY(!value)) {
+                        return false;
+                    }
+                    sem->Attributes().color = value.Get();
                     return true;
                 },
                 [&](const ast::BuiltinAttribute* attr) -> bool { return BuiltinAttribute(attr); },
@@ -767,7 +789,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param,
             }
         }
         if (group && binding) {
-            sem->SetBindingPoint(BindingPoint{group.value(), binding.value()});
+            sem->Attributes().binding_point = BindingPoint{group.value(), binding.value()};
         }
     } else {
         for (auto* attribute : param->attributes) {
@@ -863,8 +885,8 @@ bool Resolver::AllocateOverridableConstantIds() {
         auto* sem = sem_.Get(override);
 
         OverrideId id;
-        if (ast::HasAttribute<ast::IdAttribute>(override->attributes)) {
-            id = sem->OverrideId();
+        if (auto sem_id = sem->Attributes().override_id) {
+            id = *sem_id;
         } else {
             // No ID was specified, so allocate the next available ID.
             while (!ids_exhausted && override_ids_.Contains(next_id)) {
@@ -880,7 +902,7 @@ bool Resolver::AllocateOverridableConstantIds() {
             increment_next_id();
         }
 
-        const_cast<sem::GlobalVariable*>(sem)->SetOverrideId(id);
+        const_cast<sem::GlobalVariable*>(sem)->Attributes().override_id = id;
     }
     return true;
 }
@@ -1510,13 +1532,8 @@ sem::Expression* Resolver::Expression(const ast::Expression* root) {
                                                       current_statement_,
                                                       /* constant_value */ nullptr,
                                                       /* has_side_effects */ false);
-            },
-            [&](Default) {
-                StringStream err;
-                err << "unhandled expression type: " << expr->TypeInfo().name;
-                AddICE(err.str(), expr->source);
-                return nullptr;
-            });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
         if (!sem_expr) {
             return nullptr;
         }
@@ -1591,12 +1608,6 @@ core::type::Type* Resolver::Type(const ast::Expression* ast) {
 
     auto* type = const_cast<core::type::Type*>(type_expr->Type());
     if (TINT_UNLIKELY(!type)) {
-        return nullptr;
-    }
-
-    if (auto* incomplete = type->As<IncompleteType>(); TINT_UNLIKELY(incomplete)) {
-        AddError("expected '<' for '" + std::string(ToString(incomplete->builtin)) + "'",
-                 ast->source.End());
         return nullptr;
     }
 
@@ -2056,7 +2067,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     // * A builtin call.
     // * A value constructor.
     // * A value conversion.
-    auto* target = Expression(expr->target);
+    auto* target = sem_.Get(expr->target);
     if (TINT_UNLIKELY(!target)) {
         return nullptr;
     }
@@ -2145,18 +2156,17 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     // constructor call target.
     auto arr_or_str_init = [&](const core::type::Type* ty,
                                const sem::CallTarget* call_target) -> sem::Call* {
-        if (!MaybeMaterializeAndLoadArguments(args, call_target)) {
-            return nullptr;
-        }
-
         auto stage = args_stage;                       // The evaluation stage of the call
         const core::constant::Value* value = nullptr;  // The constant value for the call
         if (stage == core::EvaluationStage::kConstant && skip_const_eval_.Contains(expr)) {
             stage = core::EvaluationStage::kNotEvaluated;
         }
         if (stage == core::EvaluationStage::kConstant) {
-            auto els = tint::Transform(args, [&](auto* arg) { return arg->ConstantValue(); });
-            if (auto r = const_eval_.ArrayOrStructCtor(ty, std::move(els))) {
+            auto const_args = ConvertArguments(args, call_target);
+            if (!const_args) {
+                return nullptr;
+            }
+            if (auto r = const_eval_.ArrayOrStructCtor(ty, std::move(const_args.Get()))) {
                 value = r.Get();
             } else {
                 return nullptr;
@@ -2212,16 +2222,15 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                         return b.create<sem::ValueConstructor>(arr, std::move(params), args_stage);
                     });
 
-                auto* call = arr_or_str_init(arr, call_target);
-                if (!call) {
+                if (TINT_UNLIKELY(!MaybeMaterializeAndLoadArguments(args, call_target))) {
                     return nullptr;
                 }
 
-                // Validation must occur after argument materialization in arr_or_str_init().
-                if (!validator_.ArrayConstructor(expr, arr)) {
+                if (TINT_UNLIKELY(!validator_.ArrayConstructor(expr, arr))) {
                     return nullptr;
                 }
-                return call;
+
+                return arr_or_str_init(arr, call_target);
             },
             [&](const core::type::Struct* str) -> sem::Call* {
                 auto* call_target = struct_ctors_.GetOrCreate(
@@ -2238,16 +2247,15 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                         return b.create<sem::ValueConstructor>(str, std::move(params), args_stage);
                     });
 
-                auto* call = arr_or_str_init(str, call_target);
-                if (!call) {
+                if (TINT_UNLIKELY(!MaybeMaterializeAndLoadArguments(args, call_target))) {
                     return nullptr;
                 }
 
-                // Validation must occur after argument materialization in arr_or_str_init().
-                if (!validator_.StructureInitializer(expr, str)) {
+                if (TINT_UNLIKELY(!validator_.StructureInitializer(expr, str))) {
                     return nullptr;
                 }
-                return call;
+
+                return arr_or_str_init(str, call_target);
             },
             [&](Default) {
                 AddError("type is not constructible", expr->source);
@@ -2437,7 +2445,7 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         current_function_->AddDirectCall(call);
     }
 
-    if (!validator_.RequiredExtensionForBuiltinFn(call)) {
+    if (!validator_.RequiredFeaturesForBuiltinFn(call)) {
         return nullptr;
     }
 
@@ -2727,7 +2735,7 @@ core::type::Type* Resolver::VecT(const ast::Identifier* ident,
         return nullptr;
     }
 
-    auto* ty = Type(tmpl_ident->arguments[0]);
+    auto* ty = sem_.GetType(tmpl_ident->arguments[0]);
     if (TINT_UNLIKELY(!ty)) {
         return nullptr;
     }
@@ -2766,7 +2774,7 @@ core::type::Type* Resolver::MatT(const ast::Identifier* ident,
         return nullptr;
     }
 
-    auto* el_ty = Type(tmpl_ident->arguments[0]);
+    auto* el_ty = sem_.GetType(tmpl_ident->arguments[0]);
     if (TINT_UNLIKELY(!el_ty)) {
         return nullptr;
     }
@@ -2787,7 +2795,7 @@ core::type::Type* Resolver::Array(const ast::Identifier* ident) {
     auto* ast_el_ty = tmpl_ident->arguments[0];
     auto* ast_count = (tmpl_ident->arguments.Length() > 1) ? tmpl_ident->arguments[1] : nullptr;
 
-    auto* el_ty = Type(ast_el_ty);
+    auto* el_ty = sem_.GetType(ast_el_ty);
     if (!el_ty) {
         return nullptr;
     }
@@ -2829,14 +2837,13 @@ core::type::Atomic* Resolver::Atomic(const ast::Identifier* ident) {
         return nullptr;
     }
 
-    auto* ty_expr = TypeExpression(tmpl_ident->arguments[0]);
-    if (TINT_UNLIKELY(!ty_expr)) {
+    auto* el_ty = sem_.GetType(tmpl_ident->arguments[0]);
+    if (TINT_UNLIKELY(!el_ty)) {
         return nullptr;
     }
-    auto* ty = ty_expr->Type();
 
-    auto* out = b.create<core::type::Atomic>(ty);
-    if (!validator_.Atomic(tmpl_ident, out)) {
+    auto* out = b.create<core::type::Atomic>(el_ty);
+    if (TINT_UNLIKELY(!validator_.Atomic(tmpl_ident, out))) {
         return nullptr;
     }
     return out;
@@ -2848,34 +2855,32 @@ core::type::Pointer* Resolver::Ptr(const ast::Identifier* ident) {
         return nullptr;
     }
 
-    auto* address_space_expr = AddressSpaceExpression(tmpl_ident->arguments[0]);
-    if (TINT_UNLIKELY(!address_space_expr)) {
+    auto address_space = sem_.GetAddressSpace(tmpl_ident->arguments[0]);
+    if (TINT_UNLIKELY(address_space == core::AddressSpace::kUndefined)) {
         return nullptr;
     }
-    auto address_space = address_space_expr->Value();
 
-    auto* store_ty_expr = TypeExpression(tmpl_ident->arguments[1]);
-    if (TINT_UNLIKELY(!store_ty_expr)) {
+    auto* store_ty = const_cast<core::type::Type*>(sem_.GetType(tmpl_ident->arguments[1]));
+    if (TINT_UNLIKELY(!store_ty)) {
         return nullptr;
     }
-    auto* store_ty = const_cast<core::type::Type*>(store_ty_expr->Type());
 
-    auto access = DefaultAccessForAddressSpace(address_space);
+    core::Access access = core::Access::kUndefined;
     if (tmpl_ident->arguments.Length() > 2) {
-        auto* access_expr = AccessExpression(tmpl_ident->arguments[2]);
-        if (TINT_UNLIKELY(!access_expr)) {
+        access = sem_.GetAccess(tmpl_ident->arguments[2]);
+        if (TINT_UNLIKELY(access == core::Access::kUndefined)) {
             return nullptr;
         }
-        access = access_expr->Value();
+    } else {
+        access = DefaultAccessForAddressSpace(address_space);
     }
 
     auto* out = b.create<core::type::Pointer>(address_space, store_ty, access);
-    if (!validator_.Pointer(tmpl_ident, out)) {
+    if (TINT_UNLIKELY(!validator_.Pointer(tmpl_ident, out))) {
         return nullptr;
     }
 
-    if (!ApplyAddressSpaceUsageToType(address_space, store_ty,
-                                      store_ty_expr->Declaration()->source)) {
+    if (!ApplyAddressSpaceUsageToType(address_space, store_ty, tmpl_ident->arguments[1]->source)) {
         AddNote("while instantiating " + out->FriendlyName(), ident->source);
         return nullptr;
     }
@@ -2889,12 +2894,12 @@ core::type::SampledTexture* Resolver::SampledTexture(const ast::Identifier* iden
         return nullptr;
     }
 
-    auto* ty_expr = TypeExpression(tmpl_ident->arguments[0]);
+    auto* ty_expr = sem_.GetType(tmpl_ident->arguments[0]);
     if (TINT_UNLIKELY(!ty_expr)) {
         return nullptr;
     }
 
-    auto* out = b.create<core::type::SampledTexture>(dim, ty_expr->Type());
+    auto* out = b.create<core::type::SampledTexture>(dim, ty_expr);
     return validator_.SampledTexture(out, ident->source) ? out : nullptr;
 }
 
@@ -2905,12 +2910,12 @@ core::type::MultisampledTexture* Resolver::MultisampledTexture(const ast::Identi
         return nullptr;
     }
 
-    auto* ty_expr = TypeExpression(tmpl_ident->arguments[0]);
+    auto* ty_expr = sem_.GetType(tmpl_ident->arguments[0]);
     if (TINT_UNLIKELY(!ty_expr)) {
         return nullptr;
     }
 
-    auto* out = b.create<core::type::MultisampledTexture>(dim, ty_expr->Type());
+    auto* out = b.create<core::type::MultisampledTexture>(dim, ty_expr);
     return validator_.MultisampledTexture(out, ident->source) ? out : nullptr;
 }
 
@@ -2921,19 +2926,18 @@ core::type::StorageTexture* Resolver::StorageTexture(const ast::Identifier* iden
         return nullptr;
     }
 
-    auto* format = TexelFormatExpression(tmpl_ident->arguments[0]);
-    if (TINT_UNLIKELY(!format)) {
+    auto format = sem_.GetTexelFormat(tmpl_ident->arguments[0]);
+    if (TINT_UNLIKELY(format == core::TexelFormat::kUndefined)) {
         return nullptr;
     }
 
-    auto* access = AccessExpression(tmpl_ident->arguments[1]);
-    if (TINT_UNLIKELY(!access)) {
+    auto access = sem_.GetAccess(tmpl_ident->arguments[1]);
+    if (TINT_UNLIKELY(access == core::Access::kUndefined)) {
         return nullptr;
     }
 
-    auto* subtype = core::type::StorageTexture::SubtypeFor(format->Value(), b.Types());
-    auto* tex =
-        b.create<core::type::StorageTexture>(dim, format->Value(), access->Value(), subtype);
+    auto* subtype = core::type::StorageTexture::SubtypeFor(format, b.Types());
+    auto* tex = b.create<core::type::StorageTexture>(dim, format, access, subtype);
     if (!validator_.StorageTexture(tex, ident->source)) {
         return nullptr;
     }
@@ -2947,7 +2951,7 @@ core::type::Vector* Resolver::PackedVec3T(const ast::Identifier* ident) {
         return nullptr;
     }
 
-    auto* el_ty = Type(tmpl_ident->arguments[0]);
+    auto* el_ty = sem_.GetType(tmpl_ident->arguments[0]);
     if (TINT_UNLIKELY(!el_ty)) {
         return nullptr;
     }
@@ -3099,18 +3103,47 @@ void Resolver::CollectTextureSamplerPairs(sem::Function* func,
     // argument passed to the current function. Leave global variables
     // as-is. Then add the mapped pair to the current function's list of
     // texture/sampler pairs.
+
+    Hashset<const sem::Variable*, 4> texture_sampler_set;
+
     for (sem::VariablePair pair : func->TextureSamplerPairs()) {
         const sem::Variable* texture = pair.first;
         const sem::Variable* sampler = pair.second;
-        if (auto* param = texture->As<sem::Parameter>()) {
+        if (auto* param = As<sem::Parameter>(texture)) {
             texture = args[param->Index()]->UnwrapLoad()->As<sem::VariableUser>()->Variable();
+            texture_sampler_set.Add(texture);
         }
-        if (sampler) {
-            if (auto* param = sampler->As<sem::Parameter>()) {
-                sampler = args[param->Index()]->UnwrapLoad()->As<sem::VariableUser>()->Variable();
-            }
+        if (auto* param = As<sem::Parameter>(sampler)) {
+            sampler = args[param->Index()]->UnwrapLoad()->As<sem::VariableUser>()->Variable();
+            texture_sampler_set.Add(sampler);
         }
         current_function_->AddTextureSamplerPair(texture, sampler);
+    }
+
+    // Add any possible texture/sampler not essentially passed to builtins from the function param.
+    // This could be unused texture/sampler or texture/sampler passed to builtins that are emulated.
+
+    const auto& signature = func->Signature();
+
+    for (size_t i = 0; i < signature.parameters.Length(); i++) {
+        auto* param = signature.parameters[i];
+        if (param->Type()->Is<core::type::Texture>()) {
+            auto* user = args[i]->UnwrapLoad()->As<sem::VariableUser>();
+            auto* texture = user->Variable();
+            if (!texture_sampler_set.Contains(texture)) {
+                current_function_->AddTextureSamplerPair(texture, nullptr);
+                func->AddTextureSamplerPair(param, nullptr);
+                texture_sampler_set.Add(texture);
+            }
+        } else if (param->Type()->Is<core::type::Sampler>()) {
+            auto* user = args[i]->UnwrapLoad()->As<sem::VariableUser>();
+            auto* sampler = user->Variable();
+            if (!texture_sampler_set.Contains(sampler)) {
+                current_function_->AddTextureSamplerPair(nullptr, sampler);
+                func->AddTextureSamplerPair(nullptr, param);
+                texture_sampler_set.Add(sampler);
+            }
+        }
     }
 }
 
@@ -3142,11 +3175,8 @@ sem::ValueExpression* Resolver::Literal(const ast::LiteralExpression* literal) {
             TINT_UNREACHABLE() << "Unhandled float literal suffix: " << f->suffix;
             return nullptr;
         },
-        [&](const ast::BoolLiteralExpression*) { return b.create<core::type::Bool>(); },
-        [&](Default) {
-            TINT_UNREACHABLE() << "Unhandled literal type: " << literal->TypeInfo().name;
-            return nullptr;
-        });
+        [&](const ast::BoolLiteralExpression*) { return b.create<core::type::Bool>(); },  //
+        TINT_ICE_ON_NO_MATCH);
 
     if (ty == nullptr) {
         return nullptr;
@@ -3702,6 +3732,29 @@ tint::Result<uint32_t> Resolver::LocationAttribute(const ast::LocationAttribute*
     return static_cast<uint32_t>(value);
 }
 
+tint::Result<uint32_t> Resolver::ColorAttribute(const ast::ColorAttribute* attr) {
+    ExprEvalStageConstraint constraint{core::EvaluationStage::kConstant, "@color value"};
+    TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
+
+    auto* materialized = Materialize(ValueExpression(attr->expr));
+    if (!materialized) {
+        return Failure{};
+    }
+
+    if (!materialized->Type()->IsAnyOf<core::type::I32, core::type::U32>()) {
+        AddError("@color must be an i32 or u32 value", attr->source);
+        return Failure{};
+    }
+
+    auto const_value = materialized->ConstantValue();
+    auto value = const_value->ValueAs<AInt>();
+    if (value < 0) {
+        AddError("@color value must be non-negative", attr->source);
+        return Failure{};
+    }
+
+    return static_cast<uint32_t>(value);
+}
 tint::Result<uint32_t> Resolver::IndexAttribute(const ast::IndexAttribute* attr) {
     ExprEvalStageConstraint constraint{core::EvaluationStage::kConstant, "@index value"};
     TINT_SCOPED_ASSIGNMENT(expr_eval_stage_constraint_, constraint);
@@ -3950,6 +4003,25 @@ bool Resolver::Enable(const ast::Enable* enable) {
     for (auto* ext : enable->extensions) {
         Mark(ext);
         enabled_extensions_.Add(ext->name);
+        if (!allowed_features_.extensions.count(ext->name)) {
+            StringStream ss;
+            ss << "extension '" << ext->name << "' is not allowed in the current environment";
+            AddError(ss.str(), ext->source);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Resolver::Requires(const ast::Requires* req) {
+    for (auto feature : req->features) {
+        if (!allowed_features_.features.count(feature)) {
+            StringStream ss;
+            ss << "language feature '" << wgsl::ToString(feature)
+               << "' is not allowed in the current environment";
+            AddError(ss.str(), req->source);
+            return false;
+        }
     }
     return true;
 }
@@ -3976,44 +4048,56 @@ core::type::Type* Resolver::TypeDecl(const ast::TypeDecl* named_type) {
 
 const core::type::ArrayCount* Resolver::ArrayCount(const ast::Expression* count_expr) {
     // Evaluate the constant array count expression.
-    const auto* count_sem = Materialize(ValueExpression(count_expr));
+    const auto* count_sem = Materialize(sem_.GetVal(count_expr));
     if (!count_sem) {
         return nullptr;
     }
 
-    if (count_sem->Stage() == core::EvaluationStage::kOverride) {
-        // array count is an override expression.
-        // Is the count a named 'override'?
-        if (auto* user = count_sem->UnwrapMaterialize()->As<sem::VariableUser>()) {
-            if (auto* global = user->Variable()->As<sem::GlobalVariable>()) {
-                return b.create<sem::NamedOverrideArrayCount>(global);
+    switch (count_sem->Stage()) {
+        case core::EvaluationStage::kNotEvaluated:
+            // Happens in expressions like:
+            //    false && array<T, N>()[i]
+            // The end result will not be used, so just make N=1.
+            return b.create<core::type::ConstantArrayCount>(static_cast<uint32_t>(1));
+
+        case core::EvaluationStage::kOverride: {
+            // array count is an override expression.
+            // Is the count a named 'override'?
+            if (auto* user = count_sem->UnwrapMaterialize()->As<sem::VariableUser>()) {
+                if (auto* global = user->Variable()->As<sem::GlobalVariable>()) {
+                    return b.create<sem::NamedOverrideArrayCount>(global);
+                }
             }
+            return b.create<sem::UnnamedOverrideArrayCount>(count_sem);
         }
-        return b.create<sem::UnnamedOverrideArrayCount>(count_sem);
-    }
 
-    auto* count_val = count_sem->ConstantValue();
-    if (!count_val) {
-        AddError("array count must evaluate to a constant integer expression or override variable",
-                 count_expr->source);
-        return nullptr;
-    }
+        case core::EvaluationStage::kConstant: {
+            auto* count_val = count_sem->ConstantValue();
+            if (auto* ty = count_val->Type(); !ty->is_integer_scalar()) {
+                AddError(
+                    "array count must evaluate to a constant integer expression, but is type '" +
+                        ty->FriendlyName() + "'",
+                    count_expr->source);
+                return nullptr;
+            }
 
-    if (auto* ty = count_val->Type(); !ty->is_integer_scalar()) {
-        AddError("array count must evaluate to a constant integer expression, but is type '" +
-                     ty->FriendlyName() + "'",
-                 count_expr->source);
-        return nullptr;
-    }
+            int64_t count = count_val->ValueAs<AInt>();
+            if (count < 1) {
+                AddError("array count (" + std::to_string(count) + ") must be greater than 0",
+                         count_expr->source);
+                return nullptr;
+            }
 
-    int64_t count = count_val->ValueAs<AInt>();
-    if (count < 1) {
-        AddError("array count (" + std::to_string(count) + ") must be greater than 0",
-                 count_expr->source);
-        return nullptr;
-    }
+            return b.create<core::type::ConstantArrayCount>(static_cast<uint32_t>(count));
+        }
 
-    return b.create<core::type::ConstantArrayCount>(static_cast<uint32_t>(count));
+        default: {
+            AddError(
+                "array count must evaluate to a constant integer expression or override variable",
+                count_expr->source);
+            return nullptr;
+        }
+    }
 }
 
 bool Resolver::ArrayAttributes(VectorRef<const ast::Attribute*> attributes,
@@ -4303,6 +4387,14 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                         return false;
                     }
                     attributes.index = value.Get();
+                    return true;
+                },
+                [&](const ast::ColorAttribute* attr) {
+                    auto value = ColorAttribute(attr);
+                    if (!value) {
+                        return false;
+                    }
+                    attributes.color = value.Get();
                     return true;
                 },
                 [&](const ast::BuiltinAttribute* attr) {

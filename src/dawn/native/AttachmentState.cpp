@@ -1,21 +1,36 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/AttachmentState.h"
 
 #include "dawn/common/BitSetIterator.h"
-#include "dawn/native/ChainUtils_autogen.h"
+#include "dawn/common/Enumerator.h"
+#include "dawn/common/ityp_span.h"
+#include "dawn/native/ChainUtils.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/ObjectContentHasher.h"
 #include "dawn/native/PipelineLayout.h"
@@ -27,9 +42,10 @@ AttachmentState::AttachmentState(DeviceBase* device,
                                  const RenderBundleEncoderDescriptor* descriptor)
     : ObjectBase(device), mSampleCount(descriptor->sampleCount) {
     DAWN_ASSERT(descriptor->colorFormatCount <= kMaxColorAttachments);
-    for (ColorAttachmentIndex i(uint8_t(0));
-         i < ColorAttachmentIndex(static_cast<uint8_t>(descriptor->colorFormatCount)); ++i) {
-        wgpu::TextureFormat format = descriptor->colorFormats[static_cast<uint8_t>(i)];
+    auto colorFormats = ityp::SpanFromUntyped<ColorAttachmentIndex>(descriptor->colorFormats,
+                                                                    descriptor->colorFormatCount);
+
+    for (auto [i, format] : Enumerate(colorFormats)) {
         if (format != wgpu::TextureFormat::Undefined) {
             mColorAttachmentsSet.set(i);
             mColorFormats[i] = format;
@@ -44,22 +60,22 @@ AttachmentState::AttachmentState(DeviceBase* device,
 }
 
 AttachmentState::AttachmentState(DeviceBase* device,
-                                 const RenderPipelineDescriptor* descriptor,
+                                 const UnpackedPtr<RenderPipelineDescriptor>& descriptor,
                                  const PipelineLayoutBase* layout)
     : ObjectBase(device), mSampleCount(descriptor->multisample.count) {
-    const DawnMultisampleStateRenderToSingleSampled* msaaRenderToSingleSampledDesc = nullptr;
-    FindInChain(descriptor->multisample.nextInChain, &msaaRenderToSingleSampledDesc);
-    if (msaaRenderToSingleSampledDesc != nullptr) {
+    UnpackedPtr<MultisampleState> unpackedMultisampleState = Unpack(&descriptor->multisample);
+    if (auto* msaaRenderToSingleSampledDesc =
+            unpackedMultisampleState.Get<DawnMultisampleStateRenderToSingleSampled>()) {
         mIsMSAARenderToSingleSampledEnabled = msaaRenderToSingleSampledDesc->enabled;
     }
 
     if (descriptor->fragment != nullptr) {
         DAWN_ASSERT(descriptor->fragment->targetCount <= kMaxColorAttachments);
-        for (ColorAttachmentIndex i(uint8_t(0));
-             i < ColorAttachmentIndex(static_cast<uint8_t>(descriptor->fragment->targetCount));
-             ++i) {
-            wgpu::TextureFormat format =
-                descriptor->fragment->targets[static_cast<uint8_t>(i)].format;
+        auto targets = ityp::SpanFromUntyped<ColorAttachmentIndex>(
+            descriptor->fragment->targets, descriptor->fragment->targetCount);
+
+        for (auto [i, target] : Enumerate(targets)) {
+            wgpu::TextureFormat format = target.format;
             if (format != wgpu::TextureFormat::Undefined) {
                 mColorAttachmentsSet.set(i);
                 mColorFormats[i] = format;
@@ -76,12 +92,12 @@ AttachmentState::AttachmentState(DeviceBase* device,
     SetContentHash(ComputeContentHash());
 }
 
-AttachmentState::AttachmentState(DeviceBase* device, const RenderPassDescriptor* descriptor)
+AttachmentState::AttachmentState(DeviceBase* device,
+                                 const UnpackedPtr<RenderPassDescriptor>& descriptor)
     : ObjectBase(device) {
-    for (ColorAttachmentIndex i(uint8_t(0));
-         i < ColorAttachmentIndex(static_cast<uint8_t>(descriptor->colorAttachmentCount)); ++i) {
-        const RenderPassColorAttachment& colorAttachment =
-            descriptor->colorAttachments[static_cast<uint8_t>(i)];
+    auto colorAttachments = ityp::SpanFromUntyped<ColorAttachmentIndex>(
+        descriptor->colorAttachments, descriptor->colorAttachmentCount);
+    for (auto [i, colorAttachment] : Enumerate(colorAttachments)) {
         TextureViewBase* attachment = colorAttachment.view;
         if (attachment == nullptr) {
             continue;
@@ -89,9 +105,9 @@ AttachmentState::AttachmentState(DeviceBase* device, const RenderPassDescriptor*
         mColorAttachmentsSet.set(i);
         mColorFormats[i] = attachment->GetFormat().format;
 
-        const DawnRenderPassColorAttachmentRenderToSingleSampled* msaaRenderToSingleSampledDesc =
-            nullptr;
-        FindInChain(colorAttachment.nextInChain, &msaaRenderToSingleSampledDesc);
+        UnpackedPtr<RenderPassColorAttachment> unpackedColorAttachment = Unpack(&colorAttachment);
+        auto* msaaRenderToSingleSampledDesc =
+            unpackedColorAttachment.Get<DawnRenderPassColorAttachmentRenderToSingleSampled>();
         uint32_t attachmentSampleCount;
         if (msaaRenderToSingleSampledDesc != nullptr &&
             msaaRenderToSingleSampledDesc->implicitSampleCount > 1) {
@@ -120,9 +136,7 @@ AttachmentState::AttachmentState(DeviceBase* device, const RenderPassDescriptor*
     }
 
     // Gather the PLS information.
-    const RenderPassPixelLocalStorage* pls = nullptr;
-    FindInChain(descriptor->nextInChain, &pls);
-    if (pls != nullptr) {
+    if (auto* pls = descriptor.Get<RenderPassPixelLocalStorage>()) {
         mHasPLS = true;
         mStorageAttachmentSlots = std::vector<wgpu::TextureFormat>(
             pls->totalPixelLocalStorageSize / kPLSSlotByteSize, wgpu::TextureFormat::Undefined);
@@ -168,7 +182,7 @@ bool AttachmentState::EqualityFunc::operator()(const AttachmentState* a,
     }
 
     // Check color formats
-    for (ColorAttachmentIndex i : IterateBitSet(a->mColorAttachmentsSet)) {
+    for (auto i : IterateBitSet(a->mColorAttachmentsSet)) {
         if (a->mColorFormats[i] != b->mColorFormats[i]) {
             return false;
         }
@@ -210,7 +224,7 @@ size_t AttachmentState::ComputeContentHash() {
 
     // Hash color formats
     HashCombine(&hash, mColorAttachmentsSet);
-    for (ColorAttachmentIndex i : IterateBitSet(mColorAttachmentsSet)) {
+    for (auto i : IterateBitSet(mColorAttachmentsSet)) {
         HashCombine(&hash, mColorFormats[i]);
     }
 
@@ -232,8 +246,7 @@ size_t AttachmentState::ComputeContentHash() {
     return hash;
 }
 
-ityp::bitset<ColorAttachmentIndex, kMaxColorAttachments> AttachmentState::GetColorAttachmentsMask()
-    const {
+ColorAttachmentMask AttachmentState::GetColorAttachmentsMask() const {
     return mColorAttachmentsSet;
 }
 
@@ -266,4 +279,25 @@ bool AttachmentState::HasPixelLocalStorage() const {
 const std::vector<wgpu::TextureFormat>& AttachmentState::GetStorageAttachmentSlots() const {
     return mStorageAttachmentSlots;
 }
+
+std::vector<ColorAttachmentIndex>
+AttachmentState::ComputeStorageAttachmentPackingInColorAttachments() const {
+    // TODO(dawn:1704): Consider caching this on AttachmentState creation, but does it become part
+    // of the hashing and comparison operators? Fill with garbage data to more easily detect cases
+    // where an incorrect slot is accessed.
+    std::vector<ColorAttachmentIndex> result(mStorageAttachmentSlots.size(),
+                                             ityp::PlusOne(kMaxColorAttachmentsTyped));
+
+    // Iterate over the empty bits of mColorAttachmentsSet to pack storage attachment in them.
+    auto availableSlots = ~mColorAttachmentsSet;
+    for (size_t i = 0; i < mStorageAttachmentSlots.size(); i++) {
+        DAWN_ASSERT(!availableSlots.none());
+        auto slot = ColorAttachmentIndex(uint8_t(ScanForward(availableSlots.to_ulong())));
+        availableSlots.reset(slot);
+        result[i] = slot;
+    }
+
+    return result;
+}
+
 }  // namespace dawn::native

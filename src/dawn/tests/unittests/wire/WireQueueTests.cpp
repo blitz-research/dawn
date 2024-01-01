@@ -1,19 +1,33 @@
-// Copyright 2021 The Dawn Authors
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <memory>
 
+#include "dawn/tests/unittests/wire/WireFutureTest.h"
 #include "dawn/tests/unittests/wire/WireTest.h"
 #include "dawn/wire/WireClient.h"
 
@@ -22,127 +36,128 @@ namespace {
 
 using testing::_;
 using testing::InvokeWithoutArgs;
-using testing::Mock;
+using testing::Return;
 
-class MockQueueWorkDoneCallback {
-  public:
-    MOCK_METHOD(void, Call, (WGPUQueueWorkDoneStatus status, void* userdata));
-};
-
-static std::unique_ptr<MockQueueWorkDoneCallback> mockQueueWorkDoneCallback;
-static void ToMockQueueWorkDone(WGPUQueueWorkDoneStatus status, void* userdata) {
-    mockQueueWorkDoneCallback->Call(status, userdata);
-}
-
-class WireQueueTests : public WireTest {
+using WireQueueTestBase = WireFutureTest<WGPUQueueWorkDoneCallback,
+                                         WGPUQueueWorkDoneCallbackInfo,
+                                         wgpuQueueOnSubmittedWorkDone,
+                                         wgpuQueueOnSubmittedWorkDoneF>;
+class WireQueueTests : public WireQueueTestBase {
   protected:
-    void SetUp() override {
-        WireTest::SetUp();
-        mockQueueWorkDoneCallback = std::make_unique<MockQueueWorkDoneCallback>();
-    }
-
-    void TearDown() override {
-        WireTest::TearDown();
-        mockQueueWorkDoneCallback = nullptr;
-    }
-
-    void FlushServer() {
-        WireTest::FlushServer();
-        Mock::VerifyAndClearExpectations(&mockQueueWorkDoneCallback);
-    }
+    // Overriden version of wgpuQueueOnSubmittedWorkDone that defers to the API call based on the
+    // test callback mode.
+    void QueueOnSubmittedWorkDone(WGPUQueue q, void* userdata = nullptr) { CallImpl(userdata, q); }
 };
+
+DAWN_INSTANTIATE_WIRE_FUTURE_TEST_P(WireQueueTests);
 
 // Test that a successful OnSubmittedWorkDone call is forwarded to the client.
-TEST_F(WireQueueTests, OnSubmittedWorkDoneSuccess) {
-    wgpuQueueOnSubmittedWorkDone(queue, 0u, ToMockQueueWorkDone, this);
-    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, 0u, _, _))
-        .WillOnce(InvokeWithoutArgs([&] {
-            api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Success);
-        }));
+TEST_P(WireQueueTests, OnSubmittedWorkDoneSuccess) {
+    QueueOnSubmittedWorkDone(queue);
+    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, _, _)).WillOnce(InvokeWithoutArgs([&] {
+        api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Success);
+    }));
     FlushClient();
+    FlushFutures();
 
-    EXPECT_CALL(*mockQueueWorkDoneCallback, Call(WGPUQueueWorkDoneStatus_Success, this)).Times(1);
-    FlushServer();
+    ExpectWireCallbacksWhen([&](auto& mockCb) {
+        EXPECT_CALL(mockCb, Call(WGPUQueueWorkDoneStatus_Success, nullptr)).Times(1);
+
+        FlushCallbacks();
+    });
 }
 
 // Test that an error OnSubmittedWorkDone call is forwarded as an error to the client.
-TEST_F(WireQueueTests, OnSubmittedWorkDoneError) {
-    wgpuQueueOnSubmittedWorkDone(queue, 0u, ToMockQueueWorkDone, this);
-    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, 0u, _, _))
-        .WillOnce(InvokeWithoutArgs([&] {
-            api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Error);
-        }));
+TEST_P(WireQueueTests, OnSubmittedWorkDoneError) {
+    QueueOnSubmittedWorkDone(queue);
+    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, _, _)).WillOnce(InvokeWithoutArgs([&] {
+        api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Error);
+    }));
     FlushClient();
+    FlushFutures();
 
-    EXPECT_CALL(*mockQueueWorkDoneCallback, Call(WGPUQueueWorkDoneStatus_Error, this)).Times(1);
-    FlushServer();
+    ExpectWireCallbacksWhen([&](auto& mockCb) {
+        EXPECT_CALL(mockCb, Call(WGPUQueueWorkDoneStatus_Error, nullptr)).Times(1);
+
+        FlushCallbacks();
+    });
 }
 
-// Test registering an OnSubmittedWorkDone then disconnecting the wire calls the callback with
-// device loss
-TEST_F(WireQueueTests, OnSubmittedWorkDoneBeforeDisconnect) {
-    wgpuQueueOnSubmittedWorkDone(queue, 0u, ToMockQueueWorkDone, this);
-    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, 0u, _, _))
-        .WillOnce(InvokeWithoutArgs([&] {
-            api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Error);
-        }));
+// Test registering an OnSubmittedWorkDone then disconnecting the wire after the server responded to
+// the client will call the callback with the server response.
+TEST_P(WireQueueTests, OnSubmittedWorkDoneBeforeDisconnectAfterReply) {
+    // On Async and Spontaneous mode, it is not possible to simulate this because on the server
+    // reponse, the callback would also be fired.
+    DAWN_SKIP_TEST_IF(IsSpontaneous());
+
+    QueueOnSubmittedWorkDone(queue);
+    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, _, _)).WillOnce(InvokeWithoutArgs([&] {
+        api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Error);
+    }));
+    FlushClient();
+    FlushFutures();
+
+    ExpectWireCallbacksWhen([&](auto& mockCb) {
+        EXPECT_CALL(mockCb, Call(WGPUQueueWorkDoneStatus_Error, nullptr)).Times(1);
+
+        GetWireClient()->Disconnect();
+    });
+}
+
+// Test registering an OnSubmittedWorkDone then disconnecting the wire before the server responded
+// to the client (i.e. before the event was ever ready) will call the callback with success to make
+// the lost device appear to continue to function.
+TEST_P(WireQueueTests, OnSubmittedWorkDoneBeforeDisconnectBeforeReply) {
+    QueueOnSubmittedWorkDone(queue);
+    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, _, _)).WillOnce(InvokeWithoutArgs([&] {
+        api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Error);
+    }));
     FlushClient();
 
-    EXPECT_CALL(*mockQueueWorkDoneCallback, Call(WGPUQueueWorkDoneStatus_DeviceLost, this))
-        .Times(1);
-    GetWireClient()->Disconnect();
+    ExpectWireCallbacksWhen([&](auto& mockCb) {
+        EXPECT_CALL(mockCb, Call(WGPUQueueWorkDoneStatus_Success, nullptr)).Times(1);
+
+        GetWireClient()->Disconnect();
+    });
 }
 
 // Test registering an OnSubmittedWorkDone after disconnecting the wire calls the callback with
-// device loss
-TEST_F(WireQueueTests, OnSubmittedWorkDoneAfterDisconnect) {
+// success.
+TEST_P(WireQueueTests, OnSubmittedWorkDoneAfterDisconnect) {
     GetWireClient()->Disconnect();
 
-    EXPECT_CALL(*mockQueueWorkDoneCallback, Call(WGPUQueueWorkDoneStatus_DeviceLost, this))
-        .Times(1);
-    wgpuQueueOnSubmittedWorkDone(queue, 0u, ToMockQueueWorkDone, this);
-}
+    ExpectWireCallbacksWhen([&](auto& mockCb) {
+        EXPECT_CALL(mockCb, Call(WGPUQueueWorkDoneStatus_Success, nullptr)).Times(1);
 
-// Hack to pass in test context into user callback
-struct TestData {
-    WireQueueTests* pTest;
-    WGPUQueue* pTestQueue;
-    size_t numRequests;
-};
-
-static void ToMockQueueWorkDoneWithNewRequests(WGPUQueueWorkDoneStatus status, void* userdata) {
-    TestData* testData = reinterpret_cast<TestData*>(userdata);
-    // Mimic the user callback is sending new requests
-    ASSERT_NE(testData, nullptr);
-    ASSERT_NE(testData->pTest, nullptr);
-    ASSERT_NE(testData->pTestQueue, nullptr);
-    mockQueueWorkDoneCallback->Call(status, testData->pTest);
-
-    // Send the requests a number of times
-    for (size_t i = 0; i < testData->numRequests; i++) {
-        wgpuQueueOnSubmittedWorkDone(*(testData->pTestQueue), 0u, ToMockQueueWorkDone,
-                                     testData->pTest);
-    }
+        QueueOnSubmittedWorkDone(queue);
+    });
 }
 
 // Test that requests inside user callbacks before disconnect are called
-TEST_F(WireQueueTests, OnSubmittedWorkDoneInsideCallbackBeforeDisconnect) {
-    TestData testData = {this, &queue, 10};
-    wgpuQueueOnSubmittedWorkDone(queue, 0u, ToMockQueueWorkDoneWithNewRequests, &testData);
-    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, 0u, _, _))
-        .WillOnce(InvokeWithoutArgs([&] {
-            api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Error);
-        }));
+TEST_P(WireQueueTests, OnSubmittedWorkDoneInsideCallbackBeforeDisconnect) {
+    static constexpr size_t kNumRequests = 10;
+    QueueOnSubmittedWorkDone(queue);
+    EXPECT_CALL(api, OnQueueOnSubmittedWorkDone(apiQueue, _, _)).WillOnce(InvokeWithoutArgs([&] {
+        api.CallQueueOnSubmittedWorkDoneCallback(apiQueue, WGPUQueueWorkDoneStatus_Error);
+    }));
     FlushClient();
 
-    EXPECT_CALL(*mockQueueWorkDoneCallback, Call(WGPUQueueWorkDoneStatus_DeviceLost, this))
-        .Times(1 + testData.numRequests);
-    GetWireClient()->Disconnect();
+    ExpectWireCallbacksWhen([&](auto& mockCb) {
+        EXPECT_CALL(mockCb, Call(WGPUQueueWorkDoneStatus_Success, nullptr))
+            .Times(kNumRequests + 1)
+            .WillOnce([&]() {
+                for (size_t i = 0; i < kNumRequests; i++) {
+                    QueueOnSubmittedWorkDone(queue);
+                }
+            })
+            .WillRepeatedly(Return());
+
+        GetWireClient()->Disconnect();
+    });
 }
 
-// Test releasing the default queue, then its device. Both should be
-// released when the device is released since the device holds a reference
-// to the queue. Regresssion test for crbug.com/1332926.
+// Test releasing the default queue, then its device. Both should be released when the device is
+// released since the device holds a reference to the queue. Regresssion test for crbug.com/1332926.
 TEST_F(WireQueueTests, DefaultQueueThenDeviceReleased) {
     // Note: The test fixture gets the default queue.
 
@@ -167,9 +182,9 @@ TEST_F(WireQueueTests, DefaultQueueThenDeviceReleased) {
     DefaultApiDeviceWasReleased();
 }
 
-// Test the device, then its default queue. The default queue should be
-// released when its external reference is dropped since releasing the device
-// drops the internal reference. Regresssion test for crbug.com/1332926.
+// Test the device, then its default queue. The default queue should be released when its external
+// reference is dropped since releasing the device drops the internal reference. Regresssion test
+// for crbug.com/1332926.
 TEST_F(WireQueueTests, DeviceThenDefaultQueueReleased) {
     // Note: The test fixture gets the default queue.
 

@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <algorithm>
 #include <utility>
@@ -110,8 +123,10 @@ ValidationTest::ValidationTest() {
     procs.adapterRequestDevice = [](WGPUAdapter self, const WGPUDeviceDescriptor* descriptor,
                                     WGPURequestDeviceCallback callback, void* userdata) {
         DAWN_ASSERT(gCurrentTest);
-        wgpu::DeviceDescriptor deviceDesc =
-            *(reinterpret_cast<const wgpu::DeviceDescriptor*>(descriptor));
+        wgpu::DeviceDescriptor deviceDesc = {};
+        if (descriptor != nullptr) {
+            deviceDesc = *(reinterpret_cast<const wgpu::DeviceDescriptor*>(descriptor));
+        }
         WGPUDevice cDevice = gCurrentTest->CreateTestDevice(
             dawn::native::Adapter(reinterpret_cast<dawn::native::AdapterBase*>(self)), deviceDesc);
         DAWN_ASSERT(cDevice != nullptr);
@@ -128,16 +143,13 @@ void ValidationTest::SetUp() {
     // features). To test device with AllowUnsafeAPIs disabled, require it in device toggles
     // descriptor to override the inheritance.
     const char* allowUnsafeApisToggle = "allow_unsafe_apis";
-    WGPUDawnTogglesDescriptor instanceToggles = {};
-    instanceToggles.chain.sType = WGPUSType::WGPUSType_DawnTogglesDescriptor;
+    wgpu::DawnTogglesDescriptor instanceToggles = {};
     instanceToggles.enabledToggleCount = 1;
     instanceToggles.enabledToggles = &allowUnsafeApisToggle;
 
-    WGPUInstanceDescriptor instanceDesc = {};
-    instanceDesc.nextInChain = &instanceToggles.chain;
-
-    mDawnInstance = std::make_unique<dawn::native::Instance>(&instanceDesc);
-    mInstance = mWireHelper->RegisterInstance(mDawnInstance->Get());
+    wgpu::InstanceDescriptor instanceDesc = {};
+    instanceDesc.nextInChain = &instanceToggles;
+    std::tie(mInstance, mDawnInstance) = mWireHelper->CreateInstances(&instanceDesc);
 
     std::string traceName =
         std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_suite_name()) +
@@ -227,7 +239,7 @@ void ValidationTest::FlushWire() {
 void ValidationTest::WaitForAllOperations(const wgpu::Device& waitDevice) {
     bool done = false;
     waitDevice.GetQueue().OnSubmittedWorkDone(
-        0u, [](WGPUQueueWorkDoneStatus, void* userdata) { *static_cast<bool*>(userdata) = true; },
+        [](WGPUQueueWorkDoneStatus, void* userdata) { *static_cast<bool*>(userdata) = true; },
         &done);
 
     // Force the currently submitted operations to completed.
@@ -257,6 +269,10 @@ wgpu::SupportedLimits ValidationTest::GetSupportedLimits() const {
     wgpu::SupportedLimits supportedLimits = {};
     device.GetLimits(&supportedLimits);
     return supportedLimits;
+}
+
+dawn::utils::WireHelper* ValidationTest::GetWireHelper() const {
+    return mWireHelper.get();
 }
 
 wgpu::Device ValidationTest::RequestDeviceSync(const wgpu::DeviceDescriptor& deviceDesc) {

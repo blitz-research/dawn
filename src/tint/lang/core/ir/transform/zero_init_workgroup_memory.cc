@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/zero_init_workgroup_memory.h"
 
@@ -88,10 +101,10 @@ struct State {
         uint32_t next_id = 0;
         for (auto inst : *ir.root_block) {
             if (auto* var = inst->As<Var>()) {
-                auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
+                auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
                 if (ptr && ptr->AddressSpace() == core::AddressSpace::kWorkgroup) {
                     // Record the usage of the variable for each block that references it.
-                    var->Result()->ForEachUse([&](const Usage& use) {
+                    var->Result(0)->ForEachUse([&](const Usage& use) {
                         block_to_direct_vars.GetOrZero(use.instruction->Block())->Add(var);
                     });
                     var_to_id.Add(var, next_id++);
@@ -100,7 +113,7 @@ struct State {
         }
 
         // Process each entry point function.
-        for (auto* func : ir.functions) {
+        for (auto& func : ir.functions) {
             if (func->Stage() == Function::PipelineStage::kCompute) {
                 ProcessEntryPoint(func);
             }
@@ -125,7 +138,7 @@ struct State {
         // Build list of store descriptors for all workgroup variables.
         StoreMap stores;
         for (auto* var : sorted_vars) {
-            PrepareStores(var, var->Result()->Type()->UnwrapPtr(), 1, {}, stores);
+            PrepareStores(var, var->Result(0)->Type()->UnwrapPtr(), 1, {}, stores);
         }
 
         // Sort the iteration counts to get deterministic output in tests.
@@ -249,8 +262,8 @@ struct State {
                     new_indices.Push(member->Index());
                     PrepareStores(var, member->Type(), iteration_count, new_indices, stores);
                 }
-            },
-            [&](Default) { TINT_UNREACHABLE(); });
+            },  //
+            TINT_ICE_ON_NO_MATCH);
     }
 
     /// Get or inject an entry point builtin for the local invocation index.
@@ -266,7 +279,7 @@ struct State {
                                                             BuiltinValue::kLocalInvocationIndex) {
                         auto* access = b.Access(ty.u32(), param, u32(member->Index()));
                         access->InsertBefore(func->Block()->Front());
-                        return access->Result();
+                        return access->Result(0);
                     }
                 }
             } else {
@@ -292,7 +305,7 @@ struct State {
     /// @param total_count the total number of elements that will be zeroed
     /// @param linear_index the linear index of the single element that will be zeroed
     void GenerateStore(const Store& store, uint32_t total_count, Value* linear_index) {
-        auto* to = store.var->Result();
+        auto* to = store.var->Result(0);
         if (!store.indices.IsEmpty()) {
             // Build the access indices to get to the target element.
             // We walk backwards along the index list so that adjacent invocation store to
@@ -306,10 +319,10 @@ struct State {
                     auto array_index = std::get<ArrayIndex>(idx);
                     Value* index = linear_index;
                     if (count > 1) {
-                        index = b.Divide(ty.u32(), index, u32(count))->Result();
+                        index = b.Divide(ty.u32(), index, u32(count))->Result(0);
                     }
                     if (total_count > count * array_index.count) {
-                        index = b.Modulo(ty.u32(), index, u32(array_index.count))->Result();
+                        index = b.Modulo(ty.u32(), index, u32(array_index.count))->Result(0);
                     }
                     indices.Push(index);
                     count *= array_index.count;
@@ -319,7 +332,7 @@ struct State {
                 }
             }
             indices.Reverse();
-            to = b.Access(ty.ptr(workgroup, store.store_type), to, indices)->Result();
+            to = b.Access(ty.ptr(workgroup, store.store_type), to, indices)->Result(0);
         }
 
         // Generate the store instruction.

@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/glsl/writer/ast_raise/combine_samplers.h"
 
@@ -973,6 +986,225 @@ fn main() -> vec4<f32> {
 }
 
 @internal(disable_validation__binding_point_collision) @group(0) @binding(0) var<uniform> gcoords : vec2<f32>;
+)";
+
+    ast::transform::DataMap data;
+    data.Add<CombineSamplers::BindingInfo>(CombineSamplers::BindingMap(), BindingPoint());
+    auto got = Run<CombineSamplers>(src, data);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CombineSamplersTest, UnusedTextureFunctionParameter) {
+    auto* src = R"(
+@group(0) @binding(0) var t : texture_2d<f32>;
+
+fn f(tex: texture_2d<f32>) -> u32 {
+  return 1u;
+}
+
+fn main() {
+  _ = f(t);
+}
+)";
+    auto* expect = R"(
+fn f(tex_1 : texture_2d<f32>) -> u32 {
+  return 1u;
+}
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t_1 : texture_2d<f32>;
+
+fn main() {
+  _ = f(t_1);
+}
+)";
+
+    ast::transform::DataMap data;
+    data.Add<CombineSamplers::BindingInfo>(CombineSamplers::BindingMap(), BindingPoint());
+    auto got = Run<CombineSamplers>(src, data);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CombineSamplersTest, UnusedSamplerFunctionParameter) {
+    auto* src = R"(
+@group(0) @binding(0) var s : sampler;
+
+fn f(sampler1: sampler) -> u32 {
+  return 1u;
+}
+
+fn main() {
+  _ = f(s);
+}
+)";
+    auto* expect = R"(
+fn f(sampler1_1 : sampler) -> u32 {
+  return 1u;
+}
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var s_1 : sampler;
+
+fn main() {
+  _ = f(s_1);
+}
+)";
+
+    ast::transform::DataMap data;
+    data.Add<CombineSamplers::BindingInfo>(CombineSamplers::BindingMap(), BindingPoint());
+    auto got = Run<CombineSamplers>(src, data);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CombineSamplersTest, UnusedTextureAndSamplerFunctionParameter) {
+    auto* src = R"(
+@group(0) @binding(0) var t : texture_2d<f32>;
+
+@group(0) @binding(1) var s : sampler;
+
+fn f(tex: texture_2d<f32>, sampler1: sampler) -> u32 {
+  return 1u;
+}
+
+fn main() {
+  _ = f(t, s);
+}
+)";
+    auto* expect = R"(
+fn f(sampler1_1 : sampler, tex_1 : texture_2d<f32>) -> u32 {
+  return 1u;
+}
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var s_1 : sampler;
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t_1 : texture_2d<f32>;
+
+fn main() {
+  _ = f(s_1, t_1);
+}
+)";
+
+    ast::transform::DataMap data;
+    data.Add<CombineSamplers::BindingInfo>(CombineSamplers::BindingMap(), BindingPoint());
+    auto got = Run<CombineSamplers>(src, data);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CombineSamplersTest, UnusedTextureFunctionParameter_Multiple) {
+    auto* src = R"(
+@group(0) @binding(0) var t1 : texture_2d<f32>;
+
+@group(0) @binding(1) var t2 : texture_2d_array<f32>;
+
+@group(0) @binding(2) var s : sampler;
+
+fn f(tex1: texture_2d<f32>, tex2: texture_2d<f32>, tex3: texture_2d_array<f32>, sampler1: sampler) -> u32 {
+  return 1u + textureNumLayers(tex3);
+}
+
+fn main() {
+  _ = f(t1, t1, t2, s);
+}
+)";
+    auto* expect = R"(
+fn f(sampler1_1 : sampler, tex3_1 : texture_2d_array<f32>, tex1_1 : texture_2d<f32>) -> u32 {
+  return (1u + textureNumLayers(tex3_1));
+}
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var s_1 : sampler;
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t2_1 : texture_2d_array<f32>;
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t1_1 : texture_2d<f32>;
+
+fn main() {
+  _ = f(s_1, t2_1, t1_1);
+}
+)";
+
+    ast::transform::DataMap data;
+    data.Add<CombineSamplers::BindingInfo>(CombineSamplers::BindingMap(), BindingPoint());
+    auto got = Run<CombineSamplers>(src, data);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CombineSamplersTest, UnusedTextureFunctionParameter_Nested) {
+    auto* src = R"(
+@group(0) @binding(0) var t : texture_2d<f32>;
+
+fn f_nested(tex: texture_2d<f32>) -> u32 {
+  return 1u;
+}
+
+fn f(tex: texture_2d<f32>) -> u32 {
+  return f_nested(tex);
+}
+
+fn main() {
+  _ = f(t);
+}
+)";
+    auto* expect = R"(
+fn f_nested(tex_1 : texture_2d<f32>) -> u32 {
+  return 1u;
+}
+
+fn f(tex_2 : texture_2d<f32>) -> u32 {
+  return f_nested(tex_2);
+}
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t_1 : texture_2d<f32>;
+
+fn main() {
+  _ = f(t_1);
+}
+)";
+
+    ast::transform::DataMap data;
+    data.Add<CombineSamplers::BindingInfo>(CombineSamplers::BindingMap(), BindingPoint());
+    auto got = Run<CombineSamplers>(src, data);
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CombineSamplersTest, UnusedTextureAndSamplerFunctionParameter_Nested) {
+    auto* src = R"(
+@group(0) @binding(0) var t : texture_2d<f32>;
+
+@group(0) @binding(1) var s : sampler;
+
+fn f_nested(tex: texture_2d<f32>, sampler1: sampler) -> u32 {
+  return 1u;
+}
+
+fn f(tex: texture_2d<f32>, sampler1: sampler) -> u32 {
+  return f_nested(tex, sampler1);
+}
+
+fn main() {
+  _ = f(t, s);
+}
+)";
+    auto* expect =
+        R"(
+fn f_nested(sampler1_1 : sampler, tex_1 : texture_2d<f32>) -> u32 {
+  return 1u;
+}
+
+fn f(sampler1_2 : sampler, tex_2 : texture_2d<f32>) -> u32 {
+  return f_nested(sampler1_2, tex_2);
+}
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var s_1 : sampler;
+
+@group(0) @binding(0) @internal(disable_validation__binding_point_collision) var t_1 : texture_2d<f32>;
+
+fn main() {
+  _ = f(s_1, t_1);
+}
 )";
 
     ast::transform::DataMap data;

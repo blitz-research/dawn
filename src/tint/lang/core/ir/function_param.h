@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_TINT_LANG_CORE_IR_FUNCTION_PARAM_H_
 #define SRC_TINT_LANG_CORE_IR_FUNCTION_PARAM_H_
@@ -65,7 +78,7 @@ class FunctionParam : public Castable<FunctionParam, Value> {
     ~FunctionParam() override;
 
     /// @returns the type of the var
-    const core::type::Type* Type() override { return type_; }
+    const core::type::Type* Type() const override { return type_; }
 
     /// @copydoc Value::Clone()
     FunctionParam* Clone(CloneContext& ctx) override;
@@ -77,7 +90,7 @@ class FunctionParam : public Castable<FunctionParam, Value> {
         builtin_ = val;
     }
     /// @returns the builtin set for the parameter
-    std::optional<FunctionParam::Builtin> Builtin() { return builtin_; }
+    std::optional<FunctionParam::Builtin> Builtin() const { return builtin_; }
     /// Clears the builtin attribute.
     void ClearBuiltin() { builtin_ = {}; }
 
@@ -85,7 +98,7 @@ class FunctionParam : public Castable<FunctionParam, Value> {
     /// @param val the value to set for invariant
     void SetInvariant(bool val) { invariant_ = val; }
     /// @returns true if parameter is invariant
-    bool Invariant() { return invariant_; }
+    bool Invariant() const { return invariant_; }
 
     /// Sets the location
     /// @param loc the location value
@@ -94,7 +107,7 @@ class FunctionParam : public Castable<FunctionParam, Value> {
         location_ = {loc, interpolation};
     }
     /// @returns the location if `Attributes` contains `kLocation`
-    std::optional<struct Location> Location() { return location_; }
+    std::optional<struct Location> Location() const { return location_; }
     /// Clears the location attribute.
     void ClearLocation() { location_ = {}; }
 
@@ -103,7 +116,7 @@ class FunctionParam : public Castable<FunctionParam, Value> {
     /// @param binding the binding
     void SetBindingPoint(uint32_t group, uint32_t binding) { binding_point_ = {group, binding}; }
     /// @returns the binding points if `Attributes` contains `kBindingPoint`
-    std::optional<struct BindingPoint>& BindingPoint() { return binding_point_; }
+    std::optional<struct BindingPoint> BindingPoint() const { return binding_point_; }
 
   private:
     const core::type::Type* type_ = nullptr;

@@ -1,16 +1,29 @@
-// Copyright 2021 The Tint Authors.
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the empecific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/constant/eval_test.h"
 
@@ -2920,6 +2933,88 @@ INSTANTIATE_TEST_SUITE_P(  //
     ConstEvalBuiltinTest,
     testing::Combine(testing::Values(core::BuiltinFn::kQuantizeToF16),
                      testing::ValuesIn(QuantizeToF16Cases())));
+
+std::vector<Case> Dot4I8PackedCases() {
+    return {
+        // {-1, -2, -3, -4} . {-5, -6, -7, -8}
+        C({Val(u32(0xFFFEFDFC)), Val(u32(0xFBFAF9F8))}, Val(i32(70))),
+        // {1, 2, 3, 4} . {-1, -2, -3, -4}
+        C({Val(u32(0x01020304)), Val(u32(0xFFFEFDFC))}, Val(i32(-30))),
+        // {-9, -10, -11, -12} . {5, 6, 7, 8}
+        C({Val(u32(0xF7F6F5F4)), Val(u32(0x05060708))}, Val(i32(-278))),
+        // {0, 0, 0, 0} . {0, 0, 0, 0}
+        C({Val(u32(0)), Val(u32(0))}, Val(i32(0))),
+        // {127, 127, 127, 127} . {127, 127, 127, 127}
+        C({Val(u32(0x7F7F7F7F)), Val(u32(0x7F7F7F7F))}, Val(i32(64516))),
+        // {-128, -128, -128, -128} . {-128, -128, -128, -128}
+        C({Val(u32(0x80808080)), Val(u32(0x80808080))}, Val(i32(65536))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Dot4I8Packed,
+    ConstEvalBuiltinTest,
+    testing::Combine(testing::Values(core::BuiltinFn::kDot4I8Packed),
+                     testing::ValuesIn(Dot4I8PackedCases())));
+
+std::vector<Case> Dot4U8PackedCases() {
+    return {
+        // {255, 254, 253, 252} . {251, 250, 249, 248}
+        C({Val(u32(0xFFFEFDFC)), Val(u32(0xFBFAF9F8))}, Val(u32(252998))),
+        // {1, 2, 3, 4} . {255, 254, 253, 252}
+        C({Val(u32(0x01020304)), Val(u32(0xFFFEFDFC))}, Val(u32(2530))),
+        // {0, 0, 0, 0} . {0, 0, 0, 0}
+        C({Val(u32(0)), Val(u32(0))}, Val(u32(0))),
+        // {255, 255, 255, 255} . {255, 255, 255, 255}
+        C({Val(u32(0xFFFFFFFF)), Val(u32(0xFFFFFFFF))}, Val(u32(260100))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Dot4U8Packed,
+    ConstEvalBuiltinTest,
+    testing::Combine(testing::Values(core::BuiltinFn::kDot4U8Packed),
+                     testing::ValuesIn(Dot4U8PackedCases())));
+
+std::vector<Case> Pack4xI8Cases() {
+    return {
+        C({Vec(i32(0), i32(0), i32(0), i32(0))}, Val(u32(0x0000'0000))),
+        C({Vec(i32(1), i32(2), i32(3), i32(4))}, Val(u32(0x0403'0201))),
+        C({Vec(i32(-1), i32(-2), i32(-3), i32(-4))}, Val(u32(0xFCFD'FEFF))),
+        C({Vec(i32(-1), i32(2), i32(3), i32(4))}, Val(u32(0x0403'02FF))),
+        C({Vec(i32(1), i32(-2), i32(3), i32(4))}, Val(u32(0x0403'FE01))),
+        C({Vec(i32(1), i32(2), i32(-3), i32(4))}, Val(u32(0x04FD'0201))),
+        C({Vec(i32(1), i32(2), i32(3), i32(-4))}, Val(u32(0xFC03'0201))),
+        C({Vec(i32(1), i32(-2), i32(-3), i32(-4))}, Val(u32(0xFCFD'FE01))),
+        C({Vec(i32(-1), i32(2), i32(-3), i32(-4))}, Val(u32(0xFCFD'02FF))),
+        C({Vec(i32(-1), i32(-2), i32(3), i32(-4))}, Val(u32(0xFC03'FEFF))),
+        C({Vec(i32(-1), i32(-2), i32(-3), i32(4))}, Val(u32(0x04FD'FEFF))),
+        C({Vec(i32(-1), i32(-2), i32(3), i32(4))}, Val(u32(0x0403'FEFF))),
+        C({Vec(i32(-1), i32(2), i32(-3), i32(4))}, Val(u32(0x04FD'02FF))),
+        C({Vec(i32(-1), i32(2), i32(3), i32(-4))}, Val(u32(0xFC03'02FF))),
+        C({Vec(i32(1), i32(-2), i32(-3), i32(4))}, Val(u32(0x04FD'FE01))),
+        C({Vec(i32(1), i32(-2), i32(3), i32(-4))}, Val(u32(0xFC03'FE01))),
+        C({Vec(i32(1), i32(2), i32(-3), i32(-4))}, Val(u32(0xFCFD'0201))),
+        C({Vec(i32(127), i32(128), i32(-128), i32(-129))}, Val(u32(0x7F80'807F))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Pack4xI8,
+    ConstEvalBuiltinTest,
+    testing::Combine(testing::Values(core::BuiltinFn::kPack4XI8),
+                     testing::ValuesIn(Pack4xI8Cases())));
+
+std::vector<Case> Pack4xU8Cases() {
+    return {
+        C({Vec(u32(0), u32(0), u32(0), u32(0))}, Val(u32(0x0000'0000))),
+        C({Vec(u32(2), u32(4), u32(6), u32(8))}, Val(u32(0x0806'0402))),
+        C({Vec(u32(255), u32(255), u32(255), u32(255))}, Val(u32(0xFFFF'FFFF))),
+        C({Vec(u32(254), u32(255), u32(256), u32(257))}, Val(u32(0x0100'FFFE))),
+    };
+}
+INSTANTIATE_TEST_SUITE_P(  //
+    Pack4xU8,
+    ConstEvalBuiltinTest,
+    testing::Combine(testing::Values(core::BuiltinFn::kPack4XU8),
+                     testing::ValuesIn(Pack4xU8Cases())));
 
 }  // namespace
 }  // namespace tint::core::constant::test

@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/cmd/common/helper.h"
 
@@ -24,6 +37,7 @@
 #endif
 
 #if TINT_BUILD_WGSL_WRITER
+#include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
 #include "src/tint/lang/wgsl/writer/writer.h"
 #endif
 
@@ -96,6 +110,38 @@ void PrintBindings(tint::inspector::Inspector& inspector, const std::string& ep_
     }
 }
 
+#if TINT_BUILD_SPV_READER
+tint::Program ReadSpirv(const std::vector<uint32_t>& data, const LoadProgramOptions& opts) {
+    if (opts.use_ir) {
+#if TINT_BUILD_WGSL_WRITER
+        // Parse the SPIR-V binary to a core Tint IR module.
+        auto result = tint::spirv::reader::ReadIR(data);
+        if (!result) {
+            std::cerr << "Failed to parse SPIR-V: " << result.Failure() << "\n";
+            exit(1);
+        }
+
+        // Convert the IR module to a WGSL AST program.
+        tint::wgsl::writer::ProgramOptions options;
+        options.allow_non_uniform_derivatives =
+            opts.spirv_reader_options.allow_non_uniform_derivatives;
+        options.allowed_features = opts.spirv_reader_options.allowed_features;
+        auto ast = tint::wgsl::writer::IRToProgram(result.Get(), options);
+        if (!ast.IsValid() || ast.Diagnostics().contains_errors()) {
+            std::cerr << "Failed to convert IR to AST:\n\n" << ast.Diagnostics() << "\n";
+            exit(1);
+        }
+        return ast;
+#else
+        std::cerr << "Tint not built with the WGSL writer enabled" << std::endl;
+        exit(1);
+#endif  // TINT_BUILD_WGSL_READER
+    } else {
+        return tint::spirv::reader::Read(data, opts.spirv_reader_options);
+    }
+}
+#endif  // TINT_BUILD_SPV_READER
+
 }  // namespace
 
 [[noreturn]] void TintInternalCompilerErrorReporter(const InternalCompilerError& err) {
@@ -144,11 +190,14 @@ ProgramInfo LoadProgramInfo(const LoadProgramOptions& opts) {
                     exit(1);
                 }
 
+                tint::wgsl::reader::Options options;
+                options.allowed_features = tint::wgsl::AllowedFeatures::Everything();
+
                 auto file = std::make_unique<tint::Source::File>(
                     opts.filename, std::string(data.begin(), data.end()));
 
                 return ProgramInfo{
-                    /* program */ tint::wgsl::reader::Parse(file.get()),
+                    /* program */ tint::wgsl::reader::Parse(file.get(), options),
                     /* source_file */ std::move(file),
                 };
 #else
@@ -164,7 +213,7 @@ ProgramInfo LoadProgramInfo(const LoadProgramOptions& opts) {
                 }
 
                 return ProgramInfo{
-                    /* program */ tint::spirv::reader::Read(data, opts.spirv_reader_options),
+                    /* program */ ReadSpirv(data, opts),
                     /* source_file */ nullptr,
                 };
 #else
@@ -195,7 +244,7 @@ ProgramInfo LoadProgramInfo(const LoadProgramOptions& opts) {
                     opts.filename, std::string(text.begin(), text.end()));
 
                 return ProgramInfo{
-                    /* program */ tint::spirv::reader::Read(data, opts.spirv_reader_options),
+                    /* program */ ReadSpirv(data, opts),
                     /* source_file */ std::move(file),
                 };
 #else
@@ -254,8 +303,12 @@ void PrintInspectorData(tint::inspector::Inspector& inspector) {
             for (const auto& var : entry_point.input_variables) {
                 std::cout << "\t";
 
-                if (var.has_location_attribute) {
-                    std::cout << "@location(" << var.location_attribute << ") ";
+                if (auto location = var.attributes.location) {
+                    std::cout << "@location(" << location.value() << ") ";
+                }
+
+                if (auto color = var.attributes.color) {
+                    std::cout << "@color(" << color.value() << ") ";
                 }
                 std::cout << var.name << std::endl;
             }
@@ -266,8 +319,8 @@ void PrintInspectorData(tint::inspector::Inspector& inspector) {
             for (const auto& var : entry_point.output_variables) {
                 std::cout << "\t";
 
-                if (var.has_location_attribute) {
-                    std::cout << "@location(" << var.location_attribute << ") ";
+                if (auto location = var.attributes.location) {
+                    std::cout << "@location(" << location.value() << ") ";
                 }
                 std::cout << var.name << std::endl;
             }

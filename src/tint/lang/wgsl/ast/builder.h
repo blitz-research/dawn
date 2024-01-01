@@ -1,16 +1,29 @@
-// Copyright 2021 The Tint Authors.
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_TINT_LANG_WGSL_AST_BUILDER_H_
 #define SRC_TINT_LANG_WGSL_AST_BUILDER_H_
@@ -54,6 +67,7 @@
 #include "src/tint/lang/wgsl/ast/call_expression.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
 #include "src/tint/lang/wgsl/ast/case_statement.h"
+#include "src/tint/lang/wgsl/ast/color_attribute.h"
 #include "src/tint/lang/wgsl/ast/compound_assignment_statement.h"
 #include "src/tint/lang/wgsl/ast/const.h"
 #include "src/tint/lang/wgsl/ast/const_assert.h"
@@ -84,6 +98,7 @@
 #include "src/tint/lang/wgsl/ast/override.h"
 #include "src/tint/lang/wgsl/ast/parameter.h"
 #include "src/tint/lang/wgsl/ast/phony_expression.h"
+#include "src/tint/lang/wgsl/ast/requires.h"
 #include "src/tint/lang/wgsl/ast/return_statement.h"
 #include "src/tint/lang/wgsl/ast/stage_attribute.h"
 #include "src/tint/lang/wgsl/ast/stride_attribute.h"
@@ -1602,6 +1617,25 @@ class Builder {
         auto* enable = create<ast::Enable>(source, Vector{ext});
         AST().AddEnable(enable);
         return enable;
+    }
+
+    /// Adds the language feature to the list of requires directives at the top of the module.
+    /// @param feature the feature to require
+    /// @return a `ast::Requires` requiring the given language feature.
+    const ast::Requires* Require(wgsl::LanguageFeature feature) {
+        auto* req = create<ast::Requires>(Requires::LanguageFeatures({feature}));
+        AST().AddRequires(req);
+        return req;
+    }
+
+    /// Adds the language feature to the list of requires directives at the top of the module.
+    /// @param source the requires source
+    /// @param feature the feature to require
+    /// @return a `ast::Requires` requiring the given language feature.
+    const ast::Requires* Require(const Source& source, wgsl::LanguageFeature feature) {
+        auto* req = create<ast::Requires>(source, Requires::LanguageFeatures({feature}));
+        AST().AddRequires(req);
+        return req;
     }
 
     /// @param name the variable name
@@ -3132,6 +3166,23 @@ class Builder {
     template <typename EXPR>
     const ast::LocationAttribute* Location(const Source& source, EXPR&& location) {
         return create<ast::LocationAttribute>(source, Expr(std::forward<EXPR>(location)));
+    }
+
+    /// Creates an ast::ColorAttribute
+    /// @param index the index value expression
+    /// @returns the index attribute pointer
+    template <typename EXPR>
+    const ast::ColorAttribute* Color(EXPR&& index) {
+        return create<ast::ColorAttribute>(source_, Expr(std::forward<EXPR>(index)));
+    }
+
+    /// Creates an ast::ColorAttribute
+    /// @param source the source information
+    /// @param index the index value expression
+    /// @returns the index attribute pointer
+    template <typename EXPR>
+    const ast::ColorAttribute* Color(const Source& source, EXPR&& index) {
+        return create<ast::ColorAttribute>(source, Expr(std::forward<EXPR>(index)));
     }
 
     /// Creates an ast::LocationAttribute

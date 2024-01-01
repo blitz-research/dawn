@@ -1,16 +1,29 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_TINT_UTILS_DIAGNOSTIC_DIAGNOSTIC_H_
 #define SRC_TINT_UTILS_DIAGNOSTIC_DIAGNOSTIC_H_
@@ -95,39 +108,45 @@ class List {
     /// Constructs the list with no elements.
     List();
 
-    /// Copy constructor. Copies the diagnostics from `list` into this list.
+    /// Constructor. Copies the diagnostics from @p list into this list.
     /// @param list the list of diagnostics to copy into this list.
     List(std::initializer_list<Diagnostic> list);
 
-    /// Copy constructor. Copies the diagnostics from `list` into this list.
+    /// Constructor. Copies the diagnostics from @p list into this list.
+    /// @param list the list of diagnostics to copy into this list.
+    explicit List(VectorRef<Diagnostic> list);
+
+    /// Copy constructor. Copies the diagnostics from @p list into this list.
     /// @param list the list of diagnostics to copy into this list.
     List(const List& list);
 
-    /// Move constructor. Moves the diagnostics from `list` into this list.
+    /// Move constructor. Moves the diagnostics from @p list into this list.
     /// @param list the list of diagnostics to move into this list.
     List(List&& list);
 
     /// Destructor
     ~List();
 
-    /// Assignment operator. Copies the diagnostics from `list` into this list.
+    /// Assignment operator. Copies the diagnostics from @p list into this list.
     /// @param list the list to copy into this list.
     /// @return this list.
     List& operator=(const List& list);
 
-    /// Assignment move operator. Moves the diagnostics from `list` into this
-    /// list.
+    /// Assignment move operator. Moves the diagnostics from @p list into this list.
     /// @param list the list to move into this list.
     /// @return this list.
     List& operator=(List&& list);
 
     /// adds a diagnostic to the end of this list.
     /// @param diag the diagnostic to append to this list.
-    void add(Diagnostic&& diag) {
+    /// @returns a reference to the new diagnostic.
+    /// @note The returned reference must not be used after the list is mutated again.
+    diag::Diagnostic& add(Diagnostic&& diag) {
         if (diag.severity >= Severity::Error) {
             error_count_++;
         }
         entries_.Push(std::move(diag));
+        return entries_.Back();
     }
 
     /// adds a list of diagnostics to the end of this list.
@@ -142,50 +161,60 @@ class List {
     /// @param system the system raising the note message
     /// @param note_msg the note message
     /// @param source the source of the note diagnostic
-    void add_note(System system, std::string_view note_msg, const Source& source) {
+    /// @returns a reference to the new diagnostic.
+    /// @note The returned reference must not be used after the list is mutated again.
+    diag::Diagnostic& add_note(System system, std::string_view note_msg, const Source& source) {
         diag::Diagnostic note{};
         note.severity = diag::Severity::Note;
         note.system = system;
         note.source = source;
         note.message = note_msg;
-        add(std::move(note));
+        return add(std::move(note));
     }
 
     /// adds the warning message with the given Source to the end of this list.
     /// @param system the system raising the warning message
     /// @param warning_msg the warning message
     /// @param source the source of the warning diagnostic
-    void add_warning(System system, std::string_view warning_msg, const Source& source) {
+    /// @returns a reference to the new diagnostic.
+    /// @note The returned reference must not be used after the list is mutated again.
+    diag::Diagnostic& add_warning(System system,
+                                  std::string_view warning_msg,
+                                  const Source& source) {
         diag::Diagnostic warning{};
         warning.severity = diag::Severity::Warning;
         warning.system = system;
         warning.source = source;
         warning.message = warning_msg;
-        add(std::move(warning));
+        return add(std::move(warning));
     }
 
     /// adds the error message without a source to the end of this list.
     /// @param system the system raising the error message
     /// @param err_msg the error message
-    void add_error(System system, std::string_view err_msg) {
+    /// @returns a reference to the new diagnostic.
+    /// @note The returned reference must not be used after the list is mutated again.
+    diag::Diagnostic& add_error(System system, std::string_view err_msg) {
         diag::Diagnostic error{};
         error.severity = diag::Severity::Error;
         error.system = system;
         error.message = err_msg;
-        add(std::move(error));
+        return add(std::move(error));
     }
 
     /// adds the error message with the given Source to the end of this list.
     /// @param system the system raising the error message
     /// @param err_msg the error message
     /// @param source the source of the error diagnostic
-    void add_error(System system, std::string_view err_msg, const Source& source) {
+    /// @returns a reference to the new diagnostic.
+    /// @note The returned reference must not be used after the list is mutated again.
+    diag::Diagnostic& add_error(System system, std::string_view err_msg, const Source& source) {
         diag::Diagnostic error{};
         error.severity = diag::Severity::Error;
         error.system = system;
         error.source = source;
         error.message = err_msg;
-        add(std::move(error));
+        return add(std::move(error));
     }
 
     /// adds an internal compiler error message to the end of this list.
@@ -193,17 +222,19 @@ class List {
     /// @param err_msg the error message
     /// @param source the source of the internal compiler error
     /// @param file the Source::File owned by this diagnostic
-    void add_ice(System system,
-                 std::string_view err_msg,
-                 const Source& source,
-                 std::shared_ptr<Source::File> file) {
+    /// @returns a reference to the new diagnostic.
+    /// @note The returned reference must not be used after the list is mutated again.
+    diag::Diagnostic& add_ice(System system,
+                              std::string_view err_msg,
+                              const Source& source,
+                              std::shared_ptr<Source::File> file) {
         diag::Diagnostic ice{};
         ice.severity = diag::Severity::InternalCompilerError;
         ice.system = system;
         ice.source = source;
         ice.message = err_msg;
         ice.owned_file = std::move(file);
-        add(std::move(ice));
+        return add(std::move(ice));
     }
 
     /// @returns true iff the diagnostic list contains errors diagnostics (or of

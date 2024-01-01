@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_DAWN_NATIVE_EVENTMANAGER_H_
 #define SRC_DAWN_NATIVE_EVENTMANAGER_H_
@@ -20,13 +33,14 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
-#include <vector>
+#include <variant>
 
 #include "dawn/common/FutureUtils.h"
 #include "dawn/common/MutexProtected.h"
 #include "dawn/common/NonCopyable.h"
 #include "dawn/common/Ref.h"
 #include "dawn/native/Error.h"
+#include "dawn/native/Forward.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/SystemEvent.h"
 
@@ -41,19 +55,16 @@ struct InstanceDescriptor;
 // TODO(crbug.com/dawn/2050): Can this eventually replace CallbackTaskManager?
 //
 // There are various ways to optimize ProcessEvents/WaitAny:
-// - TODO(crbug.com/dawn/2064) Only pay attention to the earliest serial on each queue.
 // - TODO(crbug.com/dawn/2059) Spontaneously set events as "early-ready" in other places when we see
 //   serials advance, e.g. Submit, or when checking a later wait before an earlier wait.
 // - TODO(crbug.com/dawn/2049) For thread-driven events (async pipeline compilation and Metal queue
 //   events), defer tracking for ProcessEvents until the event is already completed.
-// - TODO(crbug.com/dawn/2051) Avoid creating OS events until they're actually needed (see the todo
-//   in TrackedEvent).
 class EventManager final : NonMovable {
   public:
     EventManager();
     ~EventManager();
 
-    MaybeError Initialize(const InstanceDescriptor*);
+    MaybeError Initialize(const UnpackedPtr<InstanceDescriptor>& descriptor);
     // Called by WillDropLastExternalRef. Once shut down, the EventManager stops tracking anything.
     // It drops any refs to TrackedEvents, to break reference cycles. If doing so frees the last ref
     // of any uncompleted TrackedEvents, they'll get completed with EventCompletionType::Shutdown.
@@ -81,6 +92,11 @@ class EventManager final : NonMovable {
     std::optional<MutexProtected<EventMap>> mEvents;
 };
 
+struct QueueAndSerial {
+    Ref<QueueBase> queue;
+    ExecutionSerial completionSerial;
+};
+
 // Base class for the objects that back WGPUFutures. TrackedEvent is responsible for the lifetime
 // the callback it contains. If TrackedEvent gets destroyed before it completes, it's responsible
 // for cleaning up (by calling the callback with an "Unknown" status).
@@ -94,9 +110,12 @@ class EventManager::TrackedEvent : public RefCounted {
   protected:
     // Note: TrackedEvents are (currently) only for Device events. Events like RequestAdapter and
     // RequestDevice complete immediately in dawn native, so should never need to be tracked.
-    TrackedEvent(DeviceBase* device,
-                 wgpu::CallbackMode callbackMode,
-                 SystemEventReceiver&& receiver);
+    TrackedEvent(wgpu::CallbackMode callbackMode, Ref<SystemEvent> completionEvent);
+
+    // Create a TrackedEvent from a queue completion serial.
+    TrackedEvent(wgpu::CallbackMode callbackMode,
+                 QueueBase* queue,
+                 ExecutionSerial completionSerial);
 
   public:
     // Subclasses must implement this to complete the event (if not completed) with
@@ -104,23 +123,27 @@ class EventManager::TrackedEvent : public RefCounted {
     ~TrackedEvent() override;
 
     class WaitRef;
+    // Events may be one of two types:
+    // - A queue and the ExecutionSerial after which the event will be completed.
+    //   Used for queue completion.
+    // - A SystemEvent which will be signaled from our code, usually on a separate thread.
+    //   It stores a boolean that we can check instead of polling with the OS, or it can be
+    //   transformed lazily into a SystemEventReceiver. Used for async pipeline creation, and Metal
+    //   queue completion.
+    // The queue ref creates a temporary ref cycle
+    // (Queue->Device->Instance->EventManager->TrackedEvent). This is OK because the instance will
+    // clear out the EventManager on shutdown.
+    // TODO(crbug.com/dawn/2067): This is a bit fragile. Is it possible to remove the ref cycle?
+    using CompletionData = std::variant<QueueAndSerial, Ref<SystemEvent>>;
 
-    const SystemEventReceiver& GetReceiver() const;
-    DeviceBase* GetWaitDevice() const;
+    const CompletionData& GetCompletionData() const;
 
   protected:
     void EnsureComplete(EventCompletionType);
     void CompleteIfSpontaneous();
 
-    // True if the event can only be waited using its device (e.g. with vkWaitForFences).
-    // False if it can be waited using OS-level wait primitives (WaitAnySystemEvent).
-    virtual bool MustWaitUsingDevice() const = 0;
     virtual void Complete(EventCompletionType) = 0;
 
-    // This creates a temporary ref cycle (Device->Instance->EventManager->TrackedEvent).
-    // This is OK because the instance will clear out the EventManager on shutdown.
-    // TODO(crbug.com/dawn/2067): This is a bit fragile. Is it possible to remove the ref cycle?
-    Ref<DeviceBase> mDevice;
     wgpu::CallbackMode mCallbackMode;
 
 #if DAWN_ENABLE_ASSERTS
@@ -130,20 +153,7 @@ class EventManager::TrackedEvent : public RefCounted {
   private:
     friend class EventManager;
 
-    // TODO(crbug.com/dawn/2051): Optimize by creating an SystemEventReceiver only once actually
-    // needed (the user asks for a timed wait or an OS event handle). This should be generally
-    // achievable:
-    // - For thread-driven events (async pipeline compilation and Metal queue events), use a mutex
-    //   or atomics to atomically:
-    //   - On wait: { check if mKnownReady. if not, create the SystemEventPipe }
-    //   - On signal: { check if there's an SystemEventPipe. if not, set mKnownReady }
-    // - For D3D12/Vulkan fences, on timed waits, first use GetCompletedValue/GetFenceStatus, then
-    //   create an OS event if it's not ready yet (and we don't have one yet).
-    //
-    // This abstraction should probably be hidden from TrackedEvent - previous attempts to do
-    // something similar in TrackedEvent turned out to be quite confusing. It can instead be an
-    // "optimization" to the SystemEvent* or a layer between TrackedEvent and SystemEventReceiver.
-    SystemEventReceiver mReceiver;
+    CompletionData mCompletionData;
     // Callback has been called.
     std::atomic<bool> mCompleted = false;
 };

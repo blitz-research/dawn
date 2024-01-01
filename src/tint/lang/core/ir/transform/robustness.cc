@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/robustness.h"
 
@@ -173,7 +186,7 @@ struct State {
         if (auto* vec = value->Type()->As<type::Vector>()) {
             type = ty.vec(type, vec->Width());
         }
-        return b.Convert(type, value)->Result();
+        return b.Convert(type, value)->Result(0);
     }
 
     /// Clamp operand @p op_idx of @p inst to ensure it is within @p limit.
@@ -192,7 +205,7 @@ struct State {
                                                   const_limit->Value()->ValueAs<uint32_t>())));
         } else {
             // Clamp it to the dynamic limit.
-            clamped_idx = b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(idx), limit)->Result();
+            clamped_idx = b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(idx), limit)->Result(0);
         }
 
         // Replace the index operand with the clamped version.
@@ -238,12 +251,12 @@ struct State {
                         TINT_ASSERT_OR_RETURN_VALUE(base_ptr != nullptr, nullptr);
                         TINT_ASSERT_OR_RETURN_VALUE(i == 1, nullptr);
                         auto* arr_ptr = ty.ptr(base_ptr->AddressSpace(), arr, base_ptr->Access());
-                        object = b.Access(arr_ptr, object, indices[0])->Result();
+                        object = b.Access(arr_ptr, object, indices[0])->Result(0);
                     }
 
                     // Use the `arrayLength` builtin to get the limit of a runtime-sized array.
                     auto* length = b.Call(ty.u32(), core::BuiltinFn::kArrayLength, object);
-                    return b.Subtract(ty.u32(), length, b.Constant(1_u))->Result();
+                    return b.Subtract(ty.u32(), length, b.Constant(1_u))->Result(0);
                 });
 
             // If there's a dynamic limit that needs enforced, clamp the index operand.
@@ -271,7 +284,7 @@ struct State {
             auto* num_levels = b.Call(ty.u32(), core::BuiltinFn::kTextureNumLevels, args[0]);
             auto* limit = b.Subtract(ty.u32(), num_levels, 1_u);
             clamped_level =
-                b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result();
+                b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result(0);
             call->SetOperand(CoreBuiltinCall::kArgsOperandOffset + idx, clamped_level);
         };
 
@@ -289,7 +302,7 @@ struct State {
             auto* limit = b.Subtract(type, dims, one);
             call->SetOperand(
                 CoreBuiltinCall::kArgsOperandOffset + idx,
-                b.Call(type, core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result());
+                b.Call(type, core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result(0));
         };
 
         // Helper for clamping the array index.
@@ -298,7 +311,7 @@ struct State {
             auto* limit = b.Subtract(ty.u32(), num_layers, 1_u);
             call->SetOperand(
                 CoreBuiltinCall::kArgsOperandOffset + idx,
-                b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result());
+                b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result(0));
         };
 
         // Select which arguments to clamp based on the function overload.

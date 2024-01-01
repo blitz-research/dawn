@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_DAWN_TESTS_DAWNTEST_H_
 #define SRC_DAWN_TESTS_DAWNTEST_H_
@@ -247,6 +260,7 @@ class DawnTestBase {
     bool IsSwiftshader() const;
     bool IsANGLE() const;
     bool IsANGLESwiftShader() const;
+    bool IsANGLED3D11() const;
     bool IsWARP() const;
 
     bool IsIntelGen9() const;
@@ -305,6 +319,8 @@ class DawnTestBase {
     void ResolveDeferredExpectationsNow();
 
   protected:
+    wgpu::Instance instance;
+    wgpu::Adapter adapter;
     wgpu::Device device;
     wgpu::Queue queue;
 
@@ -592,8 +608,6 @@ class DawnTestBase {
   private:
     AdapterTestParam mParam;
     std::unique_ptr<utils::WireHelper> mWireHelper;
-    wgpu::Instance mInstance;
-    wgpu::Adapter mAdapter;
 
     // Helps generate unique userdata values passed to deviceLostUserdata.
     std::atomic<uintptr_t> mNextUniqueUserdata = 0;
@@ -617,12 +631,14 @@ class DawnTestBase {
                                                   uint32_t dataSize,
                                                   uint32_t bytesPerRow);
 
-    std::ostringstream& ExpectSampledFloatDataImpl(wgpu::TextureView textureView,
-                                                   const char* wgslTextureType,
+    std::ostringstream& ExpectSampledFloatDataImpl(wgpu::Texture texture,
                                                    uint32_t width,
                                                    uint32_t height,
                                                    uint32_t componentCount,
+                                                   uint32_t arrayLayer,
+                                                   uint32_t mipLevel,
                                                    uint32_t sampleCount,
+                                                   wgpu::TextureAspect aspect,
                                                    detail::Expectation* expectation);
 
     // MapRead buffers used to get data for the expectations
@@ -768,11 +784,6 @@ using DawnTest = DawnTestWithParams<>;
         DawnTestBase::PrintToStringParamName(#testName));                                    \
     GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(testName)
 
-// Implementation for DAWN_TEST_PARAM_STRUCT to declare/print struct fields.
-#define DAWN_TEST_PARAM_STRUCT_DECL_STRUCT_FIELD(Type) Type DAWN_PP_CONCATENATE(m, Type);
-#define DAWN_TEST_PARAM_STRUCT_PRINT_STRUCT_FIELD(Type) \
-    o << "; " << #Type << "=" << param.DAWN_PP_CONCATENATE(m, Type);
-
 // Usage: DAWN_TEST_PARAM_STRUCT(Foo, TypeA, TypeB, ...)
 // Generate a test param struct called Foo which extends AdapterTestParam and generated
 // struct _Dawn_Foo. _Dawn_Foo has members of types TypeA, TypeB, etc. which are named mTypeA,
@@ -783,29 +794,8 @@ using DawnTest = DawnTestWithParams<>;
 // Example:
 //   using MyParam = unsigned int;
 //   DAWN_TEST_PARAM_STRUCT(FooParams, MyParam);
-#define DAWN_TEST_PARAM_STRUCT(StructName, ...)                                                    \
-    struct DAWN_PP_CONCATENATE(_Dawn_, StructName) {                                               \
-        DAWN_PP_EXPAND(DAWN_PP_EXPAND(DAWN_PP_FOR_EACH)(DAWN_TEST_PARAM_STRUCT_DECL_STRUCT_FIELD,  \
-                                                        __VA_ARGS__))                              \
-    };                                                                                             \
-    inline std::ostream& operator<<(std::ostream& o,                                               \
-                                    const DAWN_PP_CONCATENATE(_Dawn_, StructName) & param) {       \
-        DAWN_PP_EXPAND(DAWN_PP_EXPAND(DAWN_PP_FOR_EACH)(DAWN_TEST_PARAM_STRUCT_PRINT_STRUCT_FIELD, \
-                                                        __VA_ARGS__))                              \
-        return o;                                                                                  \
-    }                                                                                              \
-    struct StructName : AdapterTestParam, DAWN_PP_CONCATENATE(_Dawn_, StructName) {                \
-        template <typename... Args>                                                                \
-        StructName(const AdapterTestParam& param, Args&&... args)                                  \
-            : AdapterTestParam(param),                                                             \
-              DAWN_PP_CONCATENATE(_Dawn_, StructName){std::forward<Args>(args)...} {}              \
-    };                                                                                             \
-    inline std::ostream& operator<<(std::ostream& o, const StructName& param) {                    \
-        o << static_cast<const AdapterTestParam&>(param);                                          \
-        o << "; " << static_cast<const DAWN_PP_CONCATENATE(_Dawn_, StructName)&>(param);           \
-        return o;                                                                                  \
-    }                                                                                              \
-    static_assert(true, "require semicolon")
+#define DAWN_TEST_PARAM_STRUCT(StructName, ...) \
+    DAWN_TEST_PARAM_STRUCT_BASE(AdapterTestParam, StructName, __VA_ARGS__)
 
 namespace detail {
 // Helper functions used for DAWN_INSTANTIATE_TEST
@@ -855,6 +845,7 @@ extern template class ExpectEq<uint8_t>;
 extern template class ExpectEq<int16_t>;
 extern template class ExpectEq<uint32_t>;
 extern template class ExpectEq<uint64_t>;
+extern template class ExpectEq<int32_t>;
 extern template class ExpectEq<utils::RGBA8>;
 extern template class ExpectEq<float>;
 extern template class ExpectEq<float, uint16_t>;
@@ -886,5 +877,20 @@ class CustomTextureExpectation : public Expectation {
 };
 
 }  // namespace detail
+
+template <typename Param, typename... Params>
+auto MakeParamGenerator(std::vector<BackendTestConfig>&& first,
+                        std::initializer_list<Params>&&... params) {
+    return ParamGenerator<Param, AdapterTestParam, Params...>(
+        ::dawn::detail::GetAvailableAdapterTestParamsForBackends(first.data(), first.size()),
+        std::forward<std::initializer_list<Params>&&>(params)...);
+}
+template <typename Param, typename... Params>
+auto MakeParamGenerator(std::vector<BackendTestConfig>&& first, std::vector<Params>&&... params) {
+    return ParamGenerator<Param, AdapterTestParam, Params...>(
+        ::dawn::detail::GetAvailableAdapterTestParamsForBackends(first.data(), first.size()),
+        std::forward<std::vector<Params>&&>(params)...);
+}
+
 }  // namespace dawn
 #endif  // SRC_DAWN_TESTS_DAWNTEST_H_

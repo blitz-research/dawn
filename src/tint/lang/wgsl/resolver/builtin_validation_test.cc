@@ -1,16 +1,29 @@
-// Copyright 2021 The Tint Authors.
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <unordered_set>
 
@@ -532,14 +545,11 @@ INSTANTIATE_TEST_SUITE_P(
 
 }  // namespace texture_constexpr_args
 
-// TODO(crbug.com/tint/1497): Update or remove ResolverDP4aExtensionValidationTest when the
-// experimental extension chromium_experimental_dp4a is not needed.
-using ResolverDP4aExtensionValidationTest = ResolverTest;
+using ResolverPacked4x8IntegerDotProductValidationTest = ResolverTest;
 
-TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithExtension) {
-    // enable chromium_experimental_dp4a;
+TEST_F(ResolverPacked4x8IntegerDotProductValidationTest, Dot4I8Packed) {
     // fn func { return dot4I8Packed(1u, 2u); }
-    Enable(wgsl::Extension::kChromiumExperimentalDp4A);
+    Require(wgsl::LanguageFeature::kPacked4X8IntegerDotProduct);
 
     Func("func", tint::Empty, ty.i32(),
          Vector{
@@ -550,7 +560,7 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithExtension) {
     EXPECT_TRUE(r()->Resolve());
 }
 
-TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithoutExtension) {
+TEST_F(ResolverPacked4x8IntegerDotProductValidationTest, Dot4I8Packed_FeatureDisallowed) {
     // fn func { return dot4I8Packed(1u, 2u); }
     Func("func", tint::Empty, ty.i32(),
          Vector{
@@ -558,16 +568,17 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithoutExtension) {
                          Vector{Expr(1_u), Expr(2_u)})),
          });
 
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(
-        r()->error(),
-        R"(12:34 error: cannot call built-in function 'dot4I8Packed' without extension chromium_experimental_dp4a)");
+    auto resolver = Resolver(this, {});
+    EXPECT_FALSE(resolver.Resolve());
+    EXPECT_EQ(resolver.error(),
+              "12:34 error: built-in function 'dot4I8Packed' requires the "
+              "packed_4x8_integer_dot_product language feature, which is not allowed in the "
+              "current environment");
 }
 
-TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithExtension) {
-    // enable chromium_experimental_dp4a;
+TEST_F(ResolverPacked4x8IntegerDotProductValidationTest, Dot4U8Packed) {
     // fn func { return dot4U8Packed(1u, 2u); }
-    Enable(wgsl::Extension::kChromiumExperimentalDp4A);
+    Require(wgsl::LanguageFeature::kPacked4X8IntegerDotProduct);
 
     Func("func", tint::Empty, ty.u32(),
          Vector{
@@ -578,7 +589,7 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithExtension) {
     EXPECT_TRUE(r()->Resolve());
 }
 
-TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithoutExtension) {
+TEST_F(ResolverPacked4x8IntegerDotProductValidationTest, Dot4U8Packed_FeatureDisallowed) {
     // fn func { return dot4U8Packed(1u, 2u); }
     Func("func", tint::Empty, ty.u32(),
          Vector{
@@ -586,10 +597,66 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithoutExtension) {
                          Vector{Expr(1_u), Expr(2_u)})),
          });
 
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(
-        r()->error(),
-        R"(12:34 error: cannot call built-in function 'dot4U8Packed' without extension chromium_experimental_dp4a)");
+    auto resolver = Resolver(this, {});
+    EXPECT_FALSE(resolver.Resolve());
+    EXPECT_EQ(resolver.error(),
+              "12:34 error: built-in function 'dot4U8Packed' requires the "
+              "packed_4x8_integer_dot_product language feature, which is not allowed in the "
+              "current environment");
+}
+
+TEST_F(ResolverPacked4x8IntegerDotProductValidationTest, Pack4xI8) {
+    // fn func { return pack4xI8(vec4i()); }
+    Require(wgsl::LanguageFeature::kPacked4X8IntegerDotProduct);
+
+    Func("func", tint::Empty, ty.u32(),
+         Vector{
+             Return(Call(Source{Source::Location{12, 34}}, "pack4xI8", Call<vec4<i32>>())),
+         });
+
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(ResolverPacked4x8IntegerDotProductValidationTest, Pack4xI8_FeatureDisallowed) {
+    // fn func { return pack4xI8(vec4i()); }
+    Func("func", tint::Empty, ty.u32(),
+         Vector{
+             Return(Call(Source{Source::Location{12, 34}}, "pack4xI8", Call<vec4<i32>>())),
+         });
+
+    auto resolver = Resolver(this, {});
+    EXPECT_FALSE(resolver.Resolve());
+    EXPECT_EQ(resolver.error(),
+              "12:34 error: built-in function 'pack4xI8' requires the "
+              "packed_4x8_integer_dot_product language feature, which is not allowed in the "
+              "current environment");
+}
+
+TEST_F(ResolverPacked4x8IntegerDotProductValidationTest, Pack4xU8) {
+    // fn func { return pack4xU8(vec4u()); }
+    Require(wgsl::LanguageFeature::kPacked4X8IntegerDotProduct);
+
+    Func("func", tint::Empty, ty.u32(),
+         Vector{
+             Return(Call(Source{Source::Location{12, 34}}, "pack4xU8", Call<vec4<u32>>())),
+         });
+
+    EXPECT_TRUE(r()->Resolve());
+}
+
+TEST_F(ResolverPacked4x8IntegerDotProductValidationTest, Pack4xU8_FeatureDisallowed) {
+    // fn func { return pack4xU8(vec4u()); }
+    Func("func", tint::Empty, ty.u32(),
+         Vector{
+             Return(Call(Source{Source::Location{12, 34}}, "pack4xU8", Call<vec4<u32>>())),
+         });
+
+    auto resolver = Resolver(this, {});
+    EXPECT_FALSE(resolver.Resolve());
+    EXPECT_EQ(resolver.error(),
+              "12:34 error: built-in function 'pack4xU8' requires the "
+              "packed_4x8_integer_dot_product language feature, which is not allowed in the "
+              "current environment");
 }
 
 TEST_F(ResolverBuiltinValidationTest, WorkgroupUniformLoad_WrongAddressSpace) {
@@ -796,30 +863,29 @@ TEST_F(ResolverBuiltinValidationTest, SubgroupBroadcastLaneArgMustBeConst) {
         R"(12:34 error: the sourceLaneIndex argument of subgroupBroadcast must be a const-expression)");
 }
 
-TEST_F(ResolverBuiltinValidationTest, TextureBarrierWithoutExtension) {
+TEST_F(ResolverBuiltinValidationTest, TextureBarrier) {
     // fn func { textureBarrier(); }
-    Func("func", tint::Empty, ty.void_(),
-         Vector{
-             CallStmt(Call(Source{Source::Location{12, 34}}, "textureBarrier")),
-         });
-
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(
-        r()->error(),
-        R"(12:34 error: cannot call built-in function 'textureBarrier' without extension chromium_experimental_read_write_storage_texture)");
-}
-
-TEST_F(ResolverBuiltinValidationTest, TextureBarrierWithExtension) {
-    // enable chromium_experimental_read_write_storage_texture;
-    // fn func { textureBarrier(); }
-    Enable(wgsl::Extension::kChromiumExperimentalReadWriteStorageTexture);
-
     Func("func", tint::Empty, ty.void_(),
          Vector{
              CallStmt(Call(Source{Source::Location{12, 34}}, "textureBarrier")),
          });
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverBuiltinValidationTest, TextureBarrier_FeatureDisallowed) {
+    // fn func { textureBarrier(); }
+    Func("func", tint::Empty, ty.void_(),
+         Vector{
+             CallStmt(Call(Source{Source::Location{12, 34}}, "textureBarrier")),
+         });
+
+    auto resolver = Resolver(this, {});
+    EXPECT_FALSE(resolver.Resolve());
+    EXPECT_EQ(resolver.error(),
+              "12:34 error: built-in function 'textureBarrier' requires the "
+              "readonly_and_readwrite_storage_textures language feature, which is not allowed in "
+              "the current environment");
 }
 
 }  // namespace

@@ -1,16 +1,29 @@
-// Copyright 2020 The Dawn Authors
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string>
 #include <vector>
@@ -699,6 +712,9 @@ TEST_P(StorageTextureTests, WriteonlyStorageTextureInComputeShader) {
 
 // Test that write-only storage textures are supported in fragment shader.
 TEST_P(StorageTextureTests, WriteonlyStorageTextureInFragmentShader) {
+    // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
+
     for (wgpu::TextureFormat format : utils::kAllTextureFormats) {
         if (!utils::TextureFormatSupportsStorageTexture(format, IsCompatibilityMode())) {
             continue;
@@ -1018,28 +1034,10 @@ DAWN_INSTANTIATE_TEST(StorageTextureZeroInitTests,
                       MetalBackend({"nonzero_clear_resources_on_creation_for_testing"}),
                       VulkanBackend({"nonzero_clear_resources_on_creation_for_testing"}));
 
-class ReadWriteStorageTextureTests : public StorageTextureTests {
-  public:
-    std::vector<wgpu::FeatureName> GetRequiredFeatures() override {
-        if (SupportsFeatures({wgpu::FeatureName::ChromiumExperimentalReadWriteStorageTexture})) {
-            mIsReadWriteStorageTextureSupported = true;
-            return {wgpu::FeatureName::ChromiumExperimentalReadWriteStorageTexture};
-        } else {
-            mIsReadWriteStorageTextureSupported = false;
-            return {};
-        }
-    }
-
-    bool IsReadWriteStorageTextureSupported() { return mIsReadWriteStorageTextureSupported; }
-
-  private:
-    bool mIsReadWriteStorageTextureSupported = false;
-};
+class ReadWriteStorageTextureTests : public StorageTextureTests {};
 
 // Verify read-write storage texture can work correctly in compute shaders.
 TEST_P(ReadWriteStorageTextureTests, ReadWriteStorageTextureInComputeShader) {
-    DAWN_TEST_UNSUPPORTED_IF(!IsReadWriteStorageTextureSupported());
-
     std::array<uint32_t, kWidth * kHeight> inputData;
     std::array<uint32_t, kWidth * kHeight> expectedData;
     for (size_t i = 0; i < inputData.size(); ++i) {
@@ -1053,7 +1051,6 @@ TEST_P(ReadWriteStorageTextureTests, ReadWriteStorageTextureInComputeShader) {
 
     std::ostringstream sstream;
     sstream << R"(
-enable chromium_experimental_read_write_storage_texture;
 @group(0) @binding(0) var rwImage : texture_storage_2d<r32uint, read_write>;
 
 @compute @workgroup_size()"
@@ -1085,8 +1082,6 @@ fn main(@builtin(local_invocation_id) local_id: vec3<u32>,) {
 
 // Verify read-write storage texture can work correctly in fragment shaders.
 TEST_P(ReadWriteStorageTextureTests, ReadWriteStorageTextureInFragmentShader) {
-    DAWN_TEST_UNSUPPORTED_IF(!IsReadWriteStorageTextureSupported());
-
     std::array<uint32_t, kWidth * kHeight> inputData;
     std::array<uint32_t, kWidth * kHeight> expectedData;
     for (size_t i = 0; i < inputData.size(); ++i) {
@@ -1117,7 +1112,6 @@ TEST_P(ReadWriteStorageTextureTests, ReadWriteStorageTextureInFragmentShader) {
 })");
 
     wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
-enable chromium_experimental_read_write_storage_texture;
 @group(0) @binding(0) var rwImage : texture_storage_2d<r32uint, read_write>;
 @fragment fn main(@builtin(position) fragcoord: vec4f) -> @location(0) vec4f {
     var data1 = textureLoad(rwImage, vec2i(fragcoord.xy));
@@ -1154,8 +1148,6 @@ enable chromium_experimental_read_write_storage_texture;
 
 // Verify read-only storage texture can work correctly in compute shaders.
 TEST_P(ReadWriteStorageTextureTests, ReadOnlyStorageTextureInComputeShader) {
-    DAWN_TEST_UNSUPPORTED_IF(!IsReadWriteStorageTextureSupported());
-
     constexpr wgpu::TextureFormat kStorageTextureFormat = wgpu::TextureFormat::R32Uint;
     const std::vector<uint8_t> kInitialTextureData = GetExpectedData(kStorageTextureFormat);
     wgpu::Texture readonlyStorageTexture = CreateTextureWithTestData(
@@ -1163,7 +1155,6 @@ TEST_P(ReadWriteStorageTextureTests, ReadOnlyStorageTextureInComputeShader) {
 
     std::ostringstream sstream;
     sstream << R"(
-enable chromium_experimental_read_write_storage_texture;
 @group(0) @binding(0) var srcImage : texture_storage_2d<r32uint, read>;
 @group(0) @binding(1) var<storage, read_write> output : u32;
 
@@ -1209,8 +1200,6 @@ fn main() {
 
 // Verify read-only storage texture can work correctly in vertex shaders.
 TEST_P(ReadWriteStorageTextureTests, ReadOnlyStorageTextureInVertexShader) {
-    DAWN_TEST_UNSUPPORTED_IF(!IsReadWriteStorageTextureSupported());
-
     // TODO(dawn:1972): Implement read-only storage texture as sampled texture in vertex shader.
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES());
 
@@ -1221,7 +1210,6 @@ TEST_P(ReadWriteStorageTextureTests, ReadOnlyStorageTextureInVertexShader) {
 
     std::ostringstream vsstream;
     vsstream << R"(
-enable chromium_experimental_read_write_storage_texture;
 @group(0) @binding(0) var srcImage : texture_storage_2d<r32uint, read>;
 
 struct VertexOutput {
@@ -1261,8 +1249,6 @@ struct FragmentInput {
 
 // Verify read-only storage texture can work correctly in fragment shaders.
 TEST_P(ReadWriteStorageTextureTests, ReadOnlyStorageTextureInFragmentShader) {
-    DAWN_TEST_UNSUPPORTED_IF(!IsReadWriteStorageTextureSupported());
-
     constexpr wgpu::TextureFormat kStorageTextureFormat = wgpu::TextureFormat::R32Uint;
     const std::vector<uint8_t> kInitialTextureData = GetExpectedData(kStorageTextureFormat);
     wgpu::Texture readonlyStorageTexture = CreateTextureWithTestData(
@@ -1270,7 +1256,6 @@ TEST_P(ReadWriteStorageTextureTests, ReadOnlyStorageTextureInFragmentShader) {
 
     std::ostringstream fsstream;
     fsstream << R"(
-enable chromium_experimental_read_write_storage_texture;
 @group(0) @binding(0) var srcImage : texture_storage_2d<r32uint, read>;
 
 @fragment fn main() -> @location(0) vec4f {
@@ -1294,8 +1279,6 @@ enable chromium_experimental_read_write_storage_texture;
 // Verify using read-write storage texture access in pipeline layout is compatible with write-only
 // storage texture access in shader.
 TEST_P(ReadWriteStorageTextureTests, ReadWriteInPipelineLayoutAndWriteOnlyInShader) {
-    DAWN_TEST_UNSUPPORTED_IF(!IsReadWriteStorageTextureSupported());
-
     constexpr wgpu::TextureFormat kStorageTextureFormat = wgpu::TextureFormat::R32Uint;
     std::array<uint32_t, kWidth * kHeight> expectedData;
     for (size_t i = 0; i < expectedData.size(); ++i) {
@@ -1308,7 +1291,6 @@ TEST_P(ReadWriteStorageTextureTests, ReadWriteInPipelineLayoutAndWriteOnlyInShad
 
     std::ostringstream sstream;
     sstream << R"(
-enable chromium_experimental_read_write_storage_texture;
 @group(0) @binding(0) var rwImage : texture_storage_2d<r32uint, write>;
 
 @compute @workgroup_size()"

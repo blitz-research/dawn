@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
 
@@ -61,7 +74,7 @@ struct State {
             }
             if (auto* convert = inst->As<ir::Convert>()) {
                 auto* src_ty = convert->Args()[0]->Type();
-                auto* res_ty = convert->Result()->Type();
+                auto* res_ty = convert->Result(0)->Type();
                 if (config.ftoi &&                          //
                     src_ty->is_float_scalar_or_vector() &&  //
                     res_ty->is_integer_scalar_or_vector()) {
@@ -75,10 +88,10 @@ struct State {
             auto* replacement = ftoi(convert);
 
             // Replace the old conversion instruction result with the new value.
-            if (auto name = ir.NameOf(convert->Result())) {
+            if (auto name = ir.NameOf(convert->Result(0))) {
                 ir.SetName(replacement, name);
             }
-            convert->Result()->ReplaceAllUsesWith(replacement);
+            convert->Result(0)->ReplaceAllUsesWith(replacement);
             convert->Destroy();
         }
     }
@@ -88,7 +101,7 @@ struct State {
     /// @param convert the conversion instruction
     /// @returns the replacement value
     ir::Value* ftoi(ir::Convert* convert) {
-        auto* res_ty = convert->Result()->Type();
+        auto* res_ty = convert->Result(0)->Type();
         auto* src_ty = convert->Args()[0]->Type();
         auto* src_el_ty = src_ty->DeepestElement();
 
@@ -174,7 +187,7 @@ struct State {
                 auto* select_high = b.Call(res_ty, core::BuiltinFn::kSelect, limits.high_limit_i,
                                            select_low, high_cond);
 
-                b.Return(func, select_high->Result());
+                b.Return(func, select_high->Result(0));
             });
             return func;
         });
@@ -182,7 +195,7 @@ struct State {
         // Call the helper function, splatting the arguments to match the target vector width.
         auto* call = b.Call(res_ty, helper, convert->Args()[0]);
         call->InsertBefore(convert);
-        return call->Result();
+        return call->Result(0);
     }
 
     /// Return a type with element type @p type that has the same number of vector components as

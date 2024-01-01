@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_TINT_LANG_CORE_IR_FUNCTION_H_
 #define SRC_TINT_LANG_CORE_IR_FUNCTION_H_
@@ -23,6 +36,7 @@
 #include "src/tint/lang/core/ir/location.h"
 #include "src/tint/lang/core/ir/value.h"
 #include "src/tint/lang/core/type/type.h"
+#include "src/tint/utils/containers/const_propagating_ptr.h"
 #include "src/tint/utils/ice/ice.h"
 
 // Forward declarations
@@ -59,6 +73,9 @@ class Function : public Castable<Function, Value> {
     };
 
     /// Constructor
+    Function();
+
+    /// Constructor
     /// @param rt the function return type
     /// @param stage the function stage
     /// @param wg_size the workgroup_size
@@ -75,7 +92,7 @@ class Function : public Castable<Function, Value> {
     void SetStage(PipelineStage stage) { pipeline_stage_ = stage; }
 
     /// @returns the function pipeline stage
-    PipelineStage Stage() { return pipeline_stage_; }
+    PipelineStage Stage() const { return pipeline_stage_; }
 
     /// Sets the workgroup size
     /// @param x the x size
@@ -87,10 +104,13 @@ class Function : public Castable<Function, Value> {
     void ClearWorkgroupSize() { workgroup_size_ = {}; }
 
     /// @returns the workgroup size information
-    std::optional<std::array<uint32_t, 3>> WorkgroupSize() { return workgroup_size_; }
+    std::optional<std::array<uint32_t, 3>> WorkgroupSize() const { return workgroup_size_; }
+
+    /// @param type the return type for the function
+    void SetReturnType(const core::type::Type* type) { return_.type = type; }
 
     /// @returns the return type for the function
-    const core::type::Type* ReturnType() { return return_.type; }
+    const core::type::Type* ReturnType() const { return return_.type; }
 
     /// Sets the return attributes
     /// @param builtin the builtin to set
@@ -99,7 +119,7 @@ class Function : public Castable<Function, Value> {
         return_.builtin = builtin;
     }
     /// @returns the return builtin attribute
-    std::optional<enum ReturnBuiltin> ReturnBuiltin() { return return_.builtin; }
+    std::optional<enum ReturnBuiltin> ReturnBuiltin() const { return return_.builtin; }
     /// Clears the return builtin attribute.
     void ClearReturnBuiltin() { return_.builtin = {}; }
 
@@ -110,7 +130,7 @@ class Function : public Castable<Function, Value> {
         return_.location = {loc, interp};
     }
     /// @returns the return location
-    std::optional<Location> ReturnLocation() { return return_.location; }
+    std::optional<Location> ReturnLocation() const { return return_.location; }
     /// Clears the return location attribute.
     void ClearReturnLocation() { return_.location = {}; }
 
@@ -118,7 +138,7 @@ class Function : public Castable<Function, Value> {
     /// @param val the invariant value to set
     void SetReturnInvariant(bool val) { return_.invariant = val; }
     /// @returns the return invariant value
-    bool ReturnInvariant() { return return_.invariant; }
+    bool ReturnInvariant() const { return return_.invariant; }
 
     /// Sets the function parameters
     /// @param params the function parameters
@@ -131,20 +151,27 @@ class Function : public Castable<Function, Value> {
     /// @returns the function parameters
     const VectorRef<FunctionParam*> Params() { return params_; }
 
+    /// @returns the function parameters
+    VectorRef<const FunctionParam*> Params() const { return params_; }
+
     /// Sets the root block for the function
     /// @param target the root block
     void SetBlock(Block* target) {
         TINT_ASSERT(target != nullptr);
         block_ = target;
     }
+
     /// @returns the function root block
     ir::Block* Block() { return block_; }
+
+    /// @returns the function root block
+    const ir::Block* Block() const { return block_; }
 
     /// Destroys the function and all of its instructions.
     void Destroy() override;
 
   private:
-    PipelineStage pipeline_stage_;
+    PipelineStage pipeline_stage_ = PipelineStage::kUndefined;
     std::optional<std::array<uint32_t, 3>> workgroup_size_;
 
     struct {
@@ -155,7 +182,7 @@ class Function : public Castable<Function, Value> {
     } return_;
 
     Vector<FunctionParam*, 1> params_;
-    ir::Block* block_ = nullptr;
+    ConstPropagatingPtr<ir::Block> block_;
 };
 
 /// @param value the enum value

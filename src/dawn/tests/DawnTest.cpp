@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/tests/DawnTest.h"
 
@@ -398,6 +411,8 @@ std::unique_ptr<native::Instance> DawnTestEnvironment::CreateInstance(
 
     dawn::native::DawnInstanceDescriptor dawnInstanceDesc;
     dawnInstanceDesc.platform = platform;
+    dawnInstanceDesc.beginCaptureOnStartup = mBeginCaptureOnStartup;
+    dawnInstanceDesc.backendValidationLevel = mBackendValidationLevel;
     dawnInstanceDesc.nextInChain = &instanceToggles;
 
     wgpu::InstanceDescriptor instanceDesc{};
@@ -406,9 +421,6 @@ std::unique_ptr<native::Instance> DawnTestEnvironment::CreateInstance(
 
     auto instance = std::make_unique<native::Instance>(
         reinterpret_cast<const WGPUInstanceDescriptor*>(&instanceDesc));
-    instance->EnableBeginCaptureOnStartup(mBeginCaptureOnStartup);
-    instance->SetBackendValidationLevel(mBackendValidationLevel);
-    instance->EnableAdapterBlocklist(false);
 
 #ifdef DAWN_ENABLE_BACKEND_OPENGLES
     if (GetEnvironmentVar("ANGLE_DEFAULT_PLATFORM").first.empty()) {
@@ -704,7 +716,7 @@ DawnTestBase::DawnTestBase(const AdapterTestParam& param) : mParam(param) {
     // Override procs to provide harness-specific behavior to always select the adapter required in
     // testing parameter, and to allow fixture-specific overriding of the test device with
     // CreateDeviceImpl.
-    procs.instanceRequestAdapter = [](WGPUInstance instance, const WGPURequestAdapterOptions*,
+    procs.instanceRequestAdapter = [](WGPUInstance cInstance, const WGPURequestAdapterOptions*,
                                       WGPURequestAdapterCallback callback, void* userdata) {
         DAWN_ASSERT(gCurrentTest);
 
@@ -725,9 +737,9 @@ DawnTestBase::DawnTestBase(const AdapterTestParam& param) : mParam(param) {
         // Find the adapter that exactly matches our adapter properties.
         const auto& adapters = gTestEnv->GetInstance()->EnumerateAdapters(&adapterOptions);
         const auto& it =
-            std::find_if(adapters.begin(), adapters.end(), [&](const native::Adapter& adapter) {
+            std::find_if(adapters.begin(), adapters.end(), [&](const native::Adapter& candidate) {
                 wgpu::AdapterProperties properties;
-                adapter.GetProperties(&properties);
+                candidate.GetProperties(&properties);
 
                 const auto& param = gCurrentTest->mParam;
                 return (param.adapterProperties.selected &&
@@ -745,7 +757,7 @@ DawnTestBase::DawnTestBase(const AdapterTestParam& param) : mParam(param) {
         callback(WGPURequestAdapterStatus_Success, cAdapter, nullptr, userdata);
     };
 
-    procs.adapterRequestDevice = [](WGPUAdapter adapter, const WGPUDeviceDescriptor* descriptor,
+    procs.adapterRequestDevice = [](WGPUAdapter cAdapter, const WGPUDeviceDescriptor* descriptor,
                                     WGPURequestDeviceCallback callback, void* userdata) {
         DAWN_ASSERT(gCurrentTest);
 
@@ -771,8 +783,8 @@ DawnTestBase::~DawnTestBase() {
     mReadbackSlots.clear();
     queue = nullptr;
     device = nullptr;
-    mAdapter = nullptr;
-    mInstance = nullptr;
+    adapter = nullptr;
+    instance = nullptr;
 
     // D3D11 and D3D12's GPU-based validation will accumulate objects over time if the backend
     // device is not destroyed and recreated, so we reset it here.
@@ -858,6 +870,11 @@ bool DawnTestBase::IsANGLE() const {
 bool DawnTestBase::IsANGLESwiftShader() const {
     return !mParam.adapterProperties.name.find("ANGLE") &&
            (mParam.adapterProperties.name.find("SwiftShader") != std::string::npos);
+}
+
+bool DawnTestBase::IsANGLED3D11() const {
+    return !mParam.adapterProperties.name.find("ANGLE") &&
+           (mParam.adapterProperties.name.find("Direct3D11") != std::string::npos);
 }
 
 bool DawnTestBase::IsWARP() const {
@@ -983,7 +1000,7 @@ wgpu::BackendType DawnTestBase::GetBackendTypeFilter() const {
 }
 
 const wgpu::Instance& DawnTestBase::GetInstance() const {
-    return mInstance;
+    return instance;
 }
 
 native::Adapter DawnTestBase::GetAdapter() const {
@@ -1004,7 +1021,7 @@ const TestAdapterProperties& DawnTestBase::GetAdapterProperties() const {
 
 wgpu::SupportedLimits DawnTestBase::GetAdapterLimits() {
     wgpu::SupportedLimits supportedLimits = {};
-    mAdapter.GetLimits(&supportedLimits);
+    adapter.GetLimits(&supportedLimits);
     return supportedLimits;
 }
 
@@ -1086,7 +1103,7 @@ wgpu::Device DawnTestBase::CreateDevice(std::string isolationKey) {
     deviceDesc.deviceLostCallback = mDeviceLostCallback.Callback();
     deviceDesc.deviceLostUserdata = mDeviceLostCallback.MakeUserdata(deviceUserdata);
 
-    mAdapter.RequestDevice(
+    adapter.RequestDevice(
         &deviceDesc,
         [](WGPURequestDeviceStatus, WGPUDevice cDevice, const char*, void* userdata) {
             *static_cast<wgpu::Device*>(userdata) = wgpu::Device::Acquire(cDevice);
@@ -1132,7 +1149,17 @@ void DawnTestBase::SetUp() {
     mTestPlatform = CreateTestPlatform();
     native::FromAPI(gTestEnv->GetInstance()->Get())->SetPlatformForTesting(mTestPlatform.get());
 
-    mInstance = mWireHelper->RegisterInstance(gTestEnv->GetInstance()->Get());
+    // By default we enable all the WGSL language features (including experimental, testing and
+    // unsafe ones) in the tests.
+    WGPUInstanceDescriptor instanceDesc = {};
+    WGPUDawnWireWGSLControl wgslControl;
+    wgslControl.chain.sType = WGPUSType_DawnWireWGSLControl;
+    wgslControl.enableExperimental = true;
+    wgslControl.enableTesting = true;
+    wgslControl.enableUnsafe = true;
+    instanceDesc.nextInChain = &wgslControl.chain;
+    wgslControl.chain.next = nullptr;
+    instance = mWireHelper->RegisterInstance(gTestEnv->GetInstance()->Get(), &instanceDesc);
 
     std::string traceName =
         std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_suite_name()) +
@@ -1140,14 +1167,14 @@ void DawnTestBase::SetUp() {
     mWireHelper->BeginWireTrace(traceName.c_str());
 
     // RequestAdapter is overriden to ignore RequestAdapterOptions, and select based on test params.
-    mInstance.RequestAdapter(
+    instance.RequestAdapter(
         nullptr,
         [](WGPURequestAdapterStatus, WGPUAdapter cAdapter, const char*, void* userdata) {
             *static_cast<wgpu::Adapter*>(userdata) = wgpu::Adapter::Acquire(cAdapter);
         },
-        &mAdapter);
+        &adapter);
     FlushWire();
-    DAWN_ASSERT(mAdapter);
+    DAWN_ASSERT(adapter);
 
     device = CreateDevice();
     backendDevice = mLastCreatedBackendDevice;
@@ -1278,17 +1305,51 @@ std::ostringstream& DawnTestBase::AddTextureExpectationImpl(const char* file,
     return *(mDeferredExpectations.back().message.get());
 }
 
-std::ostringstream& DawnTestBase::ExpectSampledFloatDataImpl(wgpu::TextureView textureView,
-                                                             const char* wgslTextureType,
+std::ostringstream& DawnTestBase::ExpectSampledFloatDataImpl(wgpu::Texture texture,
                                                              uint32_t width,
                                                              uint32_t height,
                                                              uint32_t componentCount,
                                                              uint32_t sampleCount,
+                                                             uint32_t arrayLayer,
+                                                             uint32_t mipLevel,
+                                                             wgpu::TextureAspect aspect,
                                                              detail::Expectation* expectation) {
+    uint32_t depthOrArrayLayers = texture.GetDepthOrArrayLayers();
+    bool useArray = IsCompatibilityMode() && depthOrArrayLayers > 1;
+
+    wgpu::TextureViewDescriptor viewDesc = {};
+    // In non-compat we can always use '2d' views.
+    // In compat we have to use '2darray' if the texture is a 2d array.
+    viewDesc.dimension =
+        useArray ? wgpu::TextureViewDimension::e2DArray : wgpu::TextureViewDimension::e2D;
+    viewDesc.baseMipLevel = mipLevel;
+    viewDesc.mipLevelCount = 1;
+    viewDesc.aspect = aspect;
+
+    // In compat we can not set these and instead use a uniform buffer
+    // to select the layer in the shader.
+    if (!IsCompatibilityMode()) {
+        viewDesc.baseArrayLayer = arrayLayer;
+        viewDesc.arrayLayerCount = 1;
+    }
+
+    wgpu::TextureView textureView = texture.CreateView(&viewDesc);
+
+    const char* wgslTextureType;
+    if (sampleCount > 1) {
+        wgslTextureType =
+            useArray ? "texture_multisampled_2d_array<f32>" : "texture_multisampled_2d<f32>";
+    } else if (aspect == wgpu::TextureAspect::DepthOnly) {
+        wgslTextureType = useArray ? "texture_depth_2d_array" : "texture_depth_2d";
+    } else {
+        wgslTextureType = useArray ? "texture_2d_array<f32>" : "texture_2d<f32>";
+    }
+
     std::ostringstream shaderSource;
     shaderSource << "const width : u32 = " << width << "u;\n";
     shaderSource << "@group(0) @binding(0) var tex : " << wgslTextureType << ";\n";
     shaderSource << R"(
+        @group(0) @binding(2) var<uniform> arrayIndex: u32;
         struct Result {
             values : array<f32>
         }
@@ -1297,22 +1358,18 @@ std::ostringstream& DawnTestBase::ExpectSampledFloatDataImpl(wgpu::TextureView t
     shaderSource << "const componentCount : u32 = " << componentCount << "u;\n";
     shaderSource << "const sampleCount : u32 = " << sampleCount << "u;\n";
 
+    const char* arrayIndex = useArray ? ", arrayIndex" : "";
     shaderSource << "fn doTextureLoad(t: " << wgslTextureType
                  << ", coord: vec2i, sample: u32, component: u32) -> f32";
     if (sampleCount > 1) {
-        shaderSource << R"({
-            return textureLoad(tex, coord, i32(sample))[component];
-        })";
+        shaderSource << "{  return textureLoad(tex, coord" << arrayIndex
+                     << ", i32(sample))[component]; }";
     } else {
-        if (strcmp(wgslTextureType, "texture_depth_2d") == 0) {
+        if (aspect == wgpu::TextureAspect::DepthOnly) {
             DAWN_ASSERT(componentCount == 1);
-            shaderSource << R"({
-                return textureLoad(tex, coord, 0);
-            })";
+            shaderSource << "{ return textureLoad(tex, coord" << arrayIndex << ", 0); }";
         } else {
-            shaderSource << R"({
-                return textureLoad(tex, coord, 0)[component];
-            })";
+            shaderSource << "{ return textureLoad(tex, coord" << arrayIndex << ", 0)[component]; }";
         }
     }
     shaderSource << R"(
@@ -1347,8 +1404,15 @@ std::ostringstream& DawnTestBase::ExpectSampledFloatDataImpl(wgpu::TextureView t
         device, initialBufferData.data(), sizeof(float) * initialBufferData.size(),
         wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::Storage);
 
-    wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
-                                                     {{0, textureView}, {1, readbackBuffer}});
+    wgpu::BindGroup bindGroup =
+        useArray ? utils::MakeBindGroup(
+                       device, pipeline.GetBindGroupLayout(0),
+                       {{0, textureView},
+                        {1, readbackBuffer},
+                        {2, utils::CreateBufferFromData(device, &arrayLayer, sizeof(arrayLayer),
+                                                        wgpu::BufferUsage::Uniform)}})
+                 : utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
+                                        {{0, textureView}, {1, readbackBuffer}});
 
     wgpu::CommandEncoder commandEncoder = device.CreateCommandEncoder();
     wgpu::ComputePassEncoder pass = commandEncoder.BeginComputePass();
@@ -1369,15 +1433,8 @@ std::ostringstream& DawnTestBase::ExpectSampledFloatData(wgpu::Texture texture,
                                                          uint32_t arrayLayer,
                                                          uint32_t mipLevel,
                                                          detail::Expectation* expectation) {
-    wgpu::TextureViewDescriptor viewDesc = {};
-    viewDesc.dimension = wgpu::TextureViewDimension::e2D;
-    viewDesc.baseMipLevel = mipLevel;
-    viewDesc.mipLevelCount = 1;
-    viewDesc.baseArrayLayer = arrayLayer;
-    viewDesc.arrayLayerCount = 1;
-
-    return ExpectSampledFloatDataImpl(texture.CreateView(&viewDesc), "texture_2d<f32>", width,
-                                      height, componentCount, 1, expectation);
+    return ExpectSampledFloatDataImpl(texture, width, height, componentCount, 1, arrayLayer,
+                                      mipLevel, wgpu::TextureAspect::All, expectation);
 }
 
 std::ostringstream& DawnTestBase::ExpectMultisampledFloatData(wgpu::Texture texture,
@@ -1388,15 +1445,8 @@ std::ostringstream& DawnTestBase::ExpectMultisampledFloatData(wgpu::Texture text
                                                               uint32_t arrayLayer,
                                                               uint32_t mipLevel,
                                                               detail::Expectation* expectation) {
-    wgpu::TextureViewDescriptor viewDesc = {};
-    viewDesc.dimension = wgpu::TextureViewDimension::e2D;
-    viewDesc.baseMipLevel = mipLevel;
-    viewDesc.mipLevelCount = 1;
-    viewDesc.baseArrayLayer = arrayLayer;
-    viewDesc.arrayLayerCount = 1;
-
-    return ExpectSampledFloatDataImpl(texture.CreateView(&viewDesc), "texture_multisampled_2d<f32>",
-                                      width, height, componentCount, sampleCount, expectation);
+    return ExpectSampledFloatDataImpl(texture, width, height, componentCount, sampleCount,
+                                      arrayLayer, mipLevel, wgpu::TextureAspect::All, expectation);
 }
 
 std::ostringstream& DawnTestBase::ExpectSampledDepthData(wgpu::Texture texture,
@@ -1405,16 +1455,8 @@ std::ostringstream& DawnTestBase::ExpectSampledDepthData(wgpu::Texture texture,
                                                          uint32_t arrayLayer,
                                                          uint32_t mipLevel,
                                                          detail::Expectation* expectation) {
-    wgpu::TextureViewDescriptor viewDesc = {};
-    viewDesc.aspect = wgpu::TextureAspect::DepthOnly;
-    viewDesc.dimension = wgpu::TextureViewDimension::e2D;
-    viewDesc.baseMipLevel = mipLevel;
-    viewDesc.mipLevelCount = 1;
-    viewDesc.baseArrayLayer = arrayLayer;
-    viewDesc.arrayLayerCount = 1;
-
-    return ExpectSampledFloatDataImpl(texture.CreateView(&viewDesc), "texture_depth_2d", width,
-                                      height, 1, 1, expectation);
+    return ExpectSampledFloatDataImpl(texture, width, height, 1, 1, arrayLayer, mipLevel,
+                                      wgpu::TextureAspect::DepthOnly, expectation);
 }
 
 std::ostringstream& DawnTestBase::ExpectAttachmentDepthStencilTestData(
@@ -1557,7 +1599,7 @@ std::ostringstream& DawnTestBase::ExpectAttachmentDepthStencilTestData(
 
 void DawnTestBase::WaitABit(wgpu::Instance targetInstance) {
     if (targetInstance == nullptr) {
-        targetInstance = mInstance;
+        targetInstance = instance;
     }
     if (targetInstance != nullptr) {
         targetInstance.ProcessEvents();
@@ -1581,7 +1623,6 @@ void DawnTestBase::WaitForAllOperations() {
     // necessarily the current thread. So we need to use atomic here.
     std::atomic<bool> done(false);
     device.GetQueue().OnSubmittedWorkDone(
-        0u,
         [](WGPUQueueWorkDoneStatus, void* userdata) {
             *static_cast<std::atomic<bool>*>(userdata) = true;
         },
@@ -1883,6 +1924,7 @@ template class ExpectEq<uint8_t>;
 template class ExpectEq<uint16_t>;
 template class ExpectEq<uint32_t>;
 template class ExpectEq<uint64_t>;
+template class ExpectEq<int32_t>;
 template class ExpectEq<utils::RGBA8>;
 template class ExpectEq<float>;
 template class ExpectEq<float, uint16_t>;

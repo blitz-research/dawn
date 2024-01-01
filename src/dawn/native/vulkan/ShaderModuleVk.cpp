@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/vulkan/ShaderModuleVk.h"
 
@@ -55,6 +68,9 @@ bool TransformedShaderModuleCacheKey::operator==(
         return false;
     }
     if (!std::equal(constants.begin(), constants.end(), other.constants.begin())) {
+        return false;
+    }
+    if (maxSubgroupSizeForFullSubgroups != other.maxSubgroupSizeForFullSubgroups) {
         return false;
     }
     return true;
@@ -140,7 +156,7 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
 // static
 ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     Device* device,
-    const ShaderModuleDescriptor* descriptor,
+    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
     Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor));
@@ -148,7 +164,7 @@ ResultOrError<Ref<ShaderModule>> ShaderModule::Create(
     return module;
 }
 
-ShaderModule::ShaderModule(Device* device, const ShaderModuleDescriptor* descriptor)
+ShaderModule::ShaderModule(Device* device, const UnpackedPtr<ShaderModuleDescriptor>& descriptor)
     : ShaderModuleBase(device, descriptor),
       mTransformedShaderModuleCache(
           std::make_unique<ConcurrentTransformedShaderModuleCache>(device)) {}
@@ -172,21 +188,14 @@ ShaderModule::~ShaderModule() = default;
 #define SPIRV_COMPILATION_REQUEST_MEMBERS(X)                                                     \
     X(SingleShaderStage, stage)                                                                  \
     X(const tint::Program*, inputProgram)                                                        \
-    X(tint::spirv::writer::Bindings, bindings)                                                   \
     X(std::optional<tint::ast::transform::SubstituteOverride::Config>, substituteOverrideConfig) \
     X(LimitsForCompilationRequest, limits)                                                       \
     X(std::string_view, entryPointName)                                                          \
-    X(bool, isRobustnessEnabled)                                                                 \
-    X(bool, disableWorkgroupInit)                                                                \
     X(bool, disableSymbolRenaming)                                                               \
-    X(bool, useZeroInitializeWorkgroupMemoryExtension)                                           \
-    X(bool, clampFragDepth)                                                                      \
-    X(bool, disableImageRobustness)                                                              \
-    X(bool, disableRuntimeSizedArrayIndexClamping)                                               \
-    X(bool, experimentalRequireSubgroupUniformControlFlow)                                       \
-    X(bool, passMatrixByPointer)                                                                 \
-    X(bool, useTintIR)                                                                           \
-    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)
+    X(tint::spirv::writer::Options, tintOptions)                                                 \
+    X(bool, use_tint_ir)                                                                         \
+    X(CacheKey::UnsafeUnkeyedValue<dawn::platform::Platform*>, platform)                         \
+    X(std::optional<uint32_t>, maxSubgroupSizeForFullSubgroups)
 
 DAWN_MAKE_CACHE_REQUEST(SpirvCompilationRequest, SPIRV_COMPILATION_REQUEST_MEMBERS);
 #undef SPIRV_COMPILATION_REQUEST_MEMBERS
@@ -197,7 +206,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     SingleShaderStage stage,
     const ProgrammableStage& programmableStage,
     const PipelineLayout* layout,
-    bool clampFragDepth) {
+    bool clampFragDepth,
+    std::optional<uint32_t> maxSubgroupSizeForFullSubgroups) {
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "ShaderModuleVk::GetHandleAndSpirv");
 
     // If the shader was destroyed, we should never call this function.
@@ -207,7 +217,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
     // Check to see if we have the handle and spirv cached already.
     auto cacheKey = TransformedShaderModuleCacheKey{layout, programmableStage.entryPoint.c_str(),
-                                                    programmableStage.constants};
+                                                    programmableStage.constants,
+                                                    maxSubgroupSizeForFullSubgroups};
     auto handleAndSpirv = mTransformedShaderModuleCache->Find(cacheKey);
     if (handleAndSpirv.has_value()) {
         return std::move(*handleAndSpirv);
@@ -301,31 +312,41 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     SpirvCompilationRequest req = {};
     req.stage = stage;
     req.inputProgram = GetTintProgram();
-    req.bindings = std::move(bindings);
     req.entryPointName = programmableStage.entryPoint;
-    req.isRobustnessEnabled = GetDevice()->IsRobustnessEnabled();
-    req.disableWorkgroupInit = GetDevice()->IsToggleEnabled(Toggle::DisableWorkgroupInit);
     req.disableSymbolRenaming = GetDevice()->IsToggleEnabled(Toggle::DisableSymbolRenaming);
-    req.useZeroInitializeWorkgroupMemoryExtension =
-        GetDevice()->IsToggleEnabled(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension);
-    req.clampFragDepth = clampFragDepth;
-    req.disableImageRobustness = GetDevice()->IsToggleEnabled(Toggle::VulkanUseImageRobustAccess2);
-    // Currently we can disable index clamping on all runtime-sized arrays in Tint robustness
-    // transform as unsized arrays can only be declared on storage address space.
-    req.disableRuntimeSizedArrayIndexClamping =
-        GetDevice()->IsToggleEnabled(Toggle::VulkanUseBufferRobustAccess2);
     req.platform = UnsafeUnkeyedValue(GetDevice()->GetPlatform());
     req.substituteOverrideConfig = std::move(substituteOverrideConfig);
-    req.useTintIR = GetDevice()->IsToggleEnabled(Toggle::UseTintIR);
+    req.maxSubgroupSizeForFullSubgroups = maxSubgroupSizeForFullSubgroups;
+
+    req.tintOptions.clamp_frag_depth = clampFragDepth;
+    req.tintOptions.disable_robustness = !GetDevice()->IsRobustnessEnabled();
+    req.tintOptions.emit_vertex_point_size = true;
+    req.tintOptions.disable_workgroup_init =
+        GetDevice()->IsToggleEnabled(Toggle::DisableWorkgroupInit);
+    req.tintOptions.use_zero_initialize_workgroup_memory_extension =
+        GetDevice()->IsToggleEnabled(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension);
+    req.tintOptions.bindings = std::move(bindings);
+    req.tintOptions.disable_image_robustness =
+        GetDevice()->IsToggleEnabled(Toggle::VulkanUseImageRobustAccess2);
+    // Currently we can disable index clamping on all runtime-sized arrays in Tint robustness
+    // transform as unsized arrays can only be declared on storage address space.
+    req.tintOptions.disable_runtime_sized_array_index_clamping =
+        GetDevice()->IsToggleEnabled(Toggle::VulkanUseBufferRobustAccess2);
+    req.tintOptions.polyfill_dot_4x8_packed =
+        GetDevice()->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
+    req.use_tint_ir = GetDevice()->IsToggleEnabled(Toggle::UseTintIR);
+
     // Set subgroup uniform control flow flag for subgroup experiment, if device has
     // Chromium-experimental-subgroup-uniform-control-flow feature. (dawn:464)
     if (GetDevice()->HasFeature(Feature::ChromiumExperimentalSubgroupUniformControlFlow)) {
-        req.experimentalRequireSubgroupUniformControlFlow = true;
+        req.tintOptions.experimental_require_subgroup_uniform_control_flow = true;
+    } else {
+        req.tintOptions.experimental_require_subgroup_uniform_control_flow = false;
     }
     // Pass matrices to user functions by pointer on Qualcomm devices to workaround a known bug.
     // See crbug.com/tint/2045.
     if (ToBackend(GetDevice()->GetPhysicalDevice())->IsAndroidQualcomm()) {
-        req.passMatrixByPointer = true;
+        req.tintOptions.pass_matrix_by_pointer = true;
     }
 
     const CombinedLimits& limits = GetDevice()->GetLimits();
@@ -367,6 +388,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             }
 
             // Get the entry point name after the renamer pass.
+            // TODO(dawn:2180): refactor out.
             std::string remappedEntryPoint;
             if (r.disableSymbolRenaming) {
                 remappedEntryPoint = r.entryPointName;
@@ -384,27 +406,22 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             if (r.stage == SingleShaderStage::Compute) {
                 Extent3D _;
                 DAWN_TRY_ASSIGN(_, ValidateComputeStageWorkgroupSize(
-                                       program, remappedEntryPoint.c_str(), r.limits));
+                                       program, remappedEntryPoint.c_str(), r.limits,
+                                       r.maxSubgroupSizeForFullSubgroups));
             }
 
-            tint::spirv::writer::Options options;
-            options.clamp_frag_depth = r.clampFragDepth;
-            options.disable_robustness = !r.isRobustnessEnabled;
-            options.emit_vertex_point_size = true;
-            options.disable_workgroup_init = r.disableWorkgroupInit;
-            options.use_zero_initialize_workgroup_memory_extension =
-                r.useZeroInitializeWorkgroupMemoryExtension;
-            options.bindings = r.bindings;
-            options.disable_image_robustness = r.disableImageRobustness;
-            options.disable_runtime_sized_array_index_clamping =
-                r.disableRuntimeSizedArrayIndexClamping;
-            options.experimental_require_subgroup_uniform_control_flow =
-                r.experimentalRequireSubgroupUniformControlFlow;
-            options.use_tint_ir = r.useTintIR;
-            options.pass_matrix_by_pointer = r.passMatrixByPointer;
-
             TRACE_EVENT0(r.platform.UnsafeGetValue(), General, "tint::spirv::writer::Generate()");
-            auto tintResult = tint::spirv::writer::Generate(program, options);
+            tint::Result<tint::spirv::writer::Output> tintResult;
+            if (r.use_tint_ir) {
+                // Convert the AST program to an IR module.
+                auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
+                DAWN_INVALID_IF(!ir, "An error occurred while generating Tint IR\n%s",
+                                ir.Failure().reason.str());
+
+                tintResult = tint::spirv::writer::Generate(ir.Get(), r.tintOptions);
+            } else {
+                tintResult = tint::spirv::writer::Generate(program, r.tintOptions);
+            }
             DAWN_INVALID_IF(!tintResult, "An error occurred while generating SPIR-V\n%s",
                             tintResult.Failure().reason.str());
 

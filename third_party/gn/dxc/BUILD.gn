@@ -1,20 +1,35 @@
-# Copyright 2023 The Dawn Authors
+# Copyright 2023 The Dawn & Tint Authors
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import("../../../scripts/dawn_overrides_with_defaults.gni")
 
-import("//build/config/win/visual_studio_version.gni")
+if (is_win) {
+  import("//build/config/win/visual_studio_version.gni")
+}
 import("${dawn_root}/scripts/dawn_features.gni")
 
 import("build/add_hlsl_hctgen.gni")
@@ -180,8 +195,6 @@ cmake_configure_file("config-header") {
     "HAVE_LONGJMP=",
     "HAVE_MALLCTL=",
     "HAVE_MALLINFO2=",
-    "HAVE_MALLOC_MALLOC_H=",
-    "HAVE_MALLOC_ZONE_STATISTICS=",
     "HAVE_MKDTEMP=",
     "HAVE_MKSTEMP=",
     "HAVE_MKTEMP=",
@@ -233,7 +246,6 @@ cmake_configure_file("config-header") {
       "HAVE_FUTIMES=",
       "HAVE_GETPAGESIZE=",
       "HAVE_GETRUSAGE=",
-      "HAVE_MALLINFO=",
       "HAVE_SYS_MMAN_H=",
       "HAVE_SYS_PARAM_H=",
       "HAVE_SYS_RESOURCE_H=",
@@ -245,6 +257,9 @@ cmake_configure_file("config-header") {
       "HAVE_MACH_MACH_H=",
       "HAVE_MACH_O_DYLD_H=",
       "HAVE_MALLOC_H=1",
+      "HAVE_MALLINFO=",
+      "HAVE_MALLOC_MALLOC_H=",
+      "HAVE_MALLOC_ZONE_STATISTICS=",
     ]
   } else if (is_linux || is_mac) {
     values += [
@@ -268,6 +283,8 @@ cmake_configure_file("config-header") {
         "HAVE_MALLINFO=1",
         "HAVE_MACH_MACH_H=",
         "HAVE_MACH_O_DYLD_H=",
+        "HAVE_MALLOC_MALLOC_H=",
+        "HAVE_MALLOC_ZONE_STATISTICS=",
       ]
     } else {
       values += [
@@ -275,6 +292,8 @@ cmake_configure_file("config-header") {
         "HAVE_MALLINFO=",
         "HAVE_MACH_MACH_H=1",
         "HAVE_MACH_O_DYLD_H=1",
+        "HAVE_MALLOC_MALLOC_H=1",
+        "HAVE_MALLOC_ZONE_STATISTICS=1",
       ]
     }
   }
@@ -386,11 +405,19 @@ cmake_configure_file("Disassemblers-def") {
 cmake_configure_file("SharedLibAffix-h") {
   input = "$dawn_dxc_dir/lib/DxcSupport/SharedLibAffix.inc"
   output = "$target_gen_dir/include/dxc/Support/SharedLibAffix.h"
+  shared_library_prefix = ""
+  if (is_linux) {
+    shared_library_prefix = "lib"
+  }
+  shared_library_suffix = ""
+  if (is_win) {
+    shared_library_suffix = ".dll"
+  } else {
+    shared_library_suffix = ".so"
+  }
   values = [
-    "CMAKE_SHARED_LIBRARY_PREFIX=",
-
-    # TODO(amaiorano): .dll for Win32, .so for Linux, .dylib for MacOS?
-    "CMAKE_SHARED_LIBRARY_SUFFIX=.dll",
+    "CMAKE_SHARED_LIBRARY_PREFIX=${shared_library_prefix}",
+    "CMAKE_SHARED_LIBRARY_SUFFIX=${shared_library_suffix}",
   ]
 }
 
@@ -494,10 +521,14 @@ config("common_config") {
     cflags_cc += [
       "/EHsc",  # DXC uses exceptions
       "/Zc:__cplusplus",
-      "/Zc:twoPhase-",  # DXC source relies on MSVC's non-conforming
-                        # two-phase lookup
       "/Zc:sizedDealloc-",  # Disable sized allocation
     ]
+    if (!is_clang) {
+      cflags_cc += [
+        "/Zc:twoPhase-",  # DXC source relies on MSVC's non-conforming
+                          # two-phase lookup
+      ]
+    }
 
     cflags_c += [
       "/EHsc",  # DXC uses exceptions
@@ -517,9 +548,17 @@ config("common_config") {
     "$dawn_dxc_dir/include",
     "$dawn_dxc_dir/tools/clang/include",
     "$dawn_dxc_dir/tools/clang/tools",
-    "$dawn_dxc_dir/include/llvm/llvm_assert",
     "${target_gen_dir}/include",  # Generated files
   ]
+
+  if (is_win) {
+    include_dirs += [
+      # $dawn_dxc_dir/lib/Support/assert.cpp depends on a "assert.h" include for the windows path,
+      # but the other architectures include <assert.h>. The system include would be shadowed if this
+      # include directory is added.
+      "$dawn_dxc_dir/include/llvm/llvm_assert",
+    ]
+  }
 
   defines = []
   if (is_debug && dawn_dxc_disable_asserts_debug) {
@@ -545,6 +584,7 @@ static_library("Support") {
   public_deps = [
     ":AsmParsers-def",
     ":AsmPrinters-def",
+    ":DataTypes-header",
     ":Disassemblers-def",
     ":Targets-def",
     ":abi-breaking-header",
@@ -657,10 +697,7 @@ static_library("Support") {
 
 # Common code for both llvm-tblgen and clang-tblgen
 source_set("TableGen") {
-  public_deps = [
-    ":DataTypes-header",
-    ":Support",
-  ]
+  public_deps = [ ":Support" ]
 
   sources = [
     "$dawn_dxc_dir/lib/TableGen/Error.cpp",
@@ -1114,7 +1151,6 @@ static_library("dxclib") {
     configs += [ "//build/config/compiler:no_chromium_code" ]
   }
   public_deps = [
-    ":DataTypes-header",
     ":HLSLOptions-inc",
     ":Intrinsics-td",
     ":SharedLibAffix-h",
@@ -1128,6 +1164,7 @@ static_library("dxclib") {
     "$dawn_dxc_dir/lib/DXIL/DxilMetadataHelper.cpp",
     "$dawn_dxc_dir/lib/DXIL/DxilModule.cpp",
     "$dawn_dxc_dir/lib/DXIL/DxilModuleHelper.cpp",
+    "$dawn_dxc_dir/lib/DXIL/DxilNodeProps.cpp",
     "$dawn_dxc_dir/lib/DXIL/DxilOperations.cpp",
     "$dawn_dxc_dir/lib/DXIL/DxilPDB.cpp",
     "$dawn_dxc_dir/lib/DXIL/DxilResource.cpp",
@@ -1144,6 +1181,7 @@ static_library("dxclib") {
     "$dawn_dxc_dir/lib/DXIL/DxilTypeSystem.cpp",
     "$dawn_dxc_dir/lib/DXIL/DxilUtil.cpp",
     "$dawn_dxc_dir/lib/DXIL/DxilUtilDbgInfoAndMisc.cpp",
+    "$dawn_dxc_dir/lib/DXIL/DxilWaveMatrix.cpp",
     "$dawn_dxc_dir/lib/DxcSupport/FileIOHelper.cpp",
     "$dawn_dxc_dir/lib/DxcSupport/Global.cpp",
     "$dawn_dxc_dir/lib/DxcSupport/HLSLOptions.cpp",
@@ -1939,7 +1977,6 @@ dxcompiler_sourceset("clang_lib_frontend") {
   target_type = "static_library"  # Ensure unused globals are stripped
   sources = [
     "$dawn_dxc_dir/tools/clang/lib/Frontend/ASTConsumers.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Frontend/ASTMerge.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Frontend/ASTUnit.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Frontend/CacheTokens.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Frontend/ChainedDiagnosticConsumer.cpp",
@@ -2309,9 +2346,18 @@ executable("dxc") {
 
   data_deps = [ ":dxcompiler" ]
 
-  include_dirs = [
-    "$visual_studio_path/DIA SDK/include",  # Required for msvc builds
-  ]
+  # Set rpath to be able to find the dxcompiler shared library
+  if (is_mac) {
+    ldflags = [ "-Wl,-rpath,@executable_path" ]
+  } else if (is_linux) {
+    ldflags = [ "-Wl,-rpath=\$ORIGIN" ]
+  }
+
+  if (is_win) {
+    include_dirs = [
+      "$visual_studio_path/DIA SDK/include",  # Required for msvc builds
+    ]
+  }
 
   sources = [
     "$dawn_dxc_dir/tools/clang/tools/dxc/dxcmain.cpp",

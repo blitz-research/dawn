@@ -1,16 +1,29 @@
-// Copyright 2018 The Dawn Authors
+// Copyright 2018 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/metal/QueueMTL.h"
 
@@ -20,6 +33,7 @@
 #include "dawn/native/Commands.h"
 #include "dawn/native/DynamicUploader.h"
 #include "dawn/native/MetalBackend.h"
+#include "dawn/native/WaitAnySystemEvent.h"
 #include "dawn/native/metal/CommandBufferMTL.h"
 #include "dawn/native/metal/DeviceMTL.h"
 #include "dawn/platform/DawnPlatform.h"
@@ -36,15 +50,19 @@ ResultOrError<Ref<Queue>> Queue::Create(Device* device, const QueueDescriptor* d
 Queue::Queue(Device* device, const QueueDescriptor* descriptor)
     : QueueBase(device, descriptor), mCompletedSerial(0) {}
 
-Queue::~Queue() {}
+Queue::~Queue() = default;
 
-void Queue::Destroy() {
+void Queue::DestroyImpl() {
     // Forget all pending commands.
     mCommandContext.AcquireCommands();
     UpdateWaitingEvents(kMaxExecutionSerial);
     mCommandQueue = nullptr;
     mLastSubmittedCommands = nullptr;
-    mMtlSharedEvent = nullptr;
+
+    // Don't free mMtlSharedEvent because it can be queried after device destruction for
+    // synchronization needs.
+
+    QueueBase::DestroyImpl();
 }
 
 MaybeError Queue::Initialize() {
@@ -63,40 +81,12 @@ MaybeError Queue::Initialize() {
 }
 
 void Queue::UpdateWaitingEvents(ExecutionSerial completedSerial) {
-    DAWN_ASSERT(mCompletedSerial >= uint64_t(completedSerial) ||
-                completedSerial == kMaxExecutionSerial);
-    mWaitingEvents.Use([&](auto waitingEvents) {
-        for (auto& waiting : waitingEvents->IterateUpTo(completedSerial)) {
-            std::move(waiting).Signal();
+    mWaitingEvents.Use([&](auto events) {
+        for (auto& s : events->IterateUpTo(completedSerial)) {
+            std::move(s)->Signal();
         }
-        waitingEvents->ClearUpTo(completedSerial);
+        events->ClearUpTo(completedSerial);
     });
-}
-
-SystemEventReceiver Queue::InsertWorkDoneEvent() {
-    ExecutionSerial serial = GetScheduledWorkDoneSerial();
-
-    // TODO(crbug.com/dawn/2051): Optimize to not create a pipe for every WorkDone/MapAsync event.
-    // Possible ways to do this:
-    // - Don't create the pipe until needed (see the todo on TrackedEvent::mReceiver).
-    // - Dedup event pipes when one serial is needed for multiple events (and add a
-    //   SystemEventReceiver::Duplicate() method which dup()s its underlying pipe receiver).
-    // - Create a pipe each for each new serial instead of for each requested event (tradeoff).
-    SystemEventPipeSender sender;
-    SystemEventReceiver receiver;
-    std::tie(sender, receiver) = CreateSystemEventPipe();
-
-    mWaitingEvents.Use([&](auto waitingEvents) {
-        // Check for device loss while the lock is held. Otherwise, we could enqueue the event
-        // after mWaitingEvents has been flushed for device loss, and it'll never get cleaned up.
-        if (GetDevice()->IsLost() || mCompletedSerial >= uint64_t(serial)) {
-            std::move(sender).Signal();
-        } else {
-            waitingEvents->Enqueue(std::move(sender), serial);
-        }
-    });
-
-    return receiver;
 }
 
 MaybeError Queue::WaitForIdleForDestruction() {
@@ -176,7 +166,7 @@ MaybeError Queue::SubmitPendingCommandBuffer() {
         TRACE_EVENT_ASYNC_END0(platform, GPUWork, "DeviceMTL::SubmitPendingCommandBuffer",
                                uint64_t(pendingSerial));
         DAWN_ASSERT(uint64_t(pendingSerial) > mCompletedSerial.load());
-        this->mCompletedSerial = uint64_t(pendingSerial);
+        this->mCompletedSerial.store(uint64_t(pendingSerial), std::memory_order_release);
 
         this->UpdateWaitingEvents(pendingSerial);
     }];
@@ -249,6 +239,34 @@ void Queue::ForceEventualFlushOfCommands() {
     if (mCommandContext.WasUsed()) {
         mCommandContext.SetNeedsSubmit();
     }
+}
+
+Ref<SystemEvent> Queue::CreateWorkDoneSystemEvent(ExecutionSerial serial) {
+    Ref<SystemEvent> completionEvent = AcquireRef(new SystemEvent());
+    mWaitingEvents.Use([&](auto events) {
+        SystemEventReceiver receiver;
+        // Now that we hold the lock, check against mCompletedSerial before inserting.
+        // This serial may have just completed. If it did, mark the event complete.
+        // Also check for device loss. Otherwise, we could enqueue the event
+        // after mWaitingEvents has been flushed for device loss, and it'll never get cleaned up.
+        if (GetDevice()->IsLost() ||
+            serial <= ExecutionSerial(mCompletedSerial.load(std::memory_order_acquire))) {
+            completionEvent->Signal();
+        } else {
+            // Insert the event into the list which will be signaled inside Metal's queue
+            // completion handler.
+            events->Enqueue(completionEvent, serial);
+        }
+    });
+    return completionEvent;
+}
+
+ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) {
+    Ref<SystemEvent> event = CreateWorkDoneSystemEvent(serial);
+    bool ready = false;
+    std::array<std::pair<const dawn::native::SystemEventReceiver&, bool*>, 1> events{
+        {{event->GetOrCreateSystemEventReceiver(), &ready}}};
+    return WaitAnySystemEvent(events.begin(), events.end(), timeout);
 }
 
 }  // namespace dawn::native::metal

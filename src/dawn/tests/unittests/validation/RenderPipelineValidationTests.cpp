@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <cmath>
 #include <sstream>
@@ -178,8 +191,31 @@ TEST_F(RenderPipelineValidationTest, DepthStencilAspectRequirement) {
         device.CreateRenderPipeline(&descriptor);
     }
 
-    // TODO(dawn:666): Add tests for stencil-only format (Stencil8) with depth test or depth write
-    // enabled when Stencil8 format is implemented
+    // It is invalid if the texture format doesn't have depth aspect while depth test is
+    // enabled.
+    {
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+        wgpu::DepthStencilState* depthStencil =
+            descriptor.EnableDepthStencil(wgpu::TextureFormat::Stencil8);
+        depthStencil->depthCompare = wgpu::CompareFunction::LessEqual;
+        depthStencil->depthWriteEnabled = false;
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+
+    // It is invalid if the texture format doesn't have depth aspect while depth write is
+    // enabled.
+    {
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = vsModule;
+        descriptor.cFragment.module = fsModule;
+        wgpu::DepthStencilState* depthStencil =
+            descriptor.EnableDepthStencil(wgpu::TextureFormat::Stencil8);
+        depthStencil->depthCompare = wgpu::CompareFunction::Undefined;
+        depthStencil->depthWriteEnabled = true;
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
 }
 
 // Tests that depth attachment is required when frag_depth is written in fragment stage.
@@ -1239,19 +1275,98 @@ TEST_F(RenderPipelineValidationTest, DepthClipControlWithoutFeature) {
     }
 }
 
-// Test that depthStencil.depthCompare must not be undefiend.
-TEST_F(RenderPipelineValidationTest, DepthCompareUndefinedIsError) {
+// Test that depthStencil.depthCompare is required only for formats with depth.
+TEST_F(RenderPipelineValidationTest, DepthCompareRequiredForFormatsWithDepth) {
     utils::ComboRenderPipelineDescriptor descriptor;
     descriptor.vertex.module = vsModule;
     descriptor.cFragment.module = fsModule;
+
+    descriptor.cDepthStencil.depthWriteEnabled = true;
     descriptor.EnableDepthStencil(wgpu::TextureFormat::Depth32Float);
 
-    // Control case: Always is valid.
+    // Control case: Always is valid for format with depth.
     descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Always;
     device.CreateRenderPipeline(&descriptor);
 
-    // Error case: Undefined is invalid.
+    // Error case: Undefined is invalid for format with depth.
     descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Undefined;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+
+    // Undefined is valid though if depthCompare is not used by anything.
+    descriptor.cDepthStencil.depthWriteEnabled = false;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
+    device.CreateRenderPipeline(&descriptor);
+
+    // Undefined is invalid if depthCompare is used by depthWriteEnabled.
+    descriptor.cDepthStencil.depthWriteEnabled = true;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+
+    // Undefined is invalid if depthCompare is used by stencilFront.depthFailOp.
+    descriptor.cDepthStencil.depthWriteEnabled = false;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Zero;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+
+    // Undefined is invalid if depthCompare is used by stencilBack.depthFailOp.
+    descriptor.cDepthStencil.depthWriteEnabled = false;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Zero;
+    ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+
+    descriptor.cDepthStencil.depthWriteEnabled = false;
+    descriptor.cDepthStencil.stencilFront.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.cDepthStencil.stencilBack.depthFailOp = wgpu::StencilOperation::Keep;
+    descriptor.EnableDepthStencil(wgpu::TextureFormat::Stencil8);
+
+    // Always is valid for format with no depth.
+    descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Always;
+    device.CreateRenderPipeline(&descriptor);
+
+    // Undefined is also valid for format with no depth.
+    descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Undefined;
+    device.CreateRenderPipeline(&descriptor);
+}
+
+// Test that depthStencil.depthWriteEnabled is required only for formats with depth.
+TEST_F(RenderPipelineValidationTest, DepthWriteEnabledRequiredForFormatsWithDepth) {
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = vsModule;
+    descriptor.cFragment.module = fsModule;
+    descriptor.cDepthStencil.depthCompare = wgpu::CompareFunction::Always;
+
+    wgpu::DepthStencilState* depthStencil =
+        descriptor.EnableDepthStencil(wgpu::TextureFormat::Depth32Float);
+
+    // Control case: Set depthWriteEnabled to false for format with depth.
+    depthStencil->depthWriteEnabled = false;
+    device.CreateRenderPipeline(&descriptor);
+
+    // When DepthStencilStateDepthWriteDefinedDawn struct is chained, depthWriteEnabled is now
+    // considered optional and depthWriteDefined needs to be true for formats with depth only.
+    wgpu::DepthStencilStateDepthWriteDefinedDawn depthWriteDefined;
+    depthStencil = descriptor.EnableDepthStencil(wgpu::TextureFormat::Stencil8);
+    depthStencil->nextInChain = &depthWriteDefined;
+
+    // depthWriteDefined set to true is valid for format with no depth.
+    depthWriteDefined.depthWriteDefined = true;
+    device.CreateRenderPipeline(&descriptor);
+
+    // depthWriteDefined set to false is valid for format with no depth.
+    depthWriteDefined.depthWriteDefined = false;
+    device.CreateRenderPipeline(&descriptor);
+
+    depthStencil = descriptor.EnableDepthStencil(wgpu::TextureFormat::Depth32Float);
+    depthStencil->nextInChain = &depthWriteDefined;
+
+    // depthWriteDefined set to true is valid for format with depth.
+    depthWriteDefined.depthWriteDefined = true;
+    device.CreateRenderPipeline(&descriptor);
+
+    // Error case: depthWriteDefined set to false is invalid for format with depth.
+    depthWriteDefined.depthWriteDefined = false;
     ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
 }
 
@@ -1297,6 +1412,100 @@ TEST_F(RenderPipelineValidationTest, EntryPointNameValidation) {
 
         // The entryPoint name exists, but not for the correct stage.
         descriptor.cFragment.entryPoint = "vertex_main";
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+}
+
+// Check that entry points are optional.
+TEST_F(RenderPipelineValidationTest, EntryPointNameOptional) {
+    wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
+        @vertex fn vertex_main() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
+        }
+
+        @fragment fn fragment_main() -> @location(0) vec4f {
+            return vec4f(1.0, 0.0, 0.0, 1.0);
+        }
+    )");
+
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = module;
+    descriptor.vertex.entryPoint = nullptr;
+    descriptor.cFragment.module = module;
+    descriptor.cFragment.entryPoint = nullptr;
+
+    // Success case.
+    device.CreateRenderPipeline(&descriptor);
+}
+
+// Check that entry points are required if module has multiple entry points.
+TEST_F(RenderPipelineValidationTest, EntryPointNameRequiredIfMultipleEntryPoints) {
+    wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
+        @vertex fn vertex1() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
+        }
+
+        @vertex fn vertex2() -> @builtin(position) vec4f {
+            return vec4f(0.0, 0.0, 0.0, 1.0);
+        }
+
+        @fragment fn fragment1() -> @location(0) vec4f {
+            return vec4f(1.0, 0.0, 0.0, 1.0);
+        }
+
+        @fragment fn fragment2() -> @location(0) vec4f {
+            return vec4f(1.0, 0.0, 0.0, 1.0);
+        }
+    )");
+
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = module;
+    descriptor.cFragment.module = module;
+
+    {
+        // The vertex stage has more than one entryPoint.
+        descriptor.vertex.entryPoint = nullptr;
+        descriptor.cFragment.entryPoint = "fragment1";
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+
+    {
+        // The fragment stage has more than one entryPoint.
+        descriptor.vertex.entryPoint = "vertex1";
+        descriptor.cFragment.entryPoint = nullptr;
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+}
+
+// Check that entry points are required if module has no compatible entry points.
+TEST_F(RenderPipelineValidationTest, EntryPointNameRequiredIfNoCompatibleEntryPoints) {
+    {
+        wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
+            @fragment fn fragment_main() -> @location(0) vec4f {
+                return vec4f(1.0, 0.0, 0.0, 1.0);
+            }
+        )");
+
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = module;
+        descriptor.cFragment.module = module;
+
+        // The vertex stage has no entryPoint.
+        ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
+    }
+
+    {
+        wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
+            @vertex fn vertex_main() -> @builtin(position) vec4f {
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+        )");
+
+        utils::ComboRenderPipelineDescriptor descriptor;
+        descriptor.vertex.module = module;
+        descriptor.cFragment.module = module;
+
+        // The fragment stage has no entryPoint.
         ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
     }
 }
@@ -2393,6 +2602,101 @@ TEST_F(DualSourceBlendingFeatureTest, MultipleRenderTargetsNotAllowed) {
                     return output;)";
 
         ASSERT_DEVICE_ERROR(utils::CreateShaderModule(device, sstream.str().c_str()));
+    }
+}
+
+class FramebufferFetchFeatureTest : public RenderPipelineValidationTest {
+  protected:
+    WGPUDevice CreateTestDevice(native::Adapter dawnAdapter,
+                                wgpu::DeviceDescriptor descriptor) override {
+        wgpu::FeatureName requiredFeatures[1] = {wgpu::FeatureName::FramebufferFetch};
+        descriptor.requiredFeatures = requiredFeatures;
+        descriptor.requiredFeatureCount = 1;
+        return dawnAdapter.CreateDevice(&descriptor);
+    }
+};
+
+// Test that the framebuffer input must have a corresponding color target.
+TEST_F(FramebufferFetchFeatureTest, FramebufferInputMustHaveColorTarget) {
+    uint32_t colorIndices[] = {0, 1, 2, kMaxColorAttachments - 1, kMaxColorAttachments};
+    for (uint32_t colorIndex : colorIndices) {
+        std::ostringstream fsStream;
+        fsStream << R"(
+            enable chromium_experimental_framebuffer_fetch;
+            @fragment fn main(@color()"
+                 << colorIndex << R"() in : vec4f) -> @location(1) vec4f {
+                return in;
+            }
+        )";
+
+        utils::ComboRenderPipelineDescriptor desc;
+        desc.vertex.module = vsModule;
+        desc.vertex.entryPoint = "main";
+        desc.cFragment.module = utils::CreateShaderModule(device, fsStream.str().c_str());
+        desc.cFragment.entryPoint = "main";
+        desc.cFragment.targetCount = 2;
+        desc.cTargets[0].format = wgpu::TextureFormat::Undefined;
+        desc.cTargets[1].format = wgpu::TextureFormat::RGBA8Unorm;
+
+        // Only colorIndex 1 should work because it is the only index with a color target.
+        if (colorIndex == 1) {
+            device.CreateRenderPipeline(&desc);
+        } else {
+            ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&desc));
+        }
+    }
+}
+
+// Test that the framebuffer fetch type matches the texture format exactly.
+TEST_F(FramebufferFetchFeatureTest, InputMatchesFormat) {
+    struct ValidPair {
+        const char* type;
+        wgpu::TextureFormat format;
+    };
+
+    std::array<ValidPair, 9> validPairs = {{
+        {"f32", wgpu::TextureFormat::R32Float},
+        {"vec2f", wgpu::TextureFormat::RG16Float},
+        {"vec4f", wgpu::TextureFormat::RGBA8Unorm},
+        {"u32", wgpu::TextureFormat::R32Uint},
+        {"vec2u", wgpu::TextureFormat::RG16Uint},
+        {"vec4u", wgpu::TextureFormat::RGBA8Uint},
+        {"i32", wgpu::TextureFormat::R32Sint},
+        {"vec2i", wgpu::TextureFormat::RG16Sint},
+        {"vec4i", wgpu::TextureFormat::RGBA8Sint},
+    }};
+
+    for (size_t i = 0; i < validPairs.size(); i++) {
+        wgpu::TextureFormat format = validPairs[i].format;
+        const char* outputType = validPairs[i].type;
+
+        for (size_t j = 0; j < validPairs.size(); j++) {
+            const char* inputType = validPairs[j].type;
+
+            std::ostringstream fsStream;
+            fsStream << R"(
+                enable chromium_experimental_framebuffer_fetch;
+                @fragment fn main(@color(0) in : )"
+                     << inputType << R"() -> @location(0) )" << outputType << R"( {
+                    var res : )"
+                     << outputType << R"(;
+                    return res;
+                }
+            )";
+
+            utils::ComboRenderPipelineDescriptor desc;
+            desc.vertex.module = vsModule;
+            desc.vertex.entryPoint = "main";
+            desc.cFragment.module = utils::CreateShaderModule(device, fsStream.str().c_str());
+            desc.cFragment.entryPoint = "main";
+            desc.cTargets[0].format = format;
+
+            if (i == j) {
+                device.CreateRenderPipeline(&desc);
+            } else {
+                ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&desc));
+            }
+        }
     }
 }
 

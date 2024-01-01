@@ -1,16 +1,29 @@
-// Copyright 2023 The Tint Authors.
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/binary_polyfill.h"
 
@@ -59,16 +72,16 @@ struct State {
                 continue;
             }
             if (auto* binary = inst->As<ir::Binary>()) {
-                switch (binary->Kind()) {
-                    case ir::Binary::Kind::kDivide:
-                    case ir::Binary::Kind::kModulo:
+                switch (binary->Op()) {
+                    case BinaryOp::kDivide:
+                    case BinaryOp::kModulo:
                         if (config.int_div_mod &&
-                            binary->Result()->Type()->is_integer_scalar_or_vector()) {
+                            binary->Result(0)->Type()->is_integer_scalar_or_vector()) {
                             worklist.Push(binary);
                         }
                         break;
-                    case ir::Binary::Kind::kShiftLeft:
-                    case ir::Binary::Kind::kShiftRight:
+                    case BinaryOp::kShiftLeft:
+                    case BinaryOp::kShiftRight:
                         if (config.bitshift_modulo) {
                             worklist.Push(binary);
                         }
@@ -82,13 +95,13 @@ struct State {
         // Polyfill the binary instructions that we found.
         for (auto* binary : worklist) {
             ir::Value* replacement = nullptr;
-            switch (binary->Kind()) {
-                case Binary::Kind::kDivide:
-                case Binary::Kind::kModulo:
+            switch (binary->Op()) {
+                case BinaryOp::kDivide:
+                case BinaryOp::kModulo:
                     replacement = IntDivMod(binary);
                     break;
-                case Binary::Kind::kShiftLeft:
-                case Binary::Kind::kShiftRight:
+                case BinaryOp::kShiftLeft:
+                case BinaryOp::kShiftRight:
                     replacement = MaskShiftAmount(binary);
                     break;
                 default:
@@ -96,12 +109,12 @@ struct State {
             }
             TINT_ASSERT_OR_RETURN(replacement);
 
-            if (replacement != binary->Result()) {
+            if (replacement != binary->Result(0)) {
                 // Replace the old binary instruction result with the new value.
-                if (auto name = ir.NameOf(binary->Result())) {
+                if (auto name = ir.NameOf(binary->Result(0))) {
                     ir.SetName(replacement, name);
                 }
-                binary->Result()->ReplaceAllUsesWith(replacement);
+                binary->Result(0)->ReplaceAllUsesWith(replacement);
                 binary->Destroy();
             }
         }
@@ -137,8 +150,8 @@ struct State {
     /// @param binary the binary instruction
     /// @returns the replacement value
     ir::Value* IntDivMod(ir::Binary* binary) {
-        auto* result_ty = binary->Result()->Type();
-        bool is_div = binary->Kind() == Binary::Kind::kDivide;
+        auto* result_ty = binary->Result(0)->Type();
+        bool is_div = binary->Op() == BinaryOp::kDivide;
         bool is_signed = result_ty->is_signed_integer_scalar_or_vector();
 
         auto& helpers = is_div ? int_div_helpers : int_mod_helpers;
@@ -182,17 +195,17 @@ struct State {
                 }
                 auto* rhs_or_one = b.Call(result_ty, core::BuiltinFn::kSelect, rhs, one, cond);
 
-                if (binary->Kind() == Binary::Kind::kDivide) {
+                if (binary->Op() == BinaryOp::kDivide) {
                     // Perform the divide with the modified RHS.
-                    b.Return(func, b.Divide(result_ty, lhs, rhs_or_one)->Result());
-                } else if (binary->Kind() == Binary::Kind::kModulo) {
+                    b.Return(func, b.Divide(result_ty, lhs, rhs_or_one)->Result(0));
+                } else if (binary->Op() == BinaryOp::kModulo) {
                     // Calculate the modulo manually, as modulo with negative operands is undefined
                     // behavior for many backends:
                     //   result = lhs - ((lhs / rhs_or_one) * rhs_or_one)
                     auto* whole = b.Divide(result_ty, lhs, rhs_or_one);
                     auto* remainder =
                         b.Subtract(result_ty, lhs, b.Multiply(result_ty, whole, rhs_or_one));
-                    b.Return(func, remainder->Result());
+                    b.Return(func, remainder->Result(0));
                 }
             });
             return func;
@@ -201,7 +214,7 @@ struct State {
         /// Helper to splat a value to match the vector width of the result type if necessary.
         auto maybe_splat = [&](ir::Value* value) -> ir::Value* {
             if (value->Type()->Is<type::Scalar>() && result_ty->Is<core::type::Vector>()) {
-                return b.Construct(result_ty, value)->Result();
+                return b.Construct(result_ty, value)->Result(0);
             }
             return value;
         };
@@ -211,7 +224,7 @@ struct State {
         b.InsertBefore(binary, [&] {
             auto* lhs = maybe_splat(binary->LHS());
             auto* rhs = maybe_splat(binary->RHS());
-            result = b.Call(result_ty, helper, lhs, rhs)->Result();
+            result = b.Call(result_ty, helper, lhs, rhs)->Result(0);
         });
         return result;
     }
@@ -225,8 +238,8 @@ struct State {
         auto* mask = b.Constant(u32(lhs->Type()->DeepestElement()->Size() * 8 - 1));
         auto* masked = b.And(rhs->Type(), rhs, MatchWidth(mask, rhs->Type()));
         masked->InsertBefore(binary);
-        binary->SetOperand(ir::Binary::kRhsOperandOffset, masked->Result());
-        return binary->Result();
+        binary->SetOperand(ir::Binary::kRhsOperandOffset, masked->Result(0));
+        return binary->Result(0);
     }
 };
 

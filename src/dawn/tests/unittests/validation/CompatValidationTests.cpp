@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <limits>
 #include <string>
@@ -55,6 +68,38 @@ TEST_F(CompatValidationTest, CanNotCreateCubeArrayTextureView) {
     }
 
     cubeTexture.Destroy();
+}
+
+TEST_F(CompatValidationTest, CanNotSpecifyAlternateCompatibleViewFormatRGBA8Unorm) {
+    constexpr wgpu::TextureFormat viewFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
+
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {1, 1, 1};
+    descriptor.dimension = wgpu::TextureDimension::e2D;
+    descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.usage = wgpu::TextureUsage::TextureBinding;
+    descriptor.viewFormatCount = 1;
+    descriptor.viewFormats = &viewFormat;
+    wgpu::Texture texture;
+    ASSERT_DEVICE_ERROR(texture = device.CreateTexture(&descriptor),
+                        testing::HasSubstr("must match format"));
+    texture.Destroy();
+}
+
+TEST_F(CompatValidationTest, CanNotSpecifyAlternateCompatibleViewFormatRGBA8UnormSrgb) {
+    constexpr wgpu::TextureFormat viewFormat = wgpu::TextureFormat::RGBA8Unorm;
+
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {1, 1, 1};
+    descriptor.dimension = wgpu::TextureDimension::e2D;
+    descriptor.format = wgpu::TextureFormat::RGBA8UnormSrgb;
+    descriptor.usage = wgpu::TextureUsage::TextureBinding;
+    descriptor.viewFormatCount = 1;
+    descriptor.viewFormats = &viewFormat;
+    wgpu::Texture texture;
+    ASSERT_DEVICE_ERROR(texture = device.CreateTexture(&descriptor),
+                        testing::HasSubstr("must match format"));
+    texture.Destroy();
 }
 
 TEST_F(CompatValidationTest, CanNotCreatePipelineWithDifferentPerTargetBlendStateOrWriteMask) {
@@ -186,6 +231,89 @@ TEST_F(CompatValidationTest, CanNotUseFragmentShaderWithSampleMask) {
 
         ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
                             testing::HasSubstr("sample_mask"));
+    }
+}
+
+TEST_F(CompatValidationTest, CanNotUseShaderWithUnsupportedInterpolateTypeOrSampling) {
+    static const char* interpolateParams[] = {
+        "linear",
+        "perspective, sample",
+    };
+    for (auto interpolateParam : interpolateParams) {
+        auto wgsl = absl::StrFormat(R"(
+            struct Vertex {
+                @builtin(position) pos: vec4f,
+                @location(0) @interpolate(%s) color : vec4f,
+            };
+            @vertex fn vs() -> Vertex {
+                var v: Vertex;
+                v.pos = vec4f(1);
+                v.color = vec4f(1);
+                return v;
+            }
+            @fragment fn fsWithoutBadInterpolationUsage() -> @location(0) vec4f {
+                return vec4f(1);
+            }
+            @fragment fn fsWithBadInterpolationUsage1(v: Vertex) -> @location(0) vec4f {
+                return vec4f(1);
+            }
+            @fragment fn fsWithBadInterpolationUsage2(v: Vertex) -> @location(0) vec4f {
+                return v.pos;
+            }
+            @fragment fn fsWithBadInterpolationUsage3(v: Vertex) -> @location(0) vec4f {
+                return v.color;
+            }
+        )",
+                                    interpolateParam);
+        wgpu::ShaderModule moduleInterpolationLinear =
+            utils::CreateShaderModule(device, wgsl.c_str());
+
+        static const char* entryPoints[] = {
+            "fsWithoutBadInterpolationUsage",
+            "fsWithBadInterpolationUsage1",
+            "fsWithBadInterpolationUsage2",
+            "fsWithBadInterpolationUsage3",
+        };
+        for (auto entryPoint : entryPoints) {
+            utils::ComboRenderPipelineDescriptor descriptor;
+            descriptor.vertex.module = moduleInterpolationLinear;
+            descriptor.vertex.entryPoint = "vs";
+            descriptor.cFragment.module = moduleInterpolationLinear;
+            descriptor.cFragment.entryPoint = entryPoint;
+
+            bool shouldSucceed = entryPoint == entryPoints[0];
+
+            if (shouldSucceed) {
+                device.CreateRenderPipeline(&descriptor);
+            } else {
+                ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor),
+                                    testing::HasSubstr("in compatibility mode"));
+            }
+        }
+    }
+}
+
+TEST_F(CompatValidationTest, CanNotCreateRGxxxStorageTexture) {
+    const wgpu::TextureFormat formats[] = {
+        wgpu::TextureFormat::RGBA8Unorm,  // pass check
+        wgpu::TextureFormat::RG32Sint,
+        wgpu::TextureFormat::RG32Uint,
+        wgpu::TextureFormat::RG32Float,
+    };
+    for (auto format : formats) {
+        wgpu::TextureDescriptor descriptor;
+        descriptor.size = {1, 1, 1};
+        descriptor.dimension = wgpu::TextureDimension::e2D;
+        descriptor.format = format;
+        descriptor.usage = wgpu::TextureUsage::StorageBinding;
+        wgpu::Texture texture;
+
+        if (format == wgpu::TextureFormat::RGBA8Unorm) {
+            texture = device.CreateTexture(&descriptor);
+        } else {
+            ASSERT_DEVICE_ERROR(texture = device.CreateTexture(&descriptor));
+        }
+        texture.Destroy();
     }
 }
 
@@ -909,6 +1037,189 @@ TEST_F(CompatValidationTest, CanNotCreateBGRA8UnormTextureWithBGRA8UnormSrgbView
     ASSERT_DEVICE_ERROR(device.CreateTexture(&descriptor),
                         testing::HasSubstr("not supported in compatibility mode"));
 }
+
+class CompatTextureViewDimensionValidationTests : public CompatValidationTest {
+  protected:
+    void TestBindingTextureViewDimensions(
+        const uint32_t depth,
+        const wgpu::TextureViewDimension textureBindingViewDimension,
+        const wgpu::TextureViewDimension viewDimension,
+        bool success) {
+        wgpu::BindGroupLayout layout = utils::MakeBindGroupLayout(
+            device, {{0, wgpu::ShaderStage::Fragment, wgpu::TextureSampleType::Float,
+                      viewDimension == wgpu::TextureViewDimension::Undefined
+                          ? wgpu::TextureViewDimension::e2D
+                          : viewDimension}});
+
+        wgpu::Texture texture = CreateTextureWithViewDimension(depth, wgpu::TextureDimension::e2D,
+                                                               textureBindingViewDimension);
+
+        wgpu::TextureViewDescriptor viewDesc = {};
+        viewDesc.dimension = viewDimension;
+
+        if (success) {
+            utils::MakeBindGroup(device, layout, {{0, texture.CreateView(&viewDesc)}});
+        } else {
+            ASSERT_DEVICE_ERROR(
+                utils::MakeBindGroup(device, layout, {{0, texture.CreateView(&viewDesc)}}),
+                testing::HasSubstr("must match textureBindingViewDimension"));
+        }
+
+        texture.Destroy();
+    }
+
+    void TestCreateTextureWithViewDimensionImpl(
+        const uint32_t depth,
+        const wgpu::TextureDimension dimension,
+        const wgpu::TextureViewDimension textureBindingViewDimension,
+        bool success,
+        const char* expectedSubstr) {
+        if (success) {
+            CreateTextureWithViewDimension(depth, dimension, textureBindingViewDimension);
+        } else {
+            ASSERT_DEVICE_ERROR(
+                CreateTextureWithViewDimension(depth, dimension, textureBindingViewDimension);
+                testing::HasSubstr(expectedSubstr));
+        }
+    }
+
+    void TestCreateTextureIsCompatibleWithViewDimension(
+        const uint32_t depth,
+        const wgpu::TextureDimension dimension,
+        const wgpu::TextureViewDimension textureBindingViewDimension,
+        bool success) {
+        TestCreateTextureWithViewDimensionImpl(depth, dimension, textureBindingViewDimension,
+                                               success, "is not compatible with the dimension");
+    }
+
+    void TestCreateTextureLayersIsCompatibleWithViewDimension(
+        const uint32_t depth,
+        const wgpu::TextureDimension dimension,
+        const wgpu::TextureViewDimension textureBindingViewDimension,
+        bool success) {
+        TestCreateTextureWithViewDimensionImpl(depth, dimension, textureBindingViewDimension,
+                                               success,
+                                               "is only compatible with depthOrArrayLayers ==");
+    }
+
+    wgpu::Texture CreateTextureWithViewDimension(
+        const uint32_t depth,
+        const wgpu::TextureDimension dimension,
+        const wgpu::TextureViewDimension textureBindingViewDimension) {
+        constexpr wgpu::TextureFormat viewFormat = wgpu::TextureFormat::RGBA8Unorm;
+
+        wgpu::TextureDescriptor textureDesc;
+        textureDesc.size = {1, 1, depth};
+        textureDesc.dimension = dimension;
+        textureDesc.format = wgpu::TextureFormat::RGBA8Unorm;
+        textureDesc.usage = wgpu::TextureUsage::TextureBinding;
+        textureDesc.viewFormatCount = 1;
+        textureDesc.viewFormats = &viewFormat;
+
+        wgpu::TextureBindingViewDimensionDescriptor textureBindingViewDimensionDesc;
+
+        if (textureBindingViewDimension != wgpu::TextureViewDimension::Undefined) {
+            textureDesc.nextInChain = &textureBindingViewDimensionDesc;
+            textureBindingViewDimensionDesc.textureBindingViewDimension =
+                textureBindingViewDimension;
+        }
+
+        return device.CreateTexture(&textureDesc);
+    }
+};
+
+// Note: CubeArray is not included because CubeArray is not allowed
+// in compatibility mode.
+const wgpu::TextureViewDimension kViewDimensions[] = {
+    wgpu::TextureViewDimension::e1D,  wgpu::TextureViewDimension::e2D,
+    wgpu::TextureViewDimension::e3D,  wgpu::TextureViewDimension::e2DArray,
+    wgpu::TextureViewDimension::Cube,
+};
+
+// Test creating 1d textures with each view dimension.
+TEST_F(CompatTextureViewDimensionValidationTests, E1D) {
+    for (auto viewDimension : kViewDimensions) {
+        TestCreateTextureIsCompatibleWithViewDimension(
+            1, wgpu::TextureDimension::e1D, viewDimension,
+            viewDimension == wgpu::TextureViewDimension::e1D);
+    }
+}
+
+// Test creating 2d textures with each view dimension.
+TEST_F(CompatTextureViewDimensionValidationTests, E2D) {
+    for (auto viewDimension : kViewDimensions) {
+        TestCreateTextureIsCompatibleWithViewDimension(
+            viewDimension == wgpu::TextureViewDimension::e2D ? 1 : 6, wgpu::TextureDimension::e2D,
+            viewDimension,
+            viewDimension != wgpu::TextureViewDimension::e1D &&
+                viewDimension != wgpu::TextureViewDimension::e3D);
+    }
+}
+
+// Test creating 1d textures with each view dimension.
+TEST_F(CompatTextureViewDimensionValidationTests, E3D) {
+    for (auto viewDimension : kViewDimensions) {
+        TestCreateTextureIsCompatibleWithViewDimension(
+            1, wgpu::TextureDimension::e3D, viewDimension,
+            viewDimension == wgpu::TextureViewDimension::e3D);
+    }
+}
+
+// Test creating a 2d texture with a 2d view and depthOrArrayLayers > 1 fails
+TEST_F(CompatTextureViewDimensionValidationTests, E2DViewMoreThan1Layer) {
+    TestCreateTextureLayersIsCompatibleWithViewDimension(2, wgpu::TextureDimension::e2D,
+                                                         wgpu::TextureViewDimension::e2D, false);
+}
+
+// Test creating a 2d texture with a cube view with depthOrArrayLayers != 6 fails
+TEST_F(CompatTextureViewDimensionValidationTests, CubeViewMoreWhereLayersIsNot6) {
+    uint32_t layers[] = {1, 5, 6, 7, 12};
+    for (auto numLayers : layers) {
+        TestCreateTextureLayersIsCompatibleWithViewDimension(numLayers, wgpu::TextureDimension::e2D,
+                                                             wgpu::TextureViewDimension::Cube,
+                                                             numLayers == 6);
+    }
+}
+
+TEST_F(CompatTextureViewDimensionValidationTests, OneLayerIs2DView) {
+    TestBindingTextureViewDimensions(1, wgpu::TextureViewDimension::Undefined,
+                                     wgpu::TextureViewDimension::e2D, true);
+}
+
+// Test 2 layer texture gets a 2d-array viewDimension
+TEST_F(CompatTextureViewDimensionValidationTests, TwoLayersIs2DArrayView) {
+    TestBindingTextureViewDimensions(2, wgpu::TextureViewDimension::Undefined,
+                                     wgpu::TextureViewDimension::e2DArray, true);
+}
+
+// Test 6 layer texture gets a 2d-array viewDimension
+TEST_F(CompatTextureViewDimensionValidationTests, SixLayersIs2DArrayView) {
+    TestBindingTextureViewDimensions(6, wgpu::TextureViewDimension::Undefined,
+                                     wgpu::TextureViewDimension::e2DArray, true);
+}
+
+// Test 2d texture can not be viewed as 2D array
+TEST_F(CompatTextureViewDimensionValidationTests, TwoDTextureViewDimensionCanNotBeViewedAs2DArray) {
+    TestBindingTextureViewDimensions(1, wgpu::TextureViewDimension::e2D,
+                                     wgpu::TextureViewDimension::e2DArray, false);
+}
+
+// Test 2d-array texture can not be viewed as cube
+TEST_F(CompatTextureViewDimensionValidationTests,
+       TwoDArrayTextureViewDimensionCanNotBeViewedAsCube) {
+    TestBindingTextureViewDimensions(6, wgpu::TextureViewDimension::e2DArray,
+                                     wgpu::TextureViewDimension::Cube, false);
+}
+
+// Test cube texture can not be viewed as 2d-array
+TEST_F(CompatTextureViewDimensionValidationTests, CubeTextureViewDimensionCanNotBeViewedAs2DArray) {
+    TestBindingTextureViewDimensions(6, wgpu::TextureViewDimension::Cube,
+                                     wgpu::TextureViewDimension::e2DArray, false);
+}
+
+// Test 2Darray != 2d
+// Test cube !== 2d
+// Test cube !== 2d-array
 
 class CompatCompressedCopyT2BAndCopyT2TValidationTests : public CompatValidationTest {
   protected:

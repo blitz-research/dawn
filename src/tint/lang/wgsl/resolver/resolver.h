@@ -1,16 +1,29 @@
-// Copyright 2020 The Tint Authors.
+// Copyright 2020 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef SRC_TINT_LANG_WGSL_RESOLVER_RESOLVER_H_
 #define SRC_TINT_LANG_WGSL_RESOLVER_RESOLVER_H_
@@ -27,6 +40,7 @@
 #include "src/tint/lang/core/constant/eval.h"
 #include "src/tint/lang/core/constant/value.h"
 #include "src/tint/lang/core/intrinsic/table.h"
+#include "src/tint/lang/wgsl/common/allowed_features.h"
 #include "src/tint/lang/wgsl/intrinsic/dialect.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/resolver/dependency_graph.h"
@@ -83,7 +97,8 @@ class Resolver {
   public:
     /// Constructor
     /// @param builder the program builder
-    explicit Resolver(ProgramBuilder* builder);
+    /// @param allowed_features the extensions and features that are allowed to be used
+    explicit Resolver(ProgramBuilder* builder, const wgsl::AllowedFeatures& allowed_features);
 
     /// Destructor
     ~Resolver();
@@ -404,6 +419,10 @@ class Resolver {
     /// @returns the location value on success.
     tint::Result<uint32_t> LocationAttribute(const ast::LocationAttribute* attr);
 
+    /// Resolves the `@color` attribute @p attr
+    /// @returns the color value on success.
+    tint::Result<uint32_t> ColorAttribute(const ast::ColorAttribute* attr);
+
     /// Resolves the `@index` attribute @p attr
     /// @returns the index value on success.
     tint::Result<uint32_t> IndexAttribute(const ast::IndexAttribute* attr);
@@ -453,8 +472,12 @@ class Resolver {
     bool DiagnosticControl(const ast::DiagnosticControl& control);
 
     /// @param enable the enable declaration
-    /// @returns the resolved extension
+    /// @returns true on success, false on failure
     bool Enable(const ast::Enable* enable);
+
+    /// @param req the requires declaration
+    /// @returns true on success, false on failure
+    bool Requires(const ast::Requires* req);
 
     /// @param named_type the named type to resolve
     /// @returns the resolved semantic type
@@ -672,6 +695,7 @@ class Resolver {
     DependencyGraph dependencies_;
     SemHelper sem_;
     Validator validator_;
+    wgsl::AllowedFeatures allowed_features_;
     wgsl::Extensions enabled_extensions_;
     Vector<sem::Function*, 8> entry_points_;
     Hashmap<const core::type::Type*, const Source*, 8> atomic_composite_info_;

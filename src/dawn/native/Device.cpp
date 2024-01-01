@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/Device.h"
 
@@ -193,10 +206,10 @@ ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetRenderPipelineDescrip
 // DeviceBase
 
 DeviceBase::DeviceBase(AdapterBase* adapter,
-                       const DeviceDescriptor* descriptor,
+                       const UnpackedPtr<DeviceDescriptor>& descriptor,
                        const TogglesState& deviceToggles)
     : mAdapter(adapter), mToggles(deviceToggles), mNextPipelineCompatibilityToken(1) {
-    DAWN_ASSERT(descriptor != nullptr);
+    DAWN_ASSERT(descriptor);
 
     mDeviceLostCallback = descriptor->deviceLostCallback;
     mDeviceLostUserdata = descriptor->deviceLostUserdata;
@@ -207,8 +220,7 @@ DeviceBase::DeviceBase(AdapterBase* adapter,
     ApplyFeatures(descriptor);
 
     DawnCacheDeviceDescriptor defaultCacheDesc = {};
-    const DawnCacheDeviceDescriptor* cacheDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &cacheDesc);
+    auto* cacheDesc = descriptor.Get<DawnCacheDeviceDescriptor>();
     if (cacheDesc == nullptr) {
         cacheDesc = &defaultCacheDesc;
     }
@@ -357,12 +369,12 @@ void DeviceBase::WillDropLastExternalRef() {
     } while (!mCallbackTaskManager->IsEmpty());
 
     auto deviceLock(GetScopedLock());
-    // Drop te device's reference to the queue. Because the application dropped the last external
+    // Drop the device's reference to the queue. Because the application dropped the last external
     // references, they can no longer get the queue from APIGetQueue().
     mQueue = nullptr;
 
-    // Reset callbacks since after this, since after dropping the last external reference, the
-    // application may have freed any device-scope memory needed to run the callback.
+    // Reset callbacks since after dropping the last external reference, the application may have
+    // freed any device-scope memory needed to run the callback.
     mUncapturedErrorCallback = [](WGPUErrorType, char const* message, void*) {
         dawn::WarningLog() << "Uncaptured error after last external device reference dropped.\n"
                            << message;
@@ -437,7 +449,7 @@ void DeviceBase::Destroy() {
     // inside which the application may destroy the device. Thus, we should be careful not
     // to delete objects that are needed inside Tick after callbacks have been called.
     //  - mCallbackTaskManager is not deleted since we flush the callback queue at the end
-    // of Tick(). Note: that flush should always be emtpy since all callbacks are drained
+    // of Tick(). Note: that flush should always be empty since all callbacks are drained
     // inside Destroy() so there should be no outstanding tasks holding objects alive.
     //  - Similiarly, mAsyncTaskManager is not deleted since we use it to return a status
     // from Tick() whether or not there is any more pending work.
@@ -507,16 +519,17 @@ void DeviceBase::Destroy() {
     // implementations of DestroyImpl checks that we are disconnected before doing work.
     mState = State::Disconnected;
 
-    // Note: mQueue is not released here since the application may still get it after calling
-    // Destroy() via APIGetQueue.
     mDynamicUploader = nullptr;
     mEmptyBindGroupLayout = nullptr;
     mEmptyPipelineLayout = nullptr;
     mInternalPipelineStore = nullptr;
     mExternalTexturePlaceholderView = nullptr;
 
+    // Note: mQueue is not released here since the application may still get it after calling
+    // Destroy() via APIGetQueue.
     if (mQueue != nullptr) {
         mQueue->AssumeCommandsComplete();
+        mQueue->Destroy();
     }
 
     // Now that the GPU timeline is empty, destroy the backend device.
@@ -534,9 +547,18 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
                              InternalErrorType additionalAllowedErrors,
                              WGPUDeviceLostReason lost_reason) {
     AppendDebugLayerMessages(error.get());
+
+    InternalErrorType type = error->GetType();
+    if (type != InternalErrorType::Validation) {
+        // D3D device can provide additional device removed reason. We would
+        // like to query and log the the device removed reason if the error is
+        // not validation error.
+        AppendDeviceLostMessage(error.get());
+    }
+
     InternalErrorType allowedErrors =
         InternalErrorType::Validation | InternalErrorType::DeviceLost | additionalAllowedErrors;
-    InternalErrorType type = error->GetType();
+
     if (type == InternalErrorType::DeviceLost) {
         mState = State::Disconnected;
 
@@ -851,7 +873,7 @@ ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::CreateEmptyPipelineLayout() {
     desc.bindGroupLayoutCount = 0;
     desc.bindGroupLayouts = nullptr;
 
-    return GetOrCreatePipelineLayout(&desc);
+    return GetOrCreatePipelineLayout(Unpack(&desc));
 }
 
 BindGroupLayoutBase* DeviceBase::GetEmptyBindGroupLayout() {
@@ -944,7 +966,7 @@ DeviceBase::GetOrCreatePlaceholderTextureViewForExternalTexture() {
 }
 
 ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::GetOrCreatePipelineLayout(
-    const PipelineLayoutDescriptor* descriptor) {
+    const UnpackedPtr<PipelineLayoutDescriptor>& descriptor) {
     PipelineLayoutBase blueprint(this, descriptor, ApiObjectBase::kUntrackedByDevice);
 
     const size_t blueprintHash = blueprint.ComputeContentHash();
@@ -975,7 +997,7 @@ ResultOrError<Ref<SamplerBase>> DeviceBase::GetOrCreateSampler(
 }
 
 ResultOrError<Ref<ShaderModuleBase>> DeviceBase::GetOrCreateShaderModule(
-    const ShaderModuleDescriptor* descriptor,
+    const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
     ShaderModuleParseResult* parseResult,
     OwnedCompilationMessages* compilationMessages) {
     DAWN_ASSERT(parseResult != nullptr);
@@ -1023,14 +1045,14 @@ Ref<AttachmentState> DeviceBase::GetOrCreateAttachmentState(
 }
 
 Ref<AttachmentState> DeviceBase::GetOrCreateAttachmentState(
-    const RenderPipelineDescriptor* descriptor,
+    const UnpackedPtr<RenderPipelineDescriptor>& descriptor,
     const PipelineLayoutBase* layout) {
     AttachmentState blueprint(this, descriptor, layout);
     return GetOrCreateAttachmentState(&blueprint);
 }
 
 Ref<AttachmentState> DeviceBase::GetOrCreateAttachmentState(
-    const RenderPassDescriptor* descriptor) {
+    const UnpackedPtr<RenderPassDescriptor>& descriptor) {
     AttachmentState blueprint(this, descriptor);
     return GetOrCreateAttachmentState(&blueprint);
 }
@@ -1224,7 +1246,7 @@ ShaderModuleBase* DeviceBase::APICreateErrorShaderModule(const ShaderModuleDescr
         ShaderModuleBase::MakeError(this, descriptor ? descriptor->label : nullptr);
     std::unique_ptr<OwnedCompilationMessages> compilationMessages(
         std::make_unique<OwnedCompilationMessages>());
-    compilationMessages->AddMessage(errorMessage, wgpu::CompilationMessageType::Error);
+    compilationMessages->AddUnanchoredMessage(errorMessage, wgpu::CompilationMessageType::Error);
     result->InjectCompilationMessages(std::move(compilationMessages));
 
     std::unique_ptr<ErrorData> errorData =
@@ -1263,30 +1285,21 @@ wgpu::TextureUsage DeviceBase::APIGetSupportedSurfaceUsage(Surface* surface) {
 // For Dawn Wire
 
 BufferBase* DeviceBase::APICreateErrorBuffer(const BufferDescriptor* desc) {
-    BufferDescriptor fakeDescriptor = *desc;
-    fakeDescriptor.nextInChain = nullptr;
-
-    // The validation errors on BufferDescriptor should be prior to any OOM errors when
-    // MapppedAtCreation == false.
-    MaybeError maybeError = ValidateBufferDescriptor(this, &fakeDescriptor);
-
-    // Set the size of the error buffer to 0 as this function is called only when an OOM happens at
-    // the client side.
-    fakeDescriptor.size = 0;
-
-    if (maybeError.IsError()) {
-        std::unique_ptr<ErrorData> error = maybeError.AcquireError();
-        error->AppendContext("calling %s.CreateBuffer(%s).", this, desc);
-        HandleError(std::move(error), InternalErrorType::OutOfMemory);
-    } else {
-        const DawnBufferDescriptorErrorInfoFromWireClient* clientErrorInfo = nullptr;
-        FindInChain(desc->nextInChain, &clientErrorInfo);
+    UnpackedPtr<BufferDescriptor> unpacked;
+    if (!ConsumedError(ValidateBufferDescriptor(this, desc), &unpacked,
+                       InternalErrorType::OutOfMemory, "calling %s.CreateBuffer(%s).", this,
+                       desc)) {
+        auto* clientErrorInfo = unpacked.Get<DawnBufferDescriptorErrorInfoFromWireClient>();
         if (clientErrorInfo != nullptr && clientErrorInfo->outOfMemory) {
             HandleError(DAWN_OUT_OF_MEMORY_ERROR("Failed to allocate memory for buffer mapping"),
                         InternalErrorType::OutOfMemory);
         }
     }
 
+    // Set the size of the error buffer to 0 as this function is called only when an OOM happens at
+    // the client side.
+    BufferDescriptor fakeDescriptor = *desc;
+    fakeDescriptor.size = 0;
     return BufferBase::MakeError(this, &fakeDescriptor);
 }
 
@@ -1416,7 +1429,7 @@ ResultOrError<Ref<SharedFenceBase>> DeviceBase::ImportSharedFenceImpl(
     return DAWN_UNIMPLEMENTED_ERROR("Not implemented");
 }
 
-void DeviceBase::ApplyFeatures(const DeviceDescriptor* deviceDescriptor) {
+void DeviceBase::ApplyFeatures(const UnpackedPtr<DeviceDescriptor>& deviceDescriptor) {
     DAWN_ASSERT(deviceDescriptor);
     // Validate all required features with device toggles.
     DAWN_ASSERT(GetPhysicalDevice()->SupportsAllRequiredFeatures(
@@ -1432,34 +1445,43 @@ bool DeviceBase::HasFeature(Feature feature) const {
 }
 
 void DeviceBase::SetWGSLExtensionAllowList() {
-    // Set the WGSL extensions allow list based on device's enabled features and other
-    // properties.
-    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalDp4a)) {
-        mWGSLExtensionAllowList.insert("chromium_experimental_dp4a");
-    }
+    // Set the WGSL extensions and language features allow list based on device's enabled features
+    // and other properties.
     if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
-        mWGSLExtensionAllowList.insert("f16");
+        mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kF16);
     }
     if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalSubgroups)) {
-        mWGSLExtensionAllowList.insert("chromium_experimental_subgroups");
-    }
-    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalReadWriteStorageTexture)) {
-        mWGSLExtensionAllowList.insert("chromium_experimental_read_write_storage_texture");
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumExperimentalSubgroups);
     }
     if (IsToggleEnabled(Toggle::AllowUnsafeAPIs)) {
-        mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumDisableUniformityAnalysis);
     }
     if (mEnabledFeatures.IsEnabled(Feature::DualSourceBlending)) {
-        mWGSLExtensionAllowList.insert("chromium_internal_dual_source_blending");
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumInternalDualSourceBlending);
     }
     if (mEnabledFeatures.IsEnabled(Feature::PixelLocalStorageNonCoherent) ||
         mEnabledFeatures.IsEnabled(Feature::PixelLocalStorageCoherent)) {
-        mWGSLExtensionAllowList.insert("chromium_experimental_pixel_local");
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumExperimentalPixelLocal);
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::FramebufferFetch)) {
+        mWGSLAllowedFeatures.extensions.insert(
+            tint::wgsl::Extension::kChromiumExperimentalFramebufferFetch);
+    }
+
+    // Language features are enabled instance-wide.
+    // mAdapter is not set for mock test devices.
+    // TODO(crbug.com/dawn/1702): using a mock adapter and instance could avoid the null checking.
+    if (mAdapter != nullptr) {
+        mWGSLAllowedFeatures.features = GetInstance()->GetAllowedWGSLLanguageFeatures();
     }
 }
 
-WGSLExtensionSet DeviceBase::GetWGSLExtensionAllowList() const {
-    return mWGSLExtensionAllowList;
+const tint::wgsl::AllowedFeatures& DeviceBase::GetWGSLAllowedFeatures() const {
+    return mWGSLAllowedFeatures;
 }
 
 bool DeviceBase::IsValidationEnabled() const {
@@ -1514,37 +1536,26 @@ void DeviceBase::EmitLog(WGPULoggingType loggingType, const char* message) {
 
 bool DeviceBase::APIGetLimits(SupportedLimits* limits) const {
     DAWN_ASSERT(limits != nullptr);
-    // TODO(dawn:1955): Revisit after deciding how to improve the validation for ChainedStructOut.
-    MaybeError result =
-        ValidateSTypes(limits->nextInChain, {{wgpu::SType::DawnExperimentalSubgroupLimits}});
-    if (GetPhysicalDevice()->GetInstance()->ConsumedError(std::move(result))) {
+    InstanceBase* instance = GetPhysicalDevice()->GetInstance();
+
+    UnpackedPtr<SupportedLimits> unpacked;
+    if (instance->ConsumedError(ValidateAndUnpack(limits), &unpacked)) {
         return false;
     }
 
     limits->limits = mLimits.v1;
 
-    for (auto* chain = limits->nextInChain; chain; chain = chain->nextInChain) {
-        wgpu::ChainedStructOut originalChain = *chain;
-        switch (chain->sType) {
-            case (wgpu::SType::DawnExperimentalSubgroupLimits): {
-                DawnExperimentalSubgroupLimits* subgroupLimits =
-                    reinterpret_cast<DawnExperimentalSubgroupLimits*>(chain);
-                if (!mToggles.IsEnabled(Toggle::AllowUnsafeAPIs)) {
-                    // If AllowUnsafeAPIs is not enabled, return the default-initialized
-                    // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
-                    // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
-                    *subgroupLimits = DawnExperimentalSubgroupLimits{};
-                } else {
-                    *subgroupLimits = mLimits.experimentalSubgroupLimits;
-                }
-                break;
-            }
-            default:
-                DAWN_UNREACHABLE();
+    if (auto* subgroupLimits = unpacked.Get<DawnExperimentalSubgroupLimits>()) {
+        if (!mToggles.IsEnabled(Toggle::AllowUnsafeAPIs)) {
+            // If AllowUnsafeAPIs is not enabled, return the default-initialized
+            // DawnExperimentalSubgroupLimits object, where minSubgroupSize and
+            // maxSubgroupSize are WGPU_LIMIT_U32_UNDEFINED.
+            *subgroupLimits = DawnExperimentalSubgroupLimits{};
+        } else {
+            *subgroupLimits = mLimits.experimentalSubgroupLimits;
         }
-        // Recover the original chain
-        *chain = originalChain;
     }
+
     return true;
 }
 
@@ -1579,7 +1590,10 @@ void DeviceBase::APIValidateTextureDescriptor(const TextureDescriptor* desc) {
     } else {
         allowMultiPlanar = AllowMultiPlanarTextureFormat::No;
     }
-    DAWN_UNUSED(ConsumedError(ValidateTextureDescriptor(this, desc, allowMultiPlanar)));
+    UnpackedPtr<TextureDescriptor> unpacked;
+    if (!ConsumedError(ValidateAndUnpack(desc), &unpacked)) {
+        DAWN_UNUSED(ConsumedError(ValidateTextureDescriptor(this, unpacked, allowMultiPlanar)));
+    }
 }
 
 QueueBase* DeviceBase::GetQueue() const {
@@ -1610,10 +1624,13 @@ ResultOrError<Ref<BindGroupLayoutBase>> DeviceBase::CreateBindGroupLayout(
     return GetOrCreateBindGroupLayout(descriptor);
 }
 
-ResultOrError<Ref<BufferBase>> DeviceBase::CreateBuffer(const BufferDescriptor* descriptor) {
+ResultOrError<Ref<BufferBase>> DeviceBase::CreateBuffer(const BufferDescriptor* rawDescriptor) {
     DAWN_TRY(ValidateIsAlive());
+    UnpackedPtr<BufferDescriptor> descriptor;
     if (IsValidationEnabled()) {
-        DAWN_TRY(ValidateBufferDescriptor(this, descriptor));
+        DAWN_TRY_ASSIGN(descriptor, ValidateBufferDescriptor(this, rawDescriptor));
+    } else {
+        descriptor = Unpack(rawDescriptor);
     }
 
     Ref<BufferBase> buffer;
@@ -1656,10 +1673,13 @@ ResultOrError<Ref<CommandEncoder>> DeviceBase::CreateCommandEncoder(
     }
 
     DAWN_TRY(ValidateIsAlive());
+    UnpackedPtr<CommandEncoderDescriptor> unpacked;
     if (IsValidationEnabled()) {
-        DAWN_TRY(ValidateCommandEncoderDescriptor(this, descriptor));
+        DAWN_TRY_ASSIGN(unpacked, ValidateCommandEncoderDescriptor(this, descriptor));
+    } else {
+        unpacked = Unpack(descriptor);
     }
-    return CommandEncoder::Create(this, descriptor);
+    return CommandEncoder::Create(this, unpacked);
 }
 
 // Overwritten on the backends to return pipeline caches if supported.
@@ -1679,7 +1699,7 @@ ResultOrError<Ref<ComputePipelineBase>> DeviceBase::CreateUninitializedComputePi
     DAWN_TRY_ASSIGN(layoutRef, ValidateLayoutAndGetComputePipelineDescriptorWithDefaults(
                                    this, *descriptor, &appliedDescriptor));
 
-    return CreateUninitializedComputePipelineImpl(&appliedDescriptor);
+    return CreateUninitializedComputePipelineImpl(Unpack(&appliedDescriptor));
 }
 
 // This function is overwritten with the async version on the backends that supports
@@ -1725,10 +1745,13 @@ void DeviceBase::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> rende
 ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::CreatePipelineLayout(
     const PipelineLayoutDescriptor* descriptor) {
     DAWN_TRY(ValidateIsAlive());
+    UnpackedPtr<PipelineLayoutDescriptor> unpacked;
     if (IsValidationEnabled()) {
-        DAWN_TRY(ValidatePipelineLayoutDescriptor(this, descriptor));
+        DAWN_TRY_ASSIGN(unpacked, ValidatePipelineLayoutDescriptor(this, descriptor));
+    } else {
+        unpacked = Unpack(descriptor);
     }
-    return GetOrCreatePipelineLayout(descriptor);
+    return GetOrCreatePipelineLayout(unpacked);
 }
 
 ResultOrError<Ref<ExternalTextureBase>> DeviceBase::CreateExternalTextureImpl(
@@ -1800,7 +1823,7 @@ ResultOrError<Ref<RenderPipelineBase>> DeviceBase::CreateUninitializedRenderPipe
     DAWN_TRY_ASSIGN(layoutRef, ValidateLayoutAndGetRenderPipelineDescriptorWithDefaults(
                                    this, *descriptor, &appliedDescriptor));
 
-    return CreateUninitializedRenderPipelineImpl(&appliedDescriptor);
+    return CreateUninitializedRenderPipelineImpl(Unpack(&appliedDescriptor));
 }
 
 ResultOrError<Ref<SamplerBase>> DeviceBase::CreateSampler(const SamplerDescriptor* descriptor) {
@@ -1823,13 +1846,18 @@ ResultOrError<Ref<ShaderModuleBase>> DeviceBase::CreateShaderModule(
     // long as dawn_native don't use the compilationMessages of these internal shader modules.
     ShaderModuleParseResult parseResult;
 
+    UnpackedPtr<ShaderModuleDescriptor> unpacked;
     if (IsValidationEnabled()) {
+        DAWN_TRY_ASSIGN_CONTEXT(unpacked, ValidateAndUnpack(descriptor),
+                                "validating and unpacking %s", descriptor);
         DAWN_TRY_CONTEXT(
-            ValidateAndParseShaderModule(this, descriptor, &parseResult, compilationMessages),
+            ValidateAndParseShaderModule(this, unpacked, &parseResult, compilationMessages),
             "validating %s", descriptor);
+    } else {
+        unpacked = Unpack(descriptor);
     }
 
-    return GetOrCreateShaderModule(descriptor, &parseResult, compilationMessages);
+    return GetOrCreateShaderModule(unpacked, &parseResult, compilationMessages);
 }
 
 ResultOrError<Ref<SwapChainBase>> DeviceBase::CreateSwapChain(
@@ -1857,8 +1885,9 @@ ResultOrError<Ref<SwapChainBase>> DeviceBase::CreateSwapChain(
     return newSwapChain;
 }
 
-ResultOrError<Ref<TextureBase>> DeviceBase::CreateTexture(const TextureDescriptor* descriptor) {
+ResultOrError<Ref<TextureBase>> DeviceBase::CreateTexture(const TextureDescriptor* rawDescriptor) {
     DAWN_TRY(ValidateIsAlive());
+    UnpackedPtr<TextureDescriptor> descriptor;
     if (IsValidationEnabled()) {
         AllowMultiPlanarTextureFormat allowMultiPlanar;
         if (HasFeature(Feature::MultiPlanarFormatExtendedUsages)) {
@@ -1866,8 +1895,12 @@ ResultOrError<Ref<TextureBase>> DeviceBase::CreateTexture(const TextureDescripto
         } else {
             allowMultiPlanar = AllowMultiPlanarTextureFormat::No;
         }
+        DAWN_TRY_ASSIGN_CONTEXT(descriptor, ValidateAndUnpack(rawDescriptor), "validating %s.",
+                                rawDescriptor);
         DAWN_TRY_CONTEXT(ValidateTextureDescriptor(this, descriptor, allowMultiPlanar),
                          "validating %s.", descriptor);
+    } else {
+        descriptor = Unpack(rawDescriptor);
     }
     return CreateTextureImpl(descriptor);
 }
@@ -2096,13 +2129,6 @@ uint64_t DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil() const {
     // For depth-stencil texture, buffer offset must be a multiple of 4, which is required
     // by WebGPU and Vulkan SPEC.
     return 4u;
-}
-
-bool DeviceBase::WaitAnyImpl(size_t futureCount,
-                             TrackedFutureWaitInfo* futures,
-                             Nanoseconds timeout) {
-    // Default for backends which don't actually need to do anything special in this case.
-    return WaitAnySystemEvent(futureCount, futures, timeout);
 }
 
 MaybeError DeviceBase::CopyFromStagingToBuffer(BufferBase* source,

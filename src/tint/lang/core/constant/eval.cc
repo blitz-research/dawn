@@ -1,16 +1,29 @@
-// Copyright 2022 The Tint Authors.
+// Copyright 2022 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/constant/eval.h"
 
@@ -2497,6 +2510,36 @@ Eval::Result Eval::dot(const core::type::Type*,
     return r;
 }
 
+Eval::Result Eval::dot4I8Packed(const core::type::Type* ty,
+                                VectorRef<const Value*> args,
+                                const Source& source) {
+    uint32_t packed_int8_vec4_1 = args[0]->ValueAs<u32>();
+    uint32_t packed_int8_vec4_2 = args[1]->ValueAs<u32>();
+
+    int8_t* int8_vec4_1 = reinterpret_cast<int8_t*>(&packed_int8_vec4_1);
+    int8_t* int8_vec4_2 = reinterpret_cast<int8_t*>(&packed_int8_vec4_2);
+    int32_t result = 0;
+    for (uint8_t i = 0; i < 4; ++i) {
+        result += int8_vec4_1[i] * int8_vec4_2[i];
+    }
+    return CreateScalar(source, ty, i32(result));
+}
+
+Eval::Result Eval::dot4U8Packed(const core::type::Type* ty,
+                                VectorRef<const Value*> args,
+                                const Source& source) {
+    uint32_t packed_uint8_vec4_1 = args[0]->ValueAs<u32>();
+    uint32_t packed_uint8_vec4_2 = args[1]->ValueAs<u32>();
+
+    uint8_t* uint8_vec4_1 = reinterpret_cast<uint8_t*>(&packed_uint8_vec4_1);
+    uint8_t* uint8_vec4_2 = reinterpret_cast<uint8_t*>(&packed_uint8_vec4_2);
+    uint32_t result = 0;
+    for (uint8_t i = 0; i < 4; ++i) {
+        result += uint8_vec4_1[i] * uint8_vec4_2[i];
+    }
+    return CreateScalar(source, ty, u32(result));
+}
+
 Eval::Result Eval::exp(const core::type::Type* ty,
                        VectorRef<const Value*> args,
                        const Source& source) {
@@ -2775,11 +2818,7 @@ Eval::Result Eval::frexp(const core::type::Type* ty,
                     CreateScalar(source, mgr.types.AInt(), AInt(exp)),
                 };
             },
-            [&](Default) {
-                TINT_ICE() << "unhandled element type for frexp() const-eval: "
-                           << s->Type()->FriendlyName();
-                return FractExp{error, error};
-            });
+            TINT_ICE_ON_NO_MATCH);
     };
 
     if (auto* vec = arg->Type()->As<core::type::Vector>()) {
@@ -3225,6 +3264,34 @@ Eval::Result Eval::pack4x8unorm(const core::type::Type* ty,
     auto e3 = calc(e->Index(3)->ValueAs<f32>());
 
     uint32_t mask = 0x0000'00ff;
+    u32 ret = u32((e0 & mask) | ((e1 & mask) << 8) | ((e2 & mask) << 16) | ((e3 & mask) << 24));
+    return CreateScalar(source, ty, ret);
+}
+
+Eval::Result Eval::pack4xI8(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source& source) {
+    auto* e = args[0];
+    auto e0 = e->Index(0)->ValueAs<i32>();
+    auto e1 = e->Index(1)->ValueAs<i32>();
+    auto e2 = e->Index(2)->ValueAs<i32>();
+    auto e3 = e->Index(3)->ValueAs<i32>();
+
+    int32_t mask = 0xff;
+    u32 ret = u32((e0 & mask) | ((e1 & mask) << 8) | ((e2 & mask) << 16) | ((e3 & mask) << 24));
+    return CreateScalar(source, ty, ret);
+}
+
+Eval::Result Eval::pack4xU8(const core::type::Type* ty,
+                            VectorRef<const Value*> args,
+                            const Source& source) {
+    auto* e = args[0];
+    auto e0 = e->Index(0)->ValueAs<u32>();
+    auto e1 = e->Index(1)->ValueAs<u32>();
+    auto e2 = e->Index(2)->ValueAs<u32>();
+    auto e3 = e->Index(3)->ValueAs<u32>();
+
+    uint32_t mask = 0xff;
     u32 ret = u32((e0 & mask) | ((e1 & mask) << 8) | ((e2 & mask) << 16) | ((e3 & mask) << 24));
     return CreateScalar(source, ty, ret);
 }

@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d12/CommandBufferD3D12.h"
 
@@ -19,6 +32,7 @@
 #include <vector>
 
 #include "dawn/common/MutexProtected.h"
+#include "dawn/common/Range.h"
 #include "dawn/native/BindGroupTracker.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/DynamicUploader.h"
@@ -56,8 +70,6 @@ D3D12_QUERY_TYPE D3D12QueryType(wgpu::QueryType type) {
     switch (type) {
         case wgpu::QueryType::Occlusion:
             return D3D12_QUERY_TYPE_BINARY_OCCLUSION;
-        case wgpu::QueryType::PipelineStatistics:
-            return D3D12_QUERY_TYPE_PIPELINE_STATISTICS;
         case wgpu::QueryType::Timestamp:
             return D3D12_QUERY_TYPE_TIMESTAMP;
     }
@@ -343,10 +355,10 @@ MaybeError TransitionAndClearForSyncScope(CommandRecordingContext* commandContex
 
         D3D12_RESOURCE_BARRIER barrier;
         if (buffer->TrackUsageAndGetResourceBarrier(commandContext, &barrier,
-                                                    usages.bufferUsages[i])) {
+                                                    usages.bufferSyncInfos[i].usage)) {
             barriers.push_back(barrier);
         }
-        bufferUsages |= usages.bufferUsages[i];
+        bufferUsages |= usages.bufferSyncInfos[i].usage;
     }
 
     wgpu::TextureUsage textureUsages = wgpu::TextureUsage::None;
@@ -357,18 +369,18 @@ MaybeError TransitionAndClearForSyncScope(CommandRecordingContext* commandContex
         // Clear subresources that are not render attachments. Render attachments will be
         // cleared in RecordBeginRenderPass by setting the loadop to clear when the texture
         // subresource has not been initialized before the render pass.
-        DAWN_TRY(usages.textureUsages[i].Iterate(
-            [&](const SubresourceRange& range, wgpu::TextureUsage usage) -> MaybeError {
-                if (usage & ~wgpu::TextureUsage::RenderAttachment) {
+        DAWN_TRY(usages.textureSyncInfos[i].Iterate(
+            [&](const SubresourceRange& range, const TextureSyncInfo& syncInfo) -> MaybeError {
+                if (syncInfo.usage & ~wgpu::TextureUsage::RenderAttachment) {
                     DAWN_TRY(texture->EnsureSubresourceContentInitialized(commandContext, range));
                 }
-                textureUsages |= usage;
+                textureUsages |= syncInfo.usage;
                 return {};
             }));
 
         ToBackend(usages.textures[i])
             ->TrackUsageAndGetResourceBarrierForPass(commandContext, &barriers,
-                                                     usages.textureUsages[i]);
+                                                     usages.textureSyncInfos[i]);
     }
 
     if (barriers.size()) {
@@ -604,8 +616,7 @@ class BindGroupStateTracker : public BindGroupTrackerBase<false, uint64_t> {
 
     bool mInCompute = false;
 
-    ityp::array<BindGroupIndex, D3D12_GPU_DESCRIPTOR_HANDLE, kMaxBindGroups>
-        mBoundRootSamplerTables = {};
+    PerBindGroup<D3D12_GPU_DESCRIPTOR_HANDLE> mBoundRootSamplerTables = {};
 
     MutexProtected<ShaderVisibleDescriptorAllocator>& mViewAllocator;
     MutexProtected<ShaderVisibleDescriptorAllocator>& mSamplerAllocator;
@@ -653,7 +664,7 @@ class VertexBufferTracker {
   public:
     void OnSetVertexBuffer(VertexBufferSlot slot, Buffer* buffer, uint64_t offset, uint64_t size) {
         mStartSlot = std::min(mStartSlot, slot);
-        mEndSlot = std::max(mEndSlot, ityp::Add(slot, VertexBufferSlot(uint8_t(1))));
+        mEndSlot = std::max(mEndSlot, ityp::PlusOne(slot));
 
         auto* d3d12BufferView = &mD3D12BufferViews[slot];
         d3d12BufferView->BufferLocation = buffer->GetVA() + offset;
@@ -673,10 +684,9 @@ class VertexBufferTracker {
         if (mLastAppliedRenderPipeline != renderPipeline) {
             mLastAppliedRenderPipeline = renderPipeline;
 
-            for (VertexBufferSlot slot :
-                 IterateBitSet(renderPipeline->GetVertexBufferSlotsUsed())) {
+            for (VertexBufferSlot slot : IterateBitSet(renderPipeline->GetVertexBuffersUsed())) {
                 startSlot = std::min(startSlot, slot);
-                endSlot = std::max(endSlot, ityp::Add(slot, VertexBufferSlot(uint8_t(1))));
+                endSlot = std::max(endSlot, ityp::PlusOne(slot));
                 mD3D12BufferViews[slot].StrideInBytes =
                     renderPipeline->GetVertexBuffer(slot).arrayStride;
             }
@@ -694,8 +704,8 @@ class VertexBufferTracker {
                                         static_cast<uint8_t>(ityp::Sub(endSlot, startSlot)),
                                         &mD3D12BufferViews[startSlot]);
 
-        mStartSlot = VertexBufferSlot(kMaxVertexBuffers);
-        mEndSlot = VertexBufferSlot(uint8_t(0));
+        mStartSlot = kMaxVertexBuffersTyped;
+        mEndSlot = {};
     }
 
   private:
@@ -705,9 +715,8 @@ class VertexBufferTracker {
     // data in the middle of the range).
     const RenderPipeline* mLastAppliedRenderPipeline = nullptr;
     VertexBufferSlot mStartSlot{kMaxVertexBuffers};
-    VertexBufferSlot mEndSlot{uint8_t(0)};
-    ityp::array<VertexBufferSlot, D3D12_VERTEX_BUFFER_VIEW, kMaxVertexBuffers> mD3D12BufferViews =
-        {};
+    VertexBufferSlot mEndSlot{};
+    PerVertexBuffer<D3D12_VERTEX_BUFFER_VIEW> mD3D12BufferViews = {};
 };
 
 void ResolveMultisampledRenderPass(CommandRecordingContext* commandContext,
@@ -1313,7 +1322,7 @@ MaybeError CommandBuffer::SetupRenderPass(CommandRecordingContext* commandContex
     D3D12_CPU_DESCRIPTOR_HANDLE nullRTV;
 
     const auto& colorAttachmentsMaskBitSet = renderPass->attachmentState->GetColorAttachmentsMask();
-    for (ColorAttachmentIndex i(uint8_t(0)); i < ColorAttachmentIndex(kMaxColorAttachments); i++) {
+    for (auto i : Range(kMaxColorAttachmentsTyped)) {
         if (colorAttachmentsMaskBitSet.test(i)) {
             RenderPassColorAttachmentInfo& attachmentInfo = renderPass->colorAttachments[i];
             TextureView* view = ToBackend(attachmentInfo.view.Get());
@@ -1324,7 +1333,8 @@ MaybeError CommandBuffer::SetupRenderPass(CommandRecordingContext* commandContex
                 rtvAllocation,
                 device->GetRenderTargetViewAllocator()->AllocateTransientCPUDescriptors());
 
-            const D3D12_RENDER_TARGET_VIEW_DESC viewDesc = view->GetRTVDescriptor();
+            D3D12_RENDER_TARGET_VIEW_DESC viewDesc =
+                view->GetRTVDescriptor(attachmentInfo.depthSlice);
             const D3D12_CPU_DESCRIPTOR_HANDLE baseDescriptor = rtvAllocation.GetBaseDescriptor();
 
             device->GetD3D12Device()->CreateRenderTargetView(

@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/opengl/CommandBufferGL.h"
 
@@ -31,6 +44,7 @@
 #include "dawn/native/opengl/Forward.h"
 #include "dawn/native/opengl/PersistentPipelineStateGL.h"
 #include "dawn/native/opengl/PipelineLayoutGL.h"
+#include "dawn/native/opengl/QuerySetGL.h"
 #include "dawn/native/opengl/RenderPipelineGL.h"
 #include "dawn/native/opengl/SamplerGL.h"
 #include "dawn/native/opengl/TextureGL.h"
@@ -166,7 +180,7 @@ class VertexStateBufferBindingTracker {
         }
 
         mIndexBufferDirty = true;
-        mDirtyVertexBuffers |= pipeline->GetVertexBufferSlotsUsed();
+        mDirtyVertexBuffers |= pipeline->GetVertexBuffersUsed();
 
         mLastPipeline = pipeline;
     }
@@ -178,7 +192,7 @@ class VertexStateBufferBindingTracker {
         }
 
         for (VertexBufferSlot slot :
-             IterateBitSet(mDirtyVertexBuffers & mLastPipeline->GetVertexBufferSlotsUsed())) {
+             IterateBitSet(mDirtyVertexBuffers & mLastPipeline->GetVertexBuffersUsed())) {
             for (VertexAttributeLocation location :
                  IterateBitSet(ToBackend(mLastPipeline)->GetAttributesUsingVertexBuffer(slot))) {
                 const VertexAttributeInfo& attribute = mLastPipeline->GetAttribute(location);
@@ -212,9 +226,9 @@ class VertexStateBufferBindingTracker {
     bool mIndexBufferDirty = false;
     Buffer* mIndexBuffer = nullptr;
 
-    ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mDirtyVertexBuffers;
-    ityp::array<VertexBufferSlot, Buffer*, kMaxVertexBuffers> mVertexBuffers;
-    ityp::array<VertexBufferSlot, uint64_t, kMaxVertexBuffers> mVertexBufferOffsets;
+    VertexBufferMask mDirtyVertexBuffers;
+    PerVertexBuffer<Buffer*> mVertexBuffers;
+    PerVertexBuffer<uint64_t> mVertexBufferOffsets;
 
     RenderPipelineBase* mLastPipeline = nullptr;
 };
@@ -329,6 +343,7 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                                 case Aspect::CombinedDepthStencil:
                                 case Aspect::Plane0:
                                 case Aspect::Plane1:
+                                case Aspect::Plane2:
                                     DAWN_UNREACHABLE();
                                 case Aspect::Depth:
                                     gl.TexParameteri(target, GL_DEPTH_STENCIL_TEXTURE_MODE,
@@ -340,6 +355,9 @@ class BindGroupTracker : public BindGroupTrackerBase<false, uint64_t> {
                                     break;
                             }
                         }
+                        gl.TexParameteri(target, GL_TEXTURE_BASE_LEVEL, view->GetBaseMipLevel());
+                        gl.TexParameteri(target, GL_TEXTURE_MAX_LEVEL,
+                                         view->GetBaseMipLevel() + view->GetLevelCount() - 1);
                     }
 
                     // Some texture builtin function data needs emulation to update into the
@@ -477,8 +495,7 @@ void ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
     GLuint readFbo = 0;
     GLuint writeFbo = 0;
 
-    for (ColorAttachmentIndex i :
-         IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+    for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         if (renderPass->colorAttachments[i].resolveTarget != nullptr) {
             if (readFbo == 0) {
                 DAWN_ASSERT(writeFbo == 0);
@@ -543,9 +560,9 @@ MaybeError CommandBuffer::Execute() {
             // Clear subresources that are not render attachments. Render attachments will be
             // cleared in RecordBeginRenderPass by setting the loadop to clear when the texture
             // subresource has not been initialized before the render pass.
-            DAWN_TRY(scope.textureUsages[i].Iterate(
-                [&](const SubresourceRange& range, wgpu::TextureUsage usage) -> MaybeError {
-                    if (usage & ~wgpu::TextureUsage::RenderAttachment) {
+            DAWN_TRY(scope.textureSyncInfos[i].Iterate(
+                [&](const SubresourceRange& range, const TextureSyncInfo& syncInfo) -> MaybeError {
+                    if (syncInfo.usage & ~wgpu::TextureUsage::RenderAttachment) {
                         DAWN_TRY(texture->EnsureSubresourceContentInitialized(range));
                     }
                     return {};
@@ -621,10 +638,6 @@ MaybeError CommandBuffer::Execute() {
                 auto& src = copy->source;
                 auto& dst = copy->destination;
                 Buffer* buffer = ToBackend(src.buffer.Get());
-
-                DAWN_INVALID_IF(
-                    dst.aspect == Aspect::Stencil,
-                    "Copies to stencil textures are unsupported on the OpenGL backend.");
 
                 buffer->EnsureDataInitialized();
                 SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copy->copySize);
@@ -712,6 +725,7 @@ MaybeError CommandBuffer::Execute() {
                     case Aspect::None:
                     case Aspect::Plane0:
                     case Aspect::Plane1:
+                    case Aspect::Plane2:
                         DAWN_UNREACHABLE();
                 }
 
@@ -810,8 +824,30 @@ MaybeError CommandBuffer::Execute() {
             }
 
             case Command::ResolveQuerySet: {
-                // TODO(crbug.com/dawn/434): Resolve non-precise occlusion query.
-                SkipCommand(&mCommands, type);
+                ResolveQuerySetCmd* cmd = mCommands.NextCommand<ResolveQuerySetCmd>();
+                QuerySet* querySet = ToBackend(cmd->querySet.Get());
+                Buffer* destination = ToBackend(cmd->destination.Get());
+
+                size_t size = cmd->queryCount * sizeof(uint64_t);
+                destination->EnsureDataInitializedAsDestination(cmd->destinationOffset, size);
+
+                std::vector<uint64_t> values(cmd->queryCount);
+                auto availability = querySet->GetQueryAvailability();
+
+                for (uint32_t i = 0; i < cmd->queryCount; ++i) {
+                    if (!availability[cmd->firstQuery + i]) {
+                        values[i] = 0;
+                        continue;
+                    }
+                    uint32_t query = querySet->Get(cmd->firstQuery + i);
+                    GLuint value;
+                    gl.GetQueryObjectuiv(query, GL_QUERY_RESULT, &value);
+                    values[i] = value;
+                }
+
+                gl.BindBuffer(GL_ARRAY_BUFFER, destination->GetHandle());
+                gl.BufferSubData(GL_ARRAY_BUFFER, cmd->destinationOffset, size, values.data());
+
                 break;
             }
 
@@ -953,21 +989,20 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
 
         // Mapping from attachmentSlot to GL framebuffer attachment points. Defaults to zero
         // (GL_NONE).
-        ityp::array<ColorAttachmentIndex, GLenum, kMaxColorAttachments> drawBuffers = {};
+        PerColorAttachment<GLenum> drawBuffers = {};
 
         // Construct GL framebuffer
 
-        ColorAttachmentIndex attachmentCount(uint8_t(0));
-        for (ColorAttachmentIndex i :
-             IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+        ColorAttachmentIndex attachmentCount{};
+        for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
             TextureView* textureView = ToBackend(renderPass->colorAttachments[i].view.Get());
             GLenum glAttachment = GL_COLOR_ATTACHMENT0 + static_cast<uint8_t>(i);
 
             // Attach color buffers.
-            textureView->BindToFramebuffer(GL_DRAW_FRAMEBUFFER, glAttachment);
+            textureView->BindToFramebuffer(GL_DRAW_FRAMEBUFFER, glAttachment,
+                                           renderPass->colorAttachments[i].depthSlice);
             drawBuffers[i] = glAttachment;
-            attachmentCount = i;
-            attachmentCount++;
+            attachmentCount = ityp::PlusOne(i);
         }
         gl.DrawBuffers(static_cast<uint8_t>(attachmentCount), drawBuffers.data());
 
@@ -1003,8 +1038,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
 
     // Clear framebuffer attachments as needed
     {
-        for (ColorAttachmentIndex index :
-             IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+        for (auto index : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
             uint8_t i = static_cast<uint8_t>(index);
             auto* attachmentInfo = &renderPass->colorAttachments[index];
 
@@ -1235,7 +1269,7 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             case Command::EndRenderPass: {
                 mCommands.NextCommand<EndRenderPassCmd>();
 
-                for (ColorAttachmentIndex i :
+                for (auto i :
                      IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
                     TextureView* textureView =
                         ToBackend(renderPass->colorAttachments[i].view.Get());
@@ -1302,11 +1336,16 @@ MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
             }
 
             case Command::BeginOcclusionQuery: {
-                return DAWN_UNIMPLEMENTED_ERROR("BeginOcclusionQuery unimplemented.");
+                BeginOcclusionQueryCmd* cmd = mCommands.NextCommand<BeginOcclusionQueryCmd>();
+                QuerySet* querySet = ToBackend(renderPass->occlusionQuerySet.Get());
+                gl.BeginQuery(GL_ANY_SAMPLES_PASSED, querySet->Get(cmd->queryIndex));
+                break;
             }
 
             case Command::EndOcclusionQuery: {
-                return DAWN_UNIMPLEMENTED_ERROR("EndOcclusionQuery unimplemented.");
+                mCommands.NextCommand<EndOcclusionQueryCmd>();
+                gl.EndQuery(GL_ANY_SAMPLES_PASSED);
+                break;
             }
 
             case Command::WriteTimestamp:
@@ -1413,6 +1452,8 @@ void DoTexSubImage(const OpenGLFunctions& gl,
         uint32_t width = copySize.width;
         uint32_t height = copySize.height;
         if (dataLayout.bytesPerRow % blockInfo.byteSize == 0) {
+            // Valid values for GL_UNPACK_ALIGNMENT are 1, 2, 4, 8
+            gl.PixelStorei(GL_UNPACK_ALIGNMENT, std::min(8u, blockInfo.byteSize));
             gl.PixelStorei(GL_UNPACK_ROW_LENGTH,
                            dataLayout.bytesPerRow / blockInfo.byteSize * blockInfo.width);
             if (texture->GetArrayLayers() == 1 && Is1DOr2D(texture->GetDimension())) {
@@ -1425,6 +1466,7 @@ void DoTexSubImage(const OpenGLFunctions& gl,
                 gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
             }
             gl.PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            gl.PixelStorei(GL_UNPACK_ALIGNMENT, 4);  // Reset to default
         } else {
             if (texture->GetArrayLayers() == 1 && Is1DOr2D(texture->GetDimension())) {
                 const uint8_t* d = static_cast<const uint8_t*>(data);

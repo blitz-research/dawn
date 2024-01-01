@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <atomic>
 #include <cstdint>
@@ -24,7 +37,7 @@
 namespace dawn {
 namespace {
 
-std::pair<wgpu::Instance, wgpu::Device> CreateExtraInstance(wgpu::InstanceDescriptor* desc) {
+wgpu::Device CreateExtraDevice(wgpu::Instance instance) {
     // IMPORTANT: DawnTest overrides RequestAdapter and RequestDevice and mixes
     // up the two instances. We use these to bypass the override.
     auto* requestAdapter = reinterpret_cast<WGPUProcInstanceRequestAdapter>(
@@ -32,14 +45,12 @@ std::pair<wgpu::Instance, wgpu::Device> CreateExtraInstance(wgpu::InstanceDescri
     auto* requestDevice = reinterpret_cast<WGPUProcAdapterRequestDevice>(
         wgpuGetProcAddress(nullptr, "wgpuAdapterRequestDevice"));
 
-    wgpu::Instance instance2 = wgpu::CreateInstance(desc);
-
     wgpu::Adapter adapter2;
     requestAdapter(
-        instance2.Get(), nullptr,
+        instance.Get(), nullptr,
         [](WGPURequestAdapterStatus status, WGPUAdapter adapter, const char*, void* userdata) {
             ASSERT_EQ(status, WGPURequestAdapterStatus_Success);
-            *reinterpret_cast<wgpu::Adapter*>(userdata) = wgpu::Adapter(adapter);
+            *reinterpret_cast<wgpu::Adapter*>(userdata) = wgpu::Adapter::Acquire(adapter);
         },
         &adapter2);
     DAWN_ASSERT(adapter2);
@@ -49,9 +60,18 @@ std::pair<wgpu::Instance, wgpu::Device> CreateExtraInstance(wgpu::InstanceDescri
         adapter2.Get(), nullptr,
         [](WGPURequestDeviceStatus status, WGPUDevice device, const char*, void* userdata) {
             ASSERT_EQ(status, WGPURequestDeviceStatus_Success);
-            *reinterpret_cast<wgpu::Device*>(userdata) = wgpu::Device(device);
+            *reinterpret_cast<wgpu::Device*>(userdata) = wgpu::Device::Acquire(device);
         },
         &device2);
+    DAWN_ASSERT(device2);
+
+    return device2;
+}
+
+std::pair<wgpu::Instance, wgpu::Device> CreateExtraInstance(wgpu::InstanceDescriptor* desc) {
+    wgpu::Instance instance2 = wgpu::CreateInstance(desc);
+
+    wgpu::Device device2 = CreateExtraDevice(instance2);
     DAWN_ASSERT(device2);
 
     return std::pair(std::move(instance2), std::move(device2));
@@ -195,13 +215,13 @@ class EventCompletionTests : public DawnTestWithParams<EventCompletionTestParams
         switch (GetParam().mWaitTypeAndCallbackMode) {
             case WaitTypeAndCallbackMode::TimedWaitAny_WaitAnyOnly:
             case WaitTypeAndCallbackMode::TimedWaitAny_AllowSpontaneous:
-                return TestWaitImpl(WaitType::TimedWaitAny);
+                return TestWaitImpl(WaitType::TimedWaitAny, loopOnlyOnce);
             case WaitTypeAndCallbackMode::SpinWaitAny_WaitAnyOnly:
             case WaitTypeAndCallbackMode::SpinWaitAny_AllowSpontaneous:
-                return TestWaitImpl(WaitType::SpinWaitAny);
+                return TestWaitImpl(WaitType::SpinWaitAny, loopOnlyOnce);
             case WaitTypeAndCallbackMode::SpinProcessEvents_AllowProcessEvents:
             case WaitTypeAndCallbackMode::SpinProcessEvents_AllowSpontaneous:
-                return TestWaitImpl(WaitType::SpinProcessEvents);
+                return TestWaitImpl(WaitType::SpinProcessEvents, loopOnlyOnce);
         }
     }
 
@@ -385,7 +405,7 @@ TEST_P(EventCompletionTests, WorkDoneOutOfOrder) {
     TrackForTest(f2);
     TestWaitAll();
     TrackForTest(f1);
-    TestWaitAll(true);
+    TestWaitAll(/*loopOnlyOnce=*/true);
 }
 
 constexpr WGPUQueueWorkDoneStatus kStatusUninitialized =
@@ -446,8 +466,8 @@ TEST_P(EventCompletionTests, WorkDoneDropInstanceAfterEvent) {
 // - Other tests?
 
 DAWN_INSTANTIATE_TEST_P(EventCompletionTests,
-                        // TODO(crbug.com/dawn/2058): Enable tests for the rest of the backends.
-                        {MetalBackend()},
+                        {D3D11Backend(), D3D12Backend(), MetalBackend(), VulkanBackend(),
+                         OpenGLBackend(), OpenGLESBackend()},
                         {
                             WaitTypeAndCallbackMode::TimedWaitAny_WaitAnyOnly,
                             WaitTypeAndCallbackMode::TimedWaitAny_AllowSpontaneous,
@@ -512,17 +532,34 @@ TEST_P(WaitAnyTests, UnsupportedTimeout) {
 }
 
 TEST_P(WaitAnyTests, UnsupportedCount) {
+    wgpu::Instance instance2;
+    wgpu::Device device2;
+    wgpu::Queue queue2;
+
+    if (UsesWire()) {
+        // The wire (currently) never supports timedWaitAnyEnable, so we can run this test on the
+        // default instance/device.
+        instance2 = GetInstance();
+        device2 = device;
+        queue2 = queue;
+    } else {
+        wgpu::InstanceDescriptor desc;
+        desc.features.timedWaitAnyEnable = true;
+        std::tie(instance2, device2) = CreateExtraInstance(&desc);
+        queue2 = device2.GetQueue();
+    }
+
     for (uint64_t timeout : {uint64_t(0), uint64_t(1)}) {
         // We don't support values higher than the default (64), and if you ask for lower than 64
         // you still get 64. DawnTest doesn't request anything (so requests 0) so gets 64.
         for (size_t count : {kTimedWaitAnyMaxCountDefault, kTimedWaitAnyMaxCountDefault + 1}) {
             std::vector<wgpu::FutureWaitInfo> infos;
             for (size_t i = 0; i < count; ++i) {
-                infos.push_back(
-                    {queue.OnSubmittedWorkDoneF({nullptr, wgpu::CallbackMode::WaitAnyOnly,
-                                                 [](WGPUQueueWorkDoneStatus, void*) {}, nullptr})});
+                infos.push_back({queue2.OnSubmittedWorkDoneF(
+                    {nullptr, wgpu::CallbackMode::WaitAnyOnly,
+                     [](WGPUQueueWorkDoneStatus, void*) {}, nullptr})});
             }
-            wgpu::WaitStatus status = GetInstance().WaitAny(infos.size(), infos.data(), timeout);
+            wgpu::WaitStatus status = instance2.WaitAny(infos.size(), infos.data(), timeout);
             if (timeout == 0) {
                 ASSERT_TRUE(status == wgpu::WaitStatus::Success ||
                             status == wgpu::WaitStatus::TimedOut);
@@ -539,16 +576,37 @@ TEST_P(WaitAnyTests, UnsupportedCount) {
 }
 
 TEST_P(WaitAnyTests, UnsupportedMixedSources) {
-    wgpu::Device device2 = CreateDevice();
-    wgpu::Queue queue2 = device2.GetQueue();
+    wgpu::Instance instance2;
+    wgpu::Device device2;
+    wgpu::Queue queue2;
+    wgpu::Device device3;
+    wgpu::Queue queue3;
+
+    if (UsesWire()) {
+        // The wire (currently) never supports timedWaitAnyEnable, so we can run this test on the
+        // default instance/device.
+        instance2 = GetInstance();
+        device2 = device;
+        queue2 = queue;
+        device3 = CreateDevice();
+        queue3 = device3.GetQueue();
+    } else {
+        wgpu::InstanceDescriptor desc;
+        desc.features.timedWaitAnyEnable = true;
+        std::tie(instance2, device2) = CreateExtraInstance(&desc);
+        queue2 = device2.GetQueue();
+        device3 = CreateExtraDevice(instance2);
+        queue3 = device3.GetQueue();
+    }
+
     for (uint64_t timeout : {uint64_t(0), uint64_t(1)}) {
         std::vector<wgpu::FutureWaitInfo> infos{{
-            {queue.OnSubmittedWorkDoneF({nullptr, wgpu::CallbackMode::WaitAnyOnly,
-                                         [](WGPUQueueWorkDoneStatus, void*) {}, nullptr})},
             {queue2.OnSubmittedWorkDoneF({nullptr, wgpu::CallbackMode::WaitAnyOnly,
                                           [](WGPUQueueWorkDoneStatus, void*) {}, nullptr})},
+            {queue3.OnSubmittedWorkDoneF({nullptr, wgpu::CallbackMode::WaitAnyOnly,
+                                          [](WGPUQueueWorkDoneStatus, void*) {}, nullptr})},
         }};
-        wgpu::WaitStatus status = GetInstance().WaitAny(infos.size(), infos.data(), timeout);
+        wgpu::WaitStatus status = instance2.WaitAny(infos.size(), infos.data(), timeout);
         if (timeout == 0) {
             ASSERT_TRUE(status == wgpu::WaitStatus::Success ||
                         status == wgpu::WaitStatus::TimedOut);
@@ -562,8 +620,12 @@ TEST_P(WaitAnyTests, UnsupportedMixedSources) {
 }
 
 DAWN_INSTANTIATE_TEST(WaitAnyTests,
-                      // TODO(crbug.com/dawn/2058): Enable tests for the rest of the backends.
-                      MetalBackend());
+                      D3D11Backend(),
+                      D3D12Backend(),
+                      MetalBackend(),
+                      VulkanBackend(),
+                      OpenGLBackend(),
+                      OpenGLESBackend());
 
 }  // anonymous namespace
 }  // namespace dawn

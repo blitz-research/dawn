@@ -1,16 +1,29 @@
-// Copyright 2017 The Dawn Authors
+// Copyright 2017 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/CommandBufferStateTracker.h"
 
@@ -86,10 +99,9 @@ struct TextureAliasing {
 using WritableBindingAliasingResult = std::variant<std::monostate, BufferAliasing, TextureAliasing>;
 
 template <typename Return>
-Return FindStorageBufferBindingAliasing(
-    const PipelineLayoutBase* pipelineLayout,
-    const ityp::array<BindGroupIndex, BindGroupBase*, kMaxBindGroups>& bindGroups,
-    const ityp::array<BindGroupIndex, std::vector<uint32_t>, kMaxBindGroups>& dynamicOffsets) {
+Return FindStorageBufferBindingAliasing(const PipelineLayoutBase* pipelineLayout,
+                                        const PerBindGroup<BindGroupBase*>& bindGroups,
+                                        const PerBindGroup<std::vector<uint32_t>>& dynamicOffsets) {
     // If true, returns detailed validation error info. Otherwise simply returns if any binding
     // aliasing is found.
     constexpr bool kProduceDetails = std::is_same_v<Return, WritableBindingAliasingResult>;
@@ -384,10 +396,10 @@ MaybeError CommandBufferStateTracker::ValidateBufferInRangeForVertexBuffer(uint3
 
     RenderPipelineBase* lastRenderPipeline = GetRenderPipeline();
 
-    const ityp::bitset<VertexBufferSlot, kMaxVertexBuffers>& vertexBufferSlotsUsedAsVertexBuffer =
-        lastRenderPipeline->GetVertexBufferSlotsUsedAsVertexBuffer();
+    const auto& vertexBuffersUsedAsVertexBuffer =
+        lastRenderPipeline->GetVertexBuffersUsedAsVertexBuffer();
 
-    for (auto usedSlotVertex : IterateBitSet(vertexBufferSlotsUsedAsVertexBuffer)) {
+    for (auto usedSlotVertex : IterateBitSet(vertexBuffersUsedAsVertexBuffer)) {
         const VertexBufferInfo& vertexBuffer = lastRenderPipeline->GetVertexBuffer(usedSlotVertex);
         uint64_t arrayStride = vertexBuffer.arrayStride;
         uint64_t bufferSize = mVertexBufferSizes[usedSlotVertex];
@@ -396,8 +408,7 @@ MaybeError CommandBufferStateTracker::ValidateBufferInRangeForVertexBuffer(uint3
             DAWN_INVALID_IF(vertexBuffer.usedBytesInStride > bufferSize,
                             "Bound vertex buffer size (%u) at slot %u with an arrayStride of 0 "
                             "is smaller than the required size for all attributes (%u)",
-                            bufferSize, static_cast<uint8_t>(usedSlotVertex),
-                            vertexBuffer.usedBytesInStride);
+                            bufferSize, usedSlotVertex, vertexBuffer.usedBytesInStride);
         } else {
             DAWN_ASSERT(strideCount != 0u);
             uint64_t requiredSize = (strideCount - 1u) * arrayStride + vertexBuffer.lastStride;
@@ -412,8 +423,7 @@ MaybeError CommandBufferStateTracker::ValidateBufferInRangeForVertexBuffer(uint3
                 "Vertex range (first: %u, count: %u) requires a larger buffer (%u) than "
                 "the "
                 "bound buffer size (%u) of the vertex buffer at slot %u with stride %u.",
-                firstVertex, vertexCount, requiredSize, bufferSize,
-                static_cast<uint8_t>(usedSlotVertex), arrayStride);
+                firstVertex, vertexCount, requiredSize, bufferSize, usedSlotVertex, arrayStride);
         }
     }
 
@@ -432,10 +442,10 @@ MaybeError CommandBufferStateTracker::ValidateBufferInRangeForInstanceBuffer(
 
     RenderPipelineBase* lastRenderPipeline = GetRenderPipeline();
 
-    const ityp::bitset<VertexBufferSlot, kMaxVertexBuffers>& vertexBufferSlotsUsedAsInstanceBuffer =
-        lastRenderPipeline->GetVertexBufferSlotsUsedAsInstanceBuffer();
+    const auto& vertexBuffersUsedAsInstanceBuffer =
+        lastRenderPipeline->GetVertexBuffersUsedAsInstanceBuffer();
 
-    for (auto usedSlotInstance : IterateBitSet(vertexBufferSlotsUsedAsInstanceBuffer)) {
+    for (auto usedSlotInstance : IterateBitSet(vertexBuffersUsedAsInstanceBuffer)) {
         const VertexBufferInfo& vertexBuffer =
             lastRenderPipeline->GetVertexBuffer(usedSlotInstance);
         uint64_t arrayStride = vertexBuffer.arrayStride;
@@ -444,8 +454,7 @@ MaybeError CommandBufferStateTracker::ValidateBufferInRangeForInstanceBuffer(
             DAWN_INVALID_IF(vertexBuffer.usedBytesInStride > bufferSize,
                             "Bound vertex buffer size (%u) at slot %u with an arrayStride of 0 "
                             "is smaller than the required size for all attributes (%u)",
-                            bufferSize, static_cast<uint8_t>(usedSlotInstance),
-                            vertexBuffer.usedBytesInStride);
+                            bufferSize, usedSlotInstance, vertexBuffer.usedBytesInStride);
         } else {
             DAWN_ASSERT(strideCount != 0u);
             uint64_t requiredSize = (strideCount - 1u) * arrayStride + vertexBuffer.lastStride;
@@ -460,8 +469,8 @@ MaybeError CommandBufferStateTracker::ValidateBufferInRangeForInstanceBuffer(
                 "Instance range (first: %u, count: %u) requires a larger buffer (%u) than "
                 "the "
                 "bound buffer size (%u) of the vertex buffer at slot %u with stride %u.",
-                firstInstance, instanceCount, requiredSize, bufferSize,
-                static_cast<uint8_t>(usedSlotInstance), arrayStride);
+                firstInstance, instanceCount, requiredSize, bufferSize, usedSlotInstance,
+                arrayStride);
         }
     }
 
@@ -538,9 +547,8 @@ void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) 
     if (aspects[VALIDATION_ASPECT_VERTEX_BUFFERS]) {
         RenderPipelineBase* lastRenderPipeline = GetRenderPipeline();
 
-        const ityp::bitset<VertexBufferSlot, kMaxVertexBuffers>& requiredVertexBuffers =
-            lastRenderPipeline->GetVertexBufferSlotsUsed();
-        if (IsSubset(requiredVertexBuffers, mVertexBufferSlotsUsed)) {
+        const auto& requiredVertexBuffers = lastRenderPipeline->GetVertexBuffersUsed();
+        if (IsSubset(requiredVertexBuffers, mVertexBuffersUsed)) {
             mAspects.set(VALIDATION_ASPECT_VERTEX_BUFFERS);
         }
     }
@@ -591,8 +599,8 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
 
     if (aspects[VALIDATION_ASPECT_VERTEX_BUFFERS]) {
         // Try to be helpful by finding one missing vertex buffer to surface in the error message.
-        const ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> missingVertexBuffers =
-            GetRenderPipeline()->GetVertexBufferSlotsUsed() & ~mVertexBufferSlotsUsed;
+        const auto missingVertexBuffers =
+            GetRenderPipeline()->GetVertexBuffersUsed() & ~mVertexBuffersUsed;
         DAWN_ASSERT(missingVertexBuffers.any());
 
         VertexBufferSlot firstMissing = ityp::Sub(GetHighestBitIndexPlusOne(missingVertexBuffers),
@@ -605,8 +613,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
         for (BindGroupIndex i : IterateBitSet(mLastPipelineLayout->GetBindGroupLayoutsMask())) {
             DAWN_ASSERT(HasPipeline());
 
-            DAWN_INVALID_IF(mBindgroups[i] == nullptr, "No bind group set at group index %u.",
-                            static_cast<uint32_t>(i));
+            DAWN_INVALID_IF(mBindgroups[i] == nullptr, "No bind group set at group index %u.", i);
 
             BindGroupLayoutBase* requiredBGL = mLastPipelineLayout->GetFrontendBindGroupLayout(i);
             BindGroupLayoutBase* currentBGL = mBindgroups[i]->GetFrontendLayout();
@@ -620,8 +627,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                 "created by the pipeline. Either use the bind group layout returned by calling "
                 "getBindGroupLayout(%u) on the pipeline when creating the bind group, or "
                 "provide an explicit pipeline layout when creating the pipeline.",
-                mLastPipeline, mBindgroups[i], static_cast<uint32_t>(i), currentBGL,
-                static_cast<uint32_t>(i));
+                mLastPipeline, mBindgroups[i], i, currentBGL, i);
 
             DAWN_INVALID_IF(
                 requiredBGL->GetPipelineCompatibilityToken() == PipelineCompatibilityToken(0) &&
@@ -632,15 +638,14 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                 "compatible. Use an explicit bind group layout when creating bind groups and "
                 "an explicit pipeline layout when creating pipelines to share bind groups "
                 "between pipelines.",
-                mBindgroups[i], static_cast<uint32_t>(i), currentBGL, mLastPipeline);
+                mBindgroups[i], i, currentBGL, mLastPipeline);
 
             DAWN_INVALID_IF(
                 requiredBGL->GetInternalBindGroupLayout() !=
                     currentBGL->GetInternalBindGroupLayout(),
                 "Bind group layout %s of pipeline layout %s does not match layout %s of bind "
                 "group %s set at group index %u.",
-                requiredBGL, mLastPipelineLayout, currentBGL, mBindgroups[i],
-                static_cast<uint32_t>(i));
+                requiredBGL, mLastPipelineLayout, currentBGL, mBindgroups[i], i);
 
             std::optional<uint32_t> packedIndex = FindFirstUndersizedBuffer(
                 mBindgroups[i]->GetUnverifiedBufferSizes(), (*mMinBufferSizes)[i]);
@@ -670,8 +675,7 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                 return DAWN_VALIDATION_ERROR(
                     "%s bound with size %u at group %u, binding %u is too small. The pipeline (%s) "
                     "requires a buffer binding which is at least %u bytes.%s",
-                    buffer, bufferSize, static_cast<uint32_t>(i),
-                    static_cast<uint32_t>(bindingNumber), mLastPipeline, minBufferSize,
+                    buffer, bufferSize, i, bindingNumber, mLastPipeline, minBufferSize,
                     (bindingInfo.buffer.type == wgpu::BufferBindingType::Uniform
                          ? " This binding is a uniform buffer binding. It is padded to a multiple "
                            "of 16 bytes, and as a result may be larger than the associated data in "
@@ -689,11 +693,9 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                 "Writable storage buffer binding aliasing found between %s set at bind group index "
                 "%u, binding index %u, and %s set at bind group index %u, binding index %u, with "
                 "overlapping ranges (offset: %u, size: %u) and (offset: %u, size: %u) in %s.",
-                mBindgroups[a.e0.bindGroupIndex], static_cast<uint32_t>(a.e0.bindGroupIndex),
-                static_cast<uint32_t>(a.e0.bindingIndex), mBindgroups[a.e1.bindGroupIndex],
-                static_cast<uint32_t>(a.e1.bindGroupIndex),
-                static_cast<uint32_t>(a.e1.bindingIndex), a.e0.offset, a.e0.size, a.e1.offset,
-                a.e1.size,
+                mBindgroups[a.e0.bindGroupIndex], a.e0.bindGroupIndex, a.e0.bindingIndex,
+                mBindgroups[a.e1.bindGroupIndex], a.e1.bindGroupIndex, a.e1.bindingIndex,
+                a.e0.offset, a.e0.size, a.e1.offset, a.e1.size,
                 mBindgroups[a.e0.bindGroupIndex]
                     ->GetBindingAsBufferBinding(a.e0.bindingIndex)
                     .buffer);
@@ -706,12 +708,10 @@ MaybeError CommandBufferStateTracker::CheckMissingAspects(ValidationAspects aspe
                 "with subresources (base mipmap level: %u, mip level count: %u, base array layer: "
                 "%u, array layer count: %u) and (base mipmap level: %u, mip level count: %u, base "
                 "array layer: %u, array layer count: %u) in %s.",
-                mBindgroups[a.e0.bindGroupIndex], static_cast<uint32_t>(a.e0.bindGroupIndex),
-                static_cast<uint32_t>(a.e0.bindingIndex), mBindgroups[a.e1.bindGroupIndex],
-                static_cast<uint32_t>(a.e1.bindGroupIndex),
-                static_cast<uint32_t>(a.e1.bindingIndex), a.e0.baseMipLevel, a.e0.mipLevelCount,
-                a.e0.baseArrayLayer, a.e0.arrayLayerCount, a.e1.baseMipLevel, a.e1.mipLevelCount,
-                a.e1.baseArrayLayer, a.e1.arrayLayerCount,
+                mBindgroups[a.e0.bindGroupIndex], a.e0.bindGroupIndex, a.e0.bindingIndex,
+                mBindgroups[a.e1.bindGroupIndex], a.e1.bindGroupIndex, a.e1.bindingIndex,
+                a.e0.baseMipLevel, a.e0.mipLevelCount, a.e0.baseArrayLayer, a.e0.arrayLayerCount,
+                a.e1.baseMipLevel, a.e1.mipLevelCount, a.e1.baseArrayLayer, a.e1.arrayLayerCount,
                 mBindgroups[a.e0.bindGroupIndex]
                     ->GetBindingAsTextureView(a.e0.bindingIndex)
                     ->GetTexture());
@@ -756,13 +756,13 @@ void CommandBufferStateTracker::SetIndexBuffer(wgpu::IndexFormat format, uint64_
 }
 
 void CommandBufferStateTracker::UnsetVertexBuffer(VertexBufferSlot slot) {
-    mVertexBufferSlotsUsed.set(slot, false);
+    mVertexBuffersUsed.set(slot, false);
     mVertexBufferSizes[slot] = 0;
     mAspects.reset(VALIDATION_ASPECT_VERTEX_BUFFERS);
 }
 
 void CommandBufferStateTracker::SetVertexBuffer(VertexBufferSlot slot, uint64_t size) {
-    mVertexBufferSlotsUsed.set(slot);
+    mVertexBuffersUsed.set(slot);
     mVertexBufferSizes[slot] = size;
 }
 

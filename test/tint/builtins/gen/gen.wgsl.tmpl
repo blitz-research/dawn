@@ -9,7 +9,7 @@ See:
 --------------------------------------------------------------------------------
 */ -}}
 
-{{- $I := LoadIntrinsics "src/tint/lang/core/core.def" -}}
+{{- $I := LoadIntrinsics "src/tint/lang/wgsl/wgsl.def" -}}
 
 {{- /* For each permutation of each overload of each function... */ -}}
 {{- range $I.Sem.Builtins -}}
@@ -197,19 +197,9 @@ fn compute_main() {
 {{-   $overload := $permutation.Overload -}}
 {{-   $builtin_name := $permutation.Intrinsic.Name -}}
 
-{{- /* Check and emit chromium_experimental_dp4a */ -}}
-{{-   if or (eq "dot4I8Packed" $builtin_name) (eq "dot4U8Packed" $builtin_name)}}
-enable chromium_experimental_dp4a;
-{{    end -}}
-
 {{- /* Check and emit chromium_experimental_subgroups */ -}}
 {{-   if or (eq "subgroupBallot" $builtin_name) (eq "subgroupBroadcast" $builtin_name)}}
 enable chromium_experimental_subgroups;
-{{    end -}}
-
-{{- /* Check and emit chromium_experimental_read_write_storage_texture */ -}}
-{{-   if or (OverloadUsesReadWriteStorageTexture $overload) (eq "textureBarrier" $builtin_name)}}
-enable chromium_experimental_read_write_storage_texture;
 {{    end -}}
 
 {{- /* Check and emit f16 */ -}}

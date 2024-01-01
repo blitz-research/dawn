@@ -1,16 +1,29 @@
-// Copyright 2023 The Dawn Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/d3d/ShaderUtils.h"
 
@@ -190,6 +203,7 @@ MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
                                       &transformOutputs, nullptr));
     }
 
+    // TODO(dawn:2180): refactor out.
     if (auto* data = transformOutputs.Get<tint::ast::transform::Renamer::Data>()) {
         auto it = data->remappings.find(r.entryPointName.data());
         if (it != data->remappings.end()) {
@@ -204,11 +218,12 @@ MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
         return DAWN_VALIDATION_ERROR("Transform output missing renamer data.");
     }
 
+    // Validate workgroup size after program runs transforms.
     if (r.stage == SingleShaderStage::Compute) {
-        // Validate workgroup size after program runs transforms.
         Extent3D _;
-        DAWN_TRY_ASSIGN(_, ValidateComputeStageWorkgroupSize(
-                               transformedProgram, remappedEntryPointName->data(), r.limits));
+        DAWN_TRY_ASSIGN(
+            _, ValidateComputeStageWorkgroupSize(transformedProgram, remappedEntryPointName->data(),
+                                                 r.limits, r.maxSubgroupSizeForFullSubgroups));
     }
 
     bool usesVertexIndex = false;
@@ -222,39 +237,8 @@ MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
         }
     }
 
-    tint::hlsl::writer::Options options;
-    options.disable_robustness = !r.isRobustnessEnabled;
-    options.disable_workgroup_init = r.disableWorkgroupInit;
-    options.binding_remapper_options = r.bindingRemapper;
-    options.access_controls = r.accessControls;
-    options.external_texture_options = r.externalTextureOptions;
-
-    if (r.usesNumWorkgroups) {
-        options.root_constant_binding_point =
-            tint::BindingPoint{r.numWorkgroupsRegisterSpace, r.numWorkgroupsShaderRegister};
-    }
-    // TODO(dawn:549): HLSL generation outputs the indices into the
-    // array_length_from_uniform buffer that were actually used. When the blob cache can
-    // store more than compiled shaders, we should reflect these used indices and store
-    // them as well. This would allow us to only upload root constants that are actually
-    // read by the shader.
-    options.array_length_from_uniform = r.arrayLengthFromUniform;
-
-    if (r.stage == SingleShaderStage::Vertex) {
-        // Now that only vertex shader can have interstage outputs.
-        // Pass in the actually used interstage locations for tint to potentially truncate unused
-        // outputs.
-        options.interstage_locations = r.interstageLocations;
-        options.truncate_interstage_variables = true;
-    }
-
-    options.polyfill_reflect_vec2_f32 = r.polyfillReflectVec2F32;
-
-    options.binding_points_ignored_in_robustness_transform =
-        std::move(r.bindingPointsIgnoredInRobustnessTransform);
-
     TRACE_EVENT0(tracePlatform.UnsafeGetValue(), General, "tint::hlsl::writer::Generate");
-    auto result = tint::hlsl::writer::Generate(transformedProgram, options);
+    auto result = tint::hlsl::writer::Generate(transformedProgram, r.tintOptions);
     DAWN_INVALID_IF(!result, "An error occurred while generating HLSL:\n%s",
                     result.Failure().reason.str());
 
@@ -397,6 +381,15 @@ void DumpFXCCompiledShader(Device* device,
     if (!logMessage.empty()) {
         device->EmitLog(WGPULoggingType_Info, logMessage.c_str());
     }
+}
+
+InterStageShaderVariablesMask ToInterStageShaderVariablesMask(const std::vector<bool>& inputMask) {
+    InterStageShaderVariablesMask outputMask;
+    DAWN_ASSERT(inputMask.size() <= outputMask.size());
+    for (size_t i = 0; i < inputMask.size(); ++i) {
+        outputMask[i] = inputMask[i];
+    }
+    return outputMask;
 }
 
 }  // namespace dawn::native::d3d

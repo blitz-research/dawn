@@ -1,16 +1,29 @@
-// Copyright 2021 The Dawn Authors
+// Copyright 2021 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <algorithm>
 #include <cstring>
@@ -80,7 +93,8 @@ class WireHelperDirect : public WireHelper {
   public:
     explicit WireHelperDirect(const DawnProcTable& procs) { dawnProcSetProcs(&procs); }
 
-    wgpu::Instance RegisterInstance(WGPUInstance backendInstance) override {
+    wgpu::Instance RegisterInstance(WGPUInstance backendInstance,
+                                    const WGPUInstanceDescriptor* wireDesc) override {
         DAWN_ASSERT(backendInstance != nullptr);
         return wgpu::Instance(backendInstance);
     }
@@ -118,10 +132,11 @@ class WireHelperProxy : public WireHelper {
         dawnProcSetProcs(&dawn::wire::client::GetProcs());
     }
 
-    wgpu::Instance RegisterInstance(WGPUInstance backendInstance) override {
+    wgpu::Instance RegisterInstance(WGPUInstance backendInstance,
+                                    const WGPUInstanceDescriptor* wireDesc) override {
         DAWN_ASSERT(backendInstance != nullptr);
 
-        auto reservation = mWireClient->ReserveInstance();
+        auto reservation = mWireClient->ReserveInstance(wireDesc);
         mWireServer->InjectInstance(backendInstance, reservation.id, reservation.generation);
 
         return wgpu::Instance::Acquire(reservation.instance);
@@ -146,6 +161,17 @@ class WireHelperProxy : public WireHelper {
 };
 
 }  // anonymous namespace
+
+std::pair<wgpu::Instance, std::unique_ptr<dawn::native::Instance>> WireHelper::CreateInstances(
+    const wgpu::InstanceDescriptor* nativeDesc,
+    const wgpu::InstanceDescriptor* wireDesc) {
+    auto nativeInstance = std::make_unique<dawn::native::Instance>(
+        reinterpret_cast<const WGPUInstanceDescriptor*>(nativeDesc));
+
+    return {RegisterInstance(nativeInstance->Get(),
+                             reinterpret_cast<const WGPUInstanceDescriptor*>(wireDesc)),
+            std::move(nativeInstance)};
+}
 
 std::unique_ptr<WireHelper> CreateWireHelper(const DawnProcTable& procs,
                                              bool useWire,

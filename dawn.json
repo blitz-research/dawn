@@ -1,18 +1,31 @@
 {
     "_comment": [
-        "Copyright 2017 The Dawn Authors",
+        "Copyright 2017 The Dawn & Tint Authors",
         "",
-        "Licensed under the Apache License, Version 2.0 (the \"License\");",
-        "you may not use this file except in compliance with the License.",
-        "You may obtain a copy of the License at",
+        "Redistribution and use in source and binary forms, with or without",
+        "modification, are permitted provided that the following conditions are met:",
         "",
-        "    http://www.apache.org/licenses/LICENSE-2.0",
+        "  1. Redistributions of source code must retain the above copyright notice, this",
+        "     list of conditions and the following disclaimer.",
         "",
-        "Unless required by applicable law or agreed to in writing, software",
-        "distributed under the License is distributed on an \"AS IS\" BASIS,",
-        "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.",
-        "See the License for the specific language governing permissions and",
-        "limitations under the License."
+        "  2. Redistributions in binary form must reproduce the above copyright notice,",
+        "     this list of conditions and the following disclaimer in the documentation",
+        "     and/or other materials provided with the distribution.",
+        "",
+        "  3. Neither the name of the copyright holder nor the names of its",
+        "     contributors may be used to endorse or promote products derived from",
+        "     this software without specific prior written permission.",
+        "  ",
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"",
+        "AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE",
+        "IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE",
+        "DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE",
+        "FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL",
+        "DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR",
+        "SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER",
+        "CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,",
+        "OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE",
+        "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
     ],
 
     "_doc": "See docs/dawn/codegen.md",
@@ -59,6 +72,24 @@
             {"name": "compatibility mode", "type": "bool", "default": "false", "tags": ["dawn", "emscripten"]}
         ]
     },
+    "request adapter callback": {
+        "category": "function pointer",
+        "args": [
+            {"name": "status", "type": "request adapter status"},
+            {"name": "adapter", "type": "adapter", "optional": true},
+            {"name": "message", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
+            {"name": "userdata", "type": "void *"}
+        ]
+    },
+    "request adapter callback info": {
+         "category": "structure",
+         "extensible": "in",
+         "members": [
+            {"name": "mode", "type": "callback mode"},
+            {"name": "callback", "type": "request adapter callback"},
+            {"name": "userdata", "type": "void *"}
+         ]
+    },
     "request adapter status": {
         "category": "enum",
         "emscripten_no_enum_table": true,
@@ -67,15 +98,6 @@
             {"value": 1, "name": "unavailable"},
             {"value": 2, "name": "error"},
             {"value": 3, "name": "unknown"}
-        ]
-    },
-    "request adapter callback": {
-        "category": "function pointer",
-        "args": [
-            {"name": "status", "type": "request adapter status"},
-            {"name": "adapter", "type": "adapter", "optional": true},
-            {"name": "message", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
-            {"name": "userdata", "type": "void *"}
         ]
     },
     "adapter": {
@@ -151,10 +173,10 @@
         "category": "enum",
         "emscripten_no_enum_table": true,
         "values": [
-            {"value": 0, "name": "discrete GPU"},
-            {"value": 1, "name": "integrated GPU"},
-            {"value": 2, "name": "CPU"},
-            {"value": 3, "name": "unknown"}
+            {"value": 1, "name": "discrete GPU"},
+            {"value": 2, "name": "integrated GPU"},
+            {"value": 3, "name": "CPU"},
+            {"value": 4, "name": "unknown"}
         ]
     },
     "device descriptor": {
@@ -189,6 +211,16 @@
         "chain roots": ["device descriptor"],
         "members": [
             {"name": "isolation key", "type": "char", "annotation": "const*", "length": "strlen", "default": "\"\""}
+        ]
+    },
+    "dawn WGSL blocklist": {
+        "tags": ["dawn", "native"],
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["instance descriptor"],
+        "members": [
+            {"name": "blocklisted feature count", "type": "size_t", "default": 0},
+            {"name": "blocklisted features", "type": "char", "annotation": "const*const*", "length": "blocklisted feature count"}
         ]
     },
     "address mode": {
@@ -469,6 +501,18 @@
                 ]
             },
             {
+                "name": "map async f",
+                "_comment": "TODO(crbug.com/dawn/2021): This is dawn/emscripten-only until we rename it to replace the old API. See bug for details.",
+                "tags": ["dawn", "emscripten"],
+                "returns": "future",
+                "args": [
+                    {"name": "mode", "type": "map mode"},
+                    {"name": "offset", "type": "size_t"},
+                    {"name": "size", "type": "size_t"},
+                    {"name": "callback info", "type": "buffer map callback info"}
+                ]
+            },
+            {
                 "name": "get mapped range",
                 "returns": "void *",
                 "args": [
@@ -553,7 +597,7 @@
             {"name": "mode", "type": "callback mode"},
             {"name": "callback", "type": "buffer map callback"},
             {"name": "userdata", "type": "void *"}
-	]
+        ]
     },
     "buffer map async status": {
         "category": "enum",
@@ -573,9 +617,9 @@
     "buffer map state": {
         "category": "enum",
         "values": [
-            {"value": 0, "name": "unmapped"},
-            {"value": 1, "name": "pending"},
-            {"value": 2, "name": "mapped"}
+            {"value": 1, "name": "unmapped"},
+            {"value": 2, "name": "pending"},
+            {"value": 3, "name": "mapped"}
         ]
     },
     "buffer usage": {
@@ -783,11 +827,11 @@
             {"value": 0, "name": "undefined", "jsrepr": "undefined", "valid": false},
             {"value": 1, "name": "never"},
             {"value": 2, "name": "less"},
-            {"value": 3, "name": "less equal"},
-            {"value": 4, "name": "greater"},
-            {"value": 5, "name": "greater equal"},
-            {"value": 6, "name": "equal"},
-            {"value": 7, "name": "not equal"},
+            {"value": 3, "name": "equal"},
+            {"value": 4, "name": "less equal"},
+            {"value": 5, "name": "greater"},
+            {"value": 6, "name": "not equal"},
+            {"value": 7, "name": "greater equal"},
             {"value": 8, "name": "always"}
         ]
     },
@@ -835,9 +879,9 @@
         "category": "enum",
         "emscripten_no_enum_table": true,
         "values": [
-            {"value": 0, "name": "error"},
-            {"value": 1, "name": "warning"},
-            {"value": 2, "name": "info"}
+            {"value": 1, "name": "error"},
+            {"value": 2, "name": "warning"},
+            {"value": 3, "name": "info"}
         ]
     },
     "compute pass descriptor": {
@@ -892,14 +936,6 @@
                 ]
             },
             {
-                "name": "begin pipeline statistics query",
-                "tags": ["upstream", "emscripten"],
-                "args": [
-                    {"name": "query set", "type": "query set"},
-                    {"name": "query index", "type": "uint32_t"}
-                ]
-            },
-            {
                 "name": "dispatch workgroups",
                 "args": [
                     {"name": "workgroupCountX", "type": "uint32_t"},
@@ -916,10 +952,6 @@
             },
             {
                 "name": "end"
-            },
-            {
-                "name": "end pipeline statistics query",
-                "tags": ["upstream", "emscripten"]
             },
             {
                 "name": "set label",
@@ -977,13 +1009,22 @@
             {"name": "compute", "type": "programmable stage descriptor"}
         ]
     },
+    "dawn compute pipeline full subgroups": {
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["compute pipeline descriptor"],
+        "tags": ["dawn"],
+        "members": [
+            {"name": "requires full subgroups", "type": "bool", "default": "false"}
+        ]
+    },
     "alpha mode": {
         "category": "enum",
         "tags": ["dawn"],
         "values": [
-            {"value": 0, "name": "premultiplied"},
-            {"value": 1, "name": "unpremultiplied"},
-            {"value": 2, "name": "opaque"}
+            {"value": 1, "name": "opaque"},
+            {"value": 2, "name": "premultiplied"},
+            {"value": 3, "name": "unpremultiplied"}
         ]
     },
     "copy texture for browser options": {
@@ -1395,6 +1436,7 @@
         "category": "structure",
         "chained": "out",
         "chain roots": ["supported limits"],
+        "tags": ["dawn"],
         "members": [
             {"name": "min subgroup size", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"},
             {"name": "max subgroup size", "type": "uint32_t", "default": "WGPU_LIMIT_U32_UNDEFINED"}
@@ -1426,9 +1468,9 @@
     "error filter": {
         "category": "enum",
         "values": [
-            {"value": 0, "name": "validation"},
-            {"value": 1, "name": "out of memory"},
-            {"value": 2, "name": "internal"}
+            {"value": 1, "name": "validation"},
+            {"value": 2, "name": "out of memory"},
+            {"value": 3, "name": "internal"}
         ]
     },
     "error type": {
@@ -1447,10 +1489,10 @@
         "category": "enum",
         "tags": ["dawn"],
         "values": [
-            {"value": 0, "name": "verbose"},
-            {"value": 1, "name": "info"},
-            {"value": 2, "name": "warning"},
-            {"value": 3, "name": "error"}
+            {"value": 1, "name": "verbose"},
+            {"value": 2, "name": "info"},
+            {"value": 3, "name": "warning"},
+            {"value": 4, "name": "error"}
         ]
     },
     "extent 2D": {
@@ -1567,6 +1609,11 @@
                     {"name": "texture", "type": "texture"},
                     {"name": "descriptor", "type": "shared texture memory end access state", "annotation": "*"}
                 ]
+            },
+            {
+                "name": "is device lost",
+                "returns": "bool",
+                "args": []
             }
         ]
     },
@@ -1617,18 +1664,26 @@
             {"name": "handle", "type": "void *"}
         ]
     },
+    "shared texture memory dma buf plane": {
+        "category": "structure",
+        "tags": ["dawn", "native"],
+        "members": [
+            {"name": "fd", "type": "int"},
+            {"name": "offset", "type": "uint64_t"},
+            {"name": "stride", "type": "uint32_t"}
+        ]
+    },
     "shared texture memory dma buf descriptor": {
         "category": "structure",
         "chained": "in",
         "chain roots": ["shared texture memory descriptor"],
         "tags": ["dawn", "native"],
         "members": [
-            {"name": "memory FD", "type": "int"},
-            {"name": "allocation size", "type": "uint64_t"},
+            {"name": "size", "type": "extent 3D"},
+            {"name": "drm format", "type": "uint32_t"},
             {"name": "drm modifier", "type": "uint64_t"},
             {"name": "plane count", "type": "size_t"},
-            {"name": "plane offsets", "type": "uint64_t", "annotation": "const*", "length": "plane count"},
-            {"name": "plane strides", "type": "uint32_t", "annotation": "const*", "length": "plane count"}
+            {"name": "planes", "type": "shared texture memory dma buf plane", "annotation": "const*", "length": "plane count"}
         ]
     },
     "shared texture memory opaque FD descriptor": {
@@ -1637,8 +1692,11 @@
         "chain roots": ["shared texture memory descriptor"],
         "tags": ["dawn", "native"],
         "members": [
+            {"name": "vk image create info", "type": "void const *"},
             {"name": "memory FD", "type": "int"},
-            {"name": "allocation size", "type": "uint64_t"}
+            {"name": "memory type index", "type": "uint32_t"},
+            {"name": "allocation size", "type": "uint64_t"},
+            {"name": "dedicated allocation", "type": "bool"}
         ]
     },
     "shared texture memory zircon handle descriptor": {
@@ -1865,21 +1923,19 @@
             {"value": 1, "name": "depth clip control"},
             {"value": 2, "name": "depth32 float stencil8"},
             {"value": 3, "name": "timestamp query"},
-            {"value": 4, "name": "pipeline statistics query"},
-            {"value": 5, "name": "texture compression BC"},
-            {"value": 6, "name": "texture compression ETC2"},
-            {"value": 7, "name": "texture compression ASTC"},
-            {"value": 8, "name": "indirect first instance"},
-            {"value": 9, "name": "shader f16"},
-            {"value": 10, "name": "RG11B10 ufloat renderable"},
-            {"value": 11, "name": "BGRA8 unorm storage"},
-            {"value": 12, "name": "float32 filterable"},
+            {"value": 4, "name": "texture compression BC"},
+            {"value": 5, "name": "texture compression ETC2"},
+            {"value": 6, "name": "texture compression ASTC"},
+            {"value": 7, "name": "indirect first instance"},
+            {"value": 8, "name": "shader f16"},
+            {"value": 9, "name": "RG11B10 ufloat renderable"},
+            {"value": 10, "name": "BGRA8 unorm storage"},
+            {"value": 11, "name": "float32 filterable"},
 
             {"value": 1002, "name": "dawn internal usages", "tags": ["dawn"]},
             {"value": 1003, "name": "dawn multi planar formats", "tags": ["dawn"]},
             {"value": 1004, "name": "dawn native", "tags": ["dawn", "native"]},
-            {"value": 1005, "name": "chromium experimental dp4a", "tags": ["dawn"]},
-            {"value": 1006, "name": "timestamp query inside passes", "tags": ["dawn"]},
+            {"value": 1006, "name": "chromium experimental timestamp query inside passes", "tags": ["dawn"]},
             {"value": 1007, "name": "implicit device synchronization", "tags": ["dawn", "native"]},
             {"value": 1008, "name": "surface capabilities", "tags": ["dawn", "native"]},
             {"value": 1009, "name": "transient attachments", "tags": ["dawn"]},
@@ -1889,7 +1945,6 @@
             {"value": 1013, "name": "ANGLE texture sharing", "tags": ["dawn", "native"]},
             {"value": 1014, "name": "chromium experimental subgroups", "tags": ["dawn"]},
             {"value": 1015, "name": "chromium experimental subgroup uniform control flow", "tags": ["dawn"]},
-            {"value": 1016, "name": "chromium experimental read write storage texture", "tags": ["dawn"]},
             {"value": 1017, "name": "pixel local storage coherent", "tags": ["dawn"]},
             {"value": 1018, "name": "pixel local storage non coherent", "tags": ["dawn"]},
             {"value": 1019, "name": "norm16 texture formats", "tags": ["dawn"]},
@@ -1897,6 +1952,10 @@
             {"value": 1021, "name": "multi planar format p010", "tags": ["dawn"]},
             {"value": 1022, "name": "host mapped pointer", "tags": ["dawn"]},
             {"value": 1023, "name": "multi planar render targets", "tags": ["dawn"]},
+            {"value": 1024, "name": "multi planar format nv12a", "tags": ["dawn"]},
+            {"value": 1025, "name": "framebuffer fetch", "tags": ["dawn"]},
+            {"value": 1026, "name": "buffer map extended usages", "tags": ["dawn"]},
+            {"value": 1027, "name": "adapter properties memory heaps", "tags": ["dawn"]},
 
             {"value": 1100, "name": "shared texture memory vk dedicated allocation", "tags": ["dawn", "native"]},
             {"value": 1101, "name": "shared texture memory a hardware buffer", "tags": ["dawn", "native"]},
@@ -1997,15 +2056,41 @@
                     {"name": "callback", "type": "request adapter callback"},
                     {"name": "userdata", "type": "void *"}
                 ]
+            },
+            {
+                "name": "request adapter f",
+                "_comment": "TODO(crbug.com/dawn/2021): This is dawn/emscripten-only until we rename it to replace the old API. See bug for details.",
+                "tags": ["dawn", "emscripten"],
+                "returns": "future",
+                "args": [
+                    {"name": "options", "type": "request adapter options", "annotation": "const*", "optional": true, "no_default": true},
+                    {"name": "callback info", "type": "request adapter callback info"}
+                ]
+            },
+            {
+                "name": "has WGSL language feature",
+                "returns": "bool",
+                "args": [
+                    {"name": "feature", "type": "WGSL feature name"}
+                ]
+            },
+            {
+                "name": "enumerate WGSL language features",
+                "returns": "size_t",
+                "args": [
+                    {"name": "features", "type": "WGSL feature name", "annotation": "*"}
+                ]
             }
         ]
     },
     "callback mode": {
         "category": "enum",
+        "emscripten_no_enum_table": true,
+        "_comment": "TODO(crbug.com/dawn/2224): Should this be renumbered to reserve 0?",
         "values": [
-            {"name": "wait any only", "value": 0},
-            {"name": "allow process events", "value": 1},
-            {"name": "allow spontaneous", "value": 2}
+            {"value": 0, "name": "wait any only"},
+            {"value": 1, "name": "allow process events"},
+            {"value": 2, "name": "allow spontaneous"}
         ]
     },
     "future": {
@@ -2019,12 +2104,12 @@
         "_comment": "TODO(crbug.com/dawn/2053): This could possibly be [[nodiscard]].",
         "emscripten_no_enum_table": true,
         "values": [
-            {"name": "success", "value": 0},
-            {"name": "timed out", "value": 1},
-            {"name": "unsupported timeout", "value": 2},
-            {"name": "unsupported count", "value": 3},
-            {"name": "unsupported mixed sources", "value": 4},
-            {"name": "unknown", "value": 5}
+            {"value": 0, "name": "success"},
+            {"value": 1, "name": "timed out"},
+            {"value": 2, "name": "unsupported timeout"},
+            {"value": 3, "name": "unsupported count"},
+            {"value": 4, "name": "unsupported mixed sources"},
+            {"value": 5, "name": "unknown"}
         ]
     },
     "future wait info": {
@@ -2055,6 +2140,17 @@
         "returns": "bool",
         "args": [
             {"name": "features", "type": "instance features", "annotation": "*"}
+        ]
+    },
+    "dawn wire WGSL control": {
+        "category": "structure",
+        "tags": ["dawn"],
+        "chained": "in",
+        "chain roots": ["instance descriptor"],
+        "members": [
+            {"name": "enable experimental", "type": "bool", "default": "false"},
+            {"name": "enable unsafe", "type": "bool", "default": "false"},
+            {"name": "enable testing", "type": "bool", "default": "false"}
         ]
     },
     "vertex attribute": {
@@ -2172,16 +2268,6 @@
             {"name": "format", "type": "texture format"}
         ]
     },
-    "pipeline statistic name": {
-        "category": "enum",
-        "values": [
-            {"value": 0, "name": "vertex shader invocations"},
-            {"value": 1, "name": "clipper invocations"},
-            {"value": 2, "name": "clipper primitives out"},
-            {"value": 3, "name": "fragment shader invocations"},
-            {"value": 4, "name": "compute shader invocations"}
-        ]
-    },
     "power preference": {
         "category": "enum",
         "values": [
@@ -2193,6 +2279,7 @@
     "present mode": {
         "category": "enum",
         "emscripten_no_enum_table": true,
+        "_comment": "TODO(crbug.com/dawn/2224): Should this be renumbered to reserve 0?",
         "values": [
             {"value": 0, "name": "fifo"},
             {"value": 1, "name": "fifo relaxed", "tags": ["upstream"]},
@@ -2205,7 +2292,7 @@
         "extensible": "in",
         "members": [
             {"name": "module", "type": "shader module"},
-            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen"},
+            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "constant count", "type": "size_t", "default": 0},
             {"name": "constants", "type": "constant entry", "annotation": "const*", "length": "constant count"}
         ]
@@ -2249,16 +2336,13 @@
         "members": [
             {"name": "label", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "type", "type": "query type"},
-            {"name": "count", "type": "uint32_t"},
-            {"name": "pipeline statistics", "type": "pipeline statistic name", "annotation": "const*", "length": "pipeline statistic count"},
-            {"name": "pipeline statistic count", "type": "size_t", "default": "0"}
+            {"name": "count", "type": "uint32_t"}
         ]
     },
     "query type": {
         "category": "enum",
         "values": [
-            {"value": 0, "name": "occlusion"},
-            {"value": 1, "name": "pipeline statistics"},
+            {"value": 1, "name": "occlusion"},
             {"value": 2, "name": "timestamp"}
         ]
     },
@@ -2274,7 +2358,7 @@
             },
             {
                 "name": "on submitted work done",
-                "tags": ["dawn", "emscripten"],
+                "tags": ["emscripten"],
                 "args": [
                     {"name": "signal value", "type": "uint64_t"},
                     {"name": "callback", "type": "queue work done callback"},
@@ -2283,7 +2367,7 @@
             },
             {
                 "name": "on submitted work done",
-                "tags": ["upstream"],
+                "tags": ["dawn", "upstream"],
                 "args": [
                     {"name": "callback", "type": "queue work done callback"},
                     {"name": "userdata", "type": "void *"}
@@ -2525,7 +2609,7 @@
         "extensible": "in",
         "members": [
             {"name": "view", "type": "texture view", "optional": true},
-            {"name": "depth slice", "type": "uint32_t", "default": "0", "tags": ["dawn"]},
+            {"name": "depth slice", "type": "uint32_t", "default": "WGPU_DEPTH_SLICE_UNDEFINED"},
             {"name": "resolve target", "type": "texture view", "optional": true},
             {"name": "load op", "type": "load op"},
             {"name": "store op", "type": "store op"},
@@ -2731,14 +2815,6 @@
                 ]
             },
             {
-                "name": "begin pipeline statistics query",
-                "tags": ["upstream", "emscripten"],
-                "args": [
-                    {"name": "query set", "type": "query set"},
-                    {"name": "query index", "type": "uint32_t"}
-                ]
-            },
-            {
                 "name": "end occlusion query"
             },
             {
@@ -2755,10 +2831,6 @@
             },
             {
                 "name": "end"
-            },
-            {
-                "name": "end pipeline statistics query",
-                "tags": ["upstream", "emscripten"]
             },
             {
                 "name": "set label",
@@ -2824,7 +2896,7 @@
         "extensible": "in",
         "members": [
             {"name": "module", "type": "shader module"},
-            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen"},
+            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "constant count", "type": "size_t", "default": 0},
             {"name": "constants", "type": "constant entry", "annotation": "const*", "length": "constant count"},
             {"name": "buffer count", "type": "size_t", "default": 0},
@@ -2857,8 +2929,8 @@
         "extensible": "in",
         "members": [
             {"name": "format", "type": "texture format"},
-            {"name": "depth write enabled", "type": "bool"},
-            {"name": "depth compare", "type": "compare function"},
+            {"name": "depth write enabled", "type": "bool", "default": "false"},
+            {"name": "depth compare", "type": "compare function", "default": "undefined"},
             {"name": "stencil front", "type": "stencil face state"},
             {"name": "stencil back", "type": "stencil face state"},
             {"name": "stencil read mask", "type": "uint32_t", "default": "0xFFFFFFFF"},
@@ -2866,6 +2938,16 @@
             {"name": "depth bias", "type": "int32_t", "default": "0"},
             {"name": "depth bias slope scale", "type": "float", "default": "0.0f"},
             {"name": "depth bias clamp", "type": "float", "default": "0.0f"}
+        ]
+    },
+
+    "depth stencil state depth write defined dawn": {
+        "tags": ["dawn"],
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["depth stencil state"],
+        "members": [
+            {"name": "depth write defined", "type": "bool"}
         ]
     },
 
@@ -2894,7 +2976,7 @@
         "extensible": "in",
         "members": [
             {"name": "module", "type": "shader module"},
-            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen"},
+            {"name": "entry point", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
             {"name": "constant count", "type": "size_t", "default": 0},
             {"name": "constants", "type": "constant entry", "annotation": "const*", "length": "constant count"},
             {"name": "target count", "type": "size_t"},
@@ -3168,7 +3250,7 @@
         "tags": ["native"],
         "members": [
             {"name": "display", "type": "void", "annotation": "*"},
-            {"name": "window", "type": "uint32_t"}
+            {"name": "window", "type": "uint64_t"}
         ]
     },
     "surface descriptor from wayland surface": {
@@ -3250,6 +3332,8 @@
             {"value": 13, "name": "external texture binding layout", "tags": ["dawn"]},
             {"value": 14, "name": "surface descriptor from windows swap chain panel", "tags": ["dawn"]},
             {"value": 15, "name": "render pass descriptor max draw count"},
+            {"value": 16, "name": "depth stencil state depth write defined dawn", "tags": ["dawn"]},
+            {"value": 17, "name": "texture binding view dimension descriptor"},
             {"value": 1000, "name": "dawn texture internal usage descriptor", "tags": ["dawn"]},
             {"value": 1003, "name": "dawn encoder internal usage descriptor", "tags": ["dawn"]},
             {"value": 1004, "name": "dawn instance descriptor", "tags": ["dawn", "native"]},
@@ -3260,12 +3344,17 @@
             {"value": 1009, "name": "dawn shader module SPIRV options descriptor", "tags": ["dawn"]},
             {"value": 1010, "name": "request adapter options LUID", "tags": ["dawn", "native"]},
             {"value": 1011, "name": "request adapter options get GL proc", "tags": ["dawn", "native"]},
-            {"value": 1012, "name": "dawn multisample state render to single sampled", "tags": ["dawn"]},
-            {"value": 1013, "name": "dawn render pass color attachment render to single sampled", "tags": ["dawn"]},
-            {"value": 1014, "name": "render pass pixel local storage", "tags": ["dawn"]},
-            {"value": 1015, "name": "pipeline layout pixel local storage", "tags": ["dawn"]},
-            {"value": 1016, "name": "buffer host mapped pointer", "tags": ["dawn"]},
-            {"value": 1017, "name": "dawn experimental subgroup limits", "tags": ["dawn"]},
+            {"value": 1012, "name": "request adapter options D3D11 device", "tags": ["dawn", "native"]},
+            {"value": 1013, "name": "dawn multisample state render to single sampled", "tags": ["dawn"]},
+            {"value": 1014, "name": "dawn render pass color attachment render to single sampled", "tags": ["dawn"]},
+            {"value": 1015, "name": "render pass pixel local storage", "tags": ["dawn"]},
+            {"value": 1016, "name": "pipeline layout pixel local storage", "tags": ["dawn"]},
+            {"value": 1017, "name": "buffer host mapped pointer", "tags": ["dawn"]},
+            {"value": 1018, "name": "dawn experimental subgroup limits", "tags": ["dawn"]},
+            {"value": 1019, "name": "adapter properties memory heaps", "tags": ["dawn"]},
+            {"value": 1020, "name": "dawn compute pipeline full subgroups", "tags": ["dawn"]},
+            {"value": 1021, "name": "dawn wire WGSL control", "tags": ["dawn"]},
+            {"value": 1022, "name": "dawn WGSL blocklist", "tags": ["dawn", "native"]},
 
             {"value": 1100, "name": "shared texture memory vk image descriptor", "tags": ["dawn", "native"]},
             {"value": 1101, "name": "shared texture memory vk dedicated allocation descriptor", "tags": ["dawn", "native"]},
@@ -3369,7 +3458,8 @@
             {"value": 1, "name": "stencil only"},
             {"value": 2, "name": "depth only"},
             {"value": 3, "name": "plane 0 only", "tags": ["dawn"]},
-            {"value": 4, "name": "plane 1 only", "tags": ["dawn"]}
+            {"value": 4, "name": "plane 1 only", "tags": ["dawn"]},
+            {"value": 5, "name": "plane 2 only", "tags": ["dawn"]}
         ]
     },
     "texture data layout": {
@@ -3396,6 +3486,14 @@
             {"name": "view formats", "type": "texture format", "annotation": "const*", "length": "view format count"}
         ]
     },
+    "texture binding view dimension descriptor": {
+        "category": "structure",
+        "chained": "in",
+        "chain roots": ["texture descriptor"],
+        "members": [
+            {"name": "texture binding view dimension", "type": "texture view dimension", "default": "undefined"}
+        ]
+    },
     "texture dimension": {
         "category": "enum",
         "values": [
@@ -3407,7 +3505,7 @@
     "texture format": {
         "category": "enum",
         "values": [
-            {"value": 0, "name": "undefined", "valid": false, "jsrepr": "undefined"},
+            {"value": 0, "name": "undefined", "jsrepr": "undefined", "valid": false},
 
             {"value": 1, "name": "R8 unorm"},
             {"value": 2, "name": "R8 snorm"},
@@ -3521,7 +3619,8 @@
             {"value": 101, "name": "RGBA16 snorm", "tags": ["dawn"]},
 
             {"value": 102, "name": "R8 BG8 Biplanar 420 unorm", "tags": ["dawn"]},
-            {"value": 103, "name": "R10X6 BG10X6 Biplanar 420 unorm", "tags": ["dawn"]}
+            {"value": 103, "name": "R10X6 BG10X6 Biplanar 420 unorm", "tags": ["dawn"]},
+            {"value": 104, "name": "R8 BG8 A8 Triplanar 420 unorm", "tags": ["dawn"]}
         ]
     },
     "texture usage": {
@@ -3566,7 +3665,7 @@
     "texture view dimension": {
         "category": "enum",
         "values": [
-            {"value": 0, "name": "undefined", "valid": false, "jsrepr": "undefined"},
+            {"value": 0, "name": "undefined", "jsrepr": "undefined", "valid": false},
             {"value": 1, "name": "1D"},
             {"value": 2, "name": "2D"},
             {"value": 3, "name": "2D array"},
@@ -3578,7 +3677,7 @@
     "vertex format": {
         "category": "enum",
         "values": [
-            {"value": 0,  "name": "undefined", "valid": false, "jsrepr": "undefined"},
+            {"value": 0,  "name": "undefined", "jsrepr": "undefined", "valid": false},
             {"value": 1,  "name": "uint8x2"},
             {"value": 2,  "name": "uint8x4"},
             {"value": 3,  "name": "sint8x2"},
@@ -3612,10 +3711,25 @@
             {"value": 31, "name": "unorm 10_10_10_2", "jsrepr": "'unorm10-10-10-2'"}
         ]
     },
+    "WGSL feature name": {
+        "category": "enum",
+        "values": [
+            {"value": 0, "name": "undefined", "valid": false, "jsrepr": "undefined"},
+            {"value": 1, "name": "readonly and readwrite storage textures"},
+            {"value": 2, "name": "packed 4x8 integer dot product"},
+            {"value": 3, "name": "unrestricted pointer parameters"},
+            {"value": 4, "name": "pointer composite access"},
+            {"value": 1000, "name": "chromium testing unimplemented", "tags": ["dawn"]},
+            {"value": 1001, "name": "chromium testing unsafe experimental", "tags": ["dawn"]},
+            {"value": 1002, "name": "chromium testing experimental", "tags": ["dawn"]},
+            {"value": 1003, "name": "chromium testing shipped with killswitch", "tags": ["dawn"]},
+            {"value": 1004, "name": "chromium testing shipped", "tags": ["dawn"]}
+        ]
+    },
     "whole size" : {
         "category": "constant",
         "type": "uint64_t",
-        "value":  "(0xffffffffffffffffULL)"
+        "value":  "UINT64_MAX"
     },
     "whole map size" : {
         "category": "constant",
@@ -3625,32 +3739,37 @@
     "copy stride undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
     },
     "limit u32 undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
     },
     "limit u64 undefined" : {
         "category": "constant",
         "type": "uint64_t",
-        "value":  "(0xffffffffffffffffULL)"
+        "value":  "UINT64_MAX"
     },
     "array layer count undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
     },
     "mip level count undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
+    },
+    "depth slice undefined" : {
+        "category": "constant",
+        "type": "uint32_t",
+        "value":  "UINT32_MAX"
     },
     "query set index undefined" : {
         "category": "constant",
         "type": "uint32_t",
-        "value":  "(0xffffffffUL)"
+        "value":  "UINT32_MAX"
     },
     "ObjectType": {
       "_comment": "Only used for the wire",
@@ -3720,6 +3839,36 @@
         "tags": ["dawn"],
         "members": [
             {"name": "power preference", "type": "power preference", "default": "undefined"}
+        ]
+    },
+    "heap property": {
+        "category": "bitmask",
+        "tags": ["dawn"],
+        "values": [
+            {"value": 0, "name": "undefined", "valid": false},
+            {"value": 1, "name": "device local"},
+            {"value": 2, "name": "host visible"},
+            {"value": 4, "name": "host coherent"},
+            {"value": 8, "name": "host uncached"},
+            {"value": 16, "name": "host cached"}
+        ]
+    },
+    "memory heap info": {
+        "category": "structure",
+        "tags": ["dawn"],
+        "members": [
+            {"name": "properties", "type": "heap property"},
+            {"name": "size", "type": "uint64_t"}
+        ]
+    },
+    "adapter properties memory heaps": {
+        "category": "structure",
+        "chained": "out",
+        "chain roots": ["adapter properties"],
+        "tags": ["dawn"],
+        "members": [
+            {"name": "heap count", "type": "size_t"},
+            {"name": "heap info", "type": "memory heap info", "annotation": "const*", "length": "heap count"}
         ]
     },
     "dawn buffer descriptor error info from wire client": {
