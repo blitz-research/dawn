@@ -42,6 +42,7 @@
 #include "dawn/utils/WireHelper.h"
 #include "dawn/wire/WireClient.h"
 #include "dawn/wire/WireServer.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::utils {
 
@@ -85,7 +86,10 @@ class WireServerTraceLayer : public dawn::wire::CommandHandler {
 
   private:
     std::string mDir;
-    dawn::wire::CommandHandler* mHandler;
+    // TODO(https://crbug.com/2345): Investigate `DanglingUntriaged` in DawnWire. To reproduce:
+    // dawn_unittests --use-wire --wire-trace-dir={} \
+    //   --gtest_filter=CountUTF16CodeUnitsFromUTF8StringTest.ValidUnicodeString
+    raw_ptr<dawn::wire::CommandHandler, DanglingUntriaged> mHandler;
     std::ofstream mFile;
 };
 
@@ -136,10 +140,10 @@ class WireHelperProxy : public WireHelper {
                                     const WGPUInstanceDescriptor* wireDesc) override {
         DAWN_ASSERT(backendInstance != nullptr);
 
-        auto reservation = mWireClient->ReserveInstance(wireDesc);
-        mWireServer->InjectInstance(backendInstance, reservation.id, reservation.generation);
+        auto reserved = mWireClient->ReserveInstance(wireDesc);
+        mWireServer->InjectInstance(backendInstance, reserved.reservation);
 
-        return wgpu::Instance::Acquire(reservation.instance);
+        return wgpu::Instance::Acquire(reserved.instance);
     }
 
     void BeginWireTrace(const char* name) override {

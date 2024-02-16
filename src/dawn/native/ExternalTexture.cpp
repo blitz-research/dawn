@@ -269,9 +269,15 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
     // y-flips. After translation, coordinates range from [-0.5 .. +0.5] in both U and V.
     coordTransformMatrix = Translate(coordTransformMatrix, -0.5, -0.5);
 
-    // If the texture needs flipping, mirror in Y.
-    if (descriptor->flipY) {
-        coordTransformMatrix = Scale(coordTransformMatrix, 1, -1);
+    // Texture applies rotation first and do mirrored(horizontal flip) next.
+    // Do reverse order here to mapping final uv coordinate to origin texture.
+    // TODO(crbug.com/1514732): VideoFrame metadata defines horizontal flip (mirrored) and rotation.
+    // The vertical flip (which is flipY) could be achieved by rotate 180 + mirrored. Deprecate
+    // flipY attribute to align with VideoFrame metadata. Chrome is the only place to use this
+    // attribute and pass mirrored to descriptor->flipY and this is incorrect. Workaround to fix
+    // mirrored issue by delegate flipY operation to mirrored and remove flipY attribute in future.
+    if (descriptor->flipY || descriptor->mirrored) {
+        coordTransformMatrix = Scale(coordTransformMatrix, -1, 1);
     }
 
     // Apply rotations as needed.
@@ -279,8 +285,8 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
         case wgpu::ExternalTextureRotation::Rotate0Degrees:
             break;
         case wgpu::ExternalTextureRotation::Rotate90Degrees:
-            coordTransformMatrix = Mul(mat2x3{0, -1, 0,   // x' = -y
-                                              +1, 0, 0},  // y' = x
+            coordTransformMatrix = Mul(mat2x3{0, +1, 0,   // x' = y
+                                              -1, 0, 0},  // y' = -x
                                        coordTransformMatrix);
             break;
         case wgpu::ExternalTextureRotation::Rotate180Degrees:
@@ -289,8 +295,9 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
                                        coordTransformMatrix);
             break;
         case wgpu::ExternalTextureRotation::Rotate270Degrees:
-            coordTransformMatrix = Mul(mat2x3{0, +1, 0,   // x' = y
-                                              -1, 0, 0},  // y' = -x
+
+            coordTransformMatrix = Mul(mat2x3{0, -1, 0,   // x' = -y
+                                              +1, 0, 0},  // y' = x
                                        coordTransformMatrix);
             break;
     }
@@ -392,8 +399,8 @@ void ExternalTextureBase::DestroyImpl() {
 }
 
 // static
-ExternalTextureBase* ExternalTextureBase::MakeError(DeviceBase* device, const char* label) {
-    return new ExternalTextureBase(device, ObjectBase::kError, label);
+Ref<ExternalTextureBase> ExternalTextureBase::MakeError(DeviceBase* device, const char* label) {
+    return AcquireRef(new ExternalTextureBase(device, ObjectBase::kError, label));
 }
 
 BufferBase* ExternalTextureBase::GetParamsBuffer() const {

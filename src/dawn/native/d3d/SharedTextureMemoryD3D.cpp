@@ -33,18 +33,15 @@
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d/DeviceD3D.h"
 #include "dawn/native/d3d/Forward.h"
+#include "dawn/native/d3d/QueueD3D.h"
+#include "dawn/native/d3d/SharedFenceD3D.h"
 
 namespace dawn::native::d3d {
 
 SharedTextureMemory::SharedTextureMemory(d3d::Device* device,
                                          const char* label,
-                                         SharedTextureMemoryProperties properties,
-                                         IUnknown* resource)
-    : SharedTextureMemoryBase(device, label, properties) {
-    // If the resource has IDXGIKeyedMutex interface, it will be used for synchronization.
-    // TODO(dawn:1906): remove the mDXGIKeyedMutex when it is not used in chrome.
-    resource->QueryInterface(IID_PPV_ARGS(&mDXGIKeyedMutex));
-}
+                                         SharedTextureMemoryProperties properties)
+    : SharedTextureMemoryBase(device, label, properties) {}
 
 MaybeError SharedTextureMemory::BeginAccessImpl(
     TextureBase* texture,
@@ -66,11 +63,6 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
                 return DAWN_VALIDATION_ERROR("Unsupported fence type %s.", exportInfo.type);
         }
     }
-
-    if (mDXGIKeyedMutex) {
-        DAWN_TRY(CheckHRESULT(mDXGIKeyedMutex->AcquireSync(kDXGIKeyedMutexAcquireKey, INFINITE),
-                              "Acquire keyed mutex"));
-    }
     return {};
 }
 
@@ -82,18 +74,11 @@ ResultOrError<FenceAndSignalValue> SharedTextureMemory::EndAccessImpl(
                     "Required feature (%s) is missing.",
                     wgpu::FeatureName::SharedFenceDXGISharedHandle);
 
-    if (mDXGIKeyedMutex) {
-        mDXGIKeyedMutex->ReleaseSync(kDXGIKeyedMutexAcquireKey);
-    }
-
-    SharedFenceDXGISharedHandleDescriptor desc;
-    desc.handle = ToBackend(GetDevice())->GetFenceHandle();
-
-    Ref<SharedFenceBase> fence;
-    DAWN_TRY_ASSIGN(fence, CreateFenceImpl(&desc));
+    Ref<SharedFence> sharedFence;
+    DAWN_TRY_ASSIGN(sharedFence, ToBackend(GetDevice()->GetQueue())->GetOrCreateSharedFence());
 
     return FenceAndSignalValue{
-        std::move(fence),
+        std::move(sharedFence),
         static_cast<uint64_t>(texture->GetSharedTextureMemoryContents()->GetLastUsageSerial())};
 }
 

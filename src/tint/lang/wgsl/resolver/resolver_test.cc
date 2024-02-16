@@ -138,7 +138,7 @@ TEST_F(ResolverTest, Stmt_Case_AddressOf_Invalid) {
     WrapInFunction(cond_var, Switch("i", Case(CaseSelector(AddressOf(1_a)), Block())));
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "error: cannot take the address of expression");
+    EXPECT_EQ(r()->error(), "error: cannot take the address of value of type 'abstract-int'");
 }
 
 TEST_F(ResolverTest, Stmt_Block) {
@@ -1069,13 +1069,13 @@ TEST_F(ResolverTest, Function_CallSites) {
 
     auto* foo_sem = Sem().Get(foo);
     ASSERT_NE(foo_sem, nullptr);
-    ASSERT_EQ(foo_sem->CallSites().size(), 2u);
+    ASSERT_EQ(foo_sem->CallSites().Length(), 2u);
     EXPECT_EQ(foo_sem->CallSites()[0]->Declaration(), call_1);
     EXPECT_EQ(foo_sem->CallSites()[1]->Declaration(), call_2);
 
     auto* bar_sem = Sem().Get(bar);
     ASSERT_NE(bar_sem, nullptr);
-    EXPECT_EQ(bar_sem->CallSites().size(), 0u);
+    EXPECT_EQ(bar_sem->CallSites().Length(), 0u);
 }
 
 TEST_F(ResolverTest, Function_WorkgroupSize_NotSet) {
@@ -1240,6 +1240,15 @@ TEST_F(ResolverTest, Expr_MemberAccessor_Type) {
     EXPECT_FALSE(r()->Resolve()) << r()->error();
     EXPECT_EQ(r()->error(), R"(12:34 error: cannot use type 'f32' as value
 12:34 note: are you missing '()'?)");
+}
+
+TEST_F(ResolverTest, Expr_MemberAccessor_NonCompoundType) {
+    GlobalConst("depth", ty.i32(), Expr(3_i));
+    auto* mem = MemberAccessor(Ident(Source{{12, 34}}, "depth"), "x");
+    WrapInFunction(mem);
+
+    EXPECT_FALSE(r()->Resolve()) << r()->error();
+    EXPECT_EQ(r()->error(), R"(12:34 error: cannot index into expression of type 'i32')");
 }
 
 TEST_F(ResolverTest, Expr_MemberAccessor_Struct) {
@@ -2009,21 +2018,21 @@ TEST_F(ResolverTest, Function_EntryPoints_StageAttribute) {
     EXPECT_EQ(func_c_sem->Parameters().Length(), 0u);
 
     const auto& b_eps = func_b_sem->AncestorEntryPoints();
-    ASSERT_EQ(2u, b_eps.size());
+    ASSERT_EQ(2u, b_eps.Length());
     EXPECT_EQ(Symbols().Register("ep_1"), b_eps[0]->Declaration()->name->symbol);
     EXPECT_EQ(Symbols().Register("ep_2"), b_eps[1]->Declaration()->name->symbol);
 
     const auto& a_eps = func_a_sem->AncestorEntryPoints();
-    ASSERT_EQ(1u, a_eps.size());
+    ASSERT_EQ(1u, a_eps.Length());
     EXPECT_EQ(Symbols().Register("ep_1"), a_eps[0]->Declaration()->name->symbol);
 
     const auto& c_eps = func_c_sem->AncestorEntryPoints();
-    ASSERT_EQ(2u, c_eps.size());
+    ASSERT_EQ(2u, c_eps.Length());
     EXPECT_EQ(Symbols().Register("ep_1"), c_eps[0]->Declaration()->name->symbol);
     EXPECT_EQ(Symbols().Register("ep_2"), c_eps[1]->Declaration()->name->symbol);
 
-    EXPECT_TRUE(ep_1_sem->AncestorEntryPoints().empty());
-    EXPECT_TRUE(ep_2_sem->AncestorEntryPoints().empty());
+    EXPECT_TRUE(ep_1_sem->AncestorEntryPoints().IsEmpty());
+    EXPECT_TRUE(ep_2_sem->AncestorEntryPoints().IsEmpty());
 }
 
 // Check for linear-time traversal of functions reachable from entry points.
@@ -2411,7 +2420,7 @@ TEST_F(ResolverTest, TextureSampler_Bug1715) {  // crbug.com/tint/1715
          });
 
     ASSERT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "error: cannot take the address of expression in handle address space");
+    EXPECT_EQ(r()->error(), "error: cannot take the address of var 's' in handle address space");
 }
 
 TEST_F(ResolverTest, ModuleDependencyOrderedDeclarations) {
@@ -2469,7 +2478,7 @@ TEST_F(ResolverTest, MaxExpressionDepth_Fail) {
 
 TEST_F(ResolverTest, ScopeDepth_NestedBlocks) {
     const ast::Statement* stmt = Return();
-    for (size_t i = 0; i < 150; i++) {
+    for (uint32_t i = 0; i < 150; i++) {
         stmt = Block(Source{{i, 1}}, stmt);
     }
     WrapInFunction(stmt);
@@ -2481,7 +2490,7 @@ TEST_F(ResolverTest, ScopeDepth_NestedBlocks) {
 
 TEST_F(ResolverTest, ScopeDepth_NestedIf) {
     const ast::Statement* stmt = Return();
-    for (size_t i = 0; i < 150; i++) {
+    for (uint32_t i = 0; i < 150; i++) {
         stmt = If(Source{{i, 1}}, false, Block(Source{{i, 2}}, stmt));
     }
     WrapInFunction(stmt);
@@ -2493,7 +2502,7 @@ TEST_F(ResolverTest, ScopeDepth_NestedIf) {
 
 TEST_F(ResolverTest, ScopeDepth_IfElseChain) {
     const ast::Statement* stmt = nullptr;
-    for (size_t i = 0; i < 150; i++) {
+    for (uint32_t i = 0; i < 150; i++) {
         stmt = If(Source{{i, 1}}, false, Block(Source{{i, 2}}), Else(stmt));
     }
     WrapInFunction(stmt);
@@ -2545,13 +2554,13 @@ TEST_F(ResolverTest, MaxNumStructMembers_WithIgnoreStructMemberLimit_Valid) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
-size_t kMaxNestDepthOfCompositeType = 255;
+uint32_t kMaxNestDepthOfCompositeType = 255;
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Structs_Valid) {
     auto* s = Structure("S", Vector{Member("m", ty.i32())});
-    size_t depth = 1;  // Depth of struct
-    size_t iterations = kMaxNestDepthOfCompositeType - depth;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 1;  // Depth of struct
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (uint32_t i = 0; i < iterations; ++i) {
         s = Structure("S" + std::to_string(i), Vector{Member("m", ty.Of(s))});
     }
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2559,9 +2568,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Structs_Valid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Structs_Invalid) {
     auto* s = Structure("S", Vector{Member("m", ty.i32())});
-    size_t depth = 1;  // Depth of struct
-    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 1;  // Depth of struct
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (uint32_t i = 0; i < iterations; ++i) {
         auto source = i == iterations - 1 ? Source{{12, 34}} : Source{{0, i}};
         s = Structure(source, "S" + std::to_string(i), Vector{Member("m", ty.Of(s))});
     }
@@ -2571,9 +2580,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Structs_Invalid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithVector_Valid) {
     auto* s = Structure("S", Vector{Member("m", ty.vec3<i32>())});
-    size_t depth = 2;  // Despth of struct + vector
-    size_t iterations = kMaxNestDepthOfCompositeType - depth;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 2;  // Despth of struct + vector
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (uint32_t i = 0; i < iterations; ++i) {
         s = Structure("S" + std::to_string(i), Vector{Member("m", ty.Of(s))});
     }
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2581,9 +2590,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithVector_Valid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithVector_Invalid) {
     auto* s = Structure("S", Vector{Member("m", ty.vec3<i32>())});
-    size_t depth = 2;  // Despth of struct + vector
-    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 2;  // Despth of struct + vector
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (uint32_t i = 0; i < iterations; ++i) {
         auto source = i == iterations - 1 ? Source{{12, 34}} : Source{{0, i}};
         s = Structure(source, "S" + std::to_string(i), Vector{Member("m", ty.Of(s))});
     }
@@ -2593,9 +2602,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithVector_Invalid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithMatrix_Valid) {
     auto* s = Structure("S", Vector{Member("m", ty.mat3x3<f32>())});
-    size_t depth = 3;  // Depth of struct + matrix
-    size_t iterations = kMaxNestDepthOfCompositeType - depth;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 3;  // Depth of struct + matrix
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (uint32_t i = 0; i < iterations; ++i) {
         s = Structure("S" + std::to_string(i), Vector{Member("m", ty.Of(s))});
     }
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2603,9 +2612,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithMatrix_Valid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithMatrix_Invalid) {
     auto* s = Structure("S", Vector{Member("m", ty.mat3x3<f32>())});
-    size_t depth = 3;  // Depth of struct + matrix
-    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 3;  // Depth of struct + matrix
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (uint32_t i = 0; i < iterations; ++i) {
         auto source = i == iterations - 1 ? Source{{12, 34}} : Source{{0, i}};
         s = Structure(source, "S" + std::to_string(i), Vector{Member("m", ty.Of(s))});
     }
@@ -2615,9 +2624,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsWithMatrix_Invalid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Arrays_Valid) {
     auto a = ty.array(ty.i32(), 10_u);
-    size_t depth = 1;  // Depth of array
-    size_t iterations = kMaxNestDepthOfCompositeType - depth;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 1;  // Depth of array
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (uint32_t i = 0; i < iterations; ++i) {
         a = ty.array(a, 1_u);
     }
     Alias("a", a);
@@ -2626,9 +2635,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Arrays_Valid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Arrays_Invalid) {
     auto a = ty.array(Source{{99, 88}}, ty.i32(), 10_u);
-    size_t depth = 1;  // Depth of array
-    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 1;  // Depth of array
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (uint32_t i = 0; i < iterations; ++i) {
         auto source = (i == iterations - 1) ? Source{{12, 34}} : Source{{0, i}};
         a = ty.array(source, a, 1_u);
     }
@@ -2639,9 +2648,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_Arrays_Invalid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfVector_Valid) {
     auto a = ty.array<vec3<i32>, 10>();
-    size_t depth = 2;  // Depth of array + vector
-    size_t iterations = kMaxNestDepthOfCompositeType - depth;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 2;  // Depth of array + vector
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (uint32_t i = 0; i < iterations; ++i) {
         a = ty.array(a, 1_u);
     }
     Alias("a", a);
@@ -2650,9 +2659,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfVector_Valid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfVector_Invalid) {
     auto a = ty.array(Source{{99, 88}}, ty.vec3<i32>(), 10_u);
-    size_t depth = 2;  // Depth of array + vector
-    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 2;  // Depth of array + vector
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (uint32_t i = 0; i < iterations; ++i) {
         auto source = (i == iterations - 1) ? Source{{12, 34}} : Source{{0, i}};
         a = ty.array(source, a, 1_u);
     }
@@ -2663,9 +2672,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfVector_Invalid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfMatrix_Valid) {
     auto a = ty.array(ty.mat3x3<f32>(), 10_u);
-    size_t depth = 3;  // Depth of array + matrix
-    size_t iterations = kMaxNestDepthOfCompositeType - depth;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 3;  // Depth of array + matrix
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (uint32_t i = 0; i < iterations; ++i) {
         a = ty.array(a, 1_u);
     }
     Alias("a", a);
@@ -2674,9 +2683,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfMatrix_Valid) {
 
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfMatrix_Invalid) {
     auto a = ty.array(ty.mat3x3<f32>(), 10_u);
-    size_t depth = 3;  // Depth of array + matrix
-    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 3;  // Depth of array + matrix
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (uint32_t i = 0; i < iterations; ++i) {
         auto source = (i == iterations - 1) ? Source{{12, 34}} : Source{{0, i}};
         a = ty.array(source, a, 1_u);
     }
@@ -2688,9 +2697,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfMatrix_Invalid) {
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsOfArray_Valid) {
     auto a = ty.array(ty.mat3x3<f32>(), 10_u);
     auto* s = Structure("S", Vector{Member("m", a)});
-    size_t depth = 4;  // Depth of struct + array + matrix
-    size_t iterations = kMaxNestDepthOfCompositeType - depth;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 4;  // Depth of struct + array + matrix
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (uint32_t i = 0; i < iterations; ++i) {
         s = Structure("S" + std::to_string(i), Vector{Member("m", ty.Of(s))});
     }
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -2699,9 +2708,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsOfArray_Valid) {
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsOfArray_Invalid) {
     auto a = ty.array(ty.mat3x3<f32>(), 10_u);
     auto* s = Structure("S", Vector{Member("m", a)});
-    size_t depth = 4;  // Depth of struct + array + matrix
-    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 4;  // Depth of struct + array + matrix
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (uint32_t i = 0; i < iterations; ++i) {
         auto source = i == iterations - 1 ? Source{{12, 34}} : Source{{0, i}};
         s = Structure(source, "S" + std::to_string(i), Vector{Member("m", ty.Of(s))});
     }
@@ -2712,9 +2721,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_StructsOfArray_Invalid) {
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfStruct_Valid) {
     auto* s = Structure("S", Vector{Member("m", ty.mat3x3<f32>())});
     auto a = ty.array(ty.Of(s), 10_u);
-    size_t depth = 4;  // Depth of array + struct + matrix
-    size_t iterations = kMaxNestDepthOfCompositeType - depth;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 4;  // Depth of array + struct + matrix
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth;
+    for (uint32_t i = 0; i < iterations; ++i) {
         a = ty.array(a, 1_u);
     }
     Alias("a", a);
@@ -2724,9 +2733,9 @@ TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfStruct_Valid) {
 TEST_F(ResolverTest, MaxNestDepthOfCompositeType_ArraysOfStruct_Invalid) {
     auto* s = Structure("S", Vector{Member("m", ty.mat3x3<f32>())});
     auto a = ty.array(ty.Of(s), 10_u);
-    size_t depth = 4;  // Depth of array + struct + matrix
-    size_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
-    for (size_t i = 0; i < iterations; ++i) {
+    uint32_t depth = 4;  // Depth of array + struct + matrix
+    uint32_t iterations = kMaxNestDepthOfCompositeType - depth + 1;
+    for (uint32_t i = 0; i < iterations; ++i) {
         auto source = (i == iterations - 1) ? Source{{12, 34}} : Source{{0, i}};
         a = ty.array(source, a, 1_u);
     }

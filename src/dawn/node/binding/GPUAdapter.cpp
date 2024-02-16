@@ -27,6 +27,8 @@
 
 #include "src/dawn/node/binding/GPUAdapter.h"
 
+#include <limits>
+#include <memory>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -80,7 +82,10 @@ namespace wgpu::binding {
 // wgpu::bindings::GPUAdapter
 // TODO(crbug.com/dawn/1133): This is a stub implementation. Properly implement.
 ////////////////////////////////////////////////////////////////////////////////
-GPUAdapter::GPUAdapter(dawn::native::Adapter a, const Flags& flags) : adapter_(a), flags_(flags) {}
+GPUAdapter::GPUAdapter(dawn::native::Adapter a,
+                       const Flags& flags,
+                       std::shared_ptr<AsyncRunner> async)
+    : adapter_(a), flags_(flags), async_(async) {}
 
 // TODO(dawn:1133): Avoid the extra copy by making the generator make a virtual method with const
 // std::string&
@@ -142,16 +147,25 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
         return {env, interop::kUnusedPromise};
     }
 
+    interop::Promise<interop::Interface<interop::GPUDevice>> promise(env, PROMISE_INFO);
+
     wgpu::RequiredLimits limits;
-#define COPY_LIMIT(LIMIT)                                        \
-    if (descriptor.requiredLimits.count(#LIMIT)) {               \
-        limits.limits.LIMIT = descriptor.requiredLimits[#LIMIT]; \
-        descriptor.requiredLimits.erase(#LIMIT);                 \
+#define COPY_LIMIT(LIMIT)                                                                    \
+    if (descriptor.requiredLimits.count(#LIMIT)) {                                           \
+        using DawnLimitType = decltype(WGPULimits::LIMIT);                                   \
+        DawnLimitType* dawnLimit = &limits.limits.LIMIT;                                     \
+        uint64_t jsLimit = descriptor.requiredLimits[#LIMIT];                                \
+        if (jsLimit > std::numeric_limits<DawnLimitType>::max() - 1) {                       \
+            promise.Reject(                                                                  \
+                binding::Errors::OperationError(env, "Limit \"" #LIMIT "\" out of range.")); \
+            return promise;                                                                  \
+        }                                                                                    \
+        *dawnLimit = jsLimit;                                                                \
+        descriptor.requiredLimits.erase(#LIMIT);                                             \
     }
     FOR_EACH_LIMIT(COPY_LIMIT)
 #undef COPY_LIMIT
 
-    interop::Promise<interop::Interface<interop::GPUDevice>> promise(env, PROMISE_INFO);
     for (auto [key, _] : descriptor.requiredLimits) {
         promise.Reject(binding::Errors::OperationError(env, "Unknown limit \"" + key + "\""));
         return promise;
@@ -167,11 +181,19 @@ interop::Promise<interop::Interface<interop::GPUDevice>> GPUAdapter::requestDevi
     desc.nextInChain = &deviceTogglesDesc;
 
     auto wgpu_device = adapter_.CreateDevice(&desc);
-    if (wgpu_device) {
-        promise.Resolve(interop::GPUDevice::Create<GPUDevice>(env, env, desc, wgpu_device));
-    } else {
+    if (wgpu_device == nullptr) {
         promise.Reject(binding::Errors::OperationError(env, "failed to create device"));
+        return promise;
     }
+
+    auto gpu_device = std::make_unique<GPUDevice>(env, desc, wgpu_device, async_);
+    if (!valid_) {
+        gpu_device->ForceLoss(interop::GPUDeviceLostReason::kUnknown,
+                              "Device was marked as lost due to a stale adapter.");
+    }
+    valid_ = false;
+
+    promise.Resolve(interop::GPUDevice::Bind(env, std::move(gpu_device)));
     return promise;
 }
 

@@ -27,6 +27,7 @@
 
 #include "src/tint/lang/wgsl/reader/reader.h"
 
+#include <limits>
 #include <utility>
 
 #include "src/tint/lang/wgsl/reader/lower/lower.h"
@@ -37,6 +38,13 @@
 namespace tint::wgsl::reader {
 
 Program Parse(const Source::File* file, const Options& options) {
+    if (TINT_UNLIKELY(file->content.data.size() >
+                      static_cast<size_t>(std::numeric_limits<uint32_t>::max()))) {
+        ProgramBuilder b;
+        b.Diagnostics().AddError(tint::diag::System::Reader,
+                                 "WGSL source must be 0xffffffff bytes or fewer");
+        return Program(std::move(b));
+    }
     Parser parser(file);
     parser.Parse();
     return resolver::Resolve(parser.builder(), options.allowed_features);
@@ -45,11 +53,11 @@ Program Parse(const Source::File* file, const Options& options) {
 Result<core::ir::Module> WgslToIR(const Source::File* file, const Options& options) {
     Program program = Parse(file, options);
     auto module = ProgramToIR(program);
-    if (!module) {
+    if (module != Success) {
         return module.Failure();
     }
     // WGSL-dialect -> core-dialect
-    if (auto res = Lower(module.Get()); !res) {
+    if (auto res = Lower(module.Get()); res != Success) {
         return res.Failure();
     }
     return module;
@@ -57,13 +65,13 @@ Result<core::ir::Module> WgslToIR(const Source::File* file, const Options& optio
 
 tint::Result<core::ir::Module> ProgramToLoweredIR(const Program& program) {
     auto ir = tint::wgsl::reader::ProgramToIR(program);
-    if (!ir) {
+    if (ir != Success) {
         return ir.Failure();
     }
 
     // Lower from WGSL-dialect to core-dialect
     auto res = tint::wgsl::reader::Lower(ir.Get());
-    if (!res) {
+    if (res != Success) {
         return res.Failure();
     }
 

@@ -27,7 +27,6 @@
 
 #include "dawn/native/CopyTextureForBrowserHelper.h"
 
-#include <unordered_set>
 #include <utility>
 
 #include "dawn/common/Log.h"
@@ -368,7 +367,7 @@ ResultOrError<RenderPipelineBase*> GetOrCreateCopyTextureForBrowserPipeline(
         Ref<RenderPipelineBase> pipeline;
         DAWN_TRY_ASSIGN(
             pipeline, CreateCopyForBrowserPipeline(device, dstFormat, shaderModule, "copyTexture"));
-        store->copyTextureForBrowserPipelines.insert({dstFormat, std::move(pipeline)});
+        store->copyTextureForBrowserPipelines.emplace(dstFormat, std::move(pipeline));
     }
 
     return GetCachedCopyTexturePipeline(store, dstFormat);
@@ -384,7 +383,7 @@ ResultOrError<RenderPipelineBase*> GetOrCreateCopyExternalTextureForBrowserPipel
         Ref<RenderPipelineBase> pipeline;
         DAWN_TRY_ASSIGN(pipeline, CreateCopyForBrowserPipeline(device, dstFormat, shaderModule,
                                                                "copyExternalTexture"));
-        store->copyExternalTextureForBrowserPipelines.insert({dstFormat, std::move(pipeline)});
+        store->copyExternalTextureForBrowserPipelines.emplace(dstFormat, std::move(pipeline));
     }
 
     return GetCachedCopyExternalTexturePipeline(store, dstFormat);
@@ -688,7 +687,8 @@ MaybeError ValidateCopyTextureForBrowser(DeviceBase* device,
     // Validate copy common rules and copySize.
     DAWN_INVALID_IF(copySize->depthOrArrayLayers > 1, "Copy is for more than one array layer (%u)",
                     copySize->depthOrArrayLayers);
-    DAWN_TRY(ValidateTextureToTextureCopyCommonRestrictions(*source, *destination, *copySize));
+    DAWN_TRY(
+        ValidateTextureToTextureCopyCommonRestrictions(device, *source, *destination, *copySize));
 
     // Validate options
     DAWN_TRY(ValidateCopyForBrowserOptions(*options));

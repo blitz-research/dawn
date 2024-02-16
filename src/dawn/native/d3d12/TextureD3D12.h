@@ -37,7 +37,6 @@
 #include "dawn/native/DawnNative.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/PassResourceUsage.h"
-#include "dawn/native/d3d12/FenceD3D12.h"
 #include "dawn/native/d3d12/IntegerTypes.h"
 #include "dawn/native/d3d12/ResourceHeapAllocationD3D12.h"
 #include "dawn/native/d3d12/d3d12_platform.h"
@@ -60,7 +59,7 @@ class Texture final : public d3d::Texture {
         Device* device,
         const UnpackedPtr<TextureDescriptor>& descriptor,
         ComPtr<IUnknown> d3dTexture,
-        std::vector<Ref<d3d::Fence>> waitFences,
+        std::vector<FenceAndSignalValue> waitFences,
         bool isSwapChainTexture,
         bool isInitialized);
     static ResultOrError<Ref<Texture>> Create(Device* device,
@@ -82,7 +81,8 @@ class Texture final : public d3d::Texture {
     D3D12_RENDER_TARGET_VIEW_DESC GetRTVDescriptor(const Format& format,
                                                    uint32_t mipLevel,
                                                    uint32_t baseSlice,
-                                                   uint32_t sliceCount) const;
+                                                   uint32_t sliceCount,
+                                                   uint32_t planeSlice) const;
     D3D12_DEPTH_STENCIL_VIEW_DESC GetDSVDescriptor(uint32_t mipLevel,
                                                    uint32_t baseArrayLayer,
                                                    uint32_t layerCount,
@@ -93,8 +93,9 @@ class Texture final : public d3d::Texture {
     MaybeError EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
                                                    const SubresourceRange& range);
 
-    MaybeError SynchronizeImportedTextureBeforeUse();
-    MaybeError SynchronizeImportedTextureAfterUse();
+    MaybeError SynchronizeTextureBeforeUse();
+
+    void NotifySwapChainPresentToPIX();
 
     void TrackUsageAndGetResourceBarrierForPass(CommandRecordingContext* commandContext,
                                                 std::vector<D3D12_RESOURCE_BARRIER>* barrier,
@@ -121,7 +122,7 @@ class Texture final : public d3d::Texture {
 
     MaybeError InitializeAsInternalTexture();
     MaybeError InitializeAsExternalTexture(ComPtr<IUnknown> d3dTexture,
-                                           std::vector<Ref<d3d::Fence>> waitFences,
+                                           std::vector<FenceAndSignalValue> waitFences,
                                            bool isSwapChainTexture);
     MaybeError InitializeAsSwapChainTexture(ComPtr<ID3D12Resource> d3d12Texture);
 
@@ -160,9 +161,10 @@ class Texture final : public d3d::Texture {
     D3D12_RESOURCE_FLAGS mD3D12ResourceFlags;
     ResourceHeapAllocation mResourceAllocation;
 
-    // TODO(dawn:1460): Encapsulate imported image fields e.g. std::unique_ptr<ExternalImportInfo>.
-    std::vector<Ref<d3d::Fence>> mWaitFences;
+    // TODO(crbug.com/1515640): Remove these once Chromium has migrated to SharedTextureMemory.
+    std::vector<FenceAndSignalValue> mWaitFences;
     std::optional<ExecutionSerial> mSignalFenceValue;
+
     bool mSwapChainTexture = false;
 
     SubresourceStorage<StateAndDecay> mSubresourceStateAndDecay;

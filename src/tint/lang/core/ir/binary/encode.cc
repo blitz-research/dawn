@@ -35,12 +35,14 @@
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/ir/access.h"
-#include "src/tint/lang/core/ir/binary.h"
+#include "src/tint/lang/core/ir/bitcast.h"
 #include "src/tint/lang/core/ir/break_if.h"
 #include "src/tint/lang/core/ir/construct.h"
 #include "src/tint/lang/core/ir/continue.h"
 #include "src/tint/lang/core/ir/convert.h"
+#include "src/tint/lang/core/ir/core_binary.h"
 #include "src/tint/lang/core/ir/core_builtin_call.h"
+#include "src/tint/lang/core/ir/core_unary.h"
 #include "src/tint/lang/core/ir/discard.h"
 #include "src/tint/lang/core/ir/exit_if.h"
 #include "src/tint/lang/core/ir/exit_loop.h"
@@ -59,17 +61,20 @@
 #include "src/tint/lang/core/ir/store_vector_element.h"
 #include "src/tint/lang/core/ir/switch.h"
 #include "src/tint/lang/core/ir/swizzle.h"
-#include "src/tint/lang/core/ir/unary.h"
+#include "src/tint/lang/core/ir/unreachable.h"
 #include "src/tint/lang/core/ir/user_call.h"
 #include "src/tint/lang/core/ir/var.h"
 #include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/array.h"
 #include "src/tint/lang/core/type/bool.h"
+#include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/external_texture.h"
 #include "src/tint/lang/core/type/f16.h"
 #include "src/tint/lang/core/type/f32.h"
 #include "src/tint/lang/core/type/i32.h"
 #include "src/tint/lang/core/type/matrix.h"
+#include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/sampler.h"
@@ -136,11 +141,13 @@ struct Encoder {
         }
         if (auto ret_loc_in = fn_in->ReturnLocation()) {
             auto& ret_loc_out = *fn_out->mutable_return_location();
-            if (auto interpolation_in = ret_loc_in->interpolation) {
-                auto& interpolation_out = *ret_loc_out.mutable_interpolation();
-                Interpolation(interpolation_out, *interpolation_in);
-            }
-            ret_loc_out.set_value(ret_loc_in->value);
+            Location(ret_loc_out, *ret_loc_in);
+        }
+        if (auto builtin_in = fn_in->ReturnBuiltin()) {
+            fn_out->set_return_builtin(BuiltinValue(*builtin_in));
+        }
+        if (fn_in->ReturnInvariant()) {
+            fn_out->set_return_invariant(true);
         }
         fn_out->set_block(Block(fn_in->Block()));
     }
@@ -168,7 +175,7 @@ struct Encoder {
         if (block_in == nullptr) {
             return 0;
         }
-        return blocks_.GetOrCreate(block_in, [&]() -> uint32_t {
+        return blocks_.GetOrAdd(block_in, [&]() -> uint32_t {
             auto& block_out = *mod_out_.add_blocks();
             auto id = static_cast<uint32_t>(blocks_.Count());
             for (auto* inst : *block_in) {
@@ -191,11 +198,13 @@ struct Encoder {
         tint::Switch(
             inst_in,  //
             [&](const ir::Access* i) { InstructionAccess(*inst_out.mutable_access(), i); },
-            [&](const ir::Binary* i) { InstructionBinary(*inst_out.mutable_binary(), i); },
+            [&](const ir::Bitcast* i) { InstructionBitcast(*inst_out.mutable_bitcast(), i); },
             [&](const ir::BreakIf* i) { InstructionBreakIf(*inst_out.mutable_break_if(), i); },
+            [&](const ir::CoreBinary* i) { InstructionBinary(*inst_out.mutable_binary(), i); },
             [&](const ir::CoreBuiltinCall* i) {
                 InstructionBuiltinCall(*inst_out.mutable_builtin_call(), i);
             },
+            [&](const ir::CoreUnary* i) { InstructionUnary(*inst_out.mutable_unary(), i); },
             [&](const ir::Construct* i) { InstructionConstruct(*inst_out.mutable_construct(), i); },
             [&](const ir::Continue* i) { InstructionContinue(*inst_out.mutable_continue_(), i); },
             [&](const ir::Convert* i) { InstructionConvert(*inst_out.mutable_convert(), i); },
@@ -222,9 +231,11 @@ struct Encoder {
             },
             [&](const ir::Switch* i) { InstructionSwitch(*inst_out.mutable_switch_(), i); },
             [&](const ir::Swizzle* i) { InstructionSwizzle(*inst_out.mutable_swizzle(), i); },
-            [&](const ir::Unary* i) { InstructionUnary(*inst_out.mutable_unary(), i); },
             [&](const ir::UserCall* i) { InstructionUserCall(*inst_out.mutable_user_call(), i); },
             [&](const ir::Var* i) { InstructionVar(*inst_out.mutable_var(), i); },
+            [&](const ir::Unreachable* i) {
+                InstructionUnreachable(*inst_out.mutable_unreachable(), i);
+            },
             TINT_ICE_ON_NO_MATCH);
         for (auto* operand : inst_in->Operands()) {
             inst_out.add_operands(Value(operand));
@@ -236,9 +247,11 @@ struct Encoder {
 
     void InstructionAccess(pb::InstructionAccess&, const ir::Access*) {}
 
-    void InstructionBinary(pb::InstructionBinary& binary_out, const ir::Binary* binary_in) {
+    void InstructionBinary(pb::InstructionBinary& binary_out, const ir::CoreBinary* binary_in) {
         binary_out.set_op(BinaryOp(binary_in->Op()));
     }
+
+    void InstructionBitcast(pb::InstructionBitcast&, const ir::Bitcast*) {}
 
     void InstructionBreakIf(pb::InstructionBreakIf&, const ir::BreakIf*) {}
 
@@ -316,7 +329,7 @@ struct Encoder {
         }
     }
 
-    void InstructionUnary(pb::InstructionUnary& unary_out, const ir::Unary* unary_in) {
+    void InstructionUnary(pb::InstructionUnary& unary_out, const ir::CoreUnary* unary_in) {
         unary_out.set_op(UnaryOp(unary_in->Op()));
     }
 
@@ -325,10 +338,11 @@ struct Encoder {
     void InstructionVar(pb::InstructionVar& var_out, const ir::Var* var_in) {
         if (auto bp_in = var_in->BindingPoint()) {
             auto& bp_out = *var_out.mutable_binding_point();
-            bp_out.set_group(bp_in->group);
-            bp_out.set_binding(bp_in->binding);
+            BindingPoint(bp_out, *bp_in);
         }
     }
+
+    void InstructionUnreachable(pb::InstructionUnreachable&, const ir::Unreachable*) {}
 
     ////////////////////////////////////////////////////////////////////////////
     // Types
@@ -337,7 +351,7 @@ struct Encoder {
         if (type_in == nullptr) {
             return 0;
         }
-        return types_.GetOrCreate(type_in, [&]() -> uint32_t {
+        return types_.GetOrAdd(type_in, [&]() -> uint32_t {
             pb::Type type_out;
             tint::Switch(
                 type_in,  //
@@ -359,8 +373,17 @@ struct Encoder {
                 [&](const core::type::SampledTexture* t) {
                     TypeSampledTexture(*type_out.mutable_sampled_texture(), t);
                 },
+                [&](const core::type::MultisampledTexture* t) {
+                    TypeMultisampledTexture(*type_out.mutable_multisampled_texture(), t);
+                },
+                [&](const core::type::DepthMultisampledTexture* t) {
+                    TypeDepthMultisampledTexture(*type_out.mutable_depth_multisampled_texture(), t);
+                },
                 [&](const core::type::StorageTexture* t) {
                     TypeStorageTexture(*type_out.mutable_storage_texture(), t);
+                },
+                [&](const core::type::ExternalTexture* t) {
+                    TypeExternalTexture(*type_out.mutable_external_texture(), t);
                 },
                 [&](const core::type::Sampler* s) { TypeSampler(*type_out.mutable_sampler(), s); },
                 TINT_ICE_ON_NO_MATCH);
@@ -400,8 +423,8 @@ struct Encoder {
             if (attrs_in.location) {
                 member_out.mutable_attributes()->set_location(*attrs_in.location);
             }
-            if (attrs_in.index) {
-                member_out.mutable_attributes()->set_index(*attrs_in.index);
+            if (attrs_in.blend_src) {
+                member_out.mutable_attributes()->set_blend_src(*attrs_in.blend_src);
             }
             if (attrs_in.color) {
                 member_out.mutable_attributes()->set_color(*attrs_in.color);
@@ -444,12 +467,25 @@ struct Encoder {
         texture_out.set_sub_type(Type(texture_in->type()));
     }
 
+    void TypeMultisampledTexture(pb::TypeMultisampledTexture& texture_out,
+                                 const core::type::MultisampledTexture* texture_in) {
+        texture_out.set_dimension(TextureDimension(texture_in->dim()));
+        texture_out.set_sub_type(Type(texture_in->type()));
+    }
+
+    void TypeDepthMultisampledTexture(pb::TypeDepthMultisampledTexture& texture_out,
+                                      const core::type::DepthMultisampledTexture* texture_in) {
+        texture_out.set_dimension(TextureDimension(texture_in->dim()));
+    }
+
     void TypeStorageTexture(pb::TypeStorageTexture& texture_out,
                             const core::type::StorageTexture* texture_in) {
         texture_out.set_dimension(TextureDimension(texture_in->dim()));
         texture_out.set_texel_format(TexelFormat(texture_in->texel_format()));
         texture_out.set_access(AccessControl(texture_in->access()));
     }
+
+    void TypeExternalTexture(pb::TypeExternalTexture&, const core::type::ExternalTexture*) {}
 
     void TypeSampler(pb::TypeSampler& sampler_out, const core::type::Sampler* sampler_in) {
         sampler_out.set_kind(SamplerKind(sampler_in->kind()));
@@ -462,7 +498,7 @@ struct Encoder {
         if (!value_in) {
             return 0;
         }
-        return values_.GetOrCreate(value_in, [&] {
+        return values_.GetOrAdd(value_in, [&] {
             auto& value_out = *mod_out_.add_values();
             auto id = static_cast<uint32_t>(mod_out_.values().size());
 
@@ -497,6 +533,20 @@ struct Encoder {
         if (auto name = mod_in_.NameOf(param_in); name.IsValid()) {
             param_out.set_name(name.Name());
         }
+        if (auto bp_in = param_in->BindingPoint()) {
+            auto& bp_out = *param_out.mutable_attributes()->mutable_binding_point();
+            BindingPoint(bp_out, *bp_in);
+        }
+        if (auto location_in = param_in->Location()) {
+            auto& location_out = *param_out.mutable_attributes()->mutable_location();
+            Location(location_out, *location_in);
+        }
+        if (auto builtin_in = param_in->Builtin()) {
+            param_out.mutable_attributes()->set_builtin(BuiltinValue(*builtin_in));
+        }
+        if (param_in->Invariant()) {
+            param_out.mutable_attributes()->set_invariant(true);
+        }
     }
 
     void BlockParameter(pb::BlockParameter& param_out, const ir::BlockParam* param_in) {
@@ -513,7 +563,7 @@ struct Encoder {
         if (!constant_in) {
             return 0;
         }
-        return constant_values_.GetOrCreate(constant_in, [&] {
+        return constant_values_.GetOrAdd(constant_in, [&] {
             pb::ConstantValue constant_out;
             tint::Switch(
                 constant_in,  //
@@ -563,12 +613,25 @@ struct Encoder {
     ////////////////////////////////////////////////////////////////////////////
     // Attributes
     ////////////////////////////////////////////////////////////////////////////
+    void Location(pb::Location& location_out, const ir::Location& location_in) {
+        if (auto interpolation_in = location_in.interpolation) {
+            auto& interpolation_out = *location_out.mutable_interpolation();
+            Interpolation(interpolation_out, *interpolation_in);
+        }
+        location_out.set_value(location_in.value);
+    }
+
     void Interpolation(pb::Interpolation& interpolation_out,
                        const core::Interpolation& interpolation_in) {
         interpolation_out.set_type(InterpolationType(interpolation_in.type));
         if (interpolation_in.sampling != InterpolationSampling::kUndefined) {
             interpolation_out.set_sampling(InterpolationSampling(interpolation_in.sampling));
         }
+    }
+
+    void BindingPoint(pb::BindingPoint& binding_point_out, const BindingPoint& binding_point_in) {
+        binding_point_out.set_group(binding_point_in.group);
+        binding_point_out.set_binding(binding_point_in.binding);
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -612,51 +675,61 @@ struct Encoder {
         }
     }
 
-    pb::UnaryOp UnaryOp(core::ir::UnaryOp in) {
+    pb::UnaryOp UnaryOp(core::UnaryOp in) {
         switch (in) {
-            case core::ir::UnaryOp::kComplement:
+            case core::UnaryOp::kComplement:
                 return pb::UnaryOp::complement;
-            case core::ir::UnaryOp::kNegation:
+            case core::UnaryOp::kNegation:
                 return pb::UnaryOp::negation;
+            case core::UnaryOp::kAddressOf:
+                return pb::UnaryOp::address_of;
+            case core::UnaryOp::kIndirection:
+                return pb::UnaryOp::indirection;
+            case core::UnaryOp::kNot:
+                return pb::UnaryOp::not_;
         }
         TINT_ICE() << "invalid UnaryOp: " << in;
         return pb::UnaryOp::complement;
     }
 
-    pb::BinaryOp BinaryOp(core::ir::BinaryOp in) {
+    pb::BinaryOp BinaryOp(core::BinaryOp in) {
         switch (in) {
-            case core::ir::BinaryOp::kAdd:
+            case core::BinaryOp::kAdd:
                 return pb::BinaryOp::add_;
-            case core::ir::BinaryOp::kSubtract:
+            case core::BinaryOp::kSubtract:
                 return pb::BinaryOp::subtract;
-            case core::ir::BinaryOp::kMultiply:
+            case core::BinaryOp::kMultiply:
                 return pb::BinaryOp::multiply;
-            case core::ir::BinaryOp::kDivide:
+            case core::BinaryOp::kDivide:
                 return pb::BinaryOp::divide;
-            case core::ir::BinaryOp::kModulo:
+            case core::BinaryOp::kModulo:
                 return pb::BinaryOp::modulo;
-            case core::ir::BinaryOp::kAnd:
+            case core::BinaryOp::kAnd:
                 return pb::BinaryOp::and_;
-            case core::ir::BinaryOp::kOr:
+            case core::BinaryOp::kOr:
                 return pb::BinaryOp::or_;
-            case core::ir::BinaryOp::kXor:
+            case core::BinaryOp::kXor:
                 return pb::BinaryOp::xor_;
-            case core::ir::BinaryOp::kEqual:
+            case core::BinaryOp::kEqual:
                 return pb::BinaryOp::equal;
-            case core::ir::BinaryOp::kNotEqual:
+            case core::BinaryOp::kNotEqual:
                 return pb::BinaryOp::not_equal;
-            case core::ir::BinaryOp::kLessThan:
+            case core::BinaryOp::kLessThan:
                 return pb::BinaryOp::less_than;
-            case core::ir::BinaryOp::kGreaterThan:
+            case core::BinaryOp::kGreaterThan:
                 return pb::BinaryOp::greater_than;
-            case core::ir::BinaryOp::kLessThanEqual:
+            case core::BinaryOp::kLessThanEqual:
                 return pb::BinaryOp::less_than_equal;
-            case core::ir::BinaryOp::kGreaterThanEqual:
+            case core::BinaryOp::kGreaterThanEqual:
                 return pb::BinaryOp::greater_than_equal;
-            case core::ir::BinaryOp::kShiftLeft:
+            case core::BinaryOp::kShiftLeft:
                 return pb::BinaryOp::shift_left;
-            case core::ir::BinaryOp::kShiftRight:
+            case core::BinaryOp::kShiftRight:
                 return pb::BinaryOp::shift_right;
+            case core::BinaryOp::kLogicalAnd:
+                return pb::BinaryOp::logical_and;
+            case core::BinaryOp::kLogicalOr:
+                return pb::BinaryOp::logical_or;
         }
 
         TINT_ICE() << "invalid BinaryOp: " << in;

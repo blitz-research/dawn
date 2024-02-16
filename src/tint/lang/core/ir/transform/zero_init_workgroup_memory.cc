@@ -105,7 +105,7 @@ struct State {
                 if (ptr && ptr->AddressSpace() == core::AddressSpace::kWorkgroup) {
                     // Record the usage of the variable for each block that references it.
                     var->Result(0)->ForEachUse([&](const Usage& use) {
-                        block_to_direct_vars.GetOrZero(use.instruction->Block())->Add(var);
+                        block_to_direct_vars.GetOrAddZero(use.instruction->Block()).Add(var);
                     });
                     var_to_id.Add(var, next_id++);
                 }
@@ -184,7 +184,7 @@ struct State {
     /// @param func the function
     /// @returns the set of transitively referenced workgroup variables
     VarSet GetReferencedVars(Function* func) {
-        return function_to_transitive_vars.GetOrCreate(func, [&] {
+        return function_to_transitive_vars.GetOrAdd(func, [&] {
             VarSet vars;
             GetReferencedVars(func->Block(), vars);
             return vars;
@@ -196,8 +196,8 @@ struct State {
     /// @param vars the set of transitively referenced workgroup variables to populate
     void GetReferencedVars(Block* block, VarSet& vars) {
         // Add directly referenced vars.
-        if (auto itr = block_to_direct_vars.Find(block)) {
-            for (auto* var : *itr) {
+        if (auto itr = block_to_direct_vars.Get(block)) {
+            for (auto& var : *itr) {
                 vars.Add(var);
             }
         }
@@ -209,7 +209,7 @@ struct State {
                 [&](UserCall* call) {
                     // Get variables referenced by a function called from this block.
                     auto callee_vars = GetReferencedVars(call->Target());
-                    for (auto* var : callee_vars) {
+                    for (auto& var : callee_vars) {
                         vars.Add(var);
                     }
                 },
@@ -234,7 +234,7 @@ struct State {
                        StoreMap& stores) {
         // If this type can be trivially zeroed, store to the whole element.
         if (CanTriviallyZero(type)) {
-            stores.GetOrZero(iteration_count)->Push(Store{var, type, indices});
+            stores.GetOrAddZero(iteration_count).Push(Store{var, type, indices});
             return;
         }
 
@@ -253,7 +253,7 @@ struct State {
                 PrepareStores(var, arr->ElemType(), iteration_count * count, new_indices, stores);
             },
             [&](const type::Atomic*) {
-                stores.GetOrZero(iteration_count)->Push(Store{var, type, indices});
+                stores.GetOrAddZero(iteration_count).Push(Store{var, type, indices});
             },
             [&](const type::Struct* str) {
                 for (auto* member : str->Members()) {
@@ -285,7 +285,7 @@ struct State {
             } else {
                 // Check if the parameter is the local invocation index.
                 if (param->Builtin() &&
-                    param->Builtin().value() == FunctionParam::Builtin::kLocalInvocationIndex) {
+                    param->Builtin().value() == BuiltinValue::kLocalInvocationIndex) {
                     return param;
                 }
             }
@@ -294,7 +294,7 @@ struct State {
         // No local invocation index was found, so add one to the parameter list and use that.
         Vector<FunctionParam*, 4> params = func->Params();
         auto* param = b.FunctionParam("tint_local_index", ty.u32());
-        param->SetBuiltin(FunctionParam::Builtin::kLocalInvocationIndex);
+        param->SetBuiltin(BuiltinValue::kLocalInvocationIndex);
         params.Push(param);
         func->SetParams(params);
         return param;
@@ -368,7 +368,7 @@ struct State {
 
 Result<SuccessType> ZeroInitWorkgroupMemory(Module& ir) {
     auto result = ValidateAndDumpIfNeeded(ir, "ZeroInitWorkgroupMemory transform");
-    if (!result) {
+    if (result != Success) {
         return result;
     }
 

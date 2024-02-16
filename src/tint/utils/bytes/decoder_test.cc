@@ -34,9 +34,19 @@
 
 #include "gmock/gmock.h"
 
+namespace tint {
+namespace {
+/// An enum used for decoder tests below.
+enum class TestEnum : uint8_t { A = 2, B = 3, C = 4 };
+}  // namespace
+
+/// Reflect valid value ranges for the TestEnum enum.
+TINT_REFLECT_ENUM_RANGE(TestEnum, A, C);
+
+}  // namespace tint
+
 namespace tint::bytes {
 namespace {
-
 template <typename... ARGS>
 auto Data(ARGS&&... args) {
     return std::array{std::byte{static_cast<uint8_t>(args)}...};
@@ -53,7 +63,7 @@ TEST(BytesDecoderTest, Uint8) {
     EXPECT_EQ(Decode<uint8_t>(reader).Get(), 0x60u);
     EXPECT_EQ(Decode<uint8_t>(reader).Get(), 0x70u);
     EXPECT_EQ(Decode<uint8_t>(reader).Get(), 0x80u);
-    EXPECT_FALSE(Decode<uint8_t>(reader));
+    EXPECT_NE(Decode<uint8_t>(reader), Success);
 }
 
 TEST(BytesDecoderTest, Uint16) {
@@ -63,7 +73,7 @@ TEST(BytesDecoderTest, Uint16) {
     EXPECT_EQ(Decode<uint16_t>(reader).Get(), 0x4030u);
     EXPECT_EQ(Decode<uint16_t>(reader).Get(), 0x6050u);
     EXPECT_EQ(Decode<uint16_t>(reader).Get(), 0x8070u);
-    EXPECT_FALSE(Decode<uint16_t>(reader));
+    EXPECT_NE(Decode<uint16_t>(reader), Success);
 }
 
 TEST(BytesDecoderTest, Uint32) {
@@ -71,14 +81,14 @@ TEST(BytesDecoderTest, Uint32) {
     auto reader = BufferReader{Slice{data}};
     EXPECT_EQ(Decode<uint32_t>(reader, Endianness::kBig).Get(), 0x10203040u);
     EXPECT_EQ(Decode<uint32_t>(reader, Endianness::kBig).Get(), 0x50607080u);
-    EXPECT_FALSE(Decode<uint32_t>(reader));
+    EXPECT_NE(Decode<uint32_t>(reader), Success);
 }
 
 TEST(BytesDecoderTest, Float) {
     auto data = Data(0x00, 0x00, 0x08, 0x41);
     auto reader = BufferReader{Slice{data}};
     EXPECT_EQ(Decode<float>(reader).Get(), 8.5f);
-    EXPECT_FALSE(Decode<float>(reader));
+    EXPECT_NE(Decode<float>(reader), Success);
 }
 
 TEST(BytesDecoderTest, Bool) {
@@ -89,7 +99,7 @@ TEST(BytesDecoderTest, Bool) {
     EXPECT_EQ(Decode<bool>(reader).Get(), true);
     EXPECT_EQ(Decode<bool>(reader).Get(), true);
     EXPECT_EQ(Decode<bool>(reader).Get(), false);
-    EXPECT_FALSE(Decode<bool>(reader));
+    EXPECT_NE(Decode<bool>(reader), Success);
 }
 
 TEST(BytesDecoderTest, String) {
@@ -97,14 +107,14 @@ TEST(BytesDecoderTest, String) {
     auto reader = BufferReader{Slice{data}};
     EXPECT_EQ(Decode<std::string>(reader).Get(), "hello");
     EXPECT_EQ(Decode<std::string>(reader).Get(), "world");
-    EXPECT_FALSE(Decode<std::string>(reader));
+    EXPECT_NE(Decode<std::string>(reader), Success);
 }
 
 struct S {
     uint8_t a;
     uint16_t b;
     uint32_t c;
-    TINT_REFLECT(a, b, c);
+    TINT_REFLECT(S, a, b, c);
 };
 
 TEST(BytesDecoderTest, ReflectedObject) {
@@ -114,7 +124,16 @@ TEST(BytesDecoderTest, ReflectedObject) {
     EXPECT_EQ(got->a, 0x10u);
     EXPECT_EQ(got->b, 0x3020u);
     EXPECT_EQ(got->c, 0x70605040u);
-    EXPECT_FALSE(Decode<S>(reader));
+    EXPECT_NE(Decode<S>(reader), Success);
+}
+
+TEST(BytesDecoderTest, ReflectedEnum) {
+    auto data = Data(0x03, 0x01, 0x05);
+    auto reader = BufferReader{Slice{data}};
+    auto got = Decode<TestEnum>(reader);
+    EXPECT_EQ(got, TestEnum::B);
+    EXPECT_NE(Decode<S>(reader), Success);  // Out of range
+    EXPECT_NE(Decode<S>(reader), Success);  // Out of range
 }
 
 TEST(BytesDecoderTest, UnorderedMap) {
@@ -132,7 +151,46 @@ TEST(BytesDecoderTest, UnorderedMap) {
                                std::pair<uint8_t, uint32_t>(0x50u, 0x6006u),
                                std::pair<uint8_t, uint32_t>(0x70u, 0x8008u),
                            }));
-    EXPECT_FALSE(Decode<M>(reader));
+    EXPECT_NE(Decode<M>(reader), Success);
+}
+
+TEST(BytesDecoderTest, Vector) {
+    using M = std::vector<uint8_t>;
+    auto data = Data(0x00, 0x10,  //
+                     0x00, 0x30,  //
+                     0x00, 0x50,  //
+                     0x00, 0x70,  //
+                     0x01);
+    auto reader = BufferReader{Slice{data}};
+    auto got = Decode<M>(reader);
+    EXPECT_THAT(got.Get(), testing::ContainerEq(M{
+                               0x10u,
+                               0x30u,
+                               0x50u,
+                               0x70u,
+                           }));
+    EXPECT_NE(Decode<M>(reader), Success);
+}
+
+TEST(BytesDecoderTest, Optional) {
+    auto data = Data(0x00,  //
+                     0x01, 0x42);
+    auto reader = BufferReader{Slice{data}};
+    auto first = Decode<std::optional<uint8_t>>(reader);
+    auto second = Decode<std::optional<uint8_t>>(reader);
+    auto third = Decode<std::optional<uint8_t>>(reader);
+    ASSERT_EQ(first, Success);
+    ASSERT_EQ(second, Success);
+    EXPECT_NE(third, Success);
+    EXPECT_EQ(first.Get(), std::nullopt);
+    EXPECT_EQ(second.Get(), std::optional<uint8_t>{0x42});
+}
+
+TEST(BytesDecoderTest, Bitset) {
+    auto data = Data(0x2D, 0x6D);
+    auto reader = BufferReader{Slice{data}};
+    auto got = Decode<std::bitset<14>>(reader);
+    EXPECT_EQ(got, std::bitset<14>(0x6D2D));
 }
 
 TEST(BytesDecoderTest, Tuple) {
@@ -142,8 +200,8 @@ TEST(BytesDecoderTest, Tuple) {
                      0x40, 0x50, 0x60, 0x70,  //
                      0x80);
     auto reader = BufferReader{Slice{data}};
-    EXPECT_THAT(Decode<T>(reader).Get(), (T{0x10u, 0x3020u, 0x70605040u}));
-    EXPECT_FALSE(Decode<T>(reader));
+    EXPECT_EQ(Decode<T>(reader), (T{0x10u, 0x3020u, 0x70605040u}));
+    EXPECT_NE(Decode<T>(reader), Success);
 }
 
 }  // namespace

@@ -31,18 +31,17 @@
 #include <string>
 
 #include "src/tint/lang/core/ir/operand_instruction.h"
-#include "src/tint/utils/rtti/castable.h"
+#include "src/tint/lang/core/unary_op.h"
+
+// Forward declarations
+namespace tint::core::intrinsic {
+struct TableData;
+}
 
 namespace tint::core::ir {
 
-/// A unary operator.
-enum class UnaryOp {
-    kComplement,
-    kNegation,
-};
-
-/// A unary instruction in the IR.
-class Unary final : public Castable<Unary, OperandInstruction<1, 1>> {
+/// The abstract base class for dialect-specific unary-op instructions in the IR.
+class Unary : public Castable<Unary, OperandInstruction<1, 1>> {
   public:
     /// The offset in Operands() for the value
     static constexpr size_t kValueOperandOffset = 0;
@@ -56,9 +55,6 @@ class Unary final : public Castable<Unary, OperandInstruction<1, 1>> {
     /// @param val the input value for the instruction
     Unary(InstructionResult* result, UnaryOp op, Value* val);
     ~Unary() override;
-
-    /// @copydoc Instruction::Clone()
-    Unary* Clone(CloneContext& ctx) override;
 
     /// @returns the value for the instruction
     Value* Val() { return operands_[kValueOperandOffset]; }
@@ -75,19 +71,12 @@ class Unary final : public Castable<Unary, OperandInstruction<1, 1>> {
     /// @returns the friendly name for the instruction
     std::string FriendlyName() const override { return "unary"; }
 
+    /// @returns the table data to validate this builtin
+    virtual const core::intrinsic::TableData& TableData() const = 0;
+
   private:
     UnaryOp op_ = UnaryOp::kComplement;
 };
-
-/// @param kind the enum value
-/// @returns the string for the given enum value
-std::string_view ToString(UnaryOp kind);
-
-/// Emits the name of the intrinsic type.
-template <typename STREAM, typename = traits::EnableIfIsOStream<STREAM>>
-auto& operator<<(STREAM& out, UnaryOp kind) {
-    return out << ToString(kind);
-}
 
 }  // namespace tint::core::ir
 

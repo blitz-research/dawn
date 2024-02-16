@@ -104,7 +104,7 @@ class State {
     explicit State(const core::ir::Module& m) : mod(m) {}
 
     Program Run(const ProgramOptions& options) {
-        if (auto res = core::ir::Validate(mod); !res) {
+        if (auto res = core::ir::Validate(mod); res != Success) {
             // IR module failed validation.
             b.Diagnostics() = res.Failure().reason;
             return Program{resolver::Resolve(b)};
@@ -211,46 +211,49 @@ class State {
             // Emit parameter attributes.
             if (auto builtin = param->Builtin()) {
                 switch (builtin.value()) {
-                    case core::ir::FunctionParam::Builtin::kVertexIndex:
+                    case core::BuiltinValue::kVertexIndex:
                         attrs.Push(b.Builtin(core::BuiltinValue::kVertexIndex));
                         break;
-                    case core::ir::FunctionParam::Builtin::kInstanceIndex:
+                    case core::BuiltinValue::kInstanceIndex:
                         attrs.Push(b.Builtin(core::BuiltinValue::kInstanceIndex));
                         break;
-                    case core::ir::FunctionParam::Builtin::kPosition:
+                    case core::BuiltinValue::kPosition:
                         attrs.Push(b.Builtin(core::BuiltinValue::kPosition));
                         break;
-                    case core::ir::FunctionParam::Builtin::kFrontFacing:
+                    case core::BuiltinValue::kFrontFacing:
                         attrs.Push(b.Builtin(core::BuiltinValue::kFrontFacing));
                         break;
-                    case core::ir::FunctionParam::Builtin::kLocalInvocationId:
+                    case core::BuiltinValue::kLocalInvocationId:
                         attrs.Push(b.Builtin(core::BuiltinValue::kLocalInvocationId));
                         break;
-                    case core::ir::FunctionParam::Builtin::kLocalInvocationIndex:
+                    case core::BuiltinValue::kLocalInvocationIndex:
                         attrs.Push(b.Builtin(core::BuiltinValue::kLocalInvocationIndex));
                         break;
-                    case core::ir::FunctionParam::Builtin::kGlobalInvocationId:
+                    case core::BuiltinValue::kGlobalInvocationId:
                         attrs.Push(b.Builtin(core::BuiltinValue::kGlobalInvocationId));
                         break;
-                    case core::ir::FunctionParam::Builtin::kWorkgroupId:
+                    case core::BuiltinValue::kWorkgroupId:
                         attrs.Push(b.Builtin(core::BuiltinValue::kWorkgroupId));
                         break;
-                    case core::ir::FunctionParam::Builtin::kNumWorkgroups:
+                    case core::BuiltinValue::kNumWorkgroups:
                         attrs.Push(b.Builtin(core::BuiltinValue::kNumWorkgroups));
                         break;
-                    case core::ir::FunctionParam::Builtin::kSampleIndex:
+                    case core::BuiltinValue::kSampleIndex:
                         attrs.Push(b.Builtin(core::BuiltinValue::kSampleIndex));
                         break;
-                    case core::ir::FunctionParam::Builtin::kSampleMask:
+                    case core::BuiltinValue::kSampleMask:
                         attrs.Push(b.Builtin(core::BuiltinValue::kSampleMask));
                         break;
-                    case core::ir::FunctionParam::Builtin::kSubgroupInvocationId:
+                    case core::BuiltinValue::kSubgroupInvocationId:
                         Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
                         attrs.Push(b.Builtin(core::BuiltinValue::kSubgroupInvocationId));
                         break;
-                    case core::ir::FunctionParam::Builtin::kSubgroupSize:
+                    case core::BuiltinValue::kSubgroupSize:
                         Enable(wgsl::Extension::kChromiumExperimentalSubgroups);
                         attrs.Push(b.Builtin(core::BuiltinValue::kSubgroupSize));
+                        break;
+                    default:
+                        TINT_UNIMPLEMENTED() << builtin.value();
                         break;
                 }
             }
@@ -264,9 +267,6 @@ class State {
                 attrs.Push(b.Invariant());
             }
 
-            if (ParamRequiresFullPtrParameters(param->Type())) {
-                Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
-            }
             return b.Param(name, ty, std::move(attrs));
         });
 
@@ -297,14 +297,17 @@ class State {
         // Emit return type attributes.
         if (auto builtin = fn->ReturnBuiltin()) {
             switch (builtin.value()) {
-                case core::ir::Function::ReturnBuiltin::kPosition:
+                case core::BuiltinValue::kPosition:
                     ret_attrs.Push(b.Builtin(core::BuiltinValue::kPosition));
                     break;
-                case core::ir::Function::ReturnBuiltin::kFragDepth:
+                case core::BuiltinValue::kFragDepth:
                     ret_attrs.Push(b.Builtin(core::BuiltinValue::kFragDepth));
                     break;
-                case core::ir::Function::ReturnBuiltin::kSampleMask:
+                case core::BuiltinValue::kSampleMask:
                     ret_attrs.Push(b.Builtin(core::BuiltinValue::kSampleMask));
+                    break;
+                default:
+                    TINT_UNIMPLEMENTED() << builtin.value();
                     break;
             }
         }
@@ -680,12 +683,6 @@ class State {
         tint::Switch(
             call,  //
             [&](const core::ir::UserCall* c) {
-                for (auto* arg : call->Args()) {
-                    if (ArgRequiresFullPtrParameters(arg)) {
-                        Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
-                        break;
-                    }
-                }
                 auto* expr = b.Call(NameFor(c->Target()), std::move(args));
                 if (call->Results().IsEmpty() || !call->Result(0)->IsUsed()) {
                     Append(b.CallStmt(expr));
@@ -743,11 +740,14 @@ class State {
     void Unary(const core::ir::Unary* u) {
         const ast::Expression* expr = nullptr;
         switch (u->Op()) {
-            case core::ir::UnaryOp::kComplement:
+            case core::UnaryOp::kComplement:
                 expr = b.Complement(Expr(u->Val()));
                 break;
-            case core::ir::UnaryOp::kNegation:
+            case core::UnaryOp::kNegation:
                 expr = b.Negation(Expr(u->Val()));
+                break;
+            default:
+                TINT_UNIMPLEMENTED() << u->Op();
                 break;
         }
         Bind(u->Result(0), expr);
@@ -803,7 +803,7 @@ class State {
     }
 
     void Binary(const core::ir::Binary* e) {
-        if (e->Op() == core::ir::BinaryOp::kEqual) {
+        if (e->Op() == core::BinaryOp::kEqual) {
             auto* rhs = e->RHS()->As<core::ir::Constant>();
             if (rhs && rhs->Type()->Is<core::type::Bool>() &&
                 rhs->Value()->ValueAs<bool>() == false) {
@@ -816,53 +816,59 @@ class State {
         auto* rhs = Expr(e->RHS());
         const ast::Expression* expr = nullptr;
         switch (e->Op()) {
-            case core::ir::BinaryOp::kAdd:
+            case core::BinaryOp::kAdd:
                 expr = b.Add(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kSubtract:
+            case core::BinaryOp::kSubtract:
                 expr = b.Sub(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kMultiply:
+            case core::BinaryOp::kMultiply:
                 expr = b.Mul(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kDivide:
+            case core::BinaryOp::kDivide:
                 expr = b.Div(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kModulo:
+            case core::BinaryOp::kModulo:
                 expr = b.Mod(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kAnd:
+            case core::BinaryOp::kAnd:
                 expr = b.And(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kOr:
+            case core::BinaryOp::kOr:
                 expr = b.Or(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kXor:
+            case core::BinaryOp::kXor:
                 expr = b.Xor(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kEqual:
+            case core::BinaryOp::kEqual:
                 expr = b.Equal(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kNotEqual:
+            case core::BinaryOp::kNotEqual:
                 expr = b.NotEqual(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kLessThan:
+            case core::BinaryOp::kLessThan:
                 expr = b.LessThan(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kGreaterThan:
+            case core::BinaryOp::kGreaterThan:
                 expr = b.GreaterThan(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kLessThanEqual:
+            case core::BinaryOp::kLessThanEqual:
                 expr = b.LessThanEqual(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kGreaterThanEqual:
+            case core::BinaryOp::kGreaterThanEqual:
                 expr = b.GreaterThanEqual(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kShiftLeft:
+            case core::BinaryOp::kShiftLeft:
                 expr = b.Shl(lhs, rhs);
                 break;
-            case core::ir::BinaryOp::kShiftRight:
+            case core::BinaryOp::kShiftRight:
                 expr = b.Shr(lhs, rhs);
+                break;
+            case core::BinaryOp::kLogicalAnd:
+                expr = b.LogicalAnd(lhs, rhs);
+                break;
+            case core::BinaryOp::kLogicalOr:
+                expr = b.LogicalOr(lhs, rhs);
                 break;
         }
         Bind(e->Result(0), expr);
@@ -880,7 +886,7 @@ class State {
                 return {Constant(c), PtrKind::kRef};
             },
             [&](Default) -> ExprAndPtrKind {
-                auto lookup = bindings_.Find(value);
+                auto lookup = bindings_.Get(value);
                 if (TINT_UNLIKELY(!lookup)) {
                     TINT_ICE() << "Expr(" << (value ? value->TypeInfo().name : "null")
                                << ") value has no expression";
@@ -1058,7 +1064,7 @@ class State {
     }
 
     ast::Type Struct(const core::type::Struct* s) {
-        auto n = structs_.GetOrCreate(s, [&] {
+        auto n = structs_.GetOrAdd(s, [&] {
             auto members = tint::Transform<8>(s->Members(), [&](const core::type::StructMember* m) {
                 auto ty = Type(m->Type());
                 const auto& ir_attrs = m->Attributes();
@@ -1072,9 +1078,9 @@ class State {
                 if (auto location = ir_attrs.location) {
                     ast_attrs.Push(b.Location(u32(*location)));
                 }
-                if (auto index = ir_attrs.index) {
+                if (auto blend_src = ir_attrs.blend_src) {
                     Enable(wgsl::Extension::kChromiumInternalDualSourceBlending);
-                    ast_attrs.Push(b.Index(u32(*index)));
+                    ast_attrs.Push(b.BlendSrc(u32(*blend_src)));
                 }
                 if (auto builtin = ir_attrs.builtin) {
                     if (RequiresSubgroups(*builtin)) {
@@ -1119,7 +1125,7 @@ class State {
     /// @returns the AST name for the given value, creating and returning a new name on the first
     /// call.
     Symbol NameFor(const core::ir::Value* value, std::string_view suggested = {}) {
-        return names_.GetOrCreate(value, [&] {
+        return names_.GetOrAdd(value, [&] {
             if (!suggested.empty()) {
                 return b.Symbols().Register(suggested);
             }
@@ -1294,44 +1300,6 @@ class State {
             default:
                 return false;
         }
-    }
-
-    /// @returns true if a parameter of the type @p ty requires the
-    /// kChromiumExperimentalFullPtrParameters extension to be enabled.
-    bool ParamRequiresFullPtrParameters(const core::type::Type* ty) {
-        if (auto* ptr = ty->As<core::type::Pointer>()) {
-            switch (ptr->AddressSpace()) {
-                case core::AddressSpace::kUniform:
-                case core::AddressSpace::kStorage:
-                case core::AddressSpace::kWorkgroup:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-        return false;
-    }
-
-    /// @returns true if the argument @p arg requires the kChromiumExperimentalFullPtrParameters
-    /// extension to be enabled.
-    bool ArgRequiresFullPtrParameters(const core::ir::Value* arg) {
-        if (!arg->Type()->Is<core::type::Pointer>()) {
-            return false;
-        }
-
-        auto res = arg->As<core::ir::InstructionResult>();
-        while (res) {
-            auto* inst = res->Instruction();
-            if (inst->Is<core::ir::Access>()) {
-                return true;  // Passing pointer into sub-object
-            }
-            if (auto* let = inst->As<core::ir::Let>()) {
-                res = let->Value()->As<core::ir::InstructionResult>();
-            } else {
-                break;
-            }
-        }
-        return false;
     }
 };
 

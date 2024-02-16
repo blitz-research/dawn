@@ -39,7 +39,7 @@ using ParserTest = testing::Test;
 TEST_F(ParserTest, DataEmpty) {
     std::vector<uint32_t> data;
     auto program = Parse(data, {});
-    auto errs = program.Diagnostics().str();
+    auto errs = program.Diagnostics().Str();
     ASSERT_FALSE(program.IsValid()) << errs;
     EXPECT_EQ(errs, "error: line:0: Invalid SPIR-V magic number.");
 }
@@ -76,7 +76,7 @@ TEST_F(ParserTest, AllowNonUniformDerivatives_False) {
     Options options;
     options.allow_non_uniform_derivatives = false;
     auto program = Parse(spv, options);
-    auto errs = program.Diagnostics().str();
+    auto errs = program.Diagnostics().Str();
     EXPECT_FALSE(program.IsValid()) << errs;
     EXPECT_THAT(errs, ::testing::HasSubstr("'dpdx' must only be called from uniform control flow"));
 }
@@ -86,9 +86,9 @@ TEST_F(ParserTest, AllowNonUniformDerivatives_True) {
     Options options;
     options.allow_non_uniform_derivatives = true;
     auto program = Parse(spv, options);
-    auto errs = program.Diagnostics().str();
+    auto errs = program.Diagnostics().Str();
     EXPECT_TRUE(program.IsValid()) << errs;
-    EXPECT_EQ(program.Diagnostics().count(), 0u) << errs;
+    EXPECT_EQ(program.Diagnostics().Count(), 0u) << errs;
 }
 
 TEST_F(ParserTest, WorkgroupIdGuardingBarrier) {
@@ -103,7 +103,7 @@ TEST_F(ParserTest, WorkgroupIdGuardingBarrier) {
 %_ptr_Input_vec3u = OpTypePointer Input %vec3u
      %uint_0 = OpConstant %uint 0
      %uint_2 = OpConstant %uint 2
-     %uint_8 = OpConstant %uint 8
+   %uint_264 = OpConstant %uint 264
        %wgid = OpVariable %_ptr_Input_vec3u Input
        %void = OpTypeVoid
        %bool = OpTypeBool
@@ -116,16 +116,16 @@ TEST_F(ParserTest, WorkgroupIdGuardingBarrier) {
                OpSelectionMerge %merge None
                OpBranchConditional %condition %true_branch %merge
 %true_branch = OpLabel
-               OpControlBarrier %uint_2 %uint_2 %uint_8
+               OpControlBarrier %uint_2 %uint_2 %uint_264
                OpBranch %merge
       %merge = OpLabel
                OpReturn
                OpFunctionEnd
 )");
     auto program = Parse(spv, {});
-    auto errs = program.Diagnostics().str();
+    auto errs = program.Diagnostics().Str();
     EXPECT_TRUE(program.IsValid()) << errs;
-    EXPECT_EQ(program.Diagnostics().count(), 0u) << errs;
+    EXPECT_EQ(program.Diagnostics().Count(), 0u) << errs;
 }
 
 // TODO(dneto): uint32 vec, valid SPIR-V

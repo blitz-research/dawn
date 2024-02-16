@@ -111,7 +111,7 @@ class Builder {
     const diag::List& Diagnostics() const { return builder_.Diagnostics(); }
 
     /// @returns true if the builder encountered an error
-    bool has_error() const { return Diagnostics().contains_errors(); }
+    bool has_error() const { return Diagnostics().ContainsErrors(); }
 
     /// @returns the module that this builder has produced
     writer::Module& Module() { return module_; }
@@ -549,7 +549,7 @@ class Builder {
     std::unordered_map<uint32_t, const sem::Variable*> id_to_var_;
     std::unordered_map<std::string, uint32_t> import_name_to_id_;
     std::unordered_map<Symbol, uint32_t> func_symbol_to_id_;
-    std::unordered_map<sem::CallTargetSignature, uint32_t> func_sig_to_id_;
+    Hashmap<sem::CallTargetSignature, uint32_t, 4> func_sig_to_id_;
     std::unordered_map<const core::type::Type*, uint32_t> type_to_id_;
     std::unordered_map<ScalarConstant, uint32_t> const_to_id_;
     std::unordered_map<const core::type::Type*, uint32_t> const_null_to_id_;

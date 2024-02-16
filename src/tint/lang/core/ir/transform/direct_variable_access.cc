@@ -53,7 +53,7 @@ struct RootModuleScopeVar {
     Var* var = nullptr;
 
     /// @return a hash value for this object
-    size_t HashCode() const { return Hash(var); }
+    tint::HashCode HashCode() const { return Hash(var); }
 
     /// Inequality operator
     bool operator!=(const RootModuleScopeVar& other) const { return var != other.var; }
@@ -66,7 +66,7 @@ struct RootPtrParameter {
     const type::Pointer* type = nullptr;
 
     /// @return a hash value for this object
-    size_t HashCode() const { return Hash(type); }
+    tint::HashCode HashCode() const { return Hash(type); }
 
     /// Inequality operator
     bool operator!=(const RootPtrParameter& other) const { return type != other.type; }
@@ -81,7 +81,7 @@ struct MemberAccess {
     const type::StructMember* member;
 
     /// @return a hash member for this object
-    size_t HashCode() const { return Hash(member); }
+    tint::HashCode HashCode() const { return Hash(member); }
 
     /// Inequality operator
     bool operator!=(const MemberAccess& other) const { return member != other.member; }
@@ -91,7 +91,7 @@ struct MemberAccess {
 /// The ordered list of indices is passed by parameter.
 struct IndexAccess {
     /// @return a hash value for this object
-    size_t HashCode() const { return 42; }
+    tint::HashCode HashCode() const { return 42; }
 
     /// Inequality operator
     bool operator!=(const IndexAccess&) const { return false; }
@@ -166,7 +166,7 @@ struct AccessShape {
     }
 
     /// @return a hash value for this object
-    size_t HashCode() const { return Hash(root, ops); }
+    tint::HashCode HashCode() const { return Hash(root, ops); }
 
     /// Inequality operator
     bool operator!=(const AccessShape& other) const {
@@ -260,10 +260,12 @@ struct State {
     /// transforming. These functions will be replaced with variants based on the access shapes.
     void GatherFnsThatNeedForking() {
         for (auto& fn : ir.functions) {
-            for (auto* param : fn->Params()) {
-                if (ParamNeedsTransforming(param)) {
-                    need_forking.Add(fn, fn_info_allocator.Create());
-                    break;
+            if (fn->Alive()) {
+                for (auto* param : fn->Params()) {
+                    if (ParamNeedsTransforming(param)) {
+                        need_forking.Add(fn, fn_info_allocator.Create());
+                        break;
+                    }
                 }
             }
         }
@@ -354,22 +356,16 @@ struct State {
             }
 
             // Look to see if this callee signature already has a variant created.
-            auto* new_target = (*target_info)->variants_by_sig.GetOrCreate(signature, [&] {
+            auto* new_target = (*target_info)->variants_by_sig.GetOrAdd(signature, [&] {
                 // New signature.
 
                 // Clone the original function to seed the new variant.
                 auto* variant_fn = CloneContext{ir}.Clone(target);
                 (*target_info)->ordered_variants.Push(variant_fn);
 
-                // Build a unique name for the variant.
-                if (auto fn_name = ir.NameOf(variant_fn); fn_name.IsValid()) {
-                    StringStream variant_name;
-                    variant_name << fn_name.NameView();
-                    auto params = signature.Keys().Sort();
-                    for (auto param_idx : params) {
-                        variant_name << "_" << AccessShapeName(*signature.Get(param_idx));
-                    }
-                    ir.SetName(variant_fn, variant_name.str());
+                // Copy the original name for the variant
+                if (auto fn_name = ir.NameOf(fn)) {
+                    ir.SetName(fn, fn_name);
                 }
 
                 // Create an entry for the variant, and add it to the queue of variants that need to
@@ -380,7 +376,7 @@ struct State {
                 return variant_fn;
             });
 
-            // Repoint the target of the call to the variant.
+            // Re-point the target of the call to the variant.
             call->SetTarget(new_target);
         });
     }
@@ -587,37 +583,6 @@ struct State {
         }
     }
 
-    /// @returns a string describing the given AccessShape, used to suffix the generated function
-    /// variants.
-    std::string AccessShapeName(const AccessShape& shape) {
-        StringStream ss;
-
-        if (auto* global = std::get_if<RootModuleScopeVar>(&shape.root)) {
-            ss << ir.NameOf(global->var).NameView();
-        } else {
-            ss << "P";
-        }
-
-        for (auto& op : shape.ops) {
-            ss << "_";
-
-            if (std::holds_alternative<IndexAccess>(op)) {
-                /// The op uses an index taken from an array parameter.
-                ss << "X";
-                continue;
-            }
-
-            if (auto* access = std::get_if<MemberAccess>(&op); TINT_LIKELY(access)) {
-                ss << access->member->Name().NameView();
-                continue;
-            }
-
-            TINT_ICE() << "unhandled variant for access chain";
-            break;
-        }
-        return ss.str();
-    }
-
     /// @return true if @p param is a pointer parameter that requires transforming, based on the
     /// address space and transform options.
     /// @param param the function parameter
@@ -666,7 +631,7 @@ struct State {
 
 Result<SuccessType> DirectVariableAccess(Module& ir, const DirectVariableAccessOptions& options) {
     auto result = ValidateAndDumpIfNeeded(ir, "DirectVariableAccess transform");
-    if (!result) {
+    if (result != Success) {
         return result;
     }
 

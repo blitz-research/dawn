@@ -33,9 +33,9 @@
 #include <unordered_map>
 
 #include "src/tint/api/options/binding_remapper.h"
+#include "src/tint/api/options/depth_range_offsets.h"
 #include "src/tint/api/options/external_texture.h"
 #include "src/tint/api/options/texture_builtins_from_uniform.h"
-#include "src/tint/lang/core/access.h"
 #include "src/tint/lang/glsl/writer/common/version.h"
 #include "src/tint/lang/wgsl/sem/sampler_texture_pair.h"
 
@@ -61,6 +61,9 @@ struct Options {
     /// Set to `true` to disable workgroup memory zero initialization
     bool disable_workgroup_init = false;
 
+    /// Set to `true` to disable the polyfills on integer division and modulo.
+    bool disable_polyfill_integer_div_mod = false;
+
     /// The GLSL version to emit
     Version version;
 
@@ -77,19 +80,29 @@ struct Options {
     /// Options used in the binding mappings for external textures
     ExternalTextureOptions external_texture_options = {};
 
+    /// Offset of the firstInstance push constant.
+    std::optional<int32_t> first_instance_offset;
+
+    /// Offsets of the minDepth and maxDepth push constants.
+    std::optional<DepthRangeOffsets> depth_range_offsets;
+
     /// Options used to map WGSL textureNumLevels/textureNumSamples builtins to internal uniform
     /// buffer values. If not specified, emits corresponding GLSL builtins
     /// textureQueryLevels/textureSamples directly.
-    std::optional<TextureBuiltinsFromUniformOptions> texture_builtins_from_uniform = std::nullopt;
+    TextureBuiltinsFromUniformOptions texture_builtins_from_uniform = {};
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(disable_robustness,
+    TINT_REFLECT(Options,
+                 disable_robustness,
                  disable_workgroup_init,
+                 disable_polyfill_integer_div_mod,
                  version,
                  binding_map,
                  placeholder_binding_point,
                  binding_remapper_options,
                  external_texture_options,
+                 first_instance_offset,
+                 depth_range_offsets,
                  texture_builtins_from_uniform);
 };
 

@@ -29,6 +29,7 @@
 
 #include <utility>
 
+#include "dawn/common/MatchVariant.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/EnumMaskIterator.h"
@@ -70,11 +71,10 @@ void SyncScopeUsageTracker::TextureRangeUsedAs(TextureBase* texture,
                                                wgpu::ShaderStage shaderStages) {
     // Get or create a new TextureSubresourceSyncInfo for that texture (initially filled with
     // wgpu::TextureUsage::None and WGPUShaderStage_None)
-    auto it = mTextureSyncInfos.emplace(
-        std::piecewise_construct, std::forward_as_tuple(texture),
-        std::forward_as_tuple(texture->GetFormat().aspects, texture->GetArrayLayers(),
-                              texture->GetNumMipLevels(),
-                              TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None}));
+    auto it = mTextureSyncInfos.try_emplace(
+        texture, texture->GetFormat().aspects, texture->GetArrayLayers(),
+        texture->GetNumMipLevels(),
+        TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None});
     TextureSubresourceSyncInfo& textureSyncInfo = it.first->second;
 
     textureSyncInfo.Update(
@@ -89,11 +89,10 @@ void SyncScopeUsageTracker::AddRenderBundleTextureUsage(
     const TextureSubresourceSyncInfo& textureSyncInfo) {
     // Get or create a new TextureSubresourceSyncInfo for that texture (initially filled with
     // wgpu::TextureUsage::None and WGPUShaderStage_None)
-    auto it = mTextureSyncInfos.emplace(
-        std::piecewise_construct, std::forward_as_tuple(texture),
-        std::forward_as_tuple(texture->GetFormat().aspects, texture->GetArrayLayers(),
-                              texture->GetNumMipLevels(),
-                              TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None}));
+    auto it = mTextureSyncInfos.try_emplace(
+        texture, texture->GetFormat().aspects, texture->GetArrayLayers(),
+        texture->GetNumMipLevels(),
+        TextureSyncInfo{wgpu::TextureUsage::None, wgpu::ShaderStage::None});
     TextureSubresourceSyncInfo* passTextureSyncInfo = &it.first->second;
 
     passTextureSyncInfo->Merge(
@@ -110,10 +109,11 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
          ++bindingIndex) {
         const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(bindingIndex);
 
-        switch (bindingInfo.bindingType) {
-            case BindingInfoType::Buffer: {
+        MatchVariant(
+            bindingInfo.bindingLayout,
+            [&](const BufferBindingLayout& layout) {
                 BufferBase* buffer = group->GetBindingAsBufferBinding(bindingIndex).buffer;
-                switch (bindingInfo.buffer.type) {
+                switch (layout.type) {
                     case wgpu::BufferBindingType::Uniform:
                         BufferUsedAs(buffer, wgpu::BufferUsage::Uniform, bindingInfo.visibility);
                         break;
@@ -129,12 +129,10 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
                     case wgpu::BufferBindingType::Undefined:
                         DAWN_UNREACHABLE();
                 }
-                break;
-            }
-
-            case BindingInfoType::Texture: {
+            },
+            [&](const TextureBindingLayout& layout) {
                 TextureViewBase* view = group->GetBindingAsTextureView(bindingIndex);
-                switch (bindingInfo.texture.sampleType) {
+                switch (layout.sampleType) {
                     case kInternalResolveAttachmentSampleType:
                         TextureViewUsedAs(view, kResolveAttachmentLoadingUsage,
                                           bindingInfo.visibility);
@@ -144,12 +142,10 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
                                           bindingInfo.visibility);
                         break;
                 }
-                break;
-            }
-
-            case BindingInfoType::StorageTexture: {
+            },
+            [&](const StorageTextureBindingLayout& layout) {
                 TextureViewBase* view = group->GetBindingAsTextureView(bindingIndex);
-                switch (bindingInfo.storageTexture.access) {
+                switch (layout.access) {
                     case wgpu::StorageTextureAccess::WriteOnly:
                         TextureViewUsedAs(view, kWriteOnlyStorageTexture, bindingInfo.visibility);
                         break;
@@ -163,16 +159,8 @@ void SyncScopeUsageTracker::AddBindGroup(BindGroupBase* group) {
                     case wgpu::StorageTextureAccess::Undefined:
                         DAWN_UNREACHABLE();
                 }
-                break;
-            }
-
-            case BindingInfoType::ExternalTexture:
-                DAWN_UNREACHABLE();
-                break;
-
-            case BindingInfoType::Sampler:
-                break;
-        }
+            },
+            [&](const SamplerBindingLayout&) {});
     }
 
     for (const Ref<ExternalTextureBase>& externalTexture : group->GetBoundExternalTextures()) {
@@ -224,24 +212,20 @@ void ComputePassResourceUsageTracker::AddResourcesReferencedByBindGroup(BindGrou
     for (BindingIndex index{0}; index < group->GetLayout()->GetBindingCount(); ++index) {
         const BindingInfo& bindingInfo = group->GetLayout()->GetBindingInfo(index);
 
-        switch (bindingInfo.bindingType) {
-            case BindingInfoType::Buffer: {
+        MatchVariant(
+            bindingInfo.bindingLayout,
+            [&](const BufferBindingLayout&) {
                 mUsage.referencedBuffers.insert(group->GetBindingAsBufferBinding(index).buffer);
-                break;
-            }
-
-            case BindingInfoType::Texture: {
+            },
+            [&](const TextureBindingLayout&) {
                 mUsage.referencedTextures.insert(
                     group->GetBindingAsTextureView(index)->GetTexture());
-                break;
-            }
-
-            case BindingInfoType::ExternalTexture:
-                DAWN_UNREACHABLE();
-            case BindingInfoType::StorageTexture:
-            case BindingInfoType::Sampler:
-                break;
-        }
+            },
+            [&](const StorageTextureBindingLayout&) {
+                mUsage.referencedTextures.insert(
+                    group->GetBindingAsTextureView(index)->GetTexture());
+            },
+            [](const SamplerBindingLayout&) {});
     }
 
     for (const Ref<ExternalTextureBase>& externalTexture : group->GetBoundExternalTextures()) {
@@ -288,7 +272,7 @@ void RenderPassResourceUsageTracker::TrackQueryAvailability(QuerySetBase* queryS
 
     // Gets the iterator for that querySet or create a new vector of bool set to false
     // if the querySet wasn't registered.
-    auto it = mQueryAvailabilities.emplace(querySet, querySet->GetQueryCount()).first;
+    auto it = mQueryAvailabilities.try_emplace(querySet, querySet->GetQueryCount()).first;
     it->second[queryIndex] = true;
 }
 

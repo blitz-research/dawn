@@ -103,6 +103,7 @@ type flags struct {
 	build                bool
 	validate             bool
 	dumpShaders          bool
+	fxc                  bool
 	unrollConstEvalLoops bool
 	genCoverage          bool
 	compatibilityMode    bool
@@ -148,6 +149,7 @@ func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, e
 		" set to 'vulkan' if VK_ICD_FILENAMES environment variable is set, 'default' otherwise")
 	flag.StringVar(&c.flags.adapterName, "adapter", "", "name (or substring) of the GPU adapter to use")
 	flag.BoolVar(&c.flags.dumpShaders, "dump-shaders", false, "dump WGSL shaders. Enables --verbose")
+	flag.BoolVar(&c.flags.fxc, "fxc", false, "Use FXC instead of DXC. Disables 'use_dxc' Dawn flag")
 	flag.BoolVar(&c.flags.unrollConstEvalLoops, "unroll-const-eval-loops", unrollConstEvalLoopsDefault, "unroll loops in const-eval tests")
 	flag.BoolVar(&c.flags.genCoverage, "coverage", false, "displays coverage data")
 	flag.StringVar(&c.flags.coverageFile, "export-coverage", "", "write coverage data to the given path")
@@ -241,6 +243,9 @@ func (c *cmd) processFlags() error {
 		return fmt.Errorf("only a single query can be provided")
 	}
 
+	// For Windows, set the DLL directory to bin so that Dawn loads dxcompiler.dll from there.
+	c.flags.dawn.Set("dlldir=" + c.flags.bin)
+
 	// Forward the backend and adapter to use, if specified.
 	if c.flags.backend != "default" {
 		fmt.Println("Forcing backend to", c.flags.backend)
@@ -259,6 +264,9 @@ func (c *cmd) processFlags() error {
 		c.flags.Verbose = true
 		c.flags.dawn.Set("enable-dawn-features=dump_shaders,disable_symbol_renaming")
 	}
+	if c.flags.fxc {
+		c.flags.dawn.Set("disable-dawn-features=use_dxc")
+	}
 	c.flags.dawn.GlobListFlags("enable-dawn-features=", ",")
 
 	state, err := c.flags.Process()
@@ -271,7 +279,7 @@ func (c *cmd) processFlags() error {
 }
 
 func (c *cmd) maybeInitCoverage() error {
-	if c.flags.coverageFile == "" {
+	if !c.flags.genCoverage && c.flags.coverageFile == "" {
 		return nil
 	}
 
@@ -303,7 +311,7 @@ func (c *cmd) maybeInitCoverage() error {
 		OutputFile: c.flags.coverageFile,
 		Env: &cov.Env{
 			Profdata: profdata,
-			Binary:   c.flags.bin,
+			Binary:   filepath.Join(c.flags.bin, "dawn.node"),
 			Cov:      llvmCov,
 			TurboCov: turboCov,
 		},

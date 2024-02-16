@@ -118,7 +118,7 @@
     X(Alignment,           minUniformBufferOffsetAlignment,       256,       256,        256) \
     X(Alignment,           minStorageBufferOffsetAlignment,       256,       256,        256) \
     X(Maximum,                            maxVertexBuffers,         8,         8,          8) \
-    X(Maximum,                         maxVertexAttributes,        16,        16,         16) \
+    X(Maximum,                         maxVertexAttributes,        16,        16,         30) \
     X(Maximum,                  maxVertexBufferArrayStride,      2048,      2048,       2048) \
     X(Maximum,                         maxColorAttachments,         4,         8,          8)
 
@@ -133,6 +133,7 @@
     X(LIMITS_STORAGE_BUFFER_BINDINGS)      \
     X(LIMITS_ATTACHMENTS)                  \
     X(LIMITS_INTER_STAGE_SHADER_VARIABLES) \
+    X(LIMITS_TEXTURE_DIMENSIONS)           \
     X(LIMITS_OTHER)
 
 #define LIMITS(X)                          \

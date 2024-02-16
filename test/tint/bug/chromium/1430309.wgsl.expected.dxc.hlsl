@@ -7,7 +7,7 @@ struct frexp_result_f32 {
 };
 
 static frexp_result_f32 a = (frexp_result_f32)0;
-const frexp_result_f32_1 c = {0.5f, 1};
+static const frexp_result_f32_1 c = {0.5f, 1};
 static frexp_result_f32_1 b = c;
 
 struct tint_symbol {
@@ -19,7 +19,7 @@ float4 main_inner() {
 }
 
 tint_symbol main() {
-  const float4 inner_result = main_inner();
+  float4 inner_result = main_inner();
   tint_symbol wrapper_result = (tint_symbol)0;
   wrapper_result.value = inner_result;
   return wrapper_result;

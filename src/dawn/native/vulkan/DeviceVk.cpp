@@ -352,7 +352,8 @@ external_semaphore::Service* Device::GetExternalSemaphoreService() const {
 }
 
 void Device::EnqueueDeferredDeallocation(DescriptorSetAllocator* allocator) {
-    mDescriptorAllocatorsPendingDeallocation.Enqueue(allocator, GetPendingCommandSerial());
+    mDescriptorAllocatorsPendingDeallocation.Enqueue(allocator,
+                                                     GetQueue()->GetPendingCommandSerial());
 }
 
 ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysicalDevice) {
@@ -448,21 +449,20 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         usedKnobs.features.depthClamp = VK_TRUE;
     }
 
-    // TODO(dawn:1510, tint:1473): After implementing a transform to handle the pipeline input /
-    // output if necessary, relax the requirement of storageInputOutput16.
     if (HasFeature(Feature::ShaderF16)) {
         const VulkanDeviceInfo& deviceInfo = ToBackend(GetPhysicalDevice())->GetDeviceInfo();
         DAWN_ASSERT(deviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
                     deviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
                     deviceInfo.HasExt(DeviceExt::_16BitStorage) &&
                     deviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE &&
-                    deviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE &&
                     deviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess == VK_TRUE);
 
         usedKnobs.shaderFloat16Int8Features.shaderFloat16 = VK_TRUE;
         usedKnobs._16BitStorageFeatures.storageBuffer16BitAccess = VK_TRUE;
-        usedKnobs._16BitStorageFeatures.storageInputOutput16 = VK_TRUE;
         usedKnobs._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+        if (deviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE) {
+            usedKnobs._16BitStorageFeatures.storageInputOutput16 = VK_TRUE;
+        }
 
         featuresChain.Add(&usedKnobs.shaderFloat16Int8Features,
                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR);
@@ -563,14 +563,6 @@ VulkanFunctions* Device::GetMutableFunctions() {
     return const_cast<VulkanFunctions*>(&fn);
 }
 
-CommandRecordingContext* Device::GetPendingRecordingContext(Device::SubmitMode submitMode) {
-    return ToBackend(GetQueue())->GetPendingRecordingContext(submitMode);
-}
-
-MaybeError Device::SubmitPendingCommands() {
-    return ToBackend(GetQueue())->SubmitPendingCommands();
-}
-
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
@@ -581,7 +573,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
     DAWN_ASSERT(size != 0);
 
     CommandRecordingContext* recordingContext =
-        GetPendingRecordingContext(DeviceBase::SubmitMode::Passive);
+        ToBackend(GetQueue())->GetPendingRecordingContext(Queue::SubmitMode::Passive);
 
     ToBackend(destination)
         ->EnsureDataInitializedAsDestination(recordingContext, destinationOffset, size);
@@ -614,7 +606,7 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
     // does an implicit availability, visibility and domain operation.
 
     CommandRecordingContext* recordingContext =
-        GetPendingRecordingContext(DeviceBase::SubmitMode::Passive);
+        ToBackend(GetQueue())->GetPendingRecordingContext(Queue::SubmitMode::Passive);
 
     VkBufferImageCopy region = ComputeBufferImageCopyRegion(src, dst, copySizePixels);
     VkImageSubresourceLayers subresource = region.imageSubresource;
@@ -715,7 +707,7 @@ bool Device::SignalAndExportExternalTexture(
     }());
 }
 
-TextureBase* Device::CreateTextureWrappingVulkanImage(
+Ref<TextureBase> Device::CreateTextureWrappingVulkanImage(
     const ExternalImageDescriptorVk* descriptor,
     ExternalMemoryHandle memoryHandle,
     const std::vector<ExternalSemaphoreHandle>& waitHandles) {
@@ -751,7 +743,7 @@ TextureBase* Device::CreateTextureWrappingVulkanImage(
 
     // Cleanup in case of a failure, the image creation doesn't acquire the external objects
     // if a failure happems.
-    Texture* result = nullptr;
+    Ref<Texture> result;
     // TODO(crbug.com/1026480): Consolidate this into a single CreateFromExternal call.
     if (ConsumedError(Texture::CreateFromExternal(this, descriptor, textureDescriptor,
                                                   mExternalMemoryService.get()),
@@ -760,9 +752,7 @@ TextureBase* Device::CreateTextureWrappingVulkanImage(
                                           waitHandles, &allocation, &waitSemaphores)) ||
         ConsumedError(result->BindExternalMemory(descriptor, allocation, waitSemaphores))) {
         // Delete the Texture if it was created
-        if (result != nullptr) {
-            result->Release();
-        }
+        result = nullptr;
 
         // Clear image memory
         fn.FreeMemory(GetVkDevice(), allocation, nullptr);
@@ -771,7 +761,6 @@ TextureBase* Device::CreateTextureWrappingVulkanImage(
         for (VkSemaphore semaphore : waitSemaphores) {
             fn.DestroySemaphore(GetVkDevice(), semaphore, nullptr);
         }
-        return nullptr;
     }
 
     return result;

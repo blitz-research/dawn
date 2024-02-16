@@ -31,6 +31,7 @@
 #include "dawn/common/Ref.h"
 #include "dawn/common/RefCounted.h"
 #include "gtest/gtest.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn {
 namespace {
@@ -52,12 +53,30 @@ class RCTest : public RefCounted {
     RCTest* GetThis() { return this; }
 
   private:
-    bool* mDeleted = nullptr;
+    raw_ptr<bool> mDeleted = nullptr;
 };
 
 struct RCTestDerived : public RCTest {
     using RCTest::RCTest;
 };
+
+TEST(RefCount, Increment) {
+    RefCount refCount0(/*initCount=*/0, /*payload=*/0);
+    // Previous count is 0
+    EXPECT_TRUE(refCount0.Increment());
+    // Previous count is 1
+    EXPECT_FALSE(refCount0.Increment());
+
+    EXPECT_FALSE(refCount0.Decrement());
+    EXPECT_TRUE(refCount0.Decrement());
+
+    RefCount refCount1(/*initCount=*/1, /*payload=*/0);
+    // Previous count is 1
+    EXPECT_FALSE(refCount1.Increment());
+
+    EXPECT_FALSE(refCount1.Decrement());
+    EXPECT_TRUE(refCount1.Decrement());
+}
 
 // Test that RCs start with one ref, and removing it destroys the object.
 TEST(RefCounted, StartsWithOneRef) {

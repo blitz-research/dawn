@@ -73,6 +73,30 @@ tint_target_add_dependencies(tint_cmd_fuzz_wgsl_fuzz_cmd fuzz_cmd
   tint_utils_traits
 )
 
+if(TINT_BUILD_GLSL_WRITER)
+  tint_target_add_dependencies(tint_cmd_fuzz_wgsl_fuzz_cmd fuzz_cmd
+    tint_lang_glsl_writer_fuzz
+  )
+endif(TINT_BUILD_GLSL_WRITER)
+
+if(TINT_BUILD_HLSL_WRITER)
+  tint_target_add_dependencies(tint_cmd_fuzz_wgsl_fuzz_cmd fuzz_cmd
+    tint_lang_hlsl_writer_fuzz
+  )
+endif(TINT_BUILD_HLSL_WRITER)
+
+if(TINT_BUILD_IR_BINARY)
+  tint_target_add_dependencies(tint_cmd_fuzz_wgsl_fuzz_cmd fuzz_cmd
+    tint_lang_core_ir_binary_fuzz
+  )
+endif(TINT_BUILD_IR_BINARY)
+
+if(TINT_BUILD_MSL_WRITER)
+  tint_target_add_dependencies(tint_cmd_fuzz_wgsl_fuzz_cmd fuzz_cmd
+    tint_lang_msl_writer_fuzz
+  )
+endif(TINT_BUILD_MSL_WRITER)
+
 if(TINT_BUILD_SPV_WRITER)
   tint_target_add_dependencies(tint_cmd_fuzz_wgsl_fuzz_cmd fuzz_cmd
     tint_lang_spirv_writer_fuzz
@@ -88,7 +112,7 @@ endif(TINT_BUILD_WGSL_READER)
 
 if(TINT_BUILD_WGSL_WRITER)
   tint_target_add_dependencies(tint_cmd_fuzz_wgsl_fuzz_cmd fuzz_cmd
-    tint_lang_wgsl_writer_ast_printer_fuzz
+    tint_lang_wgsl_writer_fuzz
   )
 endif(TINT_BUILD_WGSL_WRITER)
 

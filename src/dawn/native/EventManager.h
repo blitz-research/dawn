@@ -32,9 +32,9 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
 #include <variant>
 
+#include "absl/container/flat_hash_map.h"
 #include "dawn/common/FutureUtils.h"
 #include "dawn/common/MutexProtected.h"
 #include "dawn/common/NonCopyable.h"
@@ -72,8 +72,9 @@ class EventManager final : NonMovable {
 
     class TrackedEvent;
     // Track a TrackedEvent and give it a FutureID.
-    [[nodiscard]] FutureID TrackEvent(wgpu::CallbackMode mode, Ref<TrackedEvent>&&);
-    void ProcessPollEvents();
+    [[nodiscard]] FutureID TrackEvent(Ref<TrackedEvent>&&);
+    // Returns true if future ProcessEvents is needed.
+    bool ProcessPollEvents();
     [[nodiscard]] wgpu::WaitStatus WaitAny(size_t count,
                                            FutureWaitInfo* infos,
                                            Nanoseconds timeout);
@@ -88,7 +89,7 @@ class EventManager final : NonMovable {
 
     // Freed once the user has dropped their last ref to the Instance, so can't call WaitAny or
     // ProcessEvents anymore. This breaks reference cycles.
-    using EventMap = std::unordered_map<FutureID, Ref<TrackedEvent>>;
+    using EventMap = absl::flat_hash_map<FutureID, Ref<TrackedEvent>>;
     std::optional<MutexProtected<EventMap>> mEvents;
 };
 
@@ -108,14 +109,18 @@ struct QueueAndSerial {
 // completed) will be cleaned up at that time.
 class EventManager::TrackedEvent : public RefCounted {
   protected:
-    // Note: TrackedEvents are (currently) only for Device events. Events like RequestAdapter and
-    // RequestDevice complete immediately in dawn native, so should never need to be tracked.
+    // Create an event from a SystemEvent. Note that events like RequestAdapter and
+    // RequestDevice complete immediately in dawn native, and may use an already-completed event.
     TrackedEvent(wgpu::CallbackMode callbackMode, Ref<SystemEvent> completionEvent);
 
     // Create a TrackedEvent from a queue completion serial.
     TrackedEvent(wgpu::CallbackMode callbackMode,
                  QueueBase* queue,
                  ExecutionSerial completionSerial);
+
+    struct Completed {};
+    // Create a TrackedEvent that is already completed.
+    TrackedEvent(wgpu::CallbackMode callbackMode, Completed tag);
 
   public:
     // Subclasses must implement this to complete the event (if not completed) with
@@ -147,7 +152,7 @@ class EventManager::TrackedEvent : public RefCounted {
     wgpu::CallbackMode mCallbackMode;
 
 #if DAWN_ENABLE_ASSERTS
-    std::atomic<bool> mCurrentlyBeingWaited;
+    std::atomic<bool> mCurrentlyBeingWaited = false;
 #endif
 
   private:
@@ -156,38 +161,6 @@ class EventManager::TrackedEvent : public RefCounted {
     CompletionData mCompletionData;
     // Callback has been called.
     std::atomic<bool> mCompleted = false;
-};
-
-// A Ref<TrackedEvent>, but ASSERTing that a future isn't used concurrently in multiple
-// WaitAny/ProcessEvents call (by checking that there's never more than one WaitRef for a
-// TrackedEvent). While concurrent calls on the same futures are not explicitly disallowed, they are
-// generally unintentional, and hence this can help to identify potential bugs. Note that for
-// WaitAny, this checks the embedder's behavior, but for ProcessEvents this is only an internal
-// DAWN_ASSERT (it's supposed to be synchronized so that this never happens).
-class EventManager::TrackedEvent::WaitRef : dawn::NonCopyable {
-  public:
-    WaitRef(WaitRef&& rhs) = default;
-    WaitRef& operator=(WaitRef&& rhs) = default;
-
-    explicit WaitRef(TrackedEvent* future);
-    ~WaitRef();
-
-    TrackedEvent* operator->();
-    const TrackedEvent* operator->() const;
-
-  private:
-    Ref<TrackedEvent> mRef;
-};
-
-// TrackedEvent::WaitRef plus a few extra fields needed for some implementations.
-// Sometimes they'll be unused, but that's OK; it simplifies code reuse.
-struct TrackedFutureWaitInfo {
-    FutureID futureID;
-    EventManager::TrackedEvent::WaitRef event;
-    // Used by EventManager::ProcessPollEvents
-    size_t indexInInfos;
-    // Used by EventManager::ProcessPollEvents and ::WaitAny
-    bool ready;
 };
 
 }  // namespace dawn::native

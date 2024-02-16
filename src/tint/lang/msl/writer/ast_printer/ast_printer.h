@@ -378,9 +378,10 @@ class ASTPrinter : public tint::TextGenerator {
                               const ast::CallExpression* expr,
                               const sem::BuiltinFn* builtin);
 
-    /// Emits a code sequence that preserves a loop during
-    /// optimizations even if the loop is infinite.
-    void EmitLoopPreserver();
+    /// Lazilly generates the TINT_ISOLATE_UB macro, used to prevent UB statements from affecting
+    /// later logic.
+    /// @return the MSL to call the TINT_ISOLATE_UB macro.
+    std::string IsolateUB();
 
     /// Handles generating a builtin name
     /// @param builtin the semantic info for the builtin
@@ -436,6 +437,10 @@ class ASTPrinter : public tint::TextGenerator {
     std::unordered_map<const core::type::Struct*, std::string> builtin_struct_names_;
 
     std::function<bool()> emit_continuing_;
+
+    /// The name of the macro used to prevent UB affecting later control flow.
+    /// Do not use this directly, instead call IsolateUB().
+    std::string isolate_ub_macro_name_;
 
     /// Name of atomicCompareExchangeWeak() helper for the given pointer storage
     /// class and struct return type

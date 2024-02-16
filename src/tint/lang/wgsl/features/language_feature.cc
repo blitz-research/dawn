@@ -60,8 +60,14 @@ LanguageFeature ParseLanguageFeature(std::string_view str) {
     if (str == "packed_4x8_integer_dot_product") {
         return LanguageFeature::kPacked4X8IntegerDotProduct;
     }
+    if (str == "pointer_composite_access") {
+        return LanguageFeature::kPointerCompositeAccess;
+    }
     if (str == "readonly_and_readwrite_storage_textures") {
         return LanguageFeature::kReadonlyAndReadwriteStorageTextures;
+    }
+    if (str == "unrestricted_pointer_parameters") {
+        return LanguageFeature::kUnrestrictedPointerParameters;
     }
     return LanguageFeature::kUndefined;
 }
@@ -82,8 +88,12 @@ std::string_view ToString(LanguageFeature value) {
             return "chromium_testing_unsafe_experimental";
         case LanguageFeature::kPacked4X8IntegerDotProduct:
             return "packed_4x8_integer_dot_product";
+        case LanguageFeature::kPointerCompositeAccess:
+            return "pointer_composite_access";
         case LanguageFeature::kReadonlyAndReadwriteStorageTextures:
             return "readonly_and_readwrite_storage_textures";
+        case LanguageFeature::kUnrestrictedPointerParameters:
+            return "unrestricted_pointer_parameters";
     }
     return "<unknown>";
 }

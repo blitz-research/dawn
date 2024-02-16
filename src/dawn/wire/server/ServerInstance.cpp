@@ -34,6 +34,7 @@
 namespace dawn::wire::server {
 
 WireResult Server::DoInstanceRequestAdapter(Known<WGPUInstance> instance,
+                                            ObjectHandle eventManager,
                                             WGPUFuture future,
                                             ObjectHandle adapterHandle,
                                             const WGPURequestAdapterOptions* options) {
@@ -41,7 +42,7 @@ WireResult Server::DoInstanceRequestAdapter(Known<WGPUInstance> instance,
     WIRE_TRY(AdapterObjects().Allocate(&adapter, adapterHandle, AllocationState::Reserved));
 
     auto userdata = MakeUserdata<RequestAdapterUserdata>();
-    userdata->instance = instance.AsHandle();
+    userdata->eventManager = eventManager;
     userdata->future = future;
     userdata->adapterObjectId = adapter.id;
 
@@ -56,7 +57,7 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
                                       WGPUAdapter adapter,
                                       const char* message) {
     ReturnInstanceRequestAdapterCallbackCmd cmd = {};
-    cmd.instance = data->instance;
+    cmd.eventManager = data->eventManager;
     cmd.future = data->future;
     cmd.status = status;
     cmd.message = message;
@@ -87,12 +88,22 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
 
     // Query and report the adapter properties.
     WGPUAdapterProperties properties = {};
+    WGPUChainedStructOut** propertiesChain = &properties.nextInChain;
 
     // Query AdapterPropertiesMemoryHeaps if the feature is supported.
     WGPUAdapterPropertiesMemoryHeaps memoryHeapProperties = {};
     memoryHeapProperties.chain.sType = WGPUSType_AdapterPropertiesMemoryHeaps;
     if (mProcs.adapterHasFeature(adapter, WGPUFeatureName_AdapterPropertiesMemoryHeaps)) {
-        properties.nextInChain = &memoryHeapProperties.chain;
+        *propertiesChain = &memoryHeapProperties.chain;
+        propertiesChain = &(*propertiesChain)->next;
+    }
+
+    // Query AdapterPropertiesD3D if the feature is supported.
+    WGPUAdapterPropertiesD3D d3dProperties = {};
+    d3dProperties.chain.sType = WGPUSType_AdapterPropertiesD3D;
+    if (mProcs.adapterHasFeature(adapter, WGPUFeatureName_AdapterPropertiesD3D)) {
+        *propertiesChain = &d3dProperties.chain;
+        propertiesChain = &(*propertiesChain)->next;
     }
 
     mProcs.adapterGetProperties(adapter, &properties);

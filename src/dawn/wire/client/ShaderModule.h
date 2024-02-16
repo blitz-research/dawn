@@ -29,6 +29,7 @@
 #define SRC_DAWN_WIRE_CLIENT_SHADERMODULE_H_
 
 #include "dawn/webgpu.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include "dawn/wire/client/ObjectBase.h"
 #include "dawn/wire/client/RequestTracker.h"
@@ -39,6 +40,8 @@ class ShaderModule final : public ObjectBase {
   public:
     using ObjectBase::ObjectBase;
     ~ShaderModule() override;
+
+    ObjectType GetObjectType() const override;
 
     void GetCompilationInfo(WGPUCompilationInfoCallback callback, void* userdata);
     bool GetCompilationInfoCallback(uint64_t requestSerial,
@@ -51,7 +54,8 @@ class ShaderModule final : public ObjectBase {
 
     struct CompilationInfoRequest {
         WGPUCompilationInfoCallback callback = nullptr;
-        void* userdata = nullptr;
+        // TODO(https://crbug.com/dawn/2345): Investigate `DanglingUntriaged` in dawn/wire.
+        raw_ptr<void, DanglingUntriaged> userdata = nullptr;
     };
     RequestTracker<CompilationInfoRequest> mCompilationInfoRequests;
 };

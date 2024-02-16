@@ -39,6 +39,7 @@
 namespace dawn::native::d3d11 {
 
 class Device;
+class SharedFence;
 
 class Queue final : public d3d::Queue {
   public:
@@ -47,9 +48,7 @@ class Queue final : public d3d::Queue {
     ScopedCommandRecordingContext GetScopedPendingCommandContext(SubmitMode submitMode);
     ScopedSwapStateCommandRecordingContext GetScopedSwapStatePendingCommandContext(
         SubmitMode submitMode);
-    MaybeError SubmitPendingCommands();
-    ID3D11Fence* GetFence() const;
-    void Destroy();
+    MaybeError SubmitPendingCommands() override;
     MaybeError NextSerial();
     MaybeError WaitForSerial(ExecutionSerial serial);
 
@@ -74,16 +73,20 @@ class Queue final : public d3d::Queue {
                                 const TextureDataLayout& dataLayout,
                                 const Extent3D& writeSizePixel) override;
 
+    void DestroyImpl() override;
     bool HasPendingCommands() const override;
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
     void ForceEventualFlushOfCommands() override;
     MaybeError WaitForIdleForDestruction() override;
 
+    ResultOrError<Ref<d3d::SharedFence>> GetOrCreateSharedFence() override;
     void SetEventOnCompletion(ExecutionSerial serial, HANDLE event) override;
 
     ComPtr<ID3D11Fence> mFence;
     HANDLE mFenceEvent = nullptr;
-    CommandRecordingContext mPendingCommands;
+    Ref<SharedFence> mSharedFence;
+    MutexProtected<CommandRecordingContext, CommandRecordingContextGuard> mPendingCommands;
+    std::atomic<bool> mPendingCommandsNeedSubmit = false;
 };
 
 }  // namespace dawn::native::d3d11

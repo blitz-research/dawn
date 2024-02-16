@@ -41,6 +41,9 @@ See:
 {{-   $permutation := printf "%v_%v" $builtin $overload.Hash -}}
 {{-   $args        := Map -}}
 
+{{- /* Generate the optional flag on HLSL shader model */ -}}
+{{- template "HLSLShaderModel" $overload -}}
+
 {{- /* Generate enable directives */ -}}
 {{- template "EnableDirectives" $overload -}}
 
@@ -188,6 +191,31 @@ fn compute_main() {
 {{ end -}}
 
 {{- end -}}
+
+
+{{- /* ------------------------------------------------------------------ */ -}}
+{{-                        define "HLSLShaderModel"                          -}}
+{{- /* Emits the optional HLSL shader model for a given overload          */ -}}
+{{- /* ------------------------------------------------------------------ */ -}}
+{{-   $permutation  := . -}}
+{{-   $overload := $permutation.Overload -}}
+{{-   $builtin_name := $permutation.Intrinsic.Name -}}
+
+{{- /* Check and emit dot4I8Packed and dot4U8Packed */ -}}
+{{-   if or (eq "pack4xI8" $builtin_name) (eq "pack4xU8" $builtin_name) (eq "pack4xI8Clamp" $builtin_name) (eq "unpack4xI8" $builtin_name) (eq "unpack4xU8" $builtin_name)}}
+// [hlsl-dxc] flags: --hlsl_shader_model 66
+
+{{-   else if or (eq "dot4I8Packed" $builtin_name) (eq "dot4U8Packed" $builtin_name)}}
+// [hlsl-dxc] flags: --hlsl_shader_model 64
+
+{{- /* Check and emit f16 */ -}}
+{{-   else if OverloadUsesF16 $overload}}
+// flags: --hlsl_shader_model 62
+
+{{    end -}}
+
+{{- end -}}
+
 
 {{- /* ------------------------------------------------------------------ */ -}}
 {{-                        define "EnableDirectives"                         -}}

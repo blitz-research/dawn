@@ -46,7 +46,6 @@ namespace {
 bool IsUnsupported(const ast::Enable* enable) {
     for (auto ext : enable->extensions) {
         switch (ext->name) {
-            case tint::wgsl::Extension::kChromiumExperimentalFullPtrParameters:
             case tint::wgsl::Extension::kChromiumExperimentalPixelLocal:
             case tint::wgsl::Extension::kChromiumExperimentalPushConstant:
             case tint::wgsl::Extension::kChromiumInternalDualSourceBlending:
@@ -76,11 +75,11 @@ void Register(const IRFuzzer& fuzzer) {
             }
 
             auto ir = tint::wgsl::reader::ProgramToLoweredIR(src);
-            if (!ir) {
+            if (ir != Success) {
                 return;
             }
 
-            if (auto val = core::ir::Validate(ir.Get()); !val) {
+            if (auto val = core::ir::Validate(ir.Get()); val != Success) {
                 TINT_ICE() << val.Failure();
                 return;
             }

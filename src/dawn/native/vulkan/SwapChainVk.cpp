@@ -550,7 +550,8 @@ ResultOrError<SwapChain::Config> SwapChain::ChooseConfig(
 MaybeError SwapChain::PresentImpl() {
     Device* device = ToBackend(GetDevice());
 
-    CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
+    Queue* queue = ToBackend(device->GetQueue());
+    CommandRecordingContext* recordingContext = queue->GetPendingRecordingContext();
 
     if (mConfig.needsBlit) {
         // TODO(dawn:269): ditto same as present below: eagerly transition the blit texture to
@@ -590,14 +591,14 @@ MaybeError SwapChain::PresentImpl() {
     // TODO(crbug.com/dawn/269): Remove the need for this by eagerly transitioning the
     // presentable texture to present at the end of submits that use them and ideally even
     // folding that in the free layout transition at the end of render passes.
-    mTexture->TransitionUsageNow(recordingContext, kPresentTextureUsage, wgpu::ShaderStage::None,
-                                 mTexture->GetAllSubresources());
+    mTexture->TransitionUsageNow(recordingContext, kPresentReleaseTextureUsage,
+                                 wgpu::ShaderStage::None, mTexture->GetAllSubresources());
 
     // Use a semaphore to make sure all rendering has finished before presenting.
     VkSemaphore currentSemaphore = mSwapChainSemaphores[mLastImageIndex];
     recordingContext->signalSemaphores.push_back(currentSemaphore);
 
-    DAWN_TRY(device->SubmitPendingCommands());
+    DAWN_TRY(queue->SubmitPendingCommands());
 
     VkPresentInfoKHR presentInfo;
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -662,7 +663,9 @@ ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureInternal(bool isReen
     if (result == VK_SUCCESS) {
         // TODO(crbug.com/dawn/269) put the semaphore on the texture so it is waited on when
         // used instead of directly on the recording context?
-        device->GetPendingRecordingContext()->waitSemaphores.push_back(semaphore);
+        ToBackend(device->GetQueue())
+            ->GetPendingRecordingContext()
+            ->waitSemaphores.push_back(semaphore);
     } else {
         // The semaphore wasn't actually used (? this is unclear in the spec). Delete it when
         // we get a chance.

@@ -36,7 +36,7 @@
 #include <vector>
 
 #include "dawn/native/DawnNative.h"
-#include "dawn/webgpu_cpp_chained_struct.h"
+#include "webgpu/webgpu_cpp_chained_struct.h"
 
 namespace dawn::native::d3d {
 
@@ -50,6 +50,9 @@ struct DAWN_NATIVE_EXPORT RequestAdapterOptionsLUID : wgpu::ChainedStruct {
 
     ::LUID adapterLUID;
 };
+
+// Chrome uses 0 as acquire key.
+static constexpr UINT64 kDXGIKeyedMutexAcquireKey = 0;
 
 struct DAWN_NATIVE_EXPORT ExternalImageDescriptorDXGISharedHandle : ExternalImageDescriptor {
   public:

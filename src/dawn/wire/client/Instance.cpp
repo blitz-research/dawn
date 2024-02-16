@@ -35,6 +35,7 @@
 #include "dawn/common/WGSLFeatureMapping.h"
 #include "dawn/wire/client/Client.h"
 #include "dawn/wire/client/EventManager.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 #include "tint/lang/wgsl/features/language_feature.h"
 #include "tint/lang/wgsl/features/status.h"
 
@@ -53,12 +54,13 @@ class RequestAdapterEvent : public TrackedEvent {
 
     EventType GetType() override { return kType; }
 
-    void ReadyHook(WGPURequestAdapterStatus status,
-                   const char* message,
-                   const WGPUAdapterProperties* properties,
-                   const WGPUSupportedLimits* limits,
-                   uint32_t featuresCount,
-                   const WGPUFeatureName* features) {
+    WireResult ReadyHook(FutureID futureID,
+                         WGPURequestAdapterStatus status,
+                         const char* message,
+                         const WGPUAdapterProperties* properties,
+                         const WGPUSupportedLimits* limits,
+                         uint32_t featuresCount,
+                         const WGPUFeatureName* features) {
         DAWN_ASSERT(mAdapter != nullptr);
         mStatus = status;
         if (message != nullptr) {
@@ -69,18 +71,19 @@ class RequestAdapterEvent : public TrackedEvent {
             mAdapter->SetLimits(limits);
             mAdapter->SetFeatures(features, featuresCount);
         }
+        return WireResult::Success;
     }
 
   private:
     void CompleteImpl(FutureID futureID, EventCompletionType completionType) override {
         if (completionType == EventCompletionType::Shutdown) {
-            mStatus = WGPURequestAdapterStatus_Unknown;
-            mMessage = "GPU connection lost";
+            mStatus = WGPURequestAdapterStatus_InstanceDropped;
+            mMessage = "A valid external Instance reference no longer exists.";
         }
         if (mStatus != WGPURequestAdapterStatus_Success && mAdapter != nullptr) {
             // If there was an error, we may need to reclaim the adapter allocation, otherwise the
             // adapter is returned to the user who owns it.
-            mAdapter->GetClient()->Free(mAdapter);
+            mAdapter->GetClient()->Free(mAdapter.get());
             mAdapter = nullptr;
         }
         if (mCallback) {
@@ -89,7 +92,8 @@ class RequestAdapterEvent : public TrackedEvent {
     }
 
     WGPURequestAdapterCallback mCallback;
-    void* mUserdata;
+    // TODO(https://crbug.com/dawn/2345): Investigate `DanglingUntriaged` in dawn/wire.
+    raw_ptr<void, DanglingUntriaged> mUserdata;
 
     // Note that the message is optional because we want to return nullptr when it wasn't set
     // instead of a pointer to an empty string.
@@ -100,7 +104,8 @@ class RequestAdapterEvent : public TrackedEvent {
     // throughout the duration of a RequestAdapterEvent because the Event essentially takes
     // ownership of it until either an error occurs at which point the Event cleans it up, or it
     // returns the adapter to the user who then takes ownership as the Event goes away.
-    Adapter* mAdapter = nullptr;
+    // TODO(https://crbug.com/dawn/2345): Investigate `DanglingUntriaged` in dawn/wire.
+    raw_ptr<Adapter, DanglingUntriaged> mAdapter = nullptr;
 };
 
 WGPUWGSLFeatureName ToWGPUFeature(tint::wgsl::LanguageFeature f) {
@@ -133,6 +138,16 @@ WGPUInstance ClientCreateInstance(WGPUInstanceDescriptor const* descriptor) {
 }
 
 // Instance
+
+Instance::Instance(const ObjectBaseParams& params) : ObjectWithEventsBase(params, params.handle) {}
+
+Instance::~Instance() {
+    GetEventManager().TransitionTo(EventManager::State::InstanceDropped);
+}
+
+ObjectType Instance::GetObjectType() const {
+    return ObjectType::Instance;
+}
 
 WireResult Instance::Initialize(const WGPUInstanceDescriptor* descriptor) {
     if (descriptor == nullptr) {
@@ -185,15 +200,16 @@ void Instance::RequestAdapter(const WGPURequestAdapterOptions* options,
 WGPUFuture Instance::RequestAdapterF(const WGPURequestAdapterOptions* options,
                                      const WGPURequestAdapterCallbackInfo& callbackInfo) {
     Client* client = GetClient();
-    Adapter* adapter = client->Make<Adapter>();
-    auto [futureIDInternal, tracked] = client->GetEventManager()->TrackEvent(
-        std::make_unique<RequestAdapterEvent>(callbackInfo, adapter));
+    Adapter* adapter = client->Make<Adapter>(GetEventManagerHandle());
+    auto [futureIDInternal, tracked] =
+        GetEventManager().TrackEvent(std::make_unique<RequestAdapterEvent>(callbackInfo, adapter));
     if (!tracked) {
         return {futureIDInternal};
     }
 
     InstanceRequestAdapterCmd cmd;
     cmd.instanceId = GetWireId();
+    cmd.eventManagerHandle = GetEventManagerHandle();
     cmd.future = {futureIDInternal};
     cmd.adapterObjectHandle = adapter->GetWireHandle();
     cmd.options = options;
@@ -202,38 +218,21 @@ WGPUFuture Instance::RequestAdapterF(const WGPURequestAdapterOptions* options,
     return {futureIDInternal};
 }
 
-bool Client::DoInstanceRequestAdapterCallback(Instance* instance,
-                                              WGPUFuture future,
-                                              WGPURequestAdapterStatus status,
-                                              const char* message,
-                                              const WGPUAdapterProperties* properties,
-                                              const WGPUSupportedLimits* limits,
-                                              uint32_t featuresCount,
-                                              const WGPUFeatureName* features) {
-    // May have been deleted or recreated so this isn't an error.
-    if (instance == nullptr) {
-        return true;
-    }
-    return instance->OnRequestAdapterCallback(future, status, message, properties, limits,
-                                              featuresCount, features);
-}
-
-bool Instance::OnRequestAdapterCallback(WGPUFuture future,
-                                        WGPURequestAdapterStatus status,
-                                        const char* message,
-                                        const WGPUAdapterProperties* properties,
-                                        const WGPUSupportedLimits* limits,
-                                        uint32_t featuresCount,
-                                        const WGPUFeatureName* features) {
-    return GetClient()->GetEventManager()->SetFutureReady<RequestAdapterEvent>(
-               future.id, status, message, properties, limits, featuresCount, features) ==
-           WireResult::Success;
+WireResult Client::DoInstanceRequestAdapterCallback(ObjectHandle eventManager,
+                                                    WGPUFuture future,
+                                                    WGPURequestAdapterStatus status,
+                                                    const char* message,
+                                                    const WGPUAdapterProperties* properties,
+                                                    const WGPUSupportedLimits* limits,
+                                                    uint32_t featuresCount,
+                                                    const WGPUFeatureName* features) {
+    return GetEventManager(eventManager)
+        .SetFutureReady<RequestAdapterEvent>(future.id, status, message, properties, limits,
+                                             featuresCount, features);
 }
 
 void Instance::ProcessEvents() {
-    // TODO(crbug.com/dawn/2061): This should only process events for this Instance, not others
-    // on the same client. When EventManager is moved to Instance, this can be fixed.
-    GetClient()->GetEventManager()->ProcessPollEvents();
+    GetEventManager().ProcessPollEvents();
 
     // TODO(crbug.com/dawn/1987): The responsibility of ProcessEvents here is a bit mixed. It both
     // processes events coming in from the server, and also prompts the server to check for and
@@ -255,10 +254,7 @@ void Instance::ProcessEvents() {
 }
 
 WGPUWaitStatus Instance::WaitAny(size_t count, WGPUFutureWaitInfo* infos, uint64_t timeoutNS) {
-    // In principle the EventManager should be on the Instance, not the Client.
-    // But it's hard to get from an object to its Instance right now, so we can
-    // store it on the Client.
-    return GetClient()->GetEventManager()->WaitAny(count, infos, timeoutNS);
+    return GetEventManager().WaitAny(count, infos, timeoutNS);
 }
 
 void Instance::GatherWGSLFeatures(const WGPUDawnWireWGSLControl* wgslControl,
@@ -327,7 +323,7 @@ void Instance::GatherWGSLFeatures(const WGPUDawnWireWGSLControl* wgslControl,
 }
 
 bool Instance::HasWGSLLanguageFeature(WGPUWGSLFeatureName feature) const {
-    return mWGSLFeatures.count(feature) != 0;
+    return mWGSLFeatures.contains(feature);
 }
 
 size_t Instance::EnumerateWGSLLanguageFeatures(WGPUWGSLFeatureName* features) const {

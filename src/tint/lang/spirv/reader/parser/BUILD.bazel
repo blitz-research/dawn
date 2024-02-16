@@ -79,9 +79,12 @@ cc_library(
   name = "test",
   alwayslink = True,
   srcs = [
+    "composite_test.cc",
     "constant_test.cc",
     "function_test.cc",
     "helper_test.h",
+    "memory_test.cc",
+    "struct_test.cc",
     "var_test.cc",
   ],
   deps = [
@@ -106,6 +109,7 @@ cc_library(
     "@gtest",
   ] + select({
     ":tint_build_spv_reader": [
+      "//src/tint/lang/spirv/reader/common:test",
       "//src/tint/lang/spirv/reader/parser",
     ],
     "//conditions:default": [],

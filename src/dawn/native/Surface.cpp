@@ -187,8 +187,8 @@ ResultOrError<UnpackedPtr<SurfaceDescriptor>> ValidateSurfaceDescriptor(
 }
 
 // static
-Surface* Surface::MakeError(InstanceBase* instance) {
-    return new Surface(instance, ErrorMonad::kError);
+Ref<Surface> Surface::MakeError(InstanceBase* instance) {
+    return AcquireRef(new Surface(instance, ErrorMonad::kError));
 }
 
 Surface::Surface(InstanceBase* instance, ErrorTag tag) : ErrorMonad(tag), mInstance(instance) {}
@@ -346,6 +346,15 @@ uint32_t Surface::GetXWindow() const {
     DAWN_ASSERT(!IsError());
     DAWN_ASSERT(mType == Type::XlibWindow);
     return mXWindow;
+}
+
+wgpu::TextureFormat Surface::APIGetPreferredFormat(AdapterBase* adapter) const {
+    // This is the only supported format in native mode (see crbug.com/dawn/160).
+#if DAWN_PLATFORM_IS(ANDROID)
+    return wgpu::TextureFormat::RGBA8Unorm;
+#else
+    return wgpu::TextureFormat::BGRA8Unorm;
+#endif  // !DAWN_PLATFORM_IS(ANDROID)
 }
 
 }  // namespace dawn::native

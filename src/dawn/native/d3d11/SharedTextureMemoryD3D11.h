@@ -51,6 +51,8 @@ class SharedTextureMemory final : public d3d::SharedTextureMemory {
 
     ID3D11Resource* GetD3DResource() const;
 
+    IDXGIKeyedMutex* GetKeyedMutex() const;
+
   private:
     SharedTextureMemory(Device* device,
                         const char* label,
@@ -62,10 +64,8 @@ class SharedTextureMemory final : public d3d::SharedTextureMemory {
     ResultOrError<Ref<TextureBase>> CreateTextureImpl(
         const UnpackedPtr<TextureDescriptor>& descriptor) override;
 
-    ResultOrError<Ref<SharedFenceBase>> CreateFenceImpl(
-        const SharedFenceDXGISharedHandleDescriptor* desc) override;
-
     ComPtr<ID3D11Resource> mResource;
+    ComPtr<IDXGIKeyedMutex> mKeyedMutex;
 };
 
 }  // namespace dawn::native::d3d11

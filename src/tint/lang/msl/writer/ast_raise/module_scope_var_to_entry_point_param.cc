@@ -200,8 +200,7 @@ struct ModuleScopeVarToEntryPointParam::State {
                     // Create a function-scope variable that is a pointer to the member.
                     auto* member_ptr = ctx.dst->AddressOf(
                         ctx.dst->MemberAccessor(ctx.dst->Deref(workgroup_param()), member));
-                    auto* local_var = ctx.dst->Let(
-                        new_var_symbol, ctx.dst->ty.ptr<workgroup>(store_type()), member_ptr);
+                    auto* local_var = ctx.dst->Let(new_var_symbol, member_ptr);
                     ctx.InsertFront(func->body->statements, ctx.dst->Decl(local_var));
                     is_pointer = true;
                 } else {
@@ -246,7 +245,7 @@ struct ModuleScopeVarToEntryPointParam::State {
             case core::AddressSpace::kWorkgroup:
                 break;
             case core::AddressSpace::kPushConstant: {
-                ctx.dst->Diagnostics().add_error(
+                ctx.dst->Diagnostics().AddError(
                     diag::System::Transform,
                     "unhandled module-scope address space (" + tint::ToString(sc) + ")");
                 break;
@@ -375,9 +374,6 @@ struct ModuleScopeVarToEntryPointParam::State {
         if (!private_struct_members.IsEmpty()) {
             // Create the private variable struct.
             ctx.dst->Structure(PrivateStructName(), std::move(private_struct_members));
-            // Passing a pointer to a private variable will now involve passing a pointer to the
-            // member of a structure, so enable the extension that allows this.
-            ctx.dst->Enable(wgsl::Extension::kChromiumExperimentalFullPtrParameters);
         }
 
         // Build a list of `&ident` expressions. We'll use this later to avoid generating

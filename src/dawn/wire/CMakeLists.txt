@@ -91,6 +91,8 @@ target_sources(dawn_wire PRIVATE
     "client/RequestTracker.h"
     "client/ShaderModule.cpp"
     "client/ShaderModule.h"
+    "client/Surface.cpp"
+    "client/Surface.h"
     "client/SwapChain.cpp"
     "client/SwapChain.h"
     "client/Texture.cpp"
@@ -107,8 +109,14 @@ target_sources(dawn_wire PRIVATE
     "server/ServerShaderModule.cpp"
 )
 target_link_libraries(dawn_wire
-    PUBLIC dawn_headers
-    PRIVATE dawn_common dawn_internal_config
+    PUBLIC
+      dawn_headers
+    PRIVATE
+      absl_flat_hash_map
+      absl_flat_hash_set
+      dawn_common
+      dawn_internal_config
+      partition_alloc
 )
 
 install_if_enabled(dawn_wire)

@@ -7,6 +7,7 @@ struct strided_arr {
 
 struct strided_arr_1 {
   strided_arr el[3][2];
+  uint pad;
   uint pad_1;
   uint pad_2;
   uint pad_3;
@@ -26,7 +27,6 @@ struct strided_arr_1 {
   uint pad_17;
   uint pad_18;
   uint pad_19;
-  uint pad_20;
 };
 
 struct S {
@@ -38,7 +38,7 @@ layout(binding = 0, std430) buffer s_block_ssbo {
 } s;
 
 void assign_and_preserve_padding_4_s_a_X_el_X_X(uint dest[3], strided_arr value) {
-  s.inner.a[dest[0]].el[dest[0]][dest[0]].el = value.el;
+  s.inner.a[dest[0]].el[dest[1]][dest[2]].el = value.el;
 }
 
 void assign_and_preserve_padding_3_s_a_X_el_X(uint dest[2], strided_arr value[2]) {

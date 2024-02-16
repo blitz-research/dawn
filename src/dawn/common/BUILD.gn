@@ -260,6 +260,7 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
       "LinkedList.h",
       "Log.cpp",
       "Log.h",
+      "MatchVariant.h",
       "Math.cpp",
       "Math.h",
       "Mutex.cpp",
@@ -305,6 +306,7 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
     public_deps = [
       ":dawn_gpu_info_gen",
       ":dawn_version_gen",
+      "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
     ]
 
     if (is_apple) {

@@ -67,13 +67,6 @@ struct SanitizedResult {
 
     /// The sanitized program.
     Program program;
-
-    /// True if the shader needs a UBO.
-    bool needs_internal_uniform_buffer = false;
-
-    /// Store a map of global texture variable binding point to the byte offset and data type to
-    /// push into the internal uniform buffer.
-    TextureBuiltinsFromUniformOptions::BindingPointToFieldAndOffset bindpoint_to_data;
 };
 
 /// Sanitize a program in preparation for generating GLSL.
@@ -309,6 +302,10 @@ class ASTPrinter : public tint::TextGenerator {
     /// Handles emitting a global variable with the input or output address space
     /// @param var the global variable
     void EmitIOVariable(const sem::GlobalVariable* var);
+
+    /// Handles emitting a global variable with the push_constant address space
+    /// @param var the global variable
+    void EmitPushConstant(const sem::GlobalVariable* var);
 
     /// Handles emitting interpolation qualifiers
     /// @param out the output of the expression stream

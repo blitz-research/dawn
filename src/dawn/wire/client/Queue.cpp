@@ -32,6 +32,7 @@
 
 #include "dawn/wire/client/Client.h"
 #include "dawn/wire/client/EventManager.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::wire::client {
 namespace {
@@ -47,10 +48,16 @@ class WorkDoneEvent : public TrackedEvent {
 
     EventType GetType() override { return kType; }
 
-    void ReadyHook(WGPUQueueWorkDoneStatus status) { mStatus = status; }
+    WireResult ReadyHook(FutureID futureID, WGPUQueueWorkDoneStatus status) {
+        mStatus = status;
+        return WireResult::Success;
+    }
 
   private:
     void CompleteImpl(FutureID futureID, EventCompletionType completionType) override {
+        if (completionType == EventCompletionType::Shutdown) {
+            mStatus = WGPUQueueWorkDoneStatus_InstanceDropped;
+        }
         if (mStatus == WGPUQueueWorkDoneStatus_DeviceLost) {
             mStatus = WGPUQueueWorkDoneStatus_Success;
         }
@@ -60,7 +67,8 @@ class WorkDoneEvent : public TrackedEvent {
     }
 
     WGPUQueueWorkDoneCallback mCallback;
-    void* mUserdata;
+    // TODO(https://crbug.com/dawn/2345): Investigate `DanglingUntriaged` in dawn/wire.
+    raw_ptr<void, DanglingUntriaged> mUserdata;
 
     WGPUQueueWorkDoneStatus mStatus = WGPUQueueWorkDoneStatus_Success;
 };
@@ -69,9 +77,14 @@ class WorkDoneEvent : public TrackedEvent {
 
 Queue::~Queue() = default;
 
-bool Queue::OnWorkDoneCallback(WGPUFuture future, WGPUQueueWorkDoneStatus status) {
-    return GetClient()->GetEventManager()->SetFutureReady<WorkDoneEvent>(future.id, status) ==
-           WireResult::Success;
+ObjectType Queue::GetObjectType() const {
+    return ObjectType::Queue;
+}
+
+WireResult Client::DoQueueWorkDoneCallback(ObjectHandle eventManager,
+                                           WGPUFuture future,
+                                           WGPUQueueWorkDoneStatus status) {
+    return GetEventManager(eventManager).SetFutureReady<WorkDoneEvent>(future.id, status);
 }
 
 void Queue::OnSubmittedWorkDone(WGPUQueueWorkDoneCallback callback, void* userdata) {
@@ -89,13 +102,14 @@ WGPUFuture Queue::OnSubmittedWorkDoneF(const WGPUQueueWorkDoneCallbackInfo& call
 
     Client* client = GetClient();
     auto [futureIDInternal, tracked] =
-        client->GetEventManager()->TrackEvent(std::make_unique<WorkDoneEvent>(callbackInfo));
+        GetEventManager().TrackEvent(std::make_unique<WorkDoneEvent>(callbackInfo));
     if (!tracked) {
         return {futureIDInternal};
     }
 
     QueueOnSubmittedWorkDoneCmd cmd;
     cmd.queueId = GetWireId();
+    cmd.eventManagerHandle = GetEventManagerHandle();
     cmd.future = {futureIDInternal};
 
     client->SerializeCommand(cmd);

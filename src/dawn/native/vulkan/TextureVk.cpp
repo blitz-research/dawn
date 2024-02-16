@@ -42,6 +42,7 @@
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
 #include "dawn/native/vulkan/PhysicalDeviceVk.h"
+#include "dawn/native/vulkan/QueueVk.h"
 #include "dawn/native/vulkan/ResourceHeapVk.h"
 #include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
@@ -152,10 +153,31 @@ VkAccessFlags VulkanAccessFlags(wgpu::TextureUsage usage, const Format& format) 
     if (usage & kReadOnlyRenderAttachment) {
         flags |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
     }
-    if (usage & kPresentTextureUsage) {
-        // The present usage is only used internally by the swapchain and is never used in
+
+    if (usage & kPresentAcquireTextureUsage) {
+        // The present acquire usage is only used internally by the swapchain and is never used in
         // combination with other usages.
-        DAWN_ASSERT(usage == kPresentTextureUsage);
+        DAWN_ASSERT(usage == kPresentAcquireTextureUsage);
+        // The Vulkan spec has the following note:
+        //
+        //   When the presentable image will be accessed by some stage S, the recommended idiom
+        //   for ensuring correct synchronization is:
+        //
+        //   The VkSubmitInfo used to submit the image layout transition for execution includes
+        //   vkAcquireNextImageKHR::semaphore in its pWaitSemaphores member, with the
+        //   corresponding element of pWaitDstStageMask including S.
+        //
+        //   The synchronization command that performs any necessary image layout transition
+        //   includes S in both the srcStageMask and dstStageMask.
+        //
+        // There is no mention of an access flag because there is no access flag associated with
+        // the presentation engine, so we leave it to 0.
+        flags |= 0;
+    }
+    if (usage & kPresentReleaseTextureUsage) {
+        // The present release usage is only used internally by the swapchain and is never used in
+        // combination with other usages.
+        DAWN_ASSERT(usage == kPresentReleaseTextureUsage);
         // The Vulkan spec has the following note:
         //
         //   When transitioning the image to VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR or
@@ -220,10 +242,35 @@ VkPipelineStageFlags VulkanPipelineStage(wgpu::TextureUsage usage,
             flags |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         }
     }
-    if (usage & kPresentTextureUsage) {
-        // The present usage is only used internally by the swapchain and is never used in
+
+    if (usage & kPresentAcquireTextureUsage) {
+        // The present acquire usage is only used internally by the swapchain and is never used in
         // combination with other usages.
-        DAWN_ASSERT(usage == kPresentTextureUsage);
+        DAWN_ASSERT(usage == kPresentAcquireTextureUsage);
+        // The vkAcquireNextImageKHR method is a read operation in Vulkan which completes
+        // before the semaphore/fence out parameters are signaled. This means that future uses
+        // of the texture must performs a memory barriers that synchronizes with that
+        // semaphore/barrier. Dawn uses the ALL_COMMANDS_BIT stage for the semaphore, however
+        // such a semaphore doesn't synchronize with a subsequent BOTTOM_OF_PIPE or NONE
+        // srcStage vkPipelineBarrier because there are no common stages. Instead we also use
+        // VK_PIPELINE_STAGE_ALL_COMMANDS_BIT for srcStage for presentable images, ensuring
+        // correct ordering. This explains the idiom noted in the Vulkan spec:
+        //
+        //   When the presentable image will be accessed by some stage S, the recommended idiom
+        //   for ensuring correct synchronization is:
+        //
+        //   The VkSubmitInfo used to submit the image layout transition for execution includes
+        //   vkAcquireNextImageKHR::semaphore in its pWaitSemaphores member, with the
+        //   corresponding element of pWaitDstStageMask including S.
+        //
+        //   The synchronization command that performs any necessary image layout transition
+        //   includes S in both the srcStageMask and dstStageMask.
+        flags |= VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    }
+    if (usage & kPresentReleaseTextureUsage) {
+        // The present release usage is only used internally by the swapchain and is never used in
+        // combination with other usages.
+        DAWN_ASSERT(usage == kPresentReleaseTextureUsage);
         // The Vulkan spec has the following note:
         //
         //   When transitioning the image to VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR or
@@ -278,6 +325,9 @@ void FillVulkanCreateInfoSizesAndType(const Texture& texture, VkImageCreateInfo*
     // Fill in the image type, and paper over differences in how the array layer count is
     // specified between WebGPU and Vulkan.
     switch (texture.GetDimension()) {
+        case wgpu::TextureDimension::Undefined:
+            DAWN_UNREACHABLE();
+
         case wgpu::TextureDimension::e1D:
             info->imageType = VK_IMAGE_TYPE_1D;
             info->extent = {size.width, 1, 1};
@@ -607,8 +657,12 @@ VkImageLayout VulkanImageLayout(const Format& format, wgpu::TextureUsage usage) 
         case kReadOnlyRenderAttachment:
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
-        case kPresentTextureUsage:
+        case kPresentReleaseTextureUsage:
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        case kPresentAcquireTextureUsage:
+            // We always consider images being acquired from the swapchain as uninitialized,
+            // so we can use the UNDEFINED Vulkan image layout.
+            return VK_IMAGE_LAYOUT_UNDEFINED;
 
         case wgpu::TextureUsage::TransientAttachment:
             // Will be covered by RenderAttachment above, as specification of
@@ -699,14 +753,14 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
 }
 
 // static
-ResultOrError<Texture*> Texture::CreateFromExternal(
+ResultOrError<Ref<Texture>> Texture::CreateFromExternal(
     Device* device,
     const ExternalImageDescriptorVk* descriptor,
     const UnpackedPtr<TextureDescriptor>& textureDescriptor,
     external_memory::Service* externalMemoryService) {
     Ref<Texture> texture = AcquireRef(new Texture(device, textureDescriptor));
     DAWN_TRY(texture->InitializeFromExternal(descriptor, externalMemoryService));
-    return texture.Detach();
+    return texture;
 }
 
 // static
@@ -789,19 +843,20 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
         createInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     }
 
-    if (requiresViewFormatsList) {
-        if (device->GetDeviceInfo().HasExt(DeviceExt::ImageFormatList)) {
-            createInfoChain.Add(&imageFormatListInfo,
-                                VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
-            viewFormats.push_back(VulkanImageFormat(device, GetFormat().format));
-            for (FormatIndex i : IterateBitSet(GetViewFormats())) {
-                const Format& viewFormat = device->GetValidInternalFormat(i);
-                viewFormats.push_back(VulkanImageFormat(device, viewFormat.format));
-            }
-
-            imageFormatListInfo.viewFormatCount = viewFormats.size();
-            imageFormatListInfo.pViewFormats = viewFormats.data();
+    // Add the view format list only when the usage does not have storage. Otherwise, the VVL will
+    // say creation of the texture is invalid.
+    // See https://github.com/gpuweb/gpuweb/issues/4426.
+    if (requiresViewFormatsList && device->GetDeviceInfo().HasExt(DeviceExt::ImageFormatList) &&
+        !(createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+        createInfoChain.Add(&imageFormatListInfo, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
+        viewFormats.push_back(VulkanImageFormat(device, GetFormat().format));
+        for (FormatIndex i : IterateBitSet(GetViewFormats())) {
+            const Format& viewFormat = device->GetValidInternalFormat(i);
+            viewFormats.push_back(VulkanImageFormat(device, viewFormat.format));
         }
+
+        imageFormatListInfo.viewFormatCount = viewFormats.size();
+        imageFormatListInfo.pViewFormats = viewFormats.data();
     }
 
     DAWN_ASSERT(IsSampleCountSupported(device, createInfo));
@@ -861,13 +916,13 @@ MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
         textureIsBuggy &= GetDimension() == wgpu::TextureDimension::e2D;
         textureIsBuggy &= IsPowerOfTwo(GetBaseSize().width) && IsPowerOfTwo(GetBaseSize().height);
         if (textureIsBuggy) {
-            DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
+            DAWN_TRY(ClearTexture(ToBackend(GetDevice()->GetQueue())->GetPendingRecordingContext(),
                                   GetAllSubresources(), TextureBase::ClearValue::Zero));
         }
     }
 
     if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-        DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
+        DAWN_TRY(ClearTexture(ToBackend(GetDevice()->GetQueue())->GetPendingRecordingContext(),
                               GetAllSubresources(), TextureBase::ClearValue::NonZero));
     }
 
@@ -944,6 +999,7 @@ MaybeError Texture::InitializeFromExternal(const ExternalImageDescriptorVk* desc
 
 void Texture::InitializeForSwapChain(VkImage nativeImage) {
     mHandle = nativeImage;
+    mSubresourceLastSyncInfos.Fill({kPresentAcquireTextureUsage, wgpu::ShaderStage::None});
     SetLabelHelper("Dawn_SwapChainTexture");
 }
 
@@ -1047,10 +1103,10 @@ MaybeError Texture::EndAccess(ExternalSemaphoreHandle* handle,
     if (mExternalSemaphoreHandle == kNullExternalSemaphoreHandle || targetLayout != currentLayout) {
         mDesiredExportLayout = targetLayout;
 
-        Device* device = ToBackend(GetDevice());
-        CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
+        Queue* queue = ToBackend(GetDevice()->GetQueue());
+        CommandRecordingContext* recordingContext = queue->GetPendingRecordingContext();
         recordingContext->externalTexturesForEagerTransition.insert(this);
-        DAWN_TRY(device->SubmitPendingCommands());
+        DAWN_TRY(queue->SubmitPendingCommands());
 
         currentLayout = targetLayout;
     }
@@ -1305,45 +1361,45 @@ void Texture::TransitionUsageForPassImpl(
     wgpu::ShaderStage allNewShaderStages = wgpu::ShaderStage::None;
     wgpu::ShaderStage allLastShaderStages = wgpu::ShaderStage::None;
 
-    mSubresourceLastSyncInfos.Merge(
-        subresourceSyncInfos, [&](const SubresourceRange& range, TextureSyncInfo* lastSyncInfo,
-                                  const TextureSyncInfo& newSyncInfo) {
-            if (newSyncInfo.usage == wgpu::TextureUsage::None ||
-                CanReuseWithoutBarrier(lastSyncInfo->usage, newSyncInfo.usage,
-                                       lastSyncInfo->shaderStages, newSyncInfo.shaderStages)) {
-                return;
-            }
+    mSubresourceLastSyncInfos.Merge(subresourceSyncInfos, [&](const SubresourceRange& range,
+                                                              TextureSyncInfo* lastSyncInfo,
+                                                              const TextureSyncInfo& newSyncInfo) {
+        wgpu::TextureUsage newUsage = newSyncInfo.usage;
+        if (newSyncInfo.shaderStages == wgpu::ShaderStage::None) {
+            // If the image isn't used in any shader stages, ignore shader usages. Eg. ignore a
+            // texture binding that isn't actually sampled in any shader.
+            newUsage &= ~kShaderTextureUsages;
+        }
 
-            imageBarriers->push_back(
-                BuildMemoryBarrier(this, lastSyncInfo->usage, newSyncInfo.usage, range));
+        if (newUsage == wgpu::TextureUsage::None ||
+            CanReuseWithoutBarrier(lastSyncInfo->usage, newUsage, lastSyncInfo->shaderStages,
+                                   newSyncInfo.shaderStages)) {
+            return;
+        }
 
-            allLastUsages |= lastSyncInfo->usage;
-            allNewUsages |= newSyncInfo.usage;
+        imageBarriers->push_back(BuildMemoryBarrier(this, lastSyncInfo->usage, newUsage, range));
 
-            allLastShaderStages |= lastSyncInfo->shaderStages;
-            allNewShaderStages |= newSyncInfo.shaderStages;
+        allLastUsages |= lastSyncInfo->usage;
+        allNewUsages |= newUsage;
 
-            if (lastSyncInfo->usage == newSyncInfo.usage &&
-                IsSubset(lastSyncInfo->usage, kReadOnlyTextureUsages)) {
-                // Read only usage and no layout transition. We can keep previous shader stages so
-                // future uses in those stages don't insert barriers.
-                lastSyncInfo->shaderStages |= newSyncInfo.shaderStages;
-            } else {
-                // Image was altered by write or layout transition. We need to clear previous shader
-                // stages so future uses in those stages will insert barriers.
-                lastSyncInfo->shaderStages = newSyncInfo.shaderStages;
-            }
-            lastSyncInfo->usage = newSyncInfo.usage;
-        });
+        allLastShaderStages |= lastSyncInfo->shaderStages;
+        allNewShaderStages |= newSyncInfo.shaderStages;
+
+        if (lastSyncInfo->usage == newUsage &&
+            IsSubset(lastSyncInfo->usage, kReadOnlyTextureUsages)) {
+            // Read only usage and no layout transition. We can keep previous shader stages so
+            // future uses in those stages don't insert barriers.
+            lastSyncInfo->shaderStages |= newSyncInfo.shaderStages;
+        } else {
+            // Image was altered by write or layout transition. We need to clear previous shader
+            // stages so future uses in those stages will insert barriers.
+            lastSyncInfo->shaderStages = newSyncInfo.shaderStages;
+        }
+        lastSyncInfo->usage = newUsage;
+    });
 
     if (mExternalState != ExternalState::InternalOnly) {
         TweakTransitionForExternalUsage(recordingContext, imageBarriers, transitionBarrierStart);
-    }
-
-    if (allNewShaderStages == wgpu::ShaderStage::None) {
-        // If the image isn't used in any shader stages, ignore shader usages. Eg. ignore a texture
-        // binding that isn't actually sampled in any shader.
-        allNewUsages &= ~kShaderTextureUsages;
     }
 
     // Skip adding pipeline stages if no barrier was needed to avoid putting TOP_OF_PIPE in the
@@ -1572,9 +1628,9 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                               largestMipSize.depthOrArrayLayers;
         DynamicUploader* uploader = device->GetDynamicUploader();
         UploadHandle uploadHandle;
-        DAWN_TRY_ASSIGN(
-            uploadHandle,
-            uploader->Allocate(bufferSize, device->GetPendingCommandSerial(), blockInfo.byteSize));
+        DAWN_TRY_ASSIGN(uploadHandle, uploader->Allocate(
+                                          bufferSize, device->GetQueue()->GetPendingCommandSerial(),
+                                          blockInfo.byteSize));
         memset(uploadHandle.mappedBuffer, uClearColor, bufferSize);
 
         std::vector<VkBufferImageCopy> regions;
@@ -1678,6 +1734,17 @@ MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
 
     Device* device = ToBackend(GetTexture()->GetDevice());
     VkImageViewCreateInfo createInfo = GetCreateInfo(descriptor->format, descriptor->dimension);
+
+    // Remove StorageBinding usage if the format doesn't support it.
+    wgpu::TextureUsage usage = GetTexture()->GetInternalUsage();
+    if (!GetFormat().supportsStorageUsage) {
+        usage &= ~wgpu::TextureUsage::StorageBinding;
+    }
+
+    VkImageViewUsageCreateInfo usageInfo = {};
+    usageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;
+    usageInfo.usage = VulkanImageUsage(usage, GetFormat());
+    createInfo.pNext = &usageInfo;
 
     DAWN_TRY(CheckVkSuccess(
         device->fn.CreateImageView(device->GetVkDevice(), &createInfo, nullptr, &*mHandle),

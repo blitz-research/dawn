@@ -222,6 +222,86 @@ TEST_P(ExternalTextureTests, SampleExternalTexture) {
     EXPECT_PIXEL_RGBA8_EQ(utils::RGBA8::kGreen, renderTexture, 0, 0);
 }
 
+// https://crbug.com/1515439
+TEST_P(ExternalTextureTests, SampleExternalTextureDifferingGroup) {
+    // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
+    DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
+
+    wgpu::Texture sampledTexture =
+        Create2DTexture(device, kWidth, kHeight, kFormat,
+                        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment);
+    wgpu::Texture renderTexture =
+        Create2DTexture(device, kWidth, kHeight, kFormat,
+                        wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::RenderAttachment);
+
+    // Create a texture view for the external texture
+    wgpu::TextureView externalView = sampledTexture.CreateView();
+
+    // Initialize texture with green to ensure it is sampled from later.
+    {
+        utils::ComboRenderPassDescriptor renderPass({externalView}, nullptr);
+        renderPass.cColorAttachments[0].clearValue = {0.0f, 1.0f, 0.0f, 1.0f};
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+        pass.End();
+
+        wgpu::CommandBuffer commands = encoder.Finish();
+        queue.Submit(1, &commands);
+    }
+
+    wgpu::ShaderModule fsModule = utils::CreateShaderModule(device, R"(
+            @group(0) @binding(0) var s : sampler;
+            @group(1) @binding(0) var t : texture_external;
+
+            @fragment fn main(@builtin(position) FragCoord : vec4f)
+                                     -> @location(0) vec4f {
+                return textureSampleBaseClampToEdge(t, s, FragCoord.xy / vec2f(4.0, 4.0));
+            })");
+
+    // Pipeline Creation
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.vertex.module = vsModule;
+    descriptor.cFragment.module = fsModule;
+    descriptor.cTargets[0].format = kFormat;
+    wgpu::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
+
+    // Create an ExternalTextureDescriptor from the texture view
+    wgpu::ExternalTextureDescriptor externalDesc = CreateDefaultExternalTextureDescriptor();
+    externalDesc.plane0 = externalView;
+    externalDesc.visibleOrigin = {0, 0};
+    externalDesc.visibleSize = {kWidth, kHeight};
+
+    // Import the external texture
+    wgpu::ExternalTexture externalTexture = device.CreateExternalTexture(&externalDesc);
+
+    // Create a sampler and bind group
+    wgpu::Sampler sampler = device.CreateSampler();
+
+    wgpu::BindGroup samplerBindGroup =
+        utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0), {{0, sampler}});
+    wgpu::BindGroup texBindGroup =
+        utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(1), {{0, externalTexture}});
+
+    // Run the shader, which should sample from the external texture and draw a triangle into the
+    // upper left corner of the render texture.
+    wgpu::TextureView renderView = renderTexture.CreateView();
+    utils::ComboRenderPassDescriptor renderPass({renderView}, nullptr);
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
+    {
+        pass.SetPipeline(pipeline);
+        pass.SetBindGroup(0, samplerBindGroup);
+        pass.SetBindGroup(1, texBindGroup);
+        pass.Draw(3);
+        pass.End();
+    }
+
+    wgpu::CommandBuffer commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    EXPECT_PIXEL_RGBA8_EQ(utils::RGBA8::kGreen, renderTexture, 0, 0);
+}
+
 TEST_P(ExternalTextureTests, SampleMultiplanarExternalTexture) {
     // TODO(crbug.com/dawn/2295): diagnose this failure on Pixel 4 OpenGLES
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
@@ -448,7 +528,7 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipSinglePlane) {
         Create2DTexture(device, kWidth, kHeight, kFormat,
                         wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::RenderAttachment);
 
-    // Control case to verify flipY and rotation defaults
+    // Control case to verify mirrored and rotation defaults
     {
         // Pipeline Creation
         utils::ComboRenderPipelineDescriptor descriptor;
@@ -496,7 +576,7 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipSinglePlane) {
 
     struct RotationExpectation {
         wgpu::ExternalTextureRotation rotation;
-        bool flipY;
+        bool mirrored;
         utils::RGBA8 upperLeftColor;
         utils::RGBA8 upperRightColor;
         utils::RGBA8 lowerLeftColor;
@@ -506,18 +586,18 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipSinglePlane) {
     std::array<RotationExpectation, 8> expectations = {
         {{wgpu::ExternalTextureRotation::Rotate0Degrees, false, utils::RGBA8::kGreen,
           utils::RGBA8::kBlack, utils::RGBA8::kRed, utils::RGBA8::kBlue},
-         {wgpu::ExternalTextureRotation::Rotate90Degrees, false, utils::RGBA8::kBlack,
-          utils::RGBA8::kBlue, utils::RGBA8::kGreen, utils::RGBA8::kRed},
+         {wgpu::ExternalTextureRotation::Rotate90Degrees, false, utils::RGBA8::kRed,
+          utils::RGBA8::kGreen, utils::RGBA8::kBlue, utils::RGBA8::kBlack},
          {wgpu::ExternalTextureRotation::Rotate180Degrees, false, utils::RGBA8::kBlue,
           utils::RGBA8::kRed, utils::RGBA8::kBlack, utils::RGBA8::kGreen},
-         {wgpu::ExternalTextureRotation::Rotate270Degrees, false, utils::RGBA8::kRed,
-          utils::RGBA8::kGreen, utils::RGBA8::kBlue, utils::RGBA8::kBlack},
-         {wgpu::ExternalTextureRotation::Rotate0Degrees, true, utils::RGBA8::kRed,
-          utils::RGBA8::kBlue, utils::RGBA8::kGreen, utils::RGBA8::kBlack},
+         {wgpu::ExternalTextureRotation::Rotate270Degrees, false, utils::RGBA8::kBlack,
+          utils::RGBA8::kBlue, utils::RGBA8::kGreen, utils::RGBA8::kRed},
+         {wgpu::ExternalTextureRotation::Rotate0Degrees, true, utils::RGBA8::kBlack,
+          utils::RGBA8::kGreen, utils::RGBA8::kBlue, utils::RGBA8::kRed},
          {wgpu::ExternalTextureRotation::Rotate90Degrees, true, utils::RGBA8::kGreen,
           utils::RGBA8::kRed, utils::RGBA8::kBlack, utils::RGBA8::kBlue},
-         {wgpu::ExternalTextureRotation::Rotate180Degrees, true, utils::RGBA8::kBlack,
-          utils::RGBA8::kGreen, utils::RGBA8::kBlue, utils::RGBA8::kRed},
+         {wgpu::ExternalTextureRotation::Rotate180Degrees, true, utils::RGBA8::kRed,
+          utils::RGBA8::kBlue, utils::RGBA8::kGreen, utils::RGBA8::kBlack},
          {wgpu::ExternalTextureRotation::Rotate270Degrees, true, utils::RGBA8::kBlue,
           utils::RGBA8::kBlack, utils::RGBA8::kRed, utils::RGBA8::kGreen}}};
 
@@ -533,7 +613,7 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipSinglePlane) {
         wgpu::ExternalTextureDescriptor externalDesc = CreateDefaultExternalTextureDescriptor();
         externalDesc.plane0 = sourceTexture.CreateView();
         externalDesc.rotation = exp.rotation;
-        externalDesc.flipY = exp.flipY;
+        externalDesc.mirrored = exp.mirrored;
         externalDesc.visibleOrigin = {0, 0};
         externalDesc.visibleSize = {kWidth, kHeight};
 
@@ -631,7 +711,7 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipMultiplanar) {
         Create2DTexture(device, kWidth, kHeight, kFormat,
                         wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::RenderAttachment);
 
-    // Control case to verify flipY and rotation defaults
+    // Control case to verify mirrored and rotation defaults
     {
         // Pipeline Creation
         utils::ComboRenderPipelineDescriptor descriptor;
@@ -680,7 +760,7 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipMultiplanar) {
 
     struct RotationExpectation {
         wgpu::ExternalTextureRotation rotation;
-        bool flipY;
+        bool mirrored;
         utils::RGBA8 upperLeftColor;
         utils::RGBA8 upperRightColor;
         utils::RGBA8 lowerLeftColor;
@@ -690,18 +770,18 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipMultiplanar) {
     std::array<RotationExpectation, 8> expectations = {
         {{wgpu::ExternalTextureRotation::Rotate0Degrees, false, utils::RGBA8::kGreen,
           utils::RGBA8::kBlack, utils::RGBA8::kRed, utils::RGBA8::kBlue},
-         {wgpu::ExternalTextureRotation::Rotate90Degrees, false, utils::RGBA8::kBlack,
-          utils::RGBA8::kBlue, utils::RGBA8::kGreen, utils::RGBA8::kRed},
+         {wgpu::ExternalTextureRotation::Rotate90Degrees, false, utils::RGBA8::kRed,
+          utils::RGBA8::kGreen, utils::RGBA8::kBlue, utils::RGBA8::kBlack},
          {wgpu::ExternalTextureRotation::Rotate180Degrees, false, utils::RGBA8::kBlue,
           utils::RGBA8::kRed, utils::RGBA8::kBlack, utils::RGBA8::kGreen},
-         {wgpu::ExternalTextureRotation::Rotate270Degrees, false, utils::RGBA8::kRed,
-          utils::RGBA8::kGreen, utils::RGBA8::kBlue, utils::RGBA8::kBlack},
-         {wgpu::ExternalTextureRotation::Rotate0Degrees, true, utils::RGBA8::kRed,
-          utils::RGBA8::kBlue, utils::RGBA8::kGreen, utils::RGBA8::kBlack},
+         {wgpu::ExternalTextureRotation::Rotate270Degrees, false, utils::RGBA8::kBlack,
+          utils::RGBA8::kBlue, utils::RGBA8::kGreen, utils::RGBA8::kRed},
+         {wgpu::ExternalTextureRotation::Rotate0Degrees, true, utils::RGBA8::kBlack,
+          utils::RGBA8::kGreen, utils::RGBA8::kBlue, utils::RGBA8::kRed},
          {wgpu::ExternalTextureRotation::Rotate90Degrees, true, utils::RGBA8::kGreen,
           utils::RGBA8::kRed, utils::RGBA8::kBlack, utils::RGBA8::kBlue},
-         {wgpu::ExternalTextureRotation::Rotate180Degrees, true, utils::RGBA8::kBlack,
-          utils::RGBA8::kGreen, utils::RGBA8::kBlue, utils::RGBA8::kRed},
+         {wgpu::ExternalTextureRotation::Rotate180Degrees, true, utils::RGBA8::kRed,
+          utils::RGBA8::kBlue, utils::RGBA8::kGreen, utils::RGBA8::kBlack},
          {wgpu::ExternalTextureRotation::Rotate270Degrees, true, utils::RGBA8::kBlue,
           utils::RGBA8::kBlack, utils::RGBA8::kRed, utils::RGBA8::kGreen}}};
 
@@ -718,7 +798,7 @@ TEST_P(ExternalTextureTests, RotateAndOrFlipMultiplanar) {
         externalDesc.plane0 = sourceTexturePlane0.CreateView();
         externalDesc.plane1 = sourceTexturePlane1.CreateView();
         externalDesc.rotation = exp.rotation;
-        externalDesc.flipY = exp.flipY;
+        externalDesc.mirrored = exp.mirrored;
         externalDesc.visibleOrigin = {0, 0};
         externalDesc.visibleSize = {kWidth, kHeight};
 
@@ -853,10 +933,10 @@ TEST_P(ExternalTextureTests, CropSinglePlane) {
         {{kWidth / 4, kHeight / 4},
          {kWidth / 2, kHeight / 2},
          wgpu::ExternalTextureRotation::Rotate90Degrees,
-         utils::RGBA8::kWhite,
-         utils::RGBA8::kBlue,
+         utils::RGBA8::kRed,
          utils::RGBA8::kGreen,
-         utils::RGBA8::kRed},
+         utils::RGBA8::kBlue,
+         utils::RGBA8::kWhite},
         {{kWidth / 4, kHeight / 4},
          {kWidth / 2, kHeight / 2},
          wgpu::ExternalTextureRotation::Rotate180Degrees,
@@ -867,10 +947,10 @@ TEST_P(ExternalTextureTests, CropSinglePlane) {
         {{kWidth / 4, kHeight / 4},
          {kWidth / 2, kHeight / 2},
          wgpu::ExternalTextureRotation::Rotate270Degrees,
-         utils::RGBA8::kRed,
-         utils::RGBA8::kGreen,
+         utils::RGBA8::kWhite,
          utils::RGBA8::kBlue,
-         utils::RGBA8::kWhite},
+         utils::RGBA8::kGreen,
+         utils::RGBA8::kRed},
     }};
 
     for (const CropExpectation& exp : expectations) {
@@ -1043,10 +1123,10 @@ TEST_P(ExternalTextureTests, CropMultiplanar) {
          {{kWidth / 4, kHeight / 4},
           {kWidth / 2, kHeight / 2},
           wgpu::ExternalTextureRotation::Rotate90Degrees,
-          utils::RGBA8::kWhite,
-          utils::RGBA8::kBlue,
+          utils::RGBA8::kRed,
           utils::RGBA8::kGreen,
-          utils::RGBA8::kRed},
+          utils::RGBA8::kBlue,
+          utils::RGBA8::kWhite},
          {{kWidth / 4, kHeight / 4},
           {kWidth / 2, kHeight / 2},
           wgpu::ExternalTextureRotation::Rotate180Degrees,
@@ -1057,10 +1137,10 @@ TEST_P(ExternalTextureTests, CropMultiplanar) {
          {{kWidth / 4, kHeight / 4},
           {kWidth / 2, kHeight / 2},
           wgpu::ExternalTextureRotation::Rotate270Degrees,
-          utils::RGBA8::kRed,
-          utils::RGBA8::kGreen,
+          utils::RGBA8::kWhite,
           utils::RGBA8::kBlue,
-          utils::RGBA8::kWhite}}};
+          utils::RGBA8::kGreen,
+          utils::RGBA8::kRed}}};
 
     for (const CropExpectation& exp : expectations) {
         // Pipeline Creation

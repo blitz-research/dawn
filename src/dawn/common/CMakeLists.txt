@@ -67,6 +67,7 @@ target_sources(dawn_common PRIVATE
     "LinkedList.h"
     "Log.cpp"
     "Log.h"
+    "MatchVariant.h"
     "Math.cpp"
     "Math.h"
     "Mutex.cpp"
@@ -122,7 +123,11 @@ elseif(APPLE)
     )
 endif()
 
-target_link_libraries(dawn_common PUBLIC dawncpp_headers PRIVATE dawn_internal_config)
+target_link_libraries(dawn_common
+    PUBLIC dawncpp_headers
+    PUBLIC partition_alloc
+    PRIVATE dawn_internal_config
+)
 
 # TODO Android Log support
 # TODO Vulkan headers support

@@ -32,13 +32,13 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <utility>
 
 #include "dawn/common/HashUtils.h"
 #include "dawn/common/vulkan_platform.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/ShaderModule.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 
@@ -47,7 +47,8 @@ struct ProgrammableStage;
 namespace vulkan {
 
 struct TransformedShaderModuleCacheKey {
-    const PipelineLayoutBase* layout;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<const PipelineLayoutBase, DanglingUntriaged> layout;
     std::string entryPoint;
     PipelineConstantEntries constants;
     std::optional<uint32_t> maxSubgroupSizeForFullSubgroups;
@@ -68,7 +69,7 @@ class ShaderModule final : public ShaderModuleBase {
         VkShaderModule module;
         const uint32_t* spirv;
         size_t wordCount;
-        const char* remappedEntryPoint;
+        std::string remappedEntryPoint;
     };
 
     static ResultOrError<Ref<ShaderModule>> Create(
@@ -82,6 +83,7 @@ class ShaderModule final : public ShaderModuleBase {
         const ProgrammableStage& programmableStage,
         const PipelineLayout* layout,
         bool clampFragDepth,
+        bool emitPointSize,
         std::optional<uint32_t> maxSubgroupSizeForFullSubgroups);
 
   private:

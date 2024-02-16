@@ -427,11 +427,8 @@ func (u *updater) chunk(in Chunk, isImmutable bool, progress *Progress) Chunk {
 		}
 	}
 
-	// Begin building the output chunk.
-	// Copy over the chunk's comments.
-	out := Chunk{Comments: in.Comments}
-
 	// Build the new chunk's expectations
+	newExpectations := container.NewMap[string, Expectation]()
 	for _, exIn := range in.Expectations {
 		if u.pb != nil {
 			u.pb.Update(progressbar.Status{Total: progress.totalExpectations, Segments: []progressbar.Segment{
@@ -440,20 +437,17 @@ func (u *updater) chunk(in Chunk, isImmutable bool, progress *Progress) Chunk {
 			progress.currentExpectation++
 		}
 
-		exOut := u.expectation(exIn, isImmutable)
-		out.Expectations = append(out.Expectations, exOut...)
+		u.addExpectations(newExpectations, exIn, isImmutable)
 	}
 
 	// Sort the expectations to keep things clean and tidy.
-	out.Expectations.Sort()
-	return out
+	return Chunk{Comments: in.Comments, Expectations: newExpectations.Values()}
 }
 
 // expectation returns a new list of Expectations, based on the Expectation 'in',
 // using the new result data.
-func (u *updater) expectation(in Expectation, immutable bool) []Expectation {
-	// noResults is a helper for returning when the expectation has no test
-	// results.
+func (u *updater) addExpectations(out container.Map[string, Expectation], in Expectation, isImmutable bool) {
+	// noResults is a helper for returning when the expectation has no test results.
 	noResults := func() []Expectation {
 		if len(in.Tags) > 0 {
 			u.diag(Warning, in.Line, "no results found for '%v' with tags %v", in.Query, in.Tags)
@@ -472,12 +466,14 @@ func (u *updater) expectation(in Expectation, immutable bool) []Expectation {
 	// If we can't find any results for this query + tag combination, then bail.
 	switch {
 	case errors.As(err, &query.ErrNoDataForQuery{}):
-		return noResults()
+		noResults()
+		return
 	case err != nil:
 		u.diag(Error, in.Line, "%v", err)
-		return []Expectation{}
+		return
 	case len(results) == 0:
-		return noResults()
+		noResults()
+		return
 	}
 
 	// Before returning, mark all the results as consumed.
@@ -486,20 +482,39 @@ func (u *updater) expectation(in Expectation, immutable bool) []Expectation {
 	// expectationsForRoot()
 	defer u.qt.markAsConsumed(q, in.Tags, in.Line)
 
-	if immutable { // Expectation chunk was marked with 'KEEP'
+	// keyOf returns the map key for out
+	keyOf := func(e Expectation) string { return fmt.Sprint(e.Tags, e.Query, e.Status) }
+
+	if isImmutable { // Expectation chunk was marked with 'KEEP'
 		// Add a diagnostic if all tests of the expectation were 'Pass'
 		if s := results.Statuses(); len(s) == 1 && s.One() == result.Pass {
-			if c := len(results); c > 1 {
-				u.diag(Note, in.Line, "all %d tests now pass", len(results))
-			} else {
-				u.diag(Note, in.Line, "test now passes")
-			}
+			u.diagAllPass(in.Line, results)
 		}
-		return []Expectation{in}
+		out.Add(keyOf(in), in)
+		return
 	}
 
 	// Rebuild the expectations for this query.
-	return u.expectationsForRoot(q, in.Line, in.Bug, in.Comment)
+	expectations, somePass, someConsumed := u.expectationsForRoot(q, in.Line, in.Bug, in.Comment)
+
+	// Add the new expectations to out
+	for _, expectation := range expectations {
+		out.Add(keyOf(expectation), expectation)
+	}
+
+	// Add a diagnostic if the expectation is filtered away
+	if !out.Contains(keyOf(in)) && len(expectations) == 0 {
+		switch {
+		case somePass && someConsumed:
+			fmt.Println("\n", strings.Join(out.Keys(), "\n"))
+			u.diag(Note, in.Line, "expectation is partly covered by previous expectations and the remaining tests all pass")
+		case someConsumed:
+			u.diag(Note, in.Line, "expectation is fully covered by previous expectations")
+		case somePass:
+			u.diagAllPass(in.Line, results)
+		}
+	}
+
 }
 
 // addNewExpectations (potentially) appends to 'u.out' chunks for new flaky and
@@ -531,8 +546,7 @@ func (u *updater) addNewExpectations() error {
 		// Add all the reduced leaf nodes to 'roots'.
 		for _, qd := range tree.List() {
 			if qd.Data != result.Pass {
-				// Use Split() to ensure that only the leaves have data (true) in the tree
-				roots.Split(qd.Query, true)
+				roots.Add(qd.Query, true)
 			}
 		}
 	}
@@ -547,12 +561,13 @@ func (u *updater) addNewExpectations() error {
 				{Count: 1 + i},
 			}})
 		}
-		expectations = append(expectations, u.expectationsForRoot(
+		rootExpectations, _, _ := u.expectationsForRoot(
 			root.Query,            // Root query
 			0,                     // Line number
 			"crbug.com/dawn/0000", // Bug
 			"",                    // Comment
-		)...)
+		)
+		expectations = append(expectations, rootExpectations...)
 	}
 
 	// Bin the expectations by failure or flake.
@@ -597,11 +612,15 @@ func (u *updater) expectationsForRoot(
 	line int, // The originating line, when producing diagnostics
 	bug string, // The bug to apply to all returned expectations
 	comment string, // The comment to apply to all returned expectations
-) []Expectation {
+) (
+	expectations []Expectation, // The output expectations
+	somePass bool, // Some of the results for the query had a Pass status
+	someConsumed bool, // The query was at least partly consumed by previous expectations
+) {
 	results, err := u.qt.glob(root)
 	if err != nil {
 		u.diag(Error, line, "%v", err)
-		return nil
+		return nil, false, false
 	}
 
 	// Using the full list of unfiltered tests, generate the minimal set of
@@ -637,9 +656,17 @@ func (u *updater) expectationsForRoot(
 	}
 
 	// Filter out any results that passed or have already been consumed
-	filtered := reduced.Filter(func(r result.Result) bool {
-		return r.Status != result.Pass && r.Status != consumed
-	})
+	filtered := result.List{}
+	for _, r := range reduced {
+		switch r.Status {
+		case result.Pass:
+			somePass = true
+		case consumed:
+			someConsumed = true
+		default:
+			filtered = append(filtered, r)
+		}
+	}
 
 	// Mark all the new expectation results as consumed.
 	for _, r := range filtered {
@@ -647,7 +674,8 @@ func (u *updater) expectationsForRoot(
 	}
 
 	// Transform the results to expectations.
-	return u.resultsToExpectations(filtered, bug, comment)
+	expectations = u.resultsToExpectations(filtered, bug, comment)
+	return expectations, somePass, someConsumed
 }
 
 // resultsToExpectations returns a list of expectations from the given results.
@@ -743,4 +771,13 @@ func (u *updater) diag(severity Severity, line int, msg string, args ...interfac
 		Line:     line,
 		Message:  fmt.Sprintf(msg, args...),
 	})
+}
+
+// diagAllPass appends a new note diagnostic that all the tests now pass
+func (u *updater) diagAllPass(line int, results result.List) {
+	if c := len(results); c > 1 {
+		u.diag(Note, line, "all %d tests now pass", len(results))
+	} else {
+		u.diag(Note, line, "test now passes")
+	}
 }

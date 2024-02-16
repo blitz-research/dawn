@@ -52,7 +52,6 @@ class NoopCommandSerializer final : public CommandSerializer {
 
 Client::Client(CommandSerializer* serializer, MemoryTransferService* memoryTransferService)
     : ClientBase(), mSerializer(serializer), mMemoryTransferService(memoryTransferService) {
-    mEventManager = std::make_unique<EventManager>(this);
     if (mMemoryTransferService == nullptr) {
         // If a MemoryTransferService is not provided, fall back to inline memory.
         mOwnedMemoryTransferService = CreateInlineMemoryTransferService();
@@ -61,7 +60,6 @@ Client::Client(CommandSerializer* serializer, MemoryTransferService* memoryTrans
 }
 
 Client::~Client() {
-    mEventManager->ShutDown();
     DestroyAllObjects();
 }
 
@@ -101,6 +99,11 @@ ReservedTexture Client::ReserveTexture(WGPUDevice device, const WGPUTextureDescr
 
     ReservedTexture result;
     result.texture = ToAPI(texture);
+    result.reservation.id = texture->GetWireId();
+    result.reservation.generation = texture->GetWireGeneration();
+    result.reservation.deviceId = FromAPI(device)->GetWireId();
+    result.reservation.deviceGeneration = FromAPI(device)->GetWireGeneration();
+    // TODO(dawn:2021) Remove setting of deprecated fields once Chromium is updated.
     result.id = texture->GetWireId();
     result.generation = texture->GetWireGeneration();
     result.deviceId = FromAPI(device)->GetWireId();
@@ -114,20 +117,20 @@ ReservedSwapChain Client::ReserveSwapChain(WGPUDevice device,
 
     ReservedSwapChain result;
     result.swapchain = ToAPI(swapChain);
-    result.id = swapChain->GetWireId();
-    result.generation = swapChain->GetWireGeneration();
-    result.deviceId = FromAPI(device)->GetWireId();
-    result.deviceGeneration = FromAPI(device)->GetWireGeneration();
+    result.reservation.id = swapChain->GetWireId();
+    result.reservation.generation = swapChain->GetWireGeneration();
+    result.reservation.deviceId = FromAPI(device)->GetWireId();
+    result.reservation.deviceGeneration = FromAPI(device)->GetWireGeneration();
     return result;
 }
 
-ReservedDevice Client::ReserveDevice() {
-    Device* device = Make<Device>(nullptr);
+ReservedDevice Client::ReserveDevice(WGPUInstance instance) {
+    Device* device = Make<Device>(FromAPI(instance)->GetEventManagerHandle(), nullptr);
 
     ReservedDevice result;
     result.device = ToAPI(device);
-    result.id = device->GetWireId();
-    result.generation = device->GetWireGeneration();
+    result.reservation.id = device->GetWireId();
+    result.reservation.generation = device->GetWireGeneration();
     return result;
 }
 
@@ -136,13 +139,17 @@ ReservedInstance Client::ReserveInstance(const WGPUInstanceDescriptor* descripto
 
     if (instance->Initialize(descriptor) != WireResult::Success) {
         Free(instance);
-        return {nullptr, 0, 0};
+        return {nullptr, {0, 0}};
     }
+
+    // Reserve an EventManager for the given instance and make the association in the map.
+    mEventManagers.emplace(ObjectHandle(instance->GetWireId(), instance->GetWireGeneration()),
+                           std::make_unique<EventManager>());
 
     ReservedInstance result;
     result.instance = ToAPI(instance);
-    result.id = instance->GetWireId();
-    result.generation = instance->GetWireGeneration();
+    result.reservation.id = instance->GetWireId();
+    result.reservation.generation = instance->GetWireGeneration();
     return result;
 }
 
@@ -162,8 +169,10 @@ void Client::ReclaimInstanceReservation(const ReservedInstance& reservation) {
     Free(FromAPI(reservation.instance));
 }
 
-EventManager* Client::GetEventManager() {
-    return mEventManager.get();
+EventManager& Client::GetEventManager(const ObjectHandle& instance) {
+    auto it = mEventManagers.find(instance);
+    DAWN_ASSERT(it != mEventManagers.end());
+    return *it->second;
 }
 
 void Client::Disconnect() {
@@ -184,7 +193,11 @@ void Client::Disconnect() {
             object->value()->CancelCallbacksForDisconnect();
         }
     }
-    mEventManager->ShutDown();
+
+    // Transition all event managers to ClientDropped state.
+    for (auto& [_, eventManager] : mEventManagers) {
+        eventManager->TransitionTo(EventManager::State::ClientDropped);
+    }
 }
 
 bool Client::IsDisconnected() const {

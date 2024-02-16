@@ -165,8 +165,14 @@ MaybeError Queue::SubmitPendingCommandBuffer() {
     [*pendingCommands addCompletedHandler:^(id<MTLCommandBuffer>) {
         TRACE_EVENT_ASYNC_END0(platform, GPUWork, "DeviceMTL::SubmitPendingCommandBuffer",
                                uint64_t(pendingSerial));
-        DAWN_ASSERT(uint64_t(pendingSerial) > mCompletedSerial.load());
-        this->mCompletedSerial.store(uint64_t(pendingSerial), std::memory_order_release);
+
+        // Do an atomic_max on mCompletedSerial since it might have been increased outside the
+        // CommandBufferMTL completed handlers if the device has been lost, or if they handlers fire
+        // in an unordered way.
+        uint64_t currentCompleted = mCompletedSerial.load();
+        while (uint64_t(pendingSerial) > currentCompleted &&
+               !mCompletedSerial.compare_exchange_weak(currentCompleted, uint64_t(pendingSerial))) {
+        }
 
         this->UpdateWaitingEvents(pendingSerial);
     }];
@@ -184,16 +190,6 @@ MaybeError Queue::SubmitPendingCommandBuffer() {
 }
 
 void Queue::ExportLastSignaledEvent(ExternalImageMTLSharedEventDescriptor* desc) {
-    // Ensure commands are submitted before getting the last submited serial.
-    // Ignore the error since we still want to export the serial of the last successful
-    // submission - that was the last serial that was actually signaled.
-    ForceEventualFlushOfCommands();
-
-    if (GetDevice()->ConsumedError(SubmitPendingCommandBuffer())) {
-        desc->sharedEvent = nullptr;
-        return;
-    }
-
     desc->sharedEvent = *mMtlSharedEvent;
     desc->signaledValue = static_cast<uint64_t>(GetLastSubmittedCommandSerial());
 }
@@ -216,6 +212,10 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
 
 bool Queue::HasPendingCommands() const {
     return mCommandContext.NeedsSubmit();
+}
+
+MaybeError Queue::SubmitPendingCommands() {
+    return SubmitPendingCommandBuffer();
 }
 
 ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {

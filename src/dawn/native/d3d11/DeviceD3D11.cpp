@@ -46,7 +46,6 @@
 #include "dawn/native/d3d11/BufferD3D11.h"
 #include "dawn/native/d3d11/CommandBufferD3D11.h"
 #include "dawn/native/d3d11/ComputePipelineD3D11.h"
-#include "dawn/native/d3d11/FenceD3D11.h"
 #include "dawn/native/d3d11/PhysicalDeviceD3D11.h"
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/PlatformFunctionsD3D11.h"
@@ -130,9 +129,6 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
 
     Ref<Queue> queue;
     DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue));
-    DAWN_TRY(CheckHRESULT(
-        queue->GetFence()->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &mFenceHandle),
-        "D3D11: creating fence shared handle"));
 
     DAWN_TRY(DeviceBase::Initialize(queue));
     DAWN_TRY(queue->InitializePendingContext());
@@ -152,15 +148,6 @@ ID3D11Device5* Device::GetD3D11Device5() const {
     return mD3d11Device5.Get();
 }
 
-ScopedCommandRecordingContext Device::GetScopedPendingCommandContext(SubmitMode submitMode) {
-    return ToBackend(GetQueue())->GetScopedPendingCommandContext(submitMode);
-}
-
-ScopedSwapStateCommandRecordingContext Device::GetScopedSwapStatePendingCommandContext(
-    SubmitMode submitMode) {
-    return ToBackend(GetQueue())->GetScopedSwapStatePendingCommandContext(submitMode);
-}
-
 MaybeError Device::TickImpl() {
     // Check for debug layer messages before executing the command context in case we encounter an
     // error during execution and early out as a result.
@@ -170,7 +157,7 @@ MaybeError Device::TickImpl() {
 }
 
 void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
-    mUsedComObjectRefs.Enqueue(object, GetPendingCommandSerial());
+    mUsedComObjectRefs.Enqueue(object, GetQueue()->GetPendingCommandSerial());
 }
 
 ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
@@ -312,7 +299,8 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
     // D3D11 requires that buffers are unmapped before being used in a copy.
     DAWN_TRY(source->Unmap());
 
-    auto commandContext = GetScopedPendingCommandContext(Device::SubmitMode::Normal);
+    auto commandContext =
+        ToBackend(GetQueue())->GetScopedPendingCommandContext(QueueBase::SubmitMode::Normal);
     return Buffer::Copy(&commandContext, ToBackend(source), sourceOffset, size,
                         ToBackend(destination), destinationOffset);
 }
@@ -388,6 +376,9 @@ void Device::DestroyImpl() {
     //   other threads using the device since there are no other live refs.
     DAWN_ASSERT(GetState() == State::Disconnected);
 
+    mImplicitPixelLocalStorageAttachmentTextureViews = {};
+    mStagingBuffer = nullptr;
+
     Base::DestroyImpl();
 }
 
@@ -405,10 +396,15 @@ float Device::GetTimestampPeriodInNS() const {
 
 void Device::SetLabelImpl() {}
 
-ResultOrError<Ref<d3d::Fence>> Device::CreateFence(
-    const d3d::ExternalImageDXGIFenceDescriptor* descriptor) {
-    return Fence::CreateFromHandle(mD3d11Device5.Get(), descriptor->fenceHandle,
-                                   descriptor->fenceValue);
+ResultOrError<FenceAndSignalValue> Device::CreateFence(
+    const d3d::ExternalImageDXGIFenceDescriptor* externalImageFenceDesc) {
+    SharedFenceDXGISharedHandleDescriptor sharedFenceDesc;
+    sharedFenceDesc.handle = externalImageFenceDesc->fenceHandle;
+
+    Ref<SharedFence> fence;
+    DAWN_TRY_ASSIGN(fence, SharedFence::Create(this, "Imported DXGI fence", &sharedFenceDesc));
+
+    return FenceAndSignalValue{std::move(fence), externalImageFenceDesc->fenceValue};
 }
 
 ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExternalImageDXGIImplImpl(
@@ -485,14 +481,15 @@ bool Device::IsResolveTextureBlitWithDrawSupported() const {
 
 Ref<TextureBase> Device::CreateD3DExternalTexture(const UnpackedPtr<TextureDescriptor>& descriptor,
                                                   ComPtr<IUnknown> d3dTexture,
-                                                  std::vector<Ref<d3d::Fence>> waitFences,
+                                                  ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex,
+                                                  std::vector<FenceAndSignalValue> waitFences,
                                                   bool isSwapChainTexture,
                                                   bool isInitialized) {
     Ref<Texture> dawnTexture;
-    if (ConsumedError(
-            Texture::CreateExternalImage(this, descriptor, std::move(d3dTexture),
-                                         std::move(waitFences), isSwapChainTexture, isInitialized),
-            &dawnTexture)) {
+    if (ConsumedError(Texture::CreateExternalImage(this, descriptor, std::move(d3dTexture),
+                                                   std::move(dxgiKeyedMutex), std::move(waitFences),
+                                                   isSwapChainTexture, isInitialized),
+                      &dawnTexture)) {
         return nullptr;
     }
     return {dawnTexture};
@@ -531,6 +528,32 @@ ResultOrError<TextureViewBase*> Device::GetOrCreateCachedImplicitPixelLocalStora
                         newAttachment->CreateView());
     }
     return mImplicitPixelLocalStorageAttachmentTextureViews[implicitAttachmentIndex].Get();
+}
+
+ResultOrError<Ref<BufferBase>> Device::GetStagingBuffer(
+    const ScopedCommandRecordingContext* commandContext,
+    uint64_t size) {
+    constexpr uint64_t kMinSize = 4 * 1024;
+    constexpr uint64_t kMaxSize = 16 * 1024 * 1024;
+    uint64_t bufferSize = mStagingBuffer.Get() ? mStagingBuffer->GetSize() : 0;
+    if (size > bufferSize) {
+        bufferSize = Align(size, kMinSize);
+        BufferDescriptor descriptor;
+        descriptor.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
+        descriptor.size = bufferSize;
+        descriptor.mappedAtCreation = false;
+        descriptor.label = "DawnDeviceStagingBuffer";
+        Ref<BufferBase> buffer;
+        DAWN_TRY_ASSIGN(buffer, Buffer::Create(this, Unpack(&descriptor), commandContext));
+        // We don't cache the buffer if it's too large.
+        if (bufferSize > kMaxSize) {
+            return buffer;
+        }
+        mStagingBuffer = buffer;
+    }
+    // Ensure there is no more than 1 active usage of the staging buffer.
+    DAWN_ASSERT(mStagingBuffer->GetRefCountForTesting() <= 1);
+    return mStagingBuffer;
 }
 
 }  // namespace dawn::native::d3d11

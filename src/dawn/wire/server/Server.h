@@ -31,8 +31,10 @@
 #include <memory>
 #include <utility>
 
+#include "dawn/common/MutexProtected.h"
 #include "dawn/wire/ChunkedCommandSerializer.h"
 #include "dawn/wire/server/ServerBase_autogen.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::wire::server {
 
@@ -64,7 +66,7 @@ class MemoryTransferService;
 //
 // void Server::MyCallbackHandler(MyUserdata* userdata, Other args) { }
 struct CallbackUserdata {
-    Server* const server;
+    const raw_ptr<Server> server;
     std::weak_ptr<bool> const serverIsAlive;
 
     CallbackUserdata() = delete;
@@ -105,6 +107,7 @@ struct MapUserdata : CallbackUserdata {
 
     ObjectHandle buffer;
     WGPUBuffer bufferObj;
+    ObjectHandle eventManager;
     WGPUFuture future;
     uint64_t offset;
     uint64_t size;
@@ -115,7 +118,8 @@ struct ErrorScopeUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle device;
-    uint64_t requestSerial;
+    ObjectHandle eventManager;
+    WGPUFuture future;
 };
 
 struct ShaderModuleGetCompilationInfoUserdata : CallbackUserdata {
@@ -129,6 +133,7 @@ struct QueueWorkDoneUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle queue;
+    ObjectHandle eventManager;
     WGPUFuture future;
 };
 
@@ -136,14 +141,15 @@ struct CreatePipelineAsyncUserData : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
     ObjectHandle device;
-    uint64_t requestSerial;
+    ObjectHandle eventManager;
+    WGPUFuture future;
     ObjectId pipelineObjectID;
 };
 
 struct RequestAdapterUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle instance;
+    ObjectHandle eventManager;
     WGPUFuture future;
     ObjectId adapterObjectId;
 };
@@ -151,8 +157,8 @@ struct RequestAdapterUserdata : CallbackUserdata {
 struct RequestDeviceUserdata : CallbackUserdata {
     using CallbackUserdata::CallbackUserdata;
 
-    ObjectHandle adapter;
-    uint64_t requestSerial;
+    ObjectHandle eventManager;
+    WGPUFuture future;
     ObjectId deviceObjectId;
 };
 
@@ -166,21 +172,10 @@ class Server : public ServerBase {
     // ChunkedCommandHandler implementation
     const volatile char* HandleCommandsImpl(const volatile char* commands, size_t size) override;
 
-    WireResult InjectTexture(WGPUTexture texture,
-                             uint32_t id,
-                             uint32_t generation,
-                             uint32_t deviceId,
-                             uint32_t deviceGeneration);
-
-    WireResult InjectSwapChain(WGPUSwapChain swapchain,
-                               uint32_t id,
-                               uint32_t generation,
-                               uint32_t deviceId,
-                               uint32_t deviceGeneration);
-
-    WireResult InjectDevice(WGPUDevice device, uint32_t id, uint32_t generation);
-
-    WireResult InjectInstance(WGPUInstance instance, uint32_t id, uint32_t generation);
+    WireResult InjectTexture(WGPUTexture texture, const TextureReservation& reservation);
+    WireResult InjectSwapChain(WGPUSwapChain swapchain, const SwapChainReservation& reservation);
+    WireResult InjectDevice(WGPUDevice device, const DeviceReservation& reservation);
+    WireResult InjectInstance(WGPUInstance instance, const InstanceReservation& reservation);
 
     WGPUDevice GetDevice(uint32_t id, uint32_t generation);
     bool IsDeviceKnown(WGPUDevice device) const;
@@ -194,12 +189,12 @@ class Server : public ServerBase {
   private:
     template <typename Cmd>
     void SerializeCommand(const Cmd& cmd) {
-        mSerializer.SerializeCommand(cmd);
+        mSerializer->SerializeCommand(cmd);
     }
 
     template <typename Cmd, typename... Extensions>
     void SerializeCommand(const Cmd& cmd, Extensions&&... es) {
-        mSerializer.SerializeCommand(cmd, std::forward<Extensions>(es)...);
+        mSerializer->SerializeCommand(cmd, std::forward<Extensions>(es)...);
     }
 
     void SetForwardingDeviceCallbacks(Known<WGPUDevice> device);
@@ -237,10 +232,10 @@ class Server : public ServerBase {
 #include "dawn/wire/server/ServerPrototypes_autogen.inc"
 
     WireDeserializeAllocator mAllocator;
-    ChunkedCommandSerializer mSerializer;
+    MutexProtected<ChunkedCommandSerializer> mSerializer;
     DawnProcTable mProcs;
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
-    MemoryTransferService* mMemoryTransferService = nullptr;
+    raw_ptr<MemoryTransferService> mMemoryTransferService = nullptr;
 
     std::shared_ptr<bool> mIsAlive;
 };

@@ -30,7 +30,10 @@
 #include "src/tint/lang/core/ir/binary/decode.h"
 #include "src/tint/lang/core/ir/binary/encode.h"
 #include "src/tint/lang/core/ir/disassembler.h"
+#include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/external_texture.h"
+#include "src/tint/lang/core/type/multisampled_texture.h"
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 
@@ -46,12 +49,12 @@ class IRBinaryRoundtripTestBase : public IRTestParamHelper<T> {
     std::pair<std::string, std::string> Roundtrip() {
         auto pre = Disassemble(this->mod);
         auto encoded = Encode(this->mod);
-        if (!encoded) {
-            return {pre, encoded.Failure().reason.str()};
+        if (encoded != Success) {
+            return {pre, encoded.Failure().reason.Str()};
         }
         auto decoded = Decode(encoded->Slice());
-        if (!decoded) {
-            return {pre, decoded.Failure().reason.str()};
+        if (decoded != Success) {
+            return {pre, decoded.Failure().reason.Str()};
         }
         auto post = Disassemble(decoded.Get());
         return {pre, post};
@@ -126,6 +129,27 @@ TEST_F(IRBinaryRoundtripTest, Fn_Parameters) {
     RUN_TEST();
 }
 
+TEST_F(IRBinaryRoundtripTest, Fn_ParameterAttributes) {
+    auto* fn = b.Function("Function", ty.void_());
+    auto* p0 = b.FunctionParam(ty.i32());
+    auto* p1 = b.FunctionParam(ty.u32());
+    auto* p2 = b.FunctionParam(ty.f32());
+    auto* p3 = b.FunctionParam(ty.bool_());
+    p0->SetBuiltin(BuiltinValue::kGlobalInvocationId);
+    p1->SetInvariant(true);
+    p2->SetLocation(10, Interpolation{InterpolationType::kFlat, InterpolationSampling::kCenter});
+    p3->SetBindingPoint(20, 30);
+    fn->SetParams({p0, p1, p2, p3});
+    RUN_TEST();
+}
+
+TEST_F(IRBinaryRoundtripTest, Fn_ReturnBuiltin) {
+    auto* fn = b.Function("Function", ty.void_());
+    fn->SetReturnBuiltin(BuiltinValue::kFragDepth);
+    b.ir.SetName(fn, "Function");
+    RUN_TEST();
+}
+
 TEST_F(IRBinaryRoundtripTest, Fn_ReturnLocation) {
     auto* fn = b.Function("Function", ty.void_());
     fn->SetReturnLocation(42, std::nullopt);
@@ -139,6 +163,13 @@ TEST_F(IRBinaryRoundtripTest, Fn_ReturnLocation_Interpolation) {
                                  core::InterpolationType::kPerspective,
                                  core::InterpolationSampling::kCentroid,
                              });
+    b.ir.SetName(fn, "Function");
+    RUN_TEST();
+}
+
+TEST_F(IRBinaryRoundtripTest, Fn_ReturnInvariant) {
+    auto* fn = b.Function("Function", ty.void_());
+    fn->SetReturnInvariant(true);
     b.ir.SetName(fn, "Function");
     RUN_TEST();
 }
@@ -245,7 +276,7 @@ TEST_F(IRBinaryRoundtripTest, struct) {
 TEST_F(IRBinaryRoundtripTest, StructMemberAttributes) {
     type::StructMemberAttributes attrs{};
     attrs.location = 1;
-    attrs.index = 2;
+    attrs.blend_src = 2;
     attrs.color = 3;
     attrs.builtin = core::BuiltinValue::kFragDepth;
     attrs.interpolation = core::Interpolation{
@@ -279,10 +310,29 @@ TEST_F(IRBinaryRoundtripTest, sampled_texture) {
     RUN_TEST();
 }
 
+TEST_F(IRBinaryRoundtripTest, multisampled_texture) {
+    auto* tex =
+        ty.Get<core::type::MultisampledTexture>(core::type::TextureDimension::k2d, ty.f32());
+    b.Append(b.ir.root_block, [&] { b.Var(ty.ptr(handle, tex, read)); });
+    RUN_TEST();
+}
+
+TEST_F(IRBinaryRoundtripTest, depth_multisampled_texture) {
+    auto* tex = ty.Get<core::type::DepthMultisampledTexture>(core::type::TextureDimension::k2d);
+    b.Append(b.ir.root_block, [&] { b.Var(ty.ptr(handle, tex, read)); });
+    RUN_TEST();
+}
+
 TEST_F(IRBinaryRoundtripTest, storage_texture) {
     auto* tex = ty.Get<core::type::StorageTexture>(core::type::TextureDimension::k2dArray,
                                                    core::TexelFormat::kRg32Float,
                                                    core::Access::kReadWrite, ty.f32());
+    b.Append(b.ir.root_block, [&] { b.Var(ty.ptr(handle, tex, read)); });
+    RUN_TEST();
+}
+
+TEST_F(IRBinaryRoundtripTest, external_texture) {
+    auto* tex = ty.Get<core::type::ExternalTexture>();
     b.Append(b.ir.root_block, [&] { b.Var(ty.ptr(handle, tex, read)); });
     RUN_TEST();
 }
@@ -497,6 +547,14 @@ TEST_F(IRBinaryRoundtripTest, Swizzle) {
     RUN_TEST();
 }
 
+TEST_F(IRBinaryRoundtripTest, Bitcast) {
+    auto* x = b.FunctionParam<vec4<f32>>("x");
+    auto* fn = b.Function("Function", ty.vec4<u32>());
+    fn->SetParams({x});
+    b.Append(fn->Block(), [&] { b.Return(fn, b.Bitcast<vec4<u32>>(x)); });
+    RUN_TEST();
+}
+
 TEST_F(IRBinaryRoundtripTest, Convert) {
     auto* x = b.FunctionParam<vec4<f32>>("x");
     auto* fn = b.Function("Function", ty.vec4<u32>());
@@ -657,5 +715,12 @@ TEST_F(IRBinaryRoundtripTest, LoopBlockParams) {
     });
     RUN_TEST();
 }
+
+TEST_F(IRBinaryRoundtripTest, Unreachable) {
+    auto* fn = b.Function("Function", ty.i32());
+    b.Append(fn->Block(), [&] { b.Unreachable(); });
+    RUN_TEST();
+}
+
 }  // namespace
 }  // namespace tint::core::ir::binary

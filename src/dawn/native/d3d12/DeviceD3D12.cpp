@@ -45,7 +45,6 @@
 #include "dawn/native/d3d12/CommandAllocatorManager.h"
 #include "dawn/native/d3d12/CommandBufferD3D12.h"
 #include "dawn/native/d3d12/ComputePipelineD3D12.h"
-#include "dawn/native/d3d12/FenceD3D12.h"
 #include "dawn/native/d3d12/PhysicalDeviceD3D12.h"
 #include "dawn/native/d3d12/PipelineLayoutD3D12.h"
 #include "dawn/native/d3d12/PlatformFunctionsD3D12.h"
@@ -107,11 +106,6 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
         // Calculate the period in nanoseconds by the frequency.
         mTimestampPeriod = static_cast<float>(1e9) / frequency;
     }
-
-    DAWN_TRY(CheckHRESULT(mD3d12Device->CreateSharedHandle(queue->GetFence(), nullptr, GENERIC_ALL,
-                                                           nullptr, &mFenceHandle),
-                          "D3D12 create fence handle"));
-    DAWN_ASSERT(mFenceHandle != nullptr);
 
     // Initialize backend services
 
@@ -229,12 +223,6 @@ MutexProtected<ResidencyManager>& Device::GetResidencyManager() const {
     return *mResidencyManager;
 }
 
-ResultOrError<CommandRecordingContext*> Device::GetPendingCommandContext(
-    Device::SubmitMode submitMode) {
-    // TODO(dawn:1413): Make callers of this method use the queue directly.
-    return ToBackend(GetQueue())->GetPendingCommandContext(submitMode);
-}
-
 MaybeError Device::CreateZeroBuffer() {
     BufferDescriptor zeroBufferDescriptor;
     zeroBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
@@ -256,8 +244,9 @@ MaybeError Device::ClearBufferToZero(CommandRecordingContext* commandContext,
     if (!mZeroBuffer->IsDataInitialized()) {
         DynamicUploader* uploader = GetDynamicUploader();
         UploadHandle uploadHandle;
-        DAWN_TRY_ASSIGN(uploadHandle, uploader->Allocate(kZeroBufferSize, GetPendingCommandSerial(),
-                                                         kCopyBufferToBufferOffsetAlignment));
+        DAWN_TRY_ASSIGN(uploadHandle,
+                        uploader->Allocate(kZeroBufferSize, GetQueue()->GetPendingCommandSerial(),
+                                           kCopyBufferToBufferOffsetAlignment));
 
         memset(uploadHandle.mappedBuffer, 0u, kZeroBufferSize);
 
@@ -305,7 +294,7 @@ MaybeError Device::TickImpl() {
 }
 
 void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
-    mUsedComObjectRefs->Enqueue(std::move(object), GetPendingCommandSerial());
+    mUsedComObjectRefs->Enqueue(std::move(object), GetQueue()->GetPendingCommandSerial());
 }
 
 ResultOrError<Ref<BindGroupBase>> Device::CreateBindGroupImpl(
@@ -423,7 +412,9 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
     CommandRecordingContext* commandRecordingContext;
-    DAWN_TRY_ASSIGN(commandRecordingContext, GetPendingCommandContext(Device::SubmitMode::Passive));
+    DAWN_TRY_ASSIGN(
+        commandRecordingContext,
+        ToBackend(GetQueue())->GetPendingCommandContext(QueueBase::SubmitMode::Passive));
 
     Buffer* dstBuffer = ToBackend(destination);
 
@@ -459,11 +450,14 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     CommandRecordingContext* commandContext;
-    DAWN_TRY_ASSIGN(commandContext, GetPendingCommandContext(Device::SubmitMode::Passive));
+    DAWN_TRY_ASSIGN(
+        commandContext,
+        ToBackend(GetQueue())->GetPendingCommandContext(QueueBase::SubmitMode::Passive));
+
     Texture* texture = ToBackend(dst.texture.Get());
+    DAWN_TRY(texture->SynchronizeTextureBeforeUse());
 
     SubresourceRange range = GetSubresourcesAffectedByCopy(dst, copySizePixels);
-
     if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst.mipLevel, dst.aspect)) {
         texture->SetIsSubresourceContentInitialized(true, range);
     } else {
@@ -476,7 +470,6 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                             commandContext->GetCommandList(),
                                             ToBackend(source)->GetD3D12Resource(), src.offset,
                                             src.bytesPerRow, src.rowsPerImage, dst, copySizePixels);
-
     return {};
 }
 
@@ -496,10 +489,15 @@ ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
                          forceAllocateAsCommittedResource);
 }
 
-ResultOrError<Ref<d3d::Fence>> Device::CreateFence(
-    const d3d::ExternalImageDXGIFenceDescriptor* descriptor) {
-    return Fence::CreateFromHandle(mD3d12Device.Get(), descriptor->fenceHandle,
-                                   descriptor->fenceValue);
+ResultOrError<FenceAndSignalValue> Device::CreateFence(
+    const d3d::ExternalImageDXGIFenceDescriptor* externalImageFenceDesc) {
+    SharedFenceDXGISharedHandleDescriptor sharedFenceDesc;
+    sharedFenceDesc.handle = externalImageFenceDesc->fenceHandle;
+
+    Ref<SharedFence> fence;
+    DAWN_TRY_ASSIGN(fence, SharedFence::Create(this, "Imported DXGI fence", &sharedFenceDesc));
+
+    return FenceAndSignalValue{std::move(fence), externalImageFenceDesc->fenceValue};
 }
 
 ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExternalImageDXGIImplImpl(
@@ -546,9 +544,12 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
 
 Ref<TextureBase> Device::CreateD3DExternalTexture(const UnpackedPtr<TextureDescriptor>& descriptor,
                                                   ComPtr<IUnknown> d3dTexture,
-                                                  std::vector<Ref<d3d::Fence>> waitFences,
+                                                  ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex,
+                                                  std::vector<FenceAndSignalValue> waitFences,
                                                   bool isSwapChainTexture,
                                                   bool isInitialized) {
+    // TODO(sunnyps): Reintroduce keyed mutex support.
+    DAWN_ASSERT(dxgiKeyedMutex == nullptr);
     Ref<Texture> dawnTexture;
     if (ConsumedError(
             Texture::CreateExternalImage(this, descriptor, std::move(d3dTexture),

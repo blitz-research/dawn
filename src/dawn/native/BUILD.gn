@@ -62,6 +62,9 @@ group("abseil") {
     public_deps = [ "$dawn_abseil_dir:absl" ]
   } else {
     public_deps = [
+      "${dawn_root}/third_party/gn/abseil-cpp:bits",
+      "${dawn_root}/third_party/gn/abseil-cpp:flat_hash_map",
+      "${dawn_root}/third_party/gn/abseil-cpp:flat_hash_set",
       "${dawn_root}/third_party/gn/abseil-cpp:str_format",
       "${dawn_root}/third_party/gn/abseil-cpp:strings",
     ]
@@ -328,7 +331,6 @@ source_set("sources") {
     "QuerySet.h",
     "Queue.cpp",
     "Queue.h",
-    "RefCountedWithExternalCount.cpp",
     "RefCountedWithExternalCount.h",
     "RenderBundle.cpp",
     "RenderBundle.h",
@@ -442,8 +444,6 @@ source_set("sources") {
       "d3d/DeviceD3D.h",
       "d3d/ExternalImageDXGIImpl.cpp",
       "d3d/ExternalImageDXGIImpl.h",
-      "d3d/Fence.cpp",
-      "d3d/Fence.h",
       "d3d/Forward.h",
       "d3d/PhysicalDeviceD3D.cpp",
       "d3d/PhysicalDeviceD3D.h",
@@ -490,8 +490,6 @@ source_set("sources") {
       "d3d11/DeviceD3D11.h",
       "d3d11/DeviceInfoD3D11.cpp",
       "d3d11/DeviceInfoD3D11.h",
-      "d3d11/FenceD3D11.cpp",
-      "d3d11/FenceD3D11.h",
       "d3d11/Forward.h",
       "d3d11/PhysicalDeviceD3D11.cpp",
       "d3d11/PhysicalDeviceD3D11.h",
@@ -552,8 +550,6 @@ source_set("sources") {
       "d3d12/D3D12Info.h",
       "d3d12/DeviceD3D12.cpp",
       "d3d12/DeviceD3D12.h",
-      "d3d12/FenceD3D12.cpp",
-      "d3d12/FenceD3D12.h",
       "d3d12/Forward.h",
       "d3d12/GPUDescriptorHeapAllocationD3D12.cpp",
       "d3d12/GPUDescriptorHeapAllocationD3D12.h",

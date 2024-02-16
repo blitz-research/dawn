@@ -40,13 +40,13 @@ Result<Output> Generate(core::ir::Module& ir, const Options& options, const std:
     Output output;
 
     // Raise from core-dialect to GLSL-dialect.
-    if (auto res = raise::Raise(ir); !res) {
+    if (auto res = Raise(ir); res != Success) {
         return res.Failure();
     }
 
     // Generate the GLSL code.
     auto result = Print(ir, options.version);
-    if (!result) {
+    if (result != Success) {
         return result.Failure();
     }
     output.glsl = result.Get();
@@ -76,16 +76,6 @@ Result<Output> Generate(const Program& program,
     }
 
     output.glsl = impl->Result();
-    output.needs_internal_uniform_buffer = sanitized_result.needs_internal_uniform_buffer;
-    output.bindpoint_to_data = std::move(sanitized_result.bindpoint_to_data);
-
-    // Collect the list of entry points in the sanitized program.
-    for (auto* func : sanitized_result.program.AST().Functions()) {
-        if (func->IsEntryPoint()) {
-            auto name = func->name->symbol.Name();
-            output.entry_points.push_back({name, func->PipelineStage()});
-        }
-    }
 
     return output;
 }

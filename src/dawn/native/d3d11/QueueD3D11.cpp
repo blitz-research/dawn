@@ -33,6 +33,7 @@
 #include "dawn/native/d3d11/BufferD3D11.h"
 #include "dawn/native/d3d11/CommandBufferD3D11.h"
 #include "dawn/native/d3d11/DeviceD3D11.h"
+#include "dawn/native/d3d11/SharedFenceD3D11.h"
 #include "dawn/native/d3d11/TextureD3D11.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/tracing/TraceEvent.h"
@@ -54,59 +55,83 @@ MaybeError Queue::Initialize() {
 
     // Create the fence event.
     mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    DAWN_ASSERT(mFenceEvent != nullptr);
+
+    DAWN_TRY_ASSIGN(mSharedFence, SharedFence::Create(ToBackend(GetDevice()),
+                                                      "Internal shared DXGI fence", mFence));
 
     return {};
 }
 
 MaybeError Queue::InitializePendingContext() {
-    return mPendingCommands.Initialize(ToBackend(GetDevice()));
+    // Initialize mPendingCommands. After this, calls to the use the command context
+    // are thread safe.
+    CommandRecordingContext commands;
+    DAWN_TRY(commands.Initialize(ToBackend(GetDevice())));
+    mPendingCommands.Use([&](auto pendingCommands) { *pendingCommands = std::move(commands); });
+
+    // Configure the command context's uniform buffer. This is used to emulate builtins.
+    // Creating the buffer is done outside of Initialize because it requires mPendingCommands
+    // to already be initialized.
+    Ref<BufferBase> uniformBuffer;
+    DAWN_TRY_ASSIGN(uniformBuffer,
+                    CommandRecordingContext::CreateInternalUniformBuffer(GetDevice()));
+    mPendingCommands->SetInternalUniformBuffer(std::move(uniformBuffer));
+    return {};
 }
 
-void Queue::Destroy() {
+void Queue::DestroyImpl() {
     if (mFenceEvent != nullptr) {
         ::CloseHandle(mFenceEvent);
         mFenceEvent = nullptr;
     }
 
-    mPendingCommands.Release();
+    // Release the shared fence here to prevent a ref-cycle with the device, but do not destroy the
+    // underlying native fence so that we can return a SharedFence on EndAccess after destruction.
+    mSharedFence = nullptr;
+
+    mPendingCommands.Use([&](auto pendingCommands) {
+        pendingCommands->Destroy();
+        mPendingCommandsNeedSubmit.store(false, std::memory_order_release);
+    });
 }
 
-ID3D11Fence* Queue::GetFence() const {
-    return mFence.Get();
+ResultOrError<Ref<d3d::SharedFence>> Queue::GetOrCreateSharedFence() {
+    if (mSharedFence == nullptr) {
+        DAWN_ASSERT(!IsAlive());
+        return SharedFence::Create(ToBackend(GetDevice()), "Internal shared DXGI fence", mFence);
+    }
+    return mSharedFence;
 }
 
 ScopedCommandRecordingContext Queue::GetScopedPendingCommandContext(SubmitMode submitMode) {
-    // Callers of GetPendingCommandList do so to record commands. Only reserve a command
-    // allocator when it is needed so we don't submit empty command lists
-    DAWN_ASSERT(mPendingCommands.IsOpen());
-
-    if (submitMode == SubmitMode::Normal) {
-        mPendingCommands.SetNeedsSubmit();
-    }
-
-    return ScopedCommandRecordingContext(&mPendingCommands);
+    return mPendingCommands.Use([&](auto commands) {
+        if (submitMode == SubmitMode::Normal) {
+            mPendingCommandsNeedSubmit.store(true, std::memory_order_release);
+        }
+        return ScopedCommandRecordingContext(std::move(commands));
+    });
 }
 
 ScopedSwapStateCommandRecordingContext Queue::GetScopedSwapStatePendingCommandContext(
     SubmitMode submitMode) {
-    // Callers of GetPendingCommandList do so to record commands. Only reserve a command
-    // allocator when it is needed so we don't submit empty command lists
-    DAWN_ASSERT(mPendingCommands.IsOpen());
-
-    if (submitMode == SubmitMode::Normal) {
-        mPendingCommands.SetNeedsSubmit();
-    }
-
-    return ScopedSwapStateCommandRecordingContext(&mPendingCommands);
+    return mPendingCommands.Use([&](auto commands) {
+        if (submitMode == SubmitMode::Normal) {
+            mPendingCommandsNeedSubmit.store(true, std::memory_order_release);
+        }
+        return ScopedSwapStateCommandRecordingContext(std::move(commands));
+    });
 }
 
 MaybeError Queue::SubmitPendingCommands() {
-    if (!mPendingCommands.IsOpen() || !mPendingCommands.NeedsSubmit()) {
-        return {};
+    bool needsSubmit = mPendingCommands.Use([&](auto pendingCommands) {
+        pendingCommands->ReleaseKeyedMutexes();
+        return mPendingCommandsNeedSubmit.exchange(false, std::memory_order_acq_rel);
+    });
+    if (needsSubmit) {
+        return NextSerial();
     }
-
-    DAWN_TRY(mPendingCommands.ExecuteCommandList());
-    return NextSerial();
+    return {};
 }
 
 MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) {
@@ -116,7 +141,8 @@ MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* co
     // context.
     TRACE_EVENT_BEGIN0(GetDevice()->GetPlatform(), Recording, "CommandBufferD3D11::Execute");
     {
-        auto commandContext = GetScopedSwapStatePendingCommandContext(Device::SubmitMode::Normal);
+        auto commandContext =
+            GetScopedSwapStatePendingCommandContext(QueueBase::SubmitMode::Normal);
         for (uint32_t i = 0; i < commandCount; ++i) {
             DAWN_TRY(ToBackend(commands[i])->Execute(&commandContext));
         }
@@ -136,7 +162,7 @@ MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
         return {};
     }
 
-    auto commandContext = GetScopedPendingCommandContext(Device::SubmitMode::Normal);
+    auto commandContext = GetScopedPendingCommandContext(QueueBase::SubmitMode::Normal);
     return ToBackend(buffer)->Write(&commandContext, bufferOffset, data, size);
 }
 
@@ -149,8 +175,7 @@ MaybeError Queue::WriteTextureImpl(const ImageCopyTexture& destination,
         return {};
     }
 
-    Device* device = ToBackend(GetDevice());
-    auto commandContext = device->GetScopedPendingCommandContext(Device::SubmitMode::Normal);
+    auto commandContext = GetScopedPendingCommandContext(QueueBase::SubmitMode::Normal);
     TextureCopy textureCopy;
     textureCopy.texture = destination.texture;
     textureCopy.mipLevel = destination.mipLevel;
@@ -160,14 +185,14 @@ MaybeError Queue::WriteTextureImpl(const ImageCopyTexture& destination,
     SubresourceRange subresources = GetSubresourcesAffectedByCopy(textureCopy, writeSizePixel);
 
     Texture* texture = ToBackend(destination.texture);
-
+    DAWN_TRY(texture->SynchronizeTextureBeforeUse(&commandContext));
     return texture->Write(&commandContext, subresources, destination.origin, writeSizePixel,
                           static_cast<const uint8_t*>(data) + dataLayout.offset,
                           dataLayout.bytesPerRow, dataLayout.rowsPerImage);
 }
 
 bool Queue::HasPendingCommands() const {
-    return mPendingCommands.NeedsSubmit();
+    return mPendingCommandsNeedSubmit.load(std::memory_order_acquire);
 }
 
 ResultOrError<ExecutionSerial> Queue::CheckAndUpdateCompletedSerials() {

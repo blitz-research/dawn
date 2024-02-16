@@ -523,7 +523,7 @@ TEST_F(RenderPipelineValidationTest, FragmentOutputComponentCountCompatibility) 
             descriptor.cTargets[0].format = colorFormat;
 
             descriptor.cTargets[0].blend = nullptr;
-            if (componentCount >= utils::GetWGSLRenderableColorTextureComponentCount(colorFormat)) {
+            if (componentCount >= utils::GetTextureComponentCount(colorFormat)) {
                 device.CreateRenderPipeline(&descriptor);
             } else {
                 ASSERT_DEVICE_ERROR(device.CreateRenderPipeline(&descriptor));
@@ -541,8 +541,7 @@ TEST_F(RenderPipelineValidationTest, FragmentOutputComponentCountCompatibility) 
                             descriptor.cBlends[0].alpha.dstFactor = alphaDstFactor;
 
                             bool valid = true;
-                            if (componentCount >=
-                                utils::GetWGSLRenderableColorTextureComponentCount(colorFormat)) {
+                            if (componentCount >= utils::GetTextureComponentCount(colorFormat)) {
                                 if (BlendFactorContainsSrcAlpha(
                                         descriptor.cTargets[0].blend->color.srcFactor) ||
                                     BlendFactorContainsSrcAlpha(
@@ -1847,9 +1846,7 @@ TEST_F(RenderPipelineValidationTest, RenderPipelineColorAttachmentBytesPerSample
     for (const TestCase& testCase : kTestCases) {
         utils::ComboRenderPipelineDescriptor descriptor;
         descriptor.vertex.module = vsModule;
-        descriptor.vertex.entryPoint = "main";
         descriptor.cFragment.module = CreateShader(testCase.formats);
-        descriptor.cFragment.entryPoint = "main";
         descriptor.cFragment.targetCount = testCase.formats.size();
         for (size_t i = 0; i < testCase.formats.size(); i++) {
             descriptor.cTargets[i].format = testCase.formats.at(i);
@@ -2589,8 +2586,8 @@ TEST_F(DualSourceBlendingFeatureTest, MultipleRenderTargetsNotAllowed) {
                 @group(0) @binding(0) var<uniform> testData : TestData;
 
                 struct FragOut {
-                    @location(0) @index(0) color : vec4<f32>,
-                    @location(0) @index(1) blend : vec4<f32>,
+                    @location(0) @blend_src(0) color : vec4<f32>,
+                    @location(0) @blend_src(1) blend : vec4<f32>,
                     @location()"
                 << location << R"("invalidOutput : vec4<f32>
                 }
@@ -2631,9 +2628,7 @@ TEST_F(FramebufferFetchFeatureTest, FramebufferInputMustHaveColorTarget) {
 
         utils::ComboRenderPipelineDescriptor desc;
         desc.vertex.module = vsModule;
-        desc.vertex.entryPoint = "main";
         desc.cFragment.module = utils::CreateShaderModule(device, fsStream.str().c_str());
-        desc.cFragment.entryPoint = "main";
         desc.cFragment.targetCount = 2;
         desc.cTargets[0].format = wgpu::TextureFormat::Undefined;
         desc.cTargets[1].format = wgpu::TextureFormat::RGBA8Unorm;
@@ -2686,9 +2681,7 @@ TEST_F(FramebufferFetchFeatureTest, InputMatchesFormat) {
 
             utils::ComboRenderPipelineDescriptor desc;
             desc.vertex.module = vsModule;
-            desc.vertex.entryPoint = "main";
             desc.cFragment.module = utils::CreateShaderModule(device, fsStream.str().c_str());
-            desc.cFragment.entryPoint = "main";
             desc.cTargets[0].format = format;
 
             if (i == j) {

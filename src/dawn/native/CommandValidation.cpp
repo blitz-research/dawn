@@ -133,7 +133,7 @@ MaybeError ValidatePassTimestampWrites(const DeviceBase* device,
     if (endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
         DAWN_INVALID_IF(endOfPassWriteIndex >= querySet->GetQueryCount(),
                         "endOfPassWriteIndex (%u) exceeds the number of queries (%u) in %s.",
-                        beginningOfPassWriteIndex, querySet->GetQueryCount(), querySet);
+                        endOfPassWriteIndex, querySet->GetQueryCount(), querySet);
     }
 
     DAWN_INVALID_IF(beginningOfPassWriteIndex == wgpu::kQuerySetIndexUndefined &&
@@ -459,6 +459,8 @@ ResultOrError<Aspect> SingleAspectUsedByImageCopyTexture(const ImageCopyTexture&
             return Aspect::Plane1;
         case wgpu::TextureAspect::Plane2Only:
             return Aspect::Plane2;
+        case wgpu::TextureAspect::Undefined:
+            break;
     }
     DAWN_UNREACHABLE();
 }
@@ -481,7 +483,8 @@ MaybeError ValidateLinearToDepthStencilCopyRestrictions(const ImageCopyTexture& 
     return {};
 }
 
-MaybeError ValidateTextureToTextureCopyCommonRestrictions(const ImageCopyTexture& src,
+MaybeError ValidateTextureToTextureCopyCommonRestrictions(DeviceBase const* device,
+                                                          const ImageCopyTexture& src,
                                                           const ImageCopyTexture& dst,
                                                           const Extent3D& copySize) {
     const uint32_t srcSamples = src.texture->GetSampleCount();
@@ -491,6 +494,11 @@ MaybeError ValidateTextureToTextureCopyCommonRestrictions(const ImageCopyTexture
         srcSamples != dstSamples,
         "Source %s sample count (%u) and destination %s sample count (%u) does not match.",
         src.texture, srcSamples, dst.texture, dstSamples);
+
+    DAWN_INVALID_IF(device->IsCompatibilityMode() && srcSamples != 1,
+                    "Source %s and destination %s with sample count (%u) > 1 cannot be copied in "
+                    "compatibility mode.",
+                    src.texture, dst.texture, srcSamples);
 
     // Metal cannot select a single aspect for texture-to-texture copies.
     const Format& format = src.texture->GetFormat();
@@ -507,6 +515,9 @@ MaybeError ValidateTextureToTextureCopyCommonRestrictions(const ImageCopyTexture
 
     if (src.texture == dst.texture) {
         switch (src.texture->GetDimension()) {
+            case wgpu::TextureDimension::Undefined:
+                DAWN_UNREACHABLE();
+
             case wgpu::TextureDimension::e1D:
                 DAWN_ASSERT(src.mipLevel == 0);
                 return DAWN_VALIDATION_ERROR("Copy is from %s to itself.", src.texture);
@@ -532,7 +543,8 @@ MaybeError ValidateTextureToTextureCopyCommonRestrictions(const ImageCopyTexture
     return {};
 }
 
-MaybeError ValidateTextureToTextureCopyRestrictions(const ImageCopyTexture& src,
+MaybeError ValidateTextureToTextureCopyRestrictions(DeviceBase const* device,
+                                                    const ImageCopyTexture& src,
                                                     const ImageCopyTexture& dst,
                                                     const Extent3D& copySize) {
     // Metal requires texture-to-texture copies happens between texture formats that equal to
@@ -542,7 +554,7 @@ MaybeError ValidateTextureToTextureCopyRestrictions(const ImageCopyTexture& src,
                     src.texture, src.texture->GetFormat().format, dst.texture,
                     dst.texture->GetFormat().format);
 
-    return ValidateTextureToTextureCopyCommonRestrictions(src, dst, copySize);
+    return ValidateTextureToTextureCopyCommonRestrictions(device, src, dst, copySize);
 }
 
 MaybeError ValidateCanUseAs(const TextureBase* texture,

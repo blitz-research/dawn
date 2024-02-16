@@ -32,6 +32,7 @@
 #include <memory>
 
 #include "dawn/common/NonCopyable.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
@@ -76,7 +77,7 @@ class BufferBase : public ApiObjectBase {
         HostMappedPersistent,
         Destroyed,
     };
-    static BufferBase* MakeError(DeviceBase* device, const BufferDescriptor* descriptor);
+    static Ref<BufferBase> MakeError(DeviceBase* device, const BufferDescriptor* descriptor);
 
     ObjectType GetType() const override;
 
@@ -169,7 +170,8 @@ class BufferBase : public ApiObjectBase {
     Ref<BufferBase> mStagingBuffer;
 
     WGPUBufferMapCallback mMapCallback = nullptr;
-    void* mMapUserdata = nullptr;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<void, DanglingUntriaged> mMapUserdata = nullptr;
     MapRequestID mLastMapID = MapRequestID(0);
     wgpu::MapMode mMapMode = wgpu::MapMode::None;
     size_t mMapOffset = 0;

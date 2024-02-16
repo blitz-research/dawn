@@ -31,6 +31,7 @@
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/HashUtils.h"
+#include "dawn/native/Queue.h"
 #include "dawn/native/d3d12/BindGroupD3D12.h"
 #include "dawn/native/d3d12/BindGroupLayoutD3D12.h"
 #include "dawn/native/d3d12/DeviceD3D12.h"
@@ -84,7 +85,8 @@ bool SamplerHeapCacheEntry::Populate(Device* device,
     // If either failed, return early to re-allocate and switch the heaps.
     const uint32_t descriptorCount = mSamplers.size();
     D3D12_CPU_DESCRIPTOR_HANDLE baseCPUDescriptor;
-    if (!allocator->AllocateGPUDescriptors(descriptorCount, device->GetPendingCommandSerial(),
+    if (!allocator->AllocateGPUDescriptors(descriptorCount,
+                                           device->GetQueue()->GetPendingCommandSerial(),
                                            &baseCPUDescriptor, &mGPUAllocation)) {
         return false;
     }
@@ -118,7 +120,7 @@ ResultOrError<Ref<SamplerHeapCacheEntry>> SamplerHeapCache::GetOrCreate(
     for (BindingIndex bindingIndex = bgl->GetDynamicBufferCount();
          bindingIndex < bgl->GetBindingCount(); ++bindingIndex) {
         const BindingInfo& bindingInfo = bgl->GetBindingInfo(bindingIndex);
-        if (bindingInfo.bindingType == BindingInfoType::Sampler) {
+        if (std::holds_alternative<SamplerBindingLayout>(bindingInfo.bindingLayout)) {
             samplers.push_back(ToBackend(group->GetBindingAsSampler(bindingIndex)));
         }
     }

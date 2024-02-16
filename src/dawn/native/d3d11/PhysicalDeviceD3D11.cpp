@@ -190,16 +190,20 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::DualSourceBlending);
     EnableFeature(Feature::Norm16TextureFormats);
     EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
+    EnableFeature(Feature::AdapterPropertiesD3D);
 
-    // To import multi planar textures, we need to at least tier 2 support.
-    if (mDeviceInfo.supportsSharedResourceCapabilityTier2) {
-        EnableFeature(Feature::DawnMultiPlanarFormats);
-        EnableFeature(Feature::MultiPlanarFormatP010);
-    }
+    // Multi planar formats are always supported since Feature Level 11.0
+    // https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-11-0-feature-level-hardware
+    EnableFeature(Feature::DawnMultiPlanarFormats);
+    EnableFeature(Feature::MultiPlanarFormatP010);
+    EnableFeature(Feature::MultiPlanarRenderTargets);
+
     if (mDeviceInfo.supportsROV) {
         EnableFeature(Feature::PixelLocalStorageCoherent);
     }
 
+    // Always expose SharedTextureMemoryDXGISharedHandle, since the d3d11 should be able to
+    // import shared handles which are exported from d3d device.
     EnableFeature(Feature::SharedTextureMemoryDXGISharedHandle);
     EnableFeature(Feature::SharedTextureMemoryD3D11Texture2D);
     EnableFeature(Feature::SharedFenceDXGISharedHandle);
@@ -225,7 +229,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // Slot values can be 0-15, inclusive:
     // https://docs.microsoft.com/en-ca/windows/win32/api/d3d11/ns-d3d11-d3d11_input_element_desc
     limits->v1.maxVertexBuffers = 16;
-    limits->v1.maxVertexAttributes = D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT;
+    // Both SV_VertexID and SV_InstanceID will consume vertex input slots.
+    limits->v1.maxVertexAttributes = D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT - 2;
 
     uint32_t maxUAVsAllStages = mFeatureLevel == D3D_FEATURE_LEVEL_11_1
                                     ? D3D11_1_UAV_SLOT_COUNT
@@ -328,32 +333,37 @@ MaybeError PhysicalDevice::ResetInternalDeviceForTestingImpl() {
     return {};
 }
 
-void PhysicalDevice::PopulateMemoryHeapInfo(
-    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
-    // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
-    // the properties of D3D12 Default/Upload/Readback heaps. The assumption is that these are
-    // roughly how D3D11 allocates memory has well.
-    if (mDeviceInfo.isUMA) {
-        auto* heapInfo = new MemoryHeapInfo[1];
-        memoryHeapProperties->heapCount = 1;
-        memoryHeapProperties->heapInfo = heapInfo;
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {
+    if (auto* memoryHeapProperties = properties.Get<AdapterPropertiesMemoryHeaps>()) {
+        // https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html describes
+        // the properties of D3D12 Default/Upload/Readback heaps. The assumption is that these are
+        // roughly how D3D11 allocates memory has well.
+        if (mDeviceInfo.isUMA) {
+            auto* heapInfo = new MemoryHeapInfo[1];
+            memoryHeapProperties->heapCount = 1;
+            memoryHeapProperties->heapInfo = heapInfo;
 
-        heapInfo[0].size =
-            std::max(mDeviceInfo.dedicatedVideoMemory, mDeviceInfo.sharedSystemMemory);
-        heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
-                                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
-    } else {
-        auto* heapInfo = new MemoryHeapInfo[2];
-        memoryHeapProperties->heapCount = 2;
-        memoryHeapProperties->heapInfo = heapInfo;
+            heapInfo[0].size =
+                std::max(mDeviceInfo.dedicatedVideoMemory, mDeviceInfo.sharedSystemMemory);
+            heapInfo[0].properties =
+                wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+        } else {
+            auto* heapInfo = new MemoryHeapInfo[2];
+            memoryHeapProperties->heapCount = 2;
+            memoryHeapProperties->heapInfo = heapInfo;
 
-        heapInfo[0].size = mDeviceInfo.dedicatedVideoMemory;
-        heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
+            heapInfo[0].size = mDeviceInfo.dedicatedVideoMemory;
+            heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal;
 
-        heapInfo[1].size = mDeviceInfo.sharedSystemMemory;
-        heapInfo[1].properties = wgpu::HeapProperty::HostVisible |
-                                 wgpu::HeapProperty::HostCoherent |
-                                 wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+            heapInfo[1].size = mDeviceInfo.sharedSystemMemory;
+            heapInfo[1].properties =
+                wgpu::HeapProperty::HostVisible | wgpu::HeapProperty::HostCoherent |
+                wgpu::HeapProperty::HostUncached | wgpu::HeapProperty::HostCached;
+        }
+    }
+    if (auto* d3dProperties = properties.Get<AdapterPropertiesD3D>()) {
+        d3dProperties->shaderModel = GetDeviceInfo().shaderModel;
     }
 }
 

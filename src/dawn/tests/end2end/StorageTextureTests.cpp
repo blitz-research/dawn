@@ -466,7 +466,6 @@ fn IsEqualTo(pixel : vec4f, expected : vec4f) -> bool {
         wgpu::ComputePipelineDescriptor computeDescriptor;
         computeDescriptor.layout = nullptr;
         computeDescriptor.compute.module = csModule;
-        computeDescriptor.compute.entryPoint = "main";
         return device.CreateComputePipeline(&computeDescriptor);
     }
 
@@ -680,7 +679,7 @@ fn IsEqualTo(pixel : vec4f, expected : vec4f) -> bool {
 // Test that write-only storage textures are supported in compute shader.
 TEST_P(StorageTextureTests, WriteonlyStorageTextureInComputeShader) {
     for (wgpu::TextureFormat format : utils::kAllTextureFormats) {
-        if (!utils::TextureFormatSupportsStorageTexture(format, IsCompatibilityMode())) {
+        if (!utils::TextureFormatSupportsStorageTexture(format, device, IsCompatibilityMode())) {
             continue;
         }
 
@@ -716,7 +715,7 @@ TEST_P(StorageTextureTests, WriteonlyStorageTextureInFragmentShader) {
     DAWN_SUPPRESS_TEST_IF(IsOpenGLES() && IsAndroid() && IsQualcomm());
 
     for (wgpu::TextureFormat format : utils::kAllTextureFormats) {
-        if (!utils::TextureFormatSupportsStorageTexture(format, IsCompatibilityMode())) {
+        if (!utils::TextureFormatSupportsStorageTexture(format, device, IsCompatibilityMode())) {
             continue;
         }
 
@@ -755,9 +754,6 @@ TEST_P(StorageTextureTests, WriteonlyStorageTextureInFragmentShader) {
 
 // Verify 2D array and 3D write-only storage textures work correctly.
 TEST_P(StorageTextureTests, Writeonly2DArrayOr3DStorageTexture) {
-    // TODO(crbug.com/dawn/547): implement 3D storage texture on OpenGL and OpenGLES.
-    DAWN_TEST_UNSUPPORTED_IF(IsOpenGL() || IsOpenGLES());
-
     constexpr uint32_t kSliceCount = 3u;
 
     constexpr wgpu::TextureFormat kTextureFormat = wgpu::TextureFormat::R32Uint;
@@ -828,7 +824,6 @@ TEST_P(StorageTextureTests, SampledAndWriteonlyStorageTexturePingPong) {
 
     wgpu::ComputePipelineDescriptor pipelineDesc = {};
     pipelineDesc.compute.module = module;
-    pipelineDesc.compute.entryPoint = "main";
     wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&pipelineDesc);
 
     // In bindGroupA storageTexture1 is bound as read-only storage texture and storageTexture2 is
@@ -1200,9 +1195,6 @@ fn main() {
 
 // Verify read-only storage texture can work correctly in vertex shaders.
 TEST_P(ReadWriteStorageTextureTests, ReadOnlyStorageTextureInVertexShader) {
-    // TODO(dawn:1972): Implement read-only storage texture as sampled texture in vertex shader.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGLES());
-
     constexpr wgpu::TextureFormat kStorageTextureFormat = wgpu::TextureFormat::R32Uint;
     const std::vector<uint8_t> kInitialTextureData = GetExpectedData(kStorageTextureFormat);
     wgpu::Texture readonlyStorageTexture = CreateTextureWithTestData(
@@ -1308,7 +1300,6 @@ fn main(
     wgpu::ComputePipelineDescriptor computeDescriptor;
     computeDescriptor.layout = utils::MakePipelineLayout(device, {bindGroupLayout});
     computeDescriptor.compute.module = utils::CreateShaderModule(device, sstream.str().c_str());
-    computeDescriptor.compute.entryPoint = "main";
     wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&computeDescriptor);
 
     wgpu::BindGroup bindGroup =

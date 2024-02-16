@@ -38,9 +38,6 @@ class FragDepthTests : public DawnTest {};
 
 // Test that when writing to FragDepth the result is clamped to the viewport.
 TEST_P(FragDepthTests, FragDepthIsClampedToViewport) {
-    // TODO(dawn:1125): Add the shader transform to clamp the frag depth to the GL backend.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         @vertex fn vs() -> @builtin(position) vec4f {
             return vec4f(0.0, 0.0, 0.5, 1.0);
@@ -54,10 +51,8 @@ TEST_P(FragDepthTests, FragDepthIsClampedToViewport) {
     // Create the pipeline that uses frag_depth to output the depth.
     utils::ComboRenderPipelineDescriptor pDesc;
     pDesc.vertex.module = module;
-    pDesc.vertex.entryPoint = "vs";
     pDesc.primitive.topology = wgpu::PrimitiveTopology::PointList;
     pDesc.cFragment.module = module;
-    pDesc.cFragment.entryPoint = "fs";
     pDesc.cFragment.targetCount = 0;
 
     wgpu::DepthStencilState* pDescDS = pDesc.EnableDepthStencil(kDepthFormat);
@@ -93,11 +88,11 @@ TEST_P(FragDepthTests, FragDepthIsClampedToViewport) {
 // Test for the push constant logic for ClampFragDepth in Vulkan to check that changing the
 // pipeline layout doesn't invalidate the push constants that were set.
 TEST_P(FragDepthTests, ChangingPipelineLayoutDoesntInvalidateViewport) {
-    // TODO(dawn:1125): Add the shader transform to clamp the frag depth to the GL backend.
-    DAWN_SUPPRESS_TEST_IF(IsOpenGL() || IsOpenGLES());
-
     // TODO(dawn:1805): Load ByteAddressBuffer in Pixel Shader doesn't work with NVIDIA on D3D11
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsNvidia());
+
+    // TODO(dawn:2393): ANGLE/D3D11 fails in HLSL shader compilation (UAV vs PS register bug)
+    DAWN_SUPPRESS_TEST_IF(IsANGLED3D11());
 
     wgpu::ShaderModule module = utils::CreateShaderModule(device, R"(
         @vertex fn vs() -> @builtin(position) vec4f {
@@ -118,7 +113,6 @@ TEST_P(FragDepthTests, ChangingPipelineLayoutDoesntInvalidateViewport) {
     // Create the pipeline and bindgroup for the pipeline layout with a uniform buffer.
     utils::ComboRenderPipelineDescriptor upDesc;
     upDesc.vertex.module = module;
-    upDesc.vertex.entryPoint = "vs";
     upDesc.primitive.topology = wgpu::PrimitiveTopology::PointList;
     upDesc.cFragment.module = module;
     upDesc.cFragment.entryPoint = "fsUniform";
@@ -137,7 +131,6 @@ TEST_P(FragDepthTests, ChangingPipelineLayoutDoesntInvalidateViewport) {
     // Create the pipeline and bindgroup for the pipeline layout with a uniform buffer.
     utils::ComboRenderPipelineDescriptor spDesc;
     spDesc.vertex.module = module;
-    spDesc.vertex.entryPoint = "vs";
     spDesc.primitive.topology = wgpu::PrimitiveTopology::PointList;
     spDesc.cFragment.module = module;
     spDesc.cFragment.entryPoint = "fsStorage";
@@ -205,10 +198,8 @@ TEST_P(FragDepthTests, RasterizationClipBeforeFS) {
     // Create the pipeline and bindgroup for the pipeline layout with a uniform buffer.
     utils::ComboRenderPipelineDescriptor pDesc;
     pDesc.vertex.module = module;
-    pDesc.vertex.entryPoint = "vs";
     pDesc.primitive.topology = wgpu::PrimitiveTopology::PointList;
     pDesc.cFragment.module = module;
-    pDesc.cFragment.entryPoint = "fs";
     pDesc.cFragment.targetCount = 0;
 
     wgpu::DepthStencilState* pDescDS = pDesc.EnableDepthStencil(kDepthFormat);

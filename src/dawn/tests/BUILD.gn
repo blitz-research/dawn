@@ -31,6 +31,15 @@ import("//testing/test.gni")
 import("${dawn_root}/generator/dawn_generator.gni")
 import("${dawn_root}/scripts/dawn_features.gni")
 
+# When embedded by Chrome, partition_alloc and the dangling pointer detector
+# are already initialized. Dawn shouldn't attempt to initialize them again. This
+# variable is useful to avoid double initialization of the library.
+dawn_enable_partition_alloc = false
+if (dawn_standalone && defined(dawn_partition_alloc_dir)) {
+  import("//build_overrides/partition_alloc.gni")
+  dawn_enable_partition_alloc = enable_dangling_raw_ptr_checks_default
+}
+
 group("tests") {
   testonly = true
   deps = [
@@ -276,12 +285,14 @@ dawn_test("dawn_unittests") {
     ":gmock_and_gtest",
     ":mock_webgpu_gen",
     ":native_mocks_sources",
+    ":partition_alloc_support",
     ":platform_mocks_sources",
     "${dawn_root}/src/dawn:cpp",
     "${dawn_root}/src/dawn:proc",
     "${dawn_root}/src/dawn/common",
     "${dawn_root}/src/dawn/native:sources",
     "${dawn_root}/src/dawn/native:static",
+    "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
     "${dawn_root}/src/dawn/utils",
     "${dawn_root}/src/dawn/wire",
   ]
@@ -437,6 +448,13 @@ dawn_test("dawn_unittests") {
     "unittests/wire/WireTest.h",
   ]
 
+  # `dawn_unittests` are known to run for both Dawn standalone and Chrome. This
+  # file is testing specifically the Dawn's standalone configuration of
+  # partition_alloc.
+  if (dawn_enable_partition_alloc) {
+    sources += [ "unittests/RawPtrTests.cpp" ]
+  }
+
   if (is_win) {
     sources += [ "unittests/WindowsUtilsTests.cpp" ]
   }
@@ -455,6 +473,25 @@ dawn_test("dawn_unittests") {
 }
 
 ###############################################################################
+# Dawn PartitionAlloc support for tests
+###############################################################################
+source_set("partition_alloc_support") {
+  testonly = true
+
+  deps = [
+    "${dawn_root}/src/dawn/common",
+    "${dawn_root}/src/dawn/partition_alloc",
+  ]
+
+  public = [ "PartitionAllocSupport.h" ]
+  sources = [ "PartitionAllocSupport.cpp" ]
+
+  if (dawn_enable_partition_alloc) {
+    defines = [ "DAWN_ENABLE_PARTITION_ALLOC" ]
+  }
+}
+
+###############################################################################
 # Dawn test infrastructure targets
 ###############################################################################
 
@@ -463,6 +500,7 @@ source_set("test_infra_sources") {
   testonly = true
 
   deps = [
+    ":partition_alloc_support",
     "${dawn_root}/src/dawn:cpp",
     "${dawn_root}/src/dawn:proc",
     "${dawn_root}/src/dawn/common",
@@ -472,7 +510,10 @@ source_set("test_infra_sources") {
     "${dawn_root}/src/dawn/wire",
   ]
 
-  public_deps = [ ":gmock_and_gtest" ]
+  public_deps = [
+    ":gmock_and_gtest",
+    "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
+  ]
 
   if (dawn_supports_glfw_for_windowing) {
     public_deps += [ "${dawn_root}/src/dawn/glfw" ]
@@ -505,6 +546,7 @@ source_set("platform_mocks_sources") {
     "${dawn_root}/src/dawn/common",
     "${dawn_root}/src/dawn/platform",
   ]
+  public_deps = [ "${dawn_root}/src/dawn/partition_alloc:raw_ptr" ]
 
   sources = [
     "mocks/platform/CachingInterfaceMock.cpp",
@@ -522,6 +564,7 @@ source_set("end2end_tests_sources") {
     "${dawn_root}/src/dawn:proc",
     "${dawn_root}/src/dawn/common",
     "${dawn_root}/src/dawn/native:headers",
+    "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
     "${dawn_root}/src/dawn/platform",
     "${dawn_root}/src/dawn/utils",
     "${dawn_root}/src/dawn/wire",
@@ -530,6 +573,7 @@ source_set("end2end_tests_sources") {
   sources = [
     "end2end/AdapterCreationTests.cpp",
     "end2end/AdapterEnumerationTests.cpp",
+    "end2end/AdapterPropertiesD3DTests.cpp",
     "end2end/BasicTests.cpp",
     "end2end/BindGroupTests.cpp",
     "end2end/BufferHostMappedPointerTests.cpp",
@@ -692,6 +736,7 @@ source_set("white_box_tests_sources") {
     "${dawn_root}/src/dawn:cpp",
     "${dawn_root}/src/dawn:proc",
     "${dawn_root}/src/dawn/common",
+    "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
 
     # Statically linked and with sources because the end2end white_box tests use Dawn internals.
     "${dawn_root}/src/dawn/native:sources",
@@ -701,6 +746,7 @@ source_set("white_box_tests_sources") {
   ]
 
   sources = [
+    "white_box/ShaderModuleTests.cpp",
     "white_box/SharedTextureMemoryTests.cpp",
     "white_box/SharedTextureMemoryTests.h",
   ]
@@ -820,6 +866,7 @@ dawn_test("dawn_perf_tests") {
     "${dawn_root}/src/dawn:cpp",
     "${dawn_root}/src/dawn:proc",
     "${dawn_root}/src/dawn/common",
+    "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
     "${dawn_root}/src/dawn/platform",
     "${dawn_root}/src/dawn/utils",
     "${dawn_root}/src/dawn/wire",
@@ -834,6 +881,7 @@ dawn_test("dawn_perf_tests") {
     "perf_tests/DrawCallPerf.cpp",
     "perf_tests/ShaderRobustnessPerf.cpp",
     "perf_tests/SubresourceTrackingPerf.cpp",
+    "perf_tests/UniformBufferUpdatePerf.cpp",
     "perf_tests/VulkanZeroInitializeWorkgroupMemoryPerf.cpp",
   ]
 

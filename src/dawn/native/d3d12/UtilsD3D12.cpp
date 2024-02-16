@@ -259,6 +259,9 @@ void RecordBufferTextureCopyWithBufferHandle(BufferTextureCopyDirection directio
     const TexelBlockInfo& blockInfo = texture->GetFormat().GetAspectInfo(textureCopy.aspect).block;
 
     switch (texture->GetDimension()) {
+        case wgpu::TextureDimension::Undefined:
+            DAWN_UNREACHABLE();
+
         case wgpu::TextureDimension::e1D: {
             // 1D textures copy splits are a subset of the single-layer 2D texture copy splits,
             // at least while 1D textures can only have a single array layer.
@@ -332,11 +335,15 @@ void RecordBufferTextureCopy(BufferTextureCopyDirection direction,
 }
 
 void SetDebugName(Device* device, ID3D12Object* object, const char* prefix, std::string label) {
+    if (!device->IsToggleEnabled(Toggle::UseUserDefinedLabelsInBackend)) {
+        return;
+    }
+
     if (!object) {
         return;
     }
 
-    if (label.empty() || !device->IsToggleEnabled(Toggle::UseUserDefinedLabelsInBackend)) {
+    if (label.empty()) {
         object->SetPrivateData(WKPDID_D3DDebugObjectName, strlen(prefix), prefix);
         return;
     }

@@ -45,7 +45,7 @@ struct ArrayLengthFromUniformOptions {
     std::unordered_map<BindingPoint, uint32_t> bindpoint_to_size_index;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
-    TINT_REFLECT(ubo_binding, bindpoint_to_size_index);
+    TINT_REFLECT(ArrayLengthFromUniformOptions, ubo_binding, bindpoint_to_size_index);
 };
 
 }  // namespace tint

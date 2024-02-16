@@ -94,7 +94,7 @@ class RenderPipelineBase : public PipelineBase,
     RenderPipelineBase(DeviceBase* device, const UnpackedPtr<RenderPipelineDescriptor>& descriptor);
     ~RenderPipelineBase() override;
 
-    static RenderPipelineBase* MakeError(DeviceBase* device, const char* label);
+    static Ref<RenderPipelineBase> MakeError(DeviceBase* device, const char* label);
 
     ObjectType GetType() const override;
 
@@ -128,6 +128,8 @@ class RenderPipelineBase : public PipelineBase,
     bool WritesDepth() const;
     bool WritesStencil() const;
     bool UsesFragDepth() const;
+    bool UsesVertexIndex() const;
+    bool UsesInstanceIndex() const;
 
     const AttachmentState* GetAttachmentState() const;
 
@@ -168,6 +170,8 @@ class RenderPipelineBase : public PipelineBase,
     bool mWritesDepth = false;
     bool mWritesStencil = false;
     bool mUsesFragDepth = false;
+    bool mUsesVertexIndex = false;
+    bool mUsesInstanceIndex = false;
 };
 
 }  // namespace dawn::native

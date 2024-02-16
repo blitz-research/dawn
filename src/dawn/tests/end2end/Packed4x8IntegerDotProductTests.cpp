@@ -36,10 +36,6 @@ namespace {
 class Packed4x8IntegerDotProductTests : public DawnTest {};
 
 TEST_P(Packed4x8IntegerDotProductTests, Dot4x8Packed) {
-    // TODO(dawn:1704): investigate why the creation of compute pipeline with dot4{U|I}8Packed()
-    // fails on Pixel 4
-    DAWN_SUPPRESS_TEST_IF(IsQualcomm());
-
     const char* computeShader = R"(
         struct Buf {
             data1 : i32,
@@ -81,7 +77,6 @@ TEST_P(Packed4x8IntegerDotProductTests, Dot4x8Packed) {
 
     wgpu::ComputePipelineDescriptor csDesc;
     csDesc.compute.module = utils::CreateShaderModule(device, computeShader);
-    csDesc.compute.entryPoint = "main";
     wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&csDesc);
 
     wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
@@ -99,21 +94,22 @@ TEST_P(Packed4x8IntegerDotProductTests, Dot4x8Packed) {
     wgpu::CommandBuffer commands = encoder.Finish();
     queue.Submit(1, &commands);
 
-    uint32_t expected[] = {70, 252998, static_cast<uint32_t>(-30), 2530};
-    EXPECT_BUFFER_U32_RANGE_EQ(expected, bufferOut, 0, 4);
+    int32_t expected[] = {70, 252998, -30, 2530};
+    EXPECT_BUFFER_U32_RANGE_EQ(reinterpret_cast<uint32_t*>(expected), bufferOut, 0,
+                               sizeof(expected) / sizeof(int32_t));
 }
 
 TEST_P(Packed4x8IntegerDotProductTests, Pack4x8) {
-    // TODO(dawn:1704): investigate why the creation of compute pipeline with pack4x{U|I}8()
-    // fails on Pixel 6
-    DAWN_SUPPRESS_TEST_IF(IsQualcomm());
-
     const char* computeShader = R"(
         struct Buf {
             data1 : u32,
             data2 : u32,
             data3 : u32,
             data4 : u32,
+            data5 : u32,
+            data6 : u32,
+            data7 : u32,
+            data8 : u32,
         }
         @group(0) @binding(0) var<storage, read_write> buf : Buf;
         struct InputData {
@@ -130,24 +126,28 @@ TEST_P(Packed4x8IntegerDotProductTests, Pack4x8) {
             buf.data2 = pack4xI8(inputBuf.b);
             buf.data3 = pack4xU8(inputBuf.c);
             buf.data4 = pack4xU8(inputBuf.d);
+
+            buf.data5 = pack4xI8Clamp(inputBuf.a);
+            buf.data6 = pack4xI8Clamp(inputBuf.b);
+            buf.data7 = pack4xU8Clamp(inputBuf.c);
+            buf.data8 = pack4xU8Clamp(inputBuf.d);
         }
 )";
 
     ASSERT_TRUE(instance.HasWGSLLanguageFeature(wgpu::WGSLFeatureName::Packed4x8IntegerDotProduct));
 
     wgpu::BufferDescriptor bufferDesc;
-    bufferDesc.size = 4 * sizeof(uint32_t);
+    bufferDesc.size = 8 * sizeof(uint32_t);
     bufferDesc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc;
     wgpu::Buffer bufferOut = device.CreateBuffer(&bufferDesc);
 
     wgpu::Buffer inputBuffer = utils::CreateBufferFromData(
         device,
         wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Storage,
-        {127, 128, -128, -129, 32767, 32768, -32768, -32769, 1, 2, 3, 4, 0, 254, 255, 65535});
+        {127, 128, -128, -129, -32768, -32769, 32767, 32768, 1, 2, 3, 4, 0, 254, 255, 65535});
 
     wgpu::ComputePipelineDescriptor csDesc;
     csDesc.compute.module = utils::CreateShaderModule(device, computeShader);
-    csDesc.compute.entryPoint = "main";
     wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&csDesc);
 
     wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
@@ -165,8 +165,81 @@ TEST_P(Packed4x8IntegerDotProductTests, Pack4x8) {
     wgpu::CommandBuffer commands = encoder.Finish();
     queue.Submit(1, &commands);
 
-    uint32_t expected[] = {0x7f80807f, 0xff0000ff, 0x04030201, 0xfffffe00};
-    EXPECT_BUFFER_U32_RANGE_EQ(expected, bufferOut, 0, 4);
+    uint32_t expected[] = {0x7F80807F, 0x00FFFF00, 0x04030201, 0xFFFFFE00,
+                           0x80807F7F, 0x7F7F8080, 0x04030201, 0xFFFFFE00};
+    EXPECT_BUFFER_U32_RANGE_EQ(expected, bufferOut, 0, sizeof(expected) / sizeof(uint32_t));
+}
+
+TEST_P(Packed4x8IntegerDotProductTests, Unpack4x8) {
+    const char* computeShader = R"(
+        struct Buf {
+            data1 : vec4i,
+            data2 : vec4i,
+            data3 : vec4i,
+            data4 : vec4i,
+            data5 : vec4u,
+            data6 : vec4u,
+            data7 : vec4u,
+            data8 : vec4u,
+        }
+        @group(0) @binding(0) var<storage, read_write> buf : Buf;
+        struct InputData {
+            a : u32,
+            b : u32,
+            c : u32,
+            d : u32,
+        }
+        @group(0) @binding(1) var<storage, read_write> inputBuf : InputData;
+
+        @compute @workgroup_size(1)
+        fn main() {
+            buf.data1 = unpack4xI8(inputBuf.a);
+            buf.data2 = unpack4xI8(inputBuf.b);
+            buf.data3 = unpack4xI8(inputBuf.c);
+            buf.data4 = unpack4xI8(inputBuf.d);
+
+            buf.data5 = unpack4xU8(inputBuf.a);
+            buf.data6 = unpack4xU8(inputBuf.b);
+            buf.data7 = unpack4xU8(inputBuf.c);
+            buf.data8 = unpack4xU8(inputBuf.d);
+        }
+)";
+
+    ASSERT_TRUE(instance.HasWGSLLanguageFeature(wgpu::WGSLFeatureName::Packed4x8IntegerDotProduct));
+
+    wgpu::BufferDescriptor bufferDesc;
+    bufferDesc.size = sizeof(uint32_t) * 4 * 8;
+    bufferDesc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc;
+    wgpu::Buffer bufferOut = device.CreateBuffer(&bufferDesc);
+
+    wgpu::Buffer inputBuffer = utils::CreateBufferFromData(
+        device,
+        wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Storage,
+        {0x01020304u, 0xFFFEFDFCu, 0x05FB06FAu, 0xF907F808u});
+
+    wgpu::ComputePipelineDescriptor csDesc;
+    csDesc.compute.module = utils::CreateShaderModule(device, computeShader);
+    wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&csDesc);
+
+    wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, pipeline.GetBindGroupLayout(0),
+                                                     {
+                                                         {0, bufferOut},
+                                                         {1, inputBuffer},
+                                                     });
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+    pass.SetPipeline(pipeline);
+    pass.SetBindGroup(0, bindGroup);
+    pass.DispatchWorkgroups(1);
+    pass.End();
+    wgpu::CommandBuffer commands = encoder.Finish();
+    queue.Submit(1, &commands);
+
+    int32_t expected[] = {4, 3, 2, 1, -4,  -3,  -2,  -1,  -6,  6, -5,  5, 8, -8,  7, -7,
+                          4, 3, 2, 1, 252, 253, 254, 255, 250, 6, 251, 5, 8, 248, 7, 249};
+    EXPECT_BUFFER_U32_RANGE_EQ(reinterpret_cast<uint32_t*>(expected), bufferOut, 0,
+                               sizeof(expected) / sizeof(int32_t));
 }
 
 // DawnTestBase::CreateDeviceImpl always enables allow_unsafe_apis toggle.
@@ -175,6 +248,7 @@ DAWN_INSTANTIATE_TEST(Packed4x8IntegerDotProductTests,
                       D3D12Backend(),
                       D3D12Backend({}, {"use_dxc"}),
                       D3D12Backend({"polyfill_packed_4x8_dot_product"}),
+                      D3D12Backend({"d3d12_polyfill_pack_unpack_4x8"}),
                       MetalBackend(),
                       VulkanBackend(),
                       VulkanBackend({"polyfill_packed_4x8_dot_product"}));

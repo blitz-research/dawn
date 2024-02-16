@@ -110,6 +110,22 @@ if (tint_build_wgsl_reader) {
       "${tint_src_dir}/utils/traits",
     ]
 
+    if (tint_build_glsl_writer) {
+      deps += [ "${tint_src_dir}/lang/glsl/writer:fuzz" ]
+    }
+
+    if (tint_build_hlsl_writer) {
+      deps += [ "${tint_src_dir}/lang/hlsl/writer:fuzz" ]
+    }
+
+    if (tint_build_ir_binary) {
+      deps += [ "${tint_src_dir}/lang/core/ir/binary:fuzz" ]
+    }
+
+    if (tint_build_msl_writer) {
+      deps += [ "${tint_src_dir}/lang/msl/writer:fuzz" ]
+    }
+
     if (tint_build_spv_writer) {
       deps += [ "${tint_src_dir}/lang/spirv/writer:fuzz" ]
     }
@@ -122,7 +138,7 @@ if (tint_build_wgsl_reader) {
     }
 
     if (tint_build_wgsl_writer) {
-      deps += [ "${tint_src_dir}/lang/wgsl/writer/ast_printer:fuzz" ]
+      deps += [ "${tint_src_dir}/lang/wgsl/writer:fuzz" ]
     }
   }
 }

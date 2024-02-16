@@ -83,7 +83,7 @@ Case E(T lhs, U rhs, std::string error) {
 /// Prints Case to ostream
 static std::ostream& operator<<(std::ostream& o, const Case& c) {
     o << "lhs: " << c.lhs << ", rhs: " << c.rhs << ", expected: ";
-    if (c.expected) {
+    if (c.expected == Success) {
         auto& s = c.expected.Get();
         o << s.value;
     } else {
@@ -110,7 +110,7 @@ TEST_P(ConstEvalBinaryOpTest, Test) {
     auto* expr = create<ast::BinaryExpression>(Source{{12, 34}}, op, lhs_expr, rhs_expr);
     GlobalConst("C", expr);
 
-    if (c.expected) {
+    if (c.expected == Success) {
         ASSERT_TRUE(r()->Resolve()) << r()->error();
         auto expected_case = c.expected.Get();
         auto& expected = expected_case.value;
@@ -2215,7 +2215,7 @@ const result = (one == 0) && (1111111111111111111111111111111i == 0);
     auto program = wgsl::reader::Parse(file.get());
     EXPECT_FALSE(program.IsValid());
 
-    auto error = program.Diagnostics().str();
+    auto error = program.Diagnostics().Str();
     EXPECT_EQ(error, R"(test:3:31 error: value cannot be represented as 'i32'
 const result = (one == 0) && (1111111111111111111111111111111i == 0);
                               ^
@@ -2234,7 +2234,7 @@ const result = (one == 1) || (1111111111111111111111111111111i == 0);
     auto program = wgsl::reader::Parse(file.get());
     EXPECT_FALSE(program.IsValid());
 
-    auto error = program.Diagnostics().str();
+    auto error = program.Diagnostics().Str();
     EXPECT_EQ(error, R"(test:3:31 error: value cannot be represented as 'i32'
 const result = (one == 1) || (1111111111111111111111111111111i == 0);
                               ^
@@ -2442,7 +2442,7 @@ const result = )");
     auto program = wgsl::reader::Parse(file.get());
 
     if (should_pass) {
-        auto error = program.Diagnostics().str();
+        auto error = program.Diagnostics().Str();
 
         EXPECT_TRUE(program.IsValid()) << error;
     } else {

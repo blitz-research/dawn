@@ -29,16 +29,19 @@
 #define SRC_DAWN_WIRE_CLIENT_OBJECTBASE_H_
 
 #include "dawn/webgpu.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include "dawn/common/LinkedList.h"
 #include "dawn/wire/ObjectHandle.h"
+#include "dawn/wire/ObjectType_autogen.h"
+#include "dawn/wire/client/EventManager.h"
 
 namespace dawn::wire::client {
 
 class Client;
 
 struct ObjectBaseParams {
-    Client* client;
+    raw_ptr<Client> client;
     ObjectHandle handle;
 };
 
@@ -53,6 +56,7 @@ class ObjectBase : public LinkNode<ObjectBase> {
     virtual ~ObjectBase();
 
     virtual void CancelCallbacksForDisconnect() {}
+    virtual ObjectType GetObjectType() const = 0;
 
     const ObjectHandle& GetWireHandle() const;
     ObjectId GetWireId() const;
@@ -60,17 +64,32 @@ class ObjectBase : public LinkNode<ObjectBase> {
     Client* GetClient() const;
 
     void Reference();
-    // Returns true if it was the last reference, indicating that the caller must destroy the
-    // object.
-    [[nodiscard]] bool Release();
+    void Release();
 
   protected:
     uint32_t GetRefcount() const { return mRefcount; }
 
   private:
-    Client* const mClient;
+    const raw_ptr<Client> mClient;
     const ObjectHandle mHandle;
     uint32_t mRefcount;
+};
+
+// Compositable functionality for objects on the client side that need to have access to the event
+// manager.
+class ObjectWithEventsBase : public ObjectBase {
+  public:
+    // Note that the ObjectHandle associated with an EventManager is the same handle associated to
+    // the Instance that "owns" the EventManager.
+    ObjectWithEventsBase(const ObjectBaseParams& params, const ObjectHandle& eventManager);
+
+    const ObjectHandle& GetEventManagerHandle() const;
+    EventManager& GetEventManager() const;
+
+  private:
+    // The EventManager is owned by the client and long-lived. When the client is destroyed all
+    // objects are also freed.
+    ObjectHandle mEventManagerHandle;
 };
 
 }  // namespace dawn::wire::client

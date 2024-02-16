@@ -28,25 +28,28 @@
 #ifndef SRC_TINT_LANG_SPIRV_READER_PARSER_HELPER_TEST_H_
 #define SRC_TINT_LANG_SPIRV_READER_PARSER_HELPER_TEST_H_
 
+#include <iostream>
 #include <string>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "spirv-tools/libspirv.hpp"
 #include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/spirv/reader/common/helper_test.h"
 #include "src/tint/lang/spirv/reader/parser/parser.h"
 
 namespace tint::spirv::reader {
 
 // Helper macro to run the parser and compare the disassembled IR to a string.
 // Automatically prefixes the IR disassembly with a newline to improve formatting of tests.
-#define EXPECT_IR(asm, ir)                               \
-    do {                                                 \
-        auto got = "\n" + Run(asm);                      \
-        ASSERT_THAT(got, testing::HasSubstr(ir)) << got; \
+#define EXPECT_IR(asm, ir)                                           \
+    do {                                                             \
+        auto result = Run(asm);                                      \
+        ASSERT_EQ(result, Success) << result.Failure().reason.Str(); \
+        auto got = "\n" + result.Get();                              \
+        ASSERT_THAT(got, testing::HasSubstr(ir)) << got;             \
     } while (false)
 
 /// Base helper class for testing the SPIR-V parser implementation.
@@ -55,32 +58,27 @@ class SpirvParserTestHelperBase : public BASE {
   protected:
     /// Run the parser on a SPIR-V module and return the Tint IR or an error string.
     /// @param spirv_asm the SPIR-V assembly to parse
-    /// @returns the disassembled Tint IR
-    std::string Run(std::string spirv_asm) {
+    /// @returns the disassembled Tint IR or an error
+    Result<std::string> Run(std::string spirv_asm) {
         // Assemble the SPIR-V input.
-        StringStream err;
-        std::vector<uint32_t> binary;
-        spvtools::SpirvTools tools(SPV_ENV_UNIVERSAL_1_0);
-        tools.SetMessageConsumer(
-            [&err](spv_message_level_t, const char*, const spv_position_t& pos, const char* msg) {
-                err << "SPIR-V assembly failed:" << pos.line << ":" << pos.column << ": " << msg;
-            });
-        auto assembled =
-            tools.Assemble(spirv_asm, &binary, SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS);
-        if (!assembled) {
-            return err.str();
+        auto binary = Assemble(spirv_asm);
+        if (binary != Success) {
+            return binary.Failure();
         }
 
         // Parse the SPIR-V to produce an IR module.
-        auto parsed = Parse(Slice(binary.data(), binary.size()));
-        if (!parsed) {
-            return parsed.Failure().reason.str();
+        auto parsed = Parse(Slice(binary.Get().data(), binary.Get().size()));
+        if (parsed != Success) {
+            return parsed.Failure();
         }
 
-        // Validate the IR module.
-        auto validated = core::ir::Validate(parsed.Get());
-        if (!validated) {
-            return validated.Failure().reason.str();
+        // Validate the IR module against the capabilities supported by the SPIR-V dialect.
+        auto validated =
+            core::ir::Validate(parsed.Get(), EnumSet<core::ir::Capability>{
+                                                 core::ir::Capability::kAllowVectorElementPointer,
+                                             });
+        if (validated != Success) {
+            return validated.Failure();
         }
 
         // Return the disassembled IR module.

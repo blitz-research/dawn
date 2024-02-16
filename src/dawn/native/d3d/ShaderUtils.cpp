@@ -78,9 +78,21 @@ std::vector<const wchar_t*> GetDXCArguments(std::wstring_view entryPointNameW,
                 arguments.push_back(L"/O3");
                 break;
         }
+    } else {
+        // D3DCOMPILE_OPTIMIZATION_LEVEL1 is defined to 0
+        arguments.push_back(L"/O1");
+    }
+    if (compileFlags & D3DCOMPILE_SKIP_OPTIMIZATION) {
+        // DXC will use the last optimization flag passed in (/O[n] and /Od), so we make sure
+        // to pass /Od last.
+        arguments.push_back(L"/Od");
     }
     if (compileFlags & D3DCOMPILE_DEBUG) {
         arguments.push_back(L"/Zi");
+        // Unlike FXC, DXC does not embed debug info into the shader object by default, as it's
+        // preferable to save it to pdb files to keep shader objects small. Embed it for now, and we
+        // can consider exposing an option for users to supply a path to dump pdbs to in the future.
+        arguments.push_back(L"/Qembed_debug");
     }
     if (compileFlags & D3DCOMPILE_PACK_MATRIX_ROW_MAJOR) {
         arguments.push_back(L"/Zpr");
@@ -97,6 +109,22 @@ std::vector<const wchar_t*> GetDXCArguments(std::wstring_view entryPointNameW,
     if (compileFlags & D3DCOMPILE_RESOURCES_MAY_ALIAS) {
         arguments.push_back(L"/res_may_alias");
     }
+
+#define ASSERT_UNHANDLED(f) DAWN_ASSERT((compileFlags & f) == 0)
+    ASSERT_UNHANDLED(D3DCOMPILE_SKIP_VALIDATION);
+    ASSERT_UNHANDLED(D3DCOMPILE_PARTIAL_PRECISION);
+    ASSERT_UNHANDLED(D3DCOMPILE_FORCE_VS_SOFTWARE_NO_OPT);
+    ASSERT_UNHANDLED(D3DCOMPILE_FORCE_PS_SOFTWARE_NO_OPT);
+    ASSERT_UNHANDLED(D3DCOMPILE_NO_PRESHADER);
+    ASSERT_UNHANDLED(D3DCOMPILE_ENABLE_STRICTNESS);
+    ASSERT_UNHANDLED(D3DCOMPILE_RESERVED16);
+    ASSERT_UNHANDLED(D3DCOMPILE_RESERVED17);
+    ASSERT_UNHANDLED(D3DCOMPILE_WARNINGS_ARE_ERRORS);
+    ASSERT_UNHANDLED(D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES);
+    ASSERT_UNHANDLED(D3DCOMPILE_ALL_RESOURCES_BOUND);
+    ASSERT_UNHANDLED(D3DCOMPILE_DEBUG_NAME_FOR_SOURCE);
+    ASSERT_UNHANDLED(D3DCOMPILE_DEBUG_NAME_FOR_BINARY);
+#undef ASSERT_UNHANDLED
 
     if (r.hasShaderF16Feature) {
         // enable-16bit-types are only allowed in -HV 2018 (default)
@@ -239,8 +267,8 @@ MaybeError TranslateToHLSL(d3d::HlslCompilationRequest r,
 
     TRACE_EVENT0(tracePlatform.UnsafeGetValue(), General, "tint::hlsl::writer::Generate");
     auto result = tint::hlsl::writer::Generate(transformedProgram, r.tintOptions);
-    DAWN_INVALID_IF(!result, "An error occurred while generating HLSL:\n%s",
-                    result.Failure().reason.str());
+    DAWN_INVALID_IF(result != tint::Success, "An error occurred while generating HLSL:\n%s",
+                    result.Failure().reason.Str());
 
     compiledShader->usesVertexIndex = usesVertexIndex;
     compiledShader->usesInstanceIndex = usesInstanceIndex;

@@ -315,10 +315,6 @@ id<MTLDevice> Device::GetMTLDevice() const {
     return mMtlDevice.Get();
 }
 
-CommandRecordingContext* Device::GetPendingCommandContext(Device::SubmitMode submitMode) {
-    return ToBackend(GetQueue())->GetPendingCommandContext(submitMode);
-}
-
 MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t sourceOffset,
                                                BufferBase* destination,
@@ -330,12 +326,13 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
 
     ToBackend(destination)
         ->EnsureDataInitializedAsDestination(
-            GetPendingCommandContext(DeviceBase::SubmitMode::Passive), destinationOffset, size);
+            ToBackend(GetQueue())->GetPendingCommandContext(QueueBase::SubmitMode::Passive),
+            destinationOffset, size);
 
     id<MTLBuffer> uploadBuffer = ToBackend(source)->GetMTLBuffer();
     Buffer* buffer = ToBackend(destination);
     buffer->TrackUsage();
-    [GetPendingCommandContext(DeviceBase::SubmitMode::Passive)->EnsureBlit()
+    [ToBackend(GetQueue())->GetPendingCommandContext(QueueBase::SubmitMode::Passive)->EnsureBlit()
            copyFromBuffer:uploadBuffer
              sourceOffset:sourceOffset
                  toBuffer:buffer->GetMTLBuffer()
@@ -352,52 +349,17 @@ MaybeError Device::CopyFromStagingToTextureImpl(const BufferBase* source,
                                                 const TextureCopy& dst,
                                                 const Extent3D& copySizePixels) {
     Texture* texture = ToBackend(dst.texture.Get());
-    texture->SynchronizeTextureBeforeUse(GetPendingCommandContext());
+    texture->SynchronizeTextureBeforeUse(ToBackend(GetQueue())->GetPendingCommandContext());
     DAWN_TRY(EnsureDestinationTextureInitialized(
-        GetPendingCommandContext(DeviceBase::SubmitMode::Passive), texture, dst, copySizePixels));
+        ToBackend(GetQueue())->GetPendingCommandContext(QueueBase::SubmitMode::Passive), texture,
+        dst, copySizePixels));
 
-    RecordCopyBufferToTexture(GetPendingCommandContext(DeviceBase::SubmitMode::Passive),
-                              ToBackend(source)->GetMTLBuffer(), source->GetSize(),
-                              dataLayout.offset, dataLayout.bytesPerRow, dataLayout.rowsPerImage,
-                              texture, dst.mipLevel, dst.origin, dst.aspect, copySizePixels);
+    RecordCopyBufferToTexture(
+        ToBackend(GetQueue())->GetPendingCommandContext(QueueBase::SubmitMode::Passive),
+        ToBackend(source)->GetMTLBuffer(), source->GetSize(), dataLayout.offset,
+        dataLayout.bytesPerRow, dataLayout.rowsPerImage, texture, dst.mipLevel, dst.origin,
+        dst.aspect, copySizePixels);
     return {};
-}
-
-Ref<Texture> Device::CreateTextureWrappingIOSurface(
-    const ExternalImageDescriptor* descriptor,
-    IOSurfaceRef ioSurface,
-    std::vector<MTLSharedEventAndSignalValue> waitEvents) {
-    UnpackedPtr<TextureDescriptor> textureDescriptor;
-    if (ConsumedError(ValidateIsAlive())) {
-        return nullptr;
-    }
-    if (ConsumedError(ValidateAndUnpack(FromAPI(descriptor->cTextureDescriptor)),
-                      &textureDescriptor)) {
-        return nullptr;
-    }
-    if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor,
-                                                AllowMultiPlanarTextureFormat::Yes))) {
-        return nullptr;
-    }
-    if (ConsumedError(ValidateIOSurfaceCanBeWrapped(this, textureDescriptor, ioSurface))) {
-        return nullptr;
-    }
-    // TODO(dawn:1337): Allow creating uninitialized texture for rendering.
-    if (GetValidInternalFormat(textureDescriptor->format).IsMultiPlanar() &&
-        !descriptor->isInitialized) {
-        bool consumed = ConsumedError(DAWN_VALIDATION_ERROR(
-            "External textures with multiplanar formats must be initialized."));
-        DAWN_UNUSED(consumed);
-        return nullptr;
-    }
-
-    Ref<Texture> result;
-    if (ConsumedError(Texture::CreateFromIOSurface(this, descriptor, textureDescriptor, ioSurface,
-                                                   std::move(waitEvents)),
-                      &result)) {
-        return nullptr;
-    }
-    return result;
 }
 
 void Device::DestroyImpl() {

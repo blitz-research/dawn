@@ -185,7 +185,6 @@ target_sources(dawn_native
     "QuerySet.h"
     "Queue.cpp"
     "Queue.h"
-    "RefCountedWithExternalCount.cpp"
     "RefCountedWithExternalCount.h"
     "RenderBundle.cpp"
     "RenderBundle.h"
@@ -255,6 +254,8 @@ target_link_libraries(dawn_native
             SPIRV-Tools-opt
             absl_strings
             absl_str_format_internal
+            absl_flat_hash_map
+            absl_flat_hash_set
 )
 
 target_include_directories(dawn_native PRIVATE ${DAWN_ABSEIL_DIR})
@@ -308,8 +309,6 @@ if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
         "d3d/DeviceD3D.h"
         "d3d/ExternalImageDXGIImpl.cpp"
         "d3d/ExternalImageDXGIImpl.h"
-        "d3d/Fence.cpp"
-        "d3d/Fence.h"
         "d3d/Forward.h"
         "d3d/PhysicalDeviceD3D.cpp"
         "d3d/PhysicalDeviceD3D.h"
@@ -358,8 +357,6 @@ if (DAWN_ENABLE_D3D11)
         "d3d11/DeviceD3D11.h"
         "d3d11/DeviceInfoD3D11.cpp"
         "d3d11/DeviceInfoD3D11.h"
-        "d3d11/FenceD3D11.cpp"
-        "d3d11/FenceD3D11.h"
         "d3d11/Forward.h"
         "d3d11/PhysicalDeviceD3D11.cpp"
         "d3d11/PhysicalDeviceD3D11.h"
@@ -417,8 +414,6 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/D3D12Info.h"
         "d3d12/DeviceD3D12.cpp"
         "d3d12/DeviceD3D12.h"
-        "d3d12/FenceD3D12.cpp"
-        "d3d12/FenceD3D12.h"
         "d3d12/Forward.h"
         "d3d12/GPUDescriptorHeapAllocationD3D12.cpp"
         "d3d12/GPUDescriptorHeapAllocationD3D12.h"

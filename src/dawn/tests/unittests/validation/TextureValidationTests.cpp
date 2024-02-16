@@ -638,7 +638,7 @@ TEST_F(TextureValidationTest, TextureFormatNotSupportTextureUsageStorage) {
 
     for (wgpu::TextureFormat format : utils::kAllTextureFormats) {
         descriptor.format = format;
-        if (utils::TextureFormatSupportsStorageTexture(format, UseCompatibilityMode())) {
+        if (utils::TextureFormatSupportsStorageTexture(format, device, UseCompatibilityMode())) {
             device.CreateTexture(&descriptor);
         } else {
             ASSERT_DEVICE_ERROR(device.CreateTexture(&descriptor));
@@ -1094,6 +1094,8 @@ TEST_F(TextureValidationTest, APIValidateTextureDescriptor) {
     desc.format = wgpu::TextureFormat::RGBA8Unorm;
     desc.size = {1, 1, 1};
     desc.usage = wgpu::TextureUsage::RenderAttachment;
+    // Spot-test for defaulting of .dimension.
+    desc.dimension = wgpu::TextureDimension::Undefined;
 
     device.ValidateTextureDescriptor(&desc);
 

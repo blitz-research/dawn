@@ -184,11 +184,12 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
         polyfills.first_leading_bit = true;
         polyfills.first_trailing_bit = true;
         polyfills.insert_bits = ast::transform::BuiltinPolyfill::Level::kClampParameters;
-        polyfills.int_div_mod = true;
+        polyfills.int_div_mod = !options.disable_polyfill_integer_div_mod;
         polyfills.sign_int = true;
         polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
         polyfills.workgroup_uniform_load = true;
         polyfills.pack_unpack_4x8 = true;
+        polyfills.pack_4xu8_clamp = true;
         data.Add<ast::transform::BuiltinPolyfill::Config>(polyfills);
         manager.Add<ast::transform::BuiltinPolyfill>();
     }
@@ -276,7 +277,6 @@ bool ASTPrinter::Generate() {
             "MSL", builder_.AST(), diagnostics_,
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
-                wgsl::Extension::kChromiumExperimentalFullPtrParameters,
                 wgsl::Extension::kChromiumExperimentalPixelLocal,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
                 wgsl::Extension::kChromiumExperimentalFramebufferFetch,
@@ -309,9 +309,9 @@ bool ASTPrinter::Generate() {
             },
             [&](const ast::Override*) {
                 // Override is removed with SubstituteOverride
-                diagnostics_.add_error(diag::System::Writer,
-                                       "override-expressions should have been removed with the "
-                                       "SubstituteOverride transform.");
+                diagnostics_.AddError(diag::System::Writer,
+                                      "override-expressions should have been removed with the "
+                                      "SubstituteOverride transform.");
                 return false;
             },
             [&](const ast::Function* func) {
@@ -368,7 +368,7 @@ bool ASTPrinter::EmitTypeDecl(const core::type::Type* ty) {
             return false;
         }
     } else {
-        diagnostics_.add_error(diag::System::Writer, "unknown alias type: " + ty->FriendlyName());
+        diagnostics_.AddError(diag::System::Writer, "unknown alias type: " + ty->FriendlyName());
         return false;
     }
 
@@ -947,7 +947,7 @@ bool ASTPrinter::EmitAtomicCall(StringStream& out,
             auto sc = ptr_ty->AddressSpace();
             auto* str = builtin->ReturnType()->As<core::type::Struct>();
 
-            auto func = tint::GetOrCreate(
+            auto func = tint::GetOrAdd(
                 atomicCompareExchangeWeak_, ACEWKeyType{{sc, str}}, [&]() -> std::string {
                     if (!EmitStructType(&helpers_,
                                         builtin->ReturnType()->As<core::type::Struct>())) {
@@ -1062,7 +1062,7 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
             std::vector<const char*> dims;
             switch (texture_type->dim()) {
                 case core::type::TextureDimension::kNone:
-                    diagnostics_.add_error(diag::System::Writer, "texture dimension is kNone");
+                    diagnostics_.AddError(diag::System::Writer, "texture dimension is kNone");
                     return false;
                 case core::type::TextureDimension::k1d:
                     dims = {"width"};
@@ -1263,7 +1263,7 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
             default: {
                 StringStream err;
                 err << "MSL does not support gradients for " << dim << " textures";
-                diagnostics_.add_error(diag::System::Writer, err.str());
+                diagnostics_.AddError(diag::System::Writer, err.str());
                 return false;
             }
         }
@@ -1342,7 +1342,7 @@ bool ASTPrinter::EmitDotCall(StringStream& out,
     if (vec_ty->type()->is_integer_scalar()) {
         // MSL does not have a builtin for dot() with integer vector types.
         // Generate the helper function if it hasn't been created already
-        fn = tint::GetOrCreate(int_dot_funcs_, vec_ty->Width(), [&]() -> std::string {
+        fn = tint::GetOrAdd(int_dot_funcs_, vec_ty->Width(), [&]() -> std::string {
             TextBuffer b;
             TINT_DEFER(helpers_.Append(b));
 
@@ -1619,15 +1619,15 @@ std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
             out += "unpack_unorm2x16_to_float";
             break;
         case wgsl::BuiltinFn::kArrayLength:
-            diagnostics_.add_error(
+            diagnostics_.AddError(
                 diag::System::Writer,
                 "Unable to translate builtin: " + std::string(builtin->str()) +
                     "\nDid you forget to pass array_length_from_uniform generator "
                     "options?");
             return "";
         default:
-            diagnostics_.add_error(diag::System::Writer,
-                                   "Unknown import method: " + std::string(builtin->str()));
+            diagnostics_.AddError(diag::System::Writer,
+                                  "Unknown import method: " + std::string(builtin->str()));
             return "";
     }
     return out;
@@ -1802,8 +1802,8 @@ bool ASTPrinter::EmitConstant(StringStream& out, const core::constant::Value* co
 
             auto count = a->ConstantCount();
             if (!count) {
-                diagnostics_.add_error(diag::System::Writer,
-                                       core::type::Array::kErrExpectedConstantCount);
+                diagnostics_.AddError(diag::System::Writer,
+                                      core::type::Array::kErrExpectedConstantCount);
                 return false;
             }
 
@@ -1873,7 +1873,7 @@ bool ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
                     return true;
                 }
             }
-            diagnostics_.add_error(diag::System::Writer, "unknown integer literal suffix type");
+            diagnostics_.AddError(diag::System::Writer, "unknown integer literal suffix type");
             return false;
         },  //
         TINT_ICE_ON_NO_MATCH);
@@ -2069,7 +2069,7 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
 
                         auto name = BuiltinToAttribute(builtin);
                         if (name.empty()) {
-                            diagnostics_.add_error(diag::System::Writer, "unknown builtin");
+                            diagnostics_.AddError(diag::System::Writer, "unknown builtin");
                             return false;
                         }
                         out << " [[" << name << "]]";
@@ -2122,8 +2122,7 @@ bool ASTPrinter::EmitLoop(const ast::LoopStatement* stmt) {
     };
 
     TINT_SCOPED_ASSIGNMENT(emit_continuing_, emit_continuing);
-    Line() << "while (true) {";
-    EmitLoopPreserver();
+    Line() << IsolateUB() << " while(true) {";
     {
         ScopedIndent si(this);
         if (!EmitStatements(stmt->body->statements)) {
@@ -2193,8 +2192,7 @@ bool ASTPrinter::EmitForLoop(const ast::ForLoopStatement* stmt) {
         };
 
         TINT_SCOPED_ASSIGNMENT(emit_continuing_, emit_continuing);
-        Line() << "while (true) {";
-        EmitLoopPreserver();
+        Line() << IsolateUB() << " while(true) {";
         IncrementIndent();
         TINT_DEFER({
             DecrementIndent();
@@ -2217,7 +2215,7 @@ bool ASTPrinter::EmitForLoop(const ast::ForLoopStatement* stmt) {
         // For-loop can be generated.
         {
             auto out = Line();
-            out << "for";
+            out << IsolateUB() << " for";
             {
                 ScopedParen sp(out);
 
@@ -2235,7 +2233,6 @@ bool ASTPrinter::EmitForLoop(const ast::ForLoopStatement* stmt) {
             }
             out << " {";
         }
-        EmitLoopPreserver();
         {
             auto emit_continuing = [] { return true; };
             TINT_SCOPED_ASSIGNMENT(emit_continuing_, emit_continuing);
@@ -2268,8 +2265,7 @@ bool ASTPrinter::EmitWhile(const ast::WhileStatement* stmt) {
     // as a regular while in MSL. Instead we need to generate a `while(true)` loop.
     bool emit_as_loop = cond_pre.lines.size() > 0;
     if (emit_as_loop) {
-        Line() << "while (true) {";
-        EmitLoopPreserver();
+        Line() << IsolateUB() << " while(true) {";
         IncrementIndent();
         TINT_DEFER({
             DecrementIndent();
@@ -2283,16 +2279,7 @@ bool ASTPrinter::EmitWhile(const ast::WhileStatement* stmt) {
         }
     } else {
         // While can be generated.
-        {
-            auto out = Line();
-            out << "while";
-            {
-                ScopedParen sp(out);
-                out << cond_buf.str();
-            }
-            out << " {";
-        }
-        EmitLoopPreserver();
+        Line() << IsolateUB() << " while(" << cond_buf.str() << ") {";
         if (!EmitStatementsWithIndent(stmt->body->statements)) {
             return false;
         }
@@ -2539,8 +2526,8 @@ bool ASTPrinter::EmitType(StringStream& out, const core::type::Type* type) {
             } else {
                 auto count = arr->ConstantCount();
                 if (!count) {
-                    diagnostics_.add_error(diag::System::Writer,
-                                           core::type::Array::kErrExpectedConstantCount);
+                    diagnostics_.AddError(diag::System::Writer,
+                                          core::type::Array::kErrExpectedConstantCount);
                     return false;
                 }
 
@@ -2628,7 +2615,7 @@ bool ASTPrinter::EmitType(StringStream& out, const core::type::Type* type) {
                     out << "cube_array";
                     break;
                 default:
-                    diagnostics_.add_error(diag::System::Writer, "Invalid texture dimensions");
+                    diagnostics_.AddError(diag::System::Writer, "Invalid texture dimensions");
                     return false;
             }
             if (tex->IsAnyOf<core::type::MultisampledTexture,
@@ -2661,8 +2648,8 @@ bool ASTPrinter::EmitType(StringStream& out, const core::type::Type* type) {
                     } else if (storage->access() == core::Access::kWrite) {
                         out << ", access::write";
                     } else {
-                        diagnostics_.add_error(diag::System::Writer,
-                                               "Invalid access control for storage texture");
+                        diagnostics_.AddError(diag::System::Writer,
+                                              "Invalid access control for storage texture");
                         return false;
                     }
                     return true;
@@ -2803,7 +2790,7 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
         if (auto builtin = attributes.builtin) {
             auto name = BuiltinToAttribute(builtin.value());
             if (name.empty()) {
-                diagnostics_.add_error(diag::System::Writer, "unknown builtin");
+                diagnostics_.AddError(diag::System::Writer, "unknown builtin");
                 return false;
             }
             out << " [[" << name << "]]";
@@ -2811,22 +2798,24 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
 
         if (auto location = attributes.location) {
             auto& pipeline_stage_uses = str->PipelineStageUses();
-            if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
+            if (TINT_UNLIKELY(pipeline_stage_uses.Count() != 1)) {
                 TINT_ICE() << "invalid entry point IO struct uses for " << str->Name().NameView();
                 return false;
             }
 
-            if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexInput)) {
+            if (pipeline_stage_uses.Contains(core::type::PipelineStageUsage::kVertexInput)) {
                 out << " [[attribute(" + std::to_string(location.value()) + ")]]";
-            } else if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexOutput)) {
+            } else if (pipeline_stage_uses.Contains(
+                           core::type::PipelineStageUsage::kVertexOutput)) {
                 out << " [[user(locn" + std::to_string(location.value()) + ")]]";
-            } else if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kFragmentInput)) {
+            } else if (pipeline_stage_uses.Contains(
+                           core::type::PipelineStageUsage::kFragmentInput)) {
                 out << " [[user(locn" + std::to_string(location.value()) + ")]]";
-            } else if (TINT_LIKELY(pipeline_stage_uses.count(
+            } else if (TINT_LIKELY(pipeline_stage_uses.Contains(
                            core::type::PipelineStageUsage::kFragmentOutput))) {
-                if (auto index = attributes.index) {
+                if (auto blend_src = attributes.blend_src) {
                     out << " [[color(" + std::to_string(location.value()) + ") index(" +
-                               std::to_string(index.value()) + ")]]";
+                               std::to_string(blend_src.value()) + ")]]";
                 } else {
                     out << " [[color(" + std::to_string(location.value()) + ")]]";
                 }
@@ -2843,7 +2832,7 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
         if (auto interpolation = attributes.interpolation) {
             auto name = InterpolationToAttribute(interpolation->type, interpolation->sampling);
             if (name.empty()) {
-                diagnostics_.add_error(diag::System::Writer, "unknown interpolation attribute");
+                diagnostics_.AddError(diag::System::Writer, "unknown interpolation attribute");
                 return false;
             }
             out << " [[" << name << "]]";
@@ -2883,7 +2872,7 @@ bool ASTPrinter::EmitUnaryOp(StringStream& out, const ast::UnaryOpExpression* ex
     // largest negative value, it returns `e`.
     auto* expr_type = TypeOf(expr->expr)->UnwrapRef();
     if (expr->op == core::UnaryOp::kNegation && expr_type->is_signed_integer_scalar_or_vector()) {
-        auto fn = tint::GetOrCreate(unary_minus_funcs_, expr_type, [&]() -> std::string {
+        auto fn = tint::GetOrAdd(unary_minus_funcs_, expr_type, [&]() -> std::string {
             // e.g.:
             // int tint_unary_minus(const int v) {
             //     return (v == -2147483648) ? v : -v;
@@ -3031,12 +3020,17 @@ bool ASTPrinter::EmitLet(const ast::Let* let) {
     return true;
 }
 
-void ASTPrinter::EmitLoopPreserver() {
-    IncrementIndent();
-    // This statement prevents the MSL compiler from erasing a loop during
-    // optimimzations.
-    Line() << R"(__asm__("");)";
-    DecrementIndent();
+std::string ASTPrinter::IsolateUB() {
+    if (isolate_ub_macro_name_.empty()) {
+        isolate_ub_macro_name_ = UniqueIdentifier("TINT_ISOLATE_UB");
+        Line(&helpers_) << "#define " << isolate_ub_macro_name_ << "(VOLATILE_NAME) \\";
+        Line(&helpers_) << "  volatile bool VOLATILE_NAME = true; \\";
+        Line(&helpers_) << "  if (VOLATILE_NAME)";
+        Line(&helpers_);
+    }
+    StringStream ss;
+    ss << isolate_ub_macro_name_ << "(" << UniqueIdentifier("tint_volatile_true") << ")";
+    return ss.str();
 }
 
 template <typename F>
@@ -3045,7 +3039,7 @@ bool ASTPrinter::CallBuiltinHelper(StringStream& out,
                                    const sem::BuiltinFn* builtin,
                                    F&& build) {
     // Generate the helper function if it hasn't been created already
-    auto fn = tint::GetOrCreate(builtins_, builtin, [&]() -> std::string {
+    auto fn = tint::GetOrAdd(builtins_, builtin, [&]() -> std::string {
         TextBuffer b;
         TINT_DEFER(helpers_.Append(b));
 
@@ -3128,8 +3122,8 @@ const std::string& ASTPrinter::ArrayType() {
 std::string ASTPrinter::StructName(const core::type::Struct* s) {
     auto name = s->Name().Name();
     if (HasPrefix(name, "__")) {
-        name = tint::GetOrCreate(builtin_struct_names_, s,
-                                 [&] { return UniqueIdentifier(name.substr(2)); });
+        name = tint::GetOrAdd(builtin_struct_names_, s,
+                              [&] { return UniqueIdentifier(name.substr(2)); });
     }
     return name;
 }

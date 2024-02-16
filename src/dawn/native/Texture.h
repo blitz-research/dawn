@@ -39,6 +39,7 @@
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/SharedTextureMemory.h"
 #include "dawn/native/Subresource.h"
+#include "partition_alloc/pointers/raw_ref.h"
 
 #include "dawn/native/dawn_platform.h"
 
@@ -80,7 +81,7 @@ class TextureBase : public ApiObjectBase {
   public:
     enum class ClearValue { Zero, NonZero };
 
-    static TextureBase* MakeError(DeviceBase* device, const TextureDescriptor* descriptor);
+    static Ref<TextureBase> MakeError(DeviceBase* device, const TextureDescriptor* descriptor);
 
     ObjectType GetType() const override;
 
@@ -111,6 +112,7 @@ class TextureBase : public ApiObjectBase {
 
     bool IsDestroyed() const;
     void SetHasAccess(bool hasAccess);
+    bool HasAccess() const;
     uint32_t GetSubresourceIndex(uint32_t mipLevel, uint32_t arraySlice, Aspect aspect) const;
     bool IsSubresourceContentInitialized(const SubresourceRange& range) const;
     void SetIsSubresourceContentInitialized(bool isInitialized, const SubresourceRange& range);
@@ -118,6 +120,7 @@ class TextureBase : public ApiObjectBase {
     MaybeError ValidateCanUseInSubmitNow() const;
 
     bool IsMultisampledTexture() const;
+    bool IsReadOnly() const;
 
     // Returns true if the size covers the whole subresource.
     bool CoversFullSubresource(uint32_t mipLevel, Aspect aspect, const Extent3D& size) const;
@@ -139,6 +142,7 @@ class TextureBase : public ApiObjectBase {
 
     ResultOrError<Ref<TextureViewBase>> CreateView(
         const TextureViewDescriptor* descriptor = nullptr);
+    Ref<TextureViewBase> CreateErrorView(const TextureViewDescriptor* descriptor = nullptr);
     ApiObjectList* GetViewTrackingList();
 
     bool IsImplicitMSAARenderTextureViewSupported() const;
@@ -147,6 +151,7 @@ class TextureBase : public ApiObjectBase {
 
     // Dawn API
     TextureViewBase* APICreateView(const TextureViewDescriptor* descriptor = nullptr);
+    TextureViewBase* APICreateErrorView(const TextureViewDescriptor* descriptor = nullptr);
     void APIDestroy();
     uint32_t APIGetWidth() const;
     uint32_t APIGetHeight() const;
@@ -182,7 +187,7 @@ class TextureBase : public ApiObjectBase {
     wgpu::TextureDimension mDimension;
     wgpu::TextureViewDimension
         mCompatibilityTextureBindingViewDimension;  // only used for compatibility mode
-    const Format& mFormat;
+    const raw_ref<const Format> mFormat;
     FormatSet mViewFormats;
     Extent3D mBaseSize;
     uint32_t mMipLevelCount;
@@ -205,7 +210,7 @@ class TextureViewBase : public ApiObjectBase {
     TextureViewBase(TextureBase* texture, const TextureViewDescriptor* descriptor);
     ~TextureViewBase() override;
 
-    static TextureViewBase* MakeError(DeviceBase* device, const char* label = nullptr);
+    static Ref<TextureViewBase> MakeError(DeviceBase* device, const char* label = nullptr);
 
     ObjectType GetType() const override;
     void FormatLabel(absl::FormatSink* s) const override;
@@ -235,7 +240,7 @@ class TextureViewBase : public ApiObjectBase {
 
     Ref<TextureBase> mTexture;
 
-    const Format& mFormat;
+    const raw_ref<const Format> mFormat;
     wgpu::TextureViewDimension mDimension;
     SubresourceRange mRange;
 };

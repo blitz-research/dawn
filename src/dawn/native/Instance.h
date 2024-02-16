@@ -31,24 +31,24 @@
 #include <array>
 #include <memory>
 #include <mutex>
-#include <set>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "dawn/common/MutexProtected.h"
 #include "dawn/common/Ref.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_bitset.h"
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BackendConnection.h"
-#include "dawn/native/BlobCache.h"
 #include "dawn/native/EventManager.h"
 #include "dawn/native/Features.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/RefCountedWithExternalCount.h"
 #include "dawn/native/Toggles.h"
 #include "dawn/native/dawn_platform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 #include "tint/lang/wgsl/features/language_feature.h"
 
 namespace dawn::platform {
@@ -146,7 +146,6 @@ class InstanceBase final : public RefCountedWithExternalCount {
     // Testing only API that is NOT thread-safe.
     void SetPlatformForTesting(dawn::platform::Platform* platform);
     dawn::platform::Platform* GetPlatform();
-    BlobCache* GetBlobCache(bool enabled = true);
 
     uint64_t GetDeviceCountForTesting() const;
     void AddDevice(DeviceBase* device);
@@ -160,6 +159,10 @@ class InstanceBase final : public RefCountedWithExternalCount {
     // Get backend-independent libraries that need to be loaded dynamically.
     const X11Functions* GetOrLoadX11Functions();
     const AHBFunctions* GetOrLoadAHBFunctions();
+
+    // TODO(dawn:752) Standardize webgpu.h to decide if we should return bool.
+    //   Currently this is a backdoor for Chromium's process event loop.
+    bool ProcessEvents();
 
     // Dawn API
     Surface* APICreateSurface(const SurfaceDescriptor* descriptor);
@@ -203,7 +206,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     void GatherWGSLFeatures(const DawnWGSLBlocklist* wgslBlocklist);
     void ConsumeError(std::unique_ptr<ErrorData> error);
 
-    std::unordered_set<std::string> warningMessages;
+    absl::flat_hash_set<std::string> mWarningMessages;
 
     std::vector<std::string> mRuntimeSearchPaths;
 
@@ -211,10 +214,9 @@ class InstanceBase final : public RefCountedWithExternalCount {
     bool mEnableAdapterBlocklist = false;
     BackendValidationLevel mBackendValidationLevel = BackendValidationLevel::Disabled;
 
-    dawn::platform::Platform* mPlatform = nullptr;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<dawn::platform::Platform, DanglingUntriaged> mPlatform = nullptr;
     std::unique_ptr<dawn::platform::Platform> mDefaultPlatform;
-    std::unique_ptr<BlobCache> mBlobCache;
-    BlobCache mPassthroughBlobCache;
 
     BackendsArray mBackends;
     BackendsBitset mBackendsTried;
@@ -222,7 +224,8 @@ class InstanceBase final : public RefCountedWithExternalCount {
     TogglesState mToggles;
     TogglesInfo mTogglesInfo;
 
-    std::unordered_set<wgpu::WGSLFeatureName> mWGSLFeatures;
+    absl::flat_hash_set<wgpu::WGSLFeatureName> mWGSLFeatures;
+    // TODO(dawn:1513): Use absl::flat_hash_set after it is supported in Tint.
     std::unordered_set<tint::wgsl::LanguageFeature> mTintLanguageFeatures;
 
 #if defined(DAWN_USE_X11)
@@ -235,7 +238,7 @@ class InstanceBase final : public RefCountedWithExternalCount {
     Ref<CallbackTaskManager> mCallbackTaskManager;
     EventManager mEventManager;
 
-    MutexProtected<std::set<DeviceBase*>> mDevicesList;
+    MutexProtected<absl::flat_hash_set<DeviceBase*>> mDevicesList;
 };
 
 }  // namespace dawn::native

@@ -139,7 +139,7 @@ some:other,test:* [ Failure ]
 `,
 			results: result.List{
 				result.Result{
-					Query:  Q("a:b,c:d"),
+					Query:  Q("a:b,c:d:e"),
 					Tags:   result.NewTags("os-a", "os-c", "gpu-b"),
 					Status: result.Failure,
 				},
@@ -147,6 +147,13 @@ some:other,test:* [ Failure ]
 			updated: `
 a:b,c:* [ Failure ]
 `,
+			diagnostics: expectations.Diagnostics{
+				{
+					Severity: expectations.Note,
+					Line:     headerLines + 3,
+					Message:  "expectation is fully covered by previous expectations",
+				},
+			},
 		},
 		{ //////////////////////////////////////////////////////////////////////
 			name: "expectation test now passes",
@@ -169,52 +176,109 @@ crbug.com/a/123 [ gpu-b os-b ] a:b,c:* [ Failure ]
 			updated: `
 crbug.com/a/123 [ os-b ] a:b,c:* [ Failure ]
 `,
+			diagnostics: expectations.Diagnostics{
+				{
+					Severity: expectations.Note,
+					Line:     headerLines + 3,
+					Message:  "expectation is fully covered by previous expectations",
+				},
+			},
 		},
 		{ //////////////////////////////////////////////////////////////////////
 			name: "expectation case now passes",
 			expectations: `
-crbug.com/a/123 [ gpu-a os-a ] a:b,c:d [ Failure ]
-crbug.com/a/123 [ gpu-b os-b ] a:b,c:d [ Failure ]
+crbug.com/a/123 [ gpu-a os-a ] a:b,c:d:* [ Failure ]
+crbug.com/a/123 [ gpu-b os-b ] a:b,c:d:* [ Failure ]
 `,
 			results: result.List{
 				result.Result{
-					Query:  Q("a:b,c:d"),
+					Query:  Q("a:b,c:d:*"),
 					Tags:   result.NewTags("os-a", "gpu-a"),
 					Status: result.Pass,
 				},
 				result.Result{
-					Query:  Q("a:b,c:d"),
+					Query:  Q("a:b,c:d:*"),
 					Tags:   result.NewTags("os-b", "gpu-b"),
 					Status: result.Abort,
 				},
 			},
 			updated: `
-crbug.com/a/123 [ os-b ] a:b,c:d: [ Failure ]
+crbug.com/a/123 [ os-b ] a:b,c:d:* [ Failure ]
+`,
+			diagnostics: expectations.Diagnostics{
+				{
+					Severity: expectations.Note,
+					Line:     headerLines + 3,
+					Message:  "expectation is fully covered by previous expectations",
+				},
+			},
+		},
+		{ //////////////////////////////////////////////////////////////////////
+			name: "first expectation expands to cover later expectations - no diagnostics",
+			expectations: `
+crbug.com/a/123 [ gpu-a os-a ] a:b,c:d:* [ Failure ]
+crbug.com/a/123 [ gpu-c os-a ] a:b,c:d:* [ Failure ]
+`,
+			results: result.List{
+				result.Result{
+					Query:  Q("a:b,c:d:e"),
+					Tags:   result.NewTags("gpu-a", "os-a"),
+					Status: result.Failure,
+				},
+				result.Result{
+					Query:  Q("a:b,c:d:e"),
+					Tags:   result.NewTags("gpu-a", "os-b"),
+					Status: result.Pass,
+				},
+				result.Result{
+					Query:  Q("a:b,c:d:e"),
+					Tags:   result.NewTags("gpu-b", "os-a"),
+					Status: result.Pass,
+				},
+				result.Result{
+					Query:  Q("a:b,c:d:e"),
+					Tags:   result.NewTags("gpu-b", "os-b"),
+					Status: result.Pass,
+				},
+				result.Result{
+					Query:  Q("a:b,c:d:e"),
+					Tags:   result.NewTags("gpu-c", "os-a"),
+					Status: result.Failure,
+				},
+				result.Result{
+					Query:  Q("a:b,c:d:e"),
+					Tags:   result.NewTags("gpu-c", "os-b"),
+					Status: result.Pass,
+				},
+			},
+			updated: `
+crbug.com/a/123 [ gpu-a os-a ] a:b,c:d:* [ Failure ]
+crbug.com/a/123 [ gpu-c os-a ] a:b,c:d:* [ Failure ]
 `,
 		},
 		{ //////////////////////////////////////////////////////////////////////
 			name: "expectation case now passes KEEP - single",
 			expectations: `
 # KEEP
-crbug.com/a/123 [ gpu-a os-a ] a:b,c:d [ Failure ]
-crbug.com/a/123 [ gpu-b os-b ] a:b,c:d [ Failure ]
+crbug.com/a/123 [ gpu-a os-a ] a:b,c:d:* [ Failure ]
+crbug.com/a/123 [ gpu-b os-b ] a:b,c:d:* [ Failure ]
 `,
 			results: result.List{
 				result.Result{
-					Query:  Q("a:b,c:d"),
+					Query:  Q("a:b,c:d:e"),
 					Tags:   result.NewTags("os-a", "gpu-a"),
 					Status: result.Pass,
 				},
 				result.Result{
-					Query:  Q("a:b,c:d"),
+					Query:  Q("a:b,c:d:e"),
 					Tags:   result.NewTags("os-b", "gpu-b"),
 					Status: result.Abort,
 				},
 			},
 			updated: `
 # KEEP
-crbug.com/a/123 [ gpu-a os-a ] a:b,c:d [ Failure ]
-crbug.com/a/123 [ gpu-b os-b ] a:b,c:d [ Failure ]
+crbug.com/a/123 [ gpu-a os-a ] a:b,c:d:* [ Failure ]
+crbug.com/a/123 [ gpu-b os-b ] a:b,c:d:* [ Failure ]
 `,
 			diagnostics: expectations.Diagnostics{
 				{
@@ -303,15 +367,64 @@ crbug.com/a/123 a:b,c:d:* [ Failure ]
 ################################################################################
 # New flakes. Please triage:
 ################################################################################
-crbug.com/dawn/0000 suite:dir_a,dir_b:test_c:case=5;* [ RetryOnFailure ]
-crbug.com/dawn/0000 suite:dir_a,dir_b:test_c:case=6;* [ RetryOnFailure ]
+crbug.com/dawn/0000 [ gpu-b os-b ] suite:dir_a,dir_b:test_c:case=5;* [ RetryOnFailure ]
+crbug.com/dawn/0000 [ gpu-a os-a ] suite:dir_a,dir_b:test_c:case=6;* [ RetryOnFailure ]
 
 ################################################################################
 # New failures. Please triage:
 ################################################################################
-crbug.com/dawn/0000 suite:dir_a,dir_b:test_a:* [ Failure ]
+crbug.com/dawn/0000 [ gpu-b os-a ] suite:* [ Failure ]
+crbug.com/dawn/0000 [ gpu-a os-a ] suite:dir_a,dir_b:test_a:* [ Failure ]
 crbug.com/dawn/0000 [ gpu-a os-a ] suite:dir_a,dir_b:test_b:* [ Slow ]
-crbug.com/dawn/0000 suite:dir_a,dir_b:test_c:case=4;* [ Failure ]
+crbug.com/dawn/0000 [ gpu-a os-a ] suite:dir_a,dir_b:test_c:case=4;* [ Failure ]
+crbug.com/dawn/0000 [ gpu-b os-b ] suite:dir_a,dir_b:test_c:case=4;* [ Failure ]
+`,
+		},
+
+		{ //////////////////////////////////////////////////////////////////////
+			name:         "root node overlap",
+			expectations: `# A comment`,
+			results: result.List{
+				// For variant ['os-a'], we have a root node 'a:b,c:d:*'.
+				result.Result{
+					Query:  Q("a:b,c:d:x,*"),
+					Tags:   result.NewTags("os-a"),
+					Status: result.Failure,
+				},
+				result.Result{
+					Query:  Q("a:b,c:d:y,*"),
+					Tags:   result.NewTags("os-a"),
+					Status: result.Failure,
+				},
+				result.Result{
+					Query:  Q("a:b,c:e:*"),
+					Tags:   result.NewTags("os-a"),
+					Status: result.Pass,
+				},
+				// For variant ['os-b'], we have a root node 'a:b,c:d:x,*'.
+				result.Result{
+					Query:  Q("a:b,c:d:x,*"),
+					Tags:   result.NewTags("os-b"),
+					Status: result.Failure,
+				},
+				result.Result{
+					Query:  Q("a:b,c:d:y,*"),
+					Tags:   result.NewTags("os-b"),
+					Status: result.Pass,
+				},
+				result.Result{
+					Query:  Q("a:b,c:e:*"),
+					Tags:   result.NewTags("os-b"),
+					Status: result.Pass,
+				},
+			},
+			updated: `# A comment
+
+################################################################################
+# New failures. Please triage:
+################################################################################
+crbug.com/dawn/0000 [ os-a ] a:b,c:d:* [ Failure ]
+crbug.com/dawn/0000 [ os-b ] a:b,c:d:x,* [ Failure ]
 `,
 		},
 		{ //////////////////////////////////////////////////////////////////////

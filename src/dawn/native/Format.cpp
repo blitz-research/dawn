@@ -28,7 +28,9 @@
 #include "dawn/native/Format.h"
 
 #include <bitset>
+#include <utility>
 
+#include "dawn/common/MatchVariant.h"
 #include "dawn/common/TypedInteger.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/EnumMaskIterator.h"
@@ -45,12 +47,12 @@ enum class Cap : uint16_t {
     StorageRW = 0x10,  // Implies StorageW
     PLS = 0x20,
 };
+}  // namespace dawn
 
 template <>
-struct IsDawnBitmask<Cap> {
+struct wgpu::IsWGPUBitmask<dawn::Cap> {
     static constexpr bool enable = true;
 };
-}  // namespace dawn
 
 namespace dawn::native {
 
@@ -583,32 +585,28 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
     // been added or removed recently, check that kKnownFormatCount has been updated.
     DAWN_ASSERT(formatsSet.all());
 
+    for (const Format& f : table) {
+        if (f.format != f.baseFormat) {
+            auto& baseViewFormat = table[ComputeFormatIndex(f.baseFormat)].baseViewFormat;
+            // Currently, Dawn only supports sRGB reinterpretation, so there should only be one
+            // view format.
+            DAWN_ASSERT(baseViewFormat == wgpu::TextureFormat::Undefined);
+            baseViewFormat = f.format;
+        }
+    }
     return table;
 }
-
-namespace {
-
-template <class... Ts>
-struct overloaded : Ts... {
-    using Ts::operator()...;
-};
-template <class... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;
-
-}  // anonymous namespace
 
 absl::FormatConvertResult<absl::FormatConversionCharSet::kString> AbslFormatConvert(
     const UnsupportedReason& value,
     const absl::FormatConversionSpec& spec,
     absl::FormatSink* s) {
-    std::visit(
-        overloaded{
-            [](const std::monostate&) { DAWN_UNREACHABLE(); },
-            [s](const RequiresFeature& requiresFeature) {
-                s->Append(absl::StrFormat("requires feature %s", requiresFeature.feature));
-            },
-            [s](const CompatibilityMode&) { s->Append("not supported in compatibility mode"); }},
-        value);
+    MatchVariant(
+        value, [](const std::monostate&) { DAWN_UNREACHABLE(); },
+        [s](const RequiresFeature& requiresFeature) {
+            s->Append(absl::StrFormat("requires feature %s", requiresFeature.feature));
+        },
+        [s](const CompatibilityMode&) { s->Append("not supported in compatibility mode"); });
     return {true};
 }
 

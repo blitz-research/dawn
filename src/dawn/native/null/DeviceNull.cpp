@@ -37,6 +37,7 @@
 #include "dawn/native/Instance.h"
 #include "dawn/native/Surface.h"
 #include "dawn/native/TintUtils.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include "tint/tint.h"
 
@@ -95,15 +96,19 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
     return Device::Create(adapter, descriptor, deviceToggles);
 }
 
-void PhysicalDevice::PopulateMemoryHeapInfo(
-    AdapterPropertiesMemoryHeaps* memoryHeapProperties) const {
-    auto* heapInfo = new MemoryHeapInfo[1];
-    memoryHeapProperties->heapCount = 1;
-    memoryHeapProperties->heapInfo = heapInfo;
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {
+    if (auto* memoryHeapProperties = properties.Get<AdapterPropertiesMemoryHeaps>()) {
+        auto* heapInfo = new MemoryHeapInfo[1];
+        memoryHeapProperties->heapCount = 1;
+        memoryHeapProperties->heapInfo = heapInfo;
 
-    heapInfo[0].size = 1024 * 1024 * 1024;
-    heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
-                             wgpu::HeapProperty::HostCached;
+        heapInfo[0].size = 1024 * 1024 * 1024;
+        heapInfo[0].properties = wgpu::HeapProperty::DeviceLocal | wgpu::HeapProperty::HostVisible |
+                                 wgpu::HeapProperty::HostCached;
+    }
+    if (auto* d3dProperties = properties.Get<AdapterPropertiesD3D>()) {
+        d3dProperties->shaderModel = 0;
+    }
 }
 
 FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
@@ -148,7 +153,7 @@ struct CopyFromStagingToBufferOperation : PendingOperation {
         destination->CopyFromStaging(staging, sourceOffset, destinationOffset, size);
     }
 
-    BufferBase* staging;
+    raw_ptr<BufferBase> staging;
     Ref<Buffer> destination;
     uint64_t sourceOffset;
     uint64_t destinationOffset;
@@ -439,6 +444,10 @@ bool Queue::HasPendingCommands() const {
     return false;
 }
 
+MaybeError Queue::SubmitPendingCommands() {
+    return {};
+}
+
 ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) {
     return true;
 }
@@ -449,7 +458,7 @@ MaybeError Queue::WaitForIdleForDestruction() {
 }
 
 // ComputePipeline
-MaybeError ComputePipeline::Initialize() {
+MaybeError ComputePipeline::InitializeImpl() {
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
 
     tint::Program transformedProgram;
@@ -468,9 +477,9 @@ MaybeError ComputePipeline::Initialize() {
             BuildSubstituteOverridesTransformConfig(computeStage));
     }
 
-    DAWN_TRY_ASSIGN(transformedProgram,
-                    RunTransforms(&transformManager, computeStage.module->GetTintProgram(),
-                                  transformInputs, nullptr, nullptr));
+    auto tintProgram = computeStage.module->GetTintProgram();
+    DAWN_TRY_ASSIGN(transformedProgram, RunTransforms(&transformManager, &(tintProgram->program),
+                                                      transformInputs, nullptr, nullptr));
 
     // Do the workgroup size validation, although different backend will have different
     // fullSubgroups parameter.
@@ -488,7 +497,7 @@ MaybeError ComputePipeline::Initialize() {
 }
 
 // RenderPipeline
-MaybeError RenderPipeline::Initialize() {
+MaybeError RenderPipeline::InitializeImpl() {
     return {};
 }
 

@@ -90,7 +90,7 @@ MaybeError SwapChain::PresentImpl() {
     // presentable texture to present at the end of submits that use them.
     CommandRecordingContext* commandContext;
     DAWN_TRY_ASSIGN(commandContext, queue->GetPendingCommandContext());
-    mApiTexture->TrackUsageAndTransitionNow(commandContext, kPresentTextureUsage,
+    mApiTexture->TrackUsageAndTransitionNow(commandContext, kPresentReleaseTextureUsage,
                                             mApiTexture->GetAllSubresources());
     DAWN_TRY(queue->SubmitPendingCommands());
 
@@ -98,7 +98,7 @@ MaybeError SwapChain::PresentImpl() {
 
     // Record that "new" is the last time the buffer has been used.
     DAWN_TRY(queue->NextSerial());
-    mBufferLastUsedSerials[mCurrentBuffer] = queue->GetPendingCommandSerial();
+    mBufferLastUsedSerials[mCurrentBuffer] = queue->GetLastSubmittedCommandSerial();
 
     mApiTexture->APIDestroy();
     mApiTexture = nullptr;
@@ -131,7 +131,7 @@ MaybeError SwapChain::DetachAndWaitForDeallocation() {
     // before it is finished being used. Flush the commands and wait for that serial to be
     // passed, then Tick the device to make sure the reference to the D3D12 texture is removed.
     Queue* queue = ToBackend(GetDevice()->GetQueue());
-    DAWN_TRY(queue->NextSerial());
+    DAWN_TRY(queue->EnsureCommandsFlushed(queue->GetPendingCommandSerial()));
     DAWN_TRY(queue->WaitForSerial(queue->GetLastSubmittedCommandSerial()));
     return ToBackend(GetDevice())->TickImpl();
 }

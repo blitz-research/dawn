@@ -35,7 +35,6 @@
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d/UtilsD3D.h"
 #include "dawn/native/d3d11/DeviceD3D11.h"
-#include "dawn/native/d3d11/SharedFenceD3D11.h"
 #include "dawn/native/d3d11/TextureD3D11.h"
 
 namespace dawn::native::d3d11 {
@@ -146,10 +145,12 @@ SharedTextureMemory::SharedTextureMemory(Device* device,
                                          const char* label,
                                          SharedTextureMemoryProperties properties,
                                          ComPtr<ID3D11Resource> resource)
-    : d3d::SharedTextureMemory(device, label, properties, resource.Get()),
-      mResource(std::move(resource)) {}
+    : d3d::SharedTextureMemory(device, label, properties), mResource(std::move(resource)) {
+    mResource.As(&mKeyedMutex);
+}
 
 void SharedTextureMemory::DestroyImpl() {
+    mKeyedMutex = nullptr;
     mResource = nullptr;
 }
 
@@ -157,14 +158,13 @@ ID3D11Resource* SharedTextureMemory::GetD3DResource() const {
     return mResource.Get();
 }
 
+IDXGIKeyedMutex* SharedTextureMemory::GetKeyedMutex() const {
+    return mKeyedMutex.Get();
+}
+
 ResultOrError<Ref<TextureBase>> SharedTextureMemory::CreateTextureImpl(
     const UnpackedPtr<TextureDescriptor>& descriptor) {
     return Texture::CreateFromSharedTextureMemory(this, descriptor);
-}
-
-ResultOrError<Ref<SharedFenceBase>> SharedTextureMemory::CreateFenceImpl(
-    const SharedFenceDXGISharedHandleDescriptor* desc) {
-    return SharedFence::Create(ToBackend(GetDevice()), "Internal shared DXGI fence", desc);
 }
 
 }  // namespace dawn::native::d3d11

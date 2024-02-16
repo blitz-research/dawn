@@ -32,11 +32,13 @@
 
 #include "dawn/common/Math.h"
 #include "dawn/native/BuddyMemoryAllocator.h"
+#include "dawn/native/Queue.h"
 #include "dawn/native/ResourceHeapAllocator.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
 #include "dawn/native/vulkan/ResourceHeapVk.h"
 #include "dawn/native/vulkan/VulkanError.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::vulkan {
 
@@ -130,7 +132,7 @@ class ResourceMemoryAllocator::SingleTypeAllocator : public ResourceHeapAllocato
     }
 
   private:
-    Device* mDevice;
+    raw_ptr<Device> mDevice;
     size_t mMemoryTypeIndex;
     VkDeviceSize mMemoryHeapSize;
     PooledResourceMemoryAllocator mPooledMemoryAllocator;
@@ -232,7 +234,8 @@ void ResourceMemoryAllocator::Deallocate(ResourceMemoryAllocation* allocation) {
         // TODO(crbug.com/dawn/851): Maybe we can produce the correct barriers to reduce the
         // latency to reclaim memory.
         case AllocationMethod::kSubAllocated:
-            mSubAllocationsToDelete.Enqueue(*allocation, mDevice->GetPendingCommandSerial());
+            mSubAllocationsToDelete.Enqueue(*allocation,
+                                            mDevice->GetQueue()->GetPendingCommandSerial());
             break;
 
         default:

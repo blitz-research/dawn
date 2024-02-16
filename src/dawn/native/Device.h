@@ -28,12 +28,14 @@
 #ifndef SRC_DAWN_NATIVE_DEVICE_H_
 #define SRC_DAWN_NATIVE_DEVICE_H_
 
+#include <shared_mutex>
+
 #include <memory>
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "dawn/common/ContentLessObjectCache.h"
 #include "dawn/common/Mutex.h"
 #include "dawn/native/CacheKey.h"
@@ -50,6 +52,7 @@
 #include "dawn/native/RefCountedWithExternalCount.h"
 #include "dawn/native/Toggles.h"
 #include "dawn/native/UsageValidationMode.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include "dawn/native/DawnNative.h"
 #include "dawn/native/dawn_platform.h"
@@ -72,7 +75,6 @@ class OwnedCompilationMessages;
 struct CallbackTask;
 struct InternalPipelineStore;
 struct ShaderModuleParseResult;
-struct TrackedFutureWaitInfo;
 
 class DeviceBase : public RefCountedWithExternalCount {
   public:
@@ -180,6 +182,9 @@ class DeviceBase : public RefCountedWithExternalCount {
     // The reference returned has the same lifetime as the device.
     const Format& GetValidInternalFormat(wgpu::TextureFormat format) const;
     const Format& GetValidInternalFormat(FormatIndex formatIndex) const;
+    // Get compatible view formats. The returned span contains all compatible formats not equal to
+    // `format`.
+    std::vector<const Format*> GetCompatibleViewFormats(const Format& format) const;
 
     virtual ResultOrError<Ref<CommandBufferBase>> CreateCommandBuffer(
         CommandEncoder* encoder,
@@ -279,9 +284,14 @@ class DeviceBase : public RefCountedWithExternalCount {
     void APICreateComputePipelineAsync(const ComputePipelineDescriptor* descriptor,
                                        WGPUCreateComputePipelineAsyncCallback callback,
                                        void* userdata);
+    Future APICreateComputePipelineAsyncF(
+        const ComputePipelineDescriptor* descriptor,
+        const CreateComputePipelineAsyncCallbackInfo& callbackInfo);
     void APICreateRenderPipelineAsync(const RenderPipelineDescriptor* descriptor,
                                       WGPUCreateRenderPipelineAsyncCallback callback,
                                       void* userdata);
+    Future APICreateRenderPipelineAsyncF(const RenderPipelineDescriptor* descriptor,
+                                         const CreateRenderPipelineAsyncCallbackInfo& callbackInfo);
     RenderBundleEncoder* APICreateRenderBundleEncoder(
         const RenderBundleEncoderDescriptor* descriptor);
     RenderPipelineBase* APICreateRenderPipeline(const RenderPipelineDescriptor* descriptor);
@@ -297,7 +307,6 @@ class DeviceBase : public RefCountedWithExternalCount {
     TextureBase* APICreateTexture(const TextureDescriptor* descriptor);
 
     wgpu::TextureUsage APIGetSupportedSurfaceUsage(Surface* surface);
-    size_t APIQueryMemoryHeapInfo(MemoryHeapInfo* info);
 
     InternalPipelineStore* GetInternalPipelineStore();
 
@@ -321,10 +330,11 @@ class DeviceBase : public RefCountedWithExternalCount {
     void APISetLoggingCallback(wgpu::LoggingCallback callback, void* userdata);
     void APIPushErrorScope(wgpu::ErrorFilter filter);
     void APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata);
+    Future APIPopErrorScopeF(const PopErrorScopeCallbackInfo& callbackInfo);
 
     MaybeError ValidateIsAlive() const;
 
-    BlobCache* GetBlobCache();
+    BlobCache* GetBlobCache() const;
     Blob LoadCachedBlob(const CacheKey& key);
     void StoreCachedBlob(const CacheKey& key, const Blob& blob);
 
@@ -370,6 +380,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     bool IsValidationEnabled() const;
     bool IsRobustnessEnabled() const;
     bool IsCompatibilityMode() const;
+    bool IsImmediateErrorHandlingEnabled() const;
 
     size_t GetLazyClearCountForTesting();
     void IncrementLazyClearCountForTesting();
@@ -378,6 +389,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void EmitWarningOnce(const std::string& message);
     void EmitLog(const char* message);
     void EmitLog(WGPULoggingType loggingType, const char* message);
+    void EmitCompilationLog(const ShaderModuleBase* module);
     void APIForceLoss(wgpu::DeviceLostReason reason, const char* message);
     QueueBase* GetQueue() const;
 
@@ -455,13 +467,6 @@ class DeviceBase : public RefCountedWithExternalCount {
     // turned on. Thus it should only be wrapped inside DAWN_ASSERT() macro. i.e.
     // DAWN_ASSERT(device.IsLockedByCurrentThread())
     bool IsLockedByCurrentThreadIfNeeded() const;
-
-    // TODO(dawn:1413): remove this enum forwarding once no longer necessary.
-    using SubmitMode = ExecutionQueueBase::SubmitMode;
-
-    // TODO(dawn:1413): Remove this proxy methods in favor of using the ExecutionQueue directly.
-    ExecutionSerial GetLastSubmittedCommandSerial() const;
-    ExecutionSerial GetPendingCommandSerial() const;
 
   protected:
     // Constructor used only for mocking and testing.
@@ -563,13 +568,17 @@ class DeviceBase : public RefCountedWithExternalCount {
                                                     const Extent3D& copySizePixels) = 0;
 
     wgpu::ErrorCallback mUncapturedErrorCallback = nullptr;
-    void* mUncapturedErrorUserdata = nullptr;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<void, DanglingUntriaged> mUncapturedErrorUserdata = nullptr;
 
+    std::shared_mutex mLoggingMutex;
     wgpu::LoggingCallback mLoggingCallback = nullptr;
-    void* mLoggingUserdata = nullptr;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<void, DanglingUntriaged> mLoggingUserdata = nullptr;
 
     wgpu::DeviceLostCallback mDeviceLostCallback = nullptr;
-    void* mDeviceLostUserdata = nullptr;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<void, DanglingUntriaged> mDeviceLostUserdata = nullptr;
 
     std::unique_ptr<ErrorScopeStack> mErrorScopeStack;
 
@@ -591,8 +600,9 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     struct DeprecationWarnings;
     std::unique_ptr<DeprecationWarnings> mDeprecationWarnings;
+    uint32_t mEmittedCompilationLogCount = 0;
 
-    std::unordered_set<std::string> mWarnings;
+    absl::flat_hash_set<std::string> mWarnings;
 
     State mState = State::BeingCreated;
 
@@ -614,7 +624,12 @@ class DeviceBase : public RefCountedWithExternalCount {
     Ref<CallbackTaskManager> mCallbackTaskManager;
     std::unique_ptr<dawn::platform::WorkerTaskPool> mWorkerTaskPool;
     std::string mLabel;
+
     CacheKey mDeviceCacheKey;
+    std::unique_ptr<BlobCache> mBlobCache;
+
+    // We cache this toggle so that we can check it without locking the device.
+    bool mIsImmediateErrorHandlingEnabled = false;
 
     // This pointer is non-null if Feature::ImplicitDeviceSynchronization is turned on.
     Ref<Mutex> mMutex = nullptr;
@@ -639,7 +654,7 @@ class IgnoreLazyClearCountScope : public NonMovable {
     // Disable heap allocation
     void* operator new(size_t) = delete;
 
-    DeviceBase* mDevice;
+    raw_ptr<DeviceBase> mDevice;
     size_t mLazyClearCountForTesting;
 };
 

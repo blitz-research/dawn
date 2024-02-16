@@ -62,15 +62,6 @@ class Device final : public DeviceBase {
 
     id<MTLDevice> GetMTLDevice() const;
 
-    // TODO(dawn:1413) Use the metal::Queue directly instead of this proxy method.
-    CommandRecordingContext* GetPendingCommandContext(
-        Device::SubmitMode submitMode = Device::SubmitMode::Normal);
-
-    Ref<Texture> CreateTextureWrappingIOSurface(
-        const ExternalImageDescriptor* descriptor,
-        IOSurfaceRef ioSurface,
-        std::vector<MTLSharedEventAndSignalValue> waitEvents);
-
     MaybeError CopyFromStagingToBufferImpl(BufferBase* source,
                                            uint64_t sourceOffset,
                                            BufferBase* destination,

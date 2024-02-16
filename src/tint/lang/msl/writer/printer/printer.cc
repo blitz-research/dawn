@@ -35,14 +35,15 @@
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/access.h"
-#include "src/tint/lang/core/ir/binary.h"
 #include "src/tint/lang/core/ir/bitcast.h"
 #include "src/tint/lang/core/ir/break_if.h"
 #include "src/tint/lang/core/ir/constant.h"
 #include "src/tint/lang/core/ir/construct.h"
 #include "src/tint/lang/core/ir/continue.h"
 #include "src/tint/lang/core/ir/convert.h"
+#include "src/tint/lang/core/ir/core_binary.h"
 #include "src/tint/lang/core/ir/core_builtin_call.h"
+#include "src/tint/lang/core/ir/core_unary.h"
 #include "src/tint/lang/core/ir/discard.h"
 #include "src/tint/lang/core/ir/exit_if.h"
 #include "src/tint/lang/core/ir/exit_loop.h"
@@ -107,7 +108,7 @@ class Printer : public tint::TextGenerator {
     /// @returns the generated MSL shader
     tint::Result<std::string> Generate() {
         auto valid = core::ir::ValidateAndDumpIfNeeded(ir_, "MSL writer");
-        if (!valid) {
+        if (valid != Success) {
             return std::move(valid.Failure());
         }
 
@@ -270,31 +271,31 @@ class Printer : public tint::TextGenerator {
                 if (param->Builtin().has_value()) {
                     out << " [[";
                     switch (param->Builtin().value()) {
-                        case core::ir::FunctionParam::Builtin::kFrontFacing:
+                        case core::BuiltinValue::kFrontFacing:
                             out << "front_facing";
                             break;
-                        case core::ir::FunctionParam::Builtin::kGlobalInvocationId:
+                        case core::BuiltinValue::kGlobalInvocationId:
                             out << "thread_position_in_grid";
                             break;
-                        case core::ir::FunctionParam::Builtin::kLocalInvocationId:
+                        case core::BuiltinValue::kLocalInvocationId:
                             out << "thread_position_in_threadgroup";
                             break;
-                        case core::ir::FunctionParam::Builtin::kLocalInvocationIndex:
+                        case core::BuiltinValue::kLocalInvocationIndex:
                             out << "thread_index_in_threadgroup";
                             break;
-                        case core::ir::FunctionParam::Builtin::kNumWorkgroups:
+                        case core::BuiltinValue::kNumWorkgroups:
                             out << "threadgroups_per_grid";
                             break;
-                        case core::ir::FunctionParam::Builtin::kPosition:
+                        case core::BuiltinValue::kPosition:
                             out << "position";
                             break;
-                        case core::ir::FunctionParam::Builtin::kSampleIndex:
+                        case core::BuiltinValue::kSampleIndex:
                             out << "sample_id";
                             break;
-                        case core::ir::FunctionParam::Builtin::kSampleMask:
+                        case core::BuiltinValue::kSampleMask:
                             out << "sample_mask";
                             break;
-                        case core::ir::FunctionParam::Builtin::kWorkgroupId:
+                        case core::BuiltinValue::kWorkgroupId:
                             out << "threadgroup_position_in_grid";
                             break;
 
@@ -349,8 +350,8 @@ class Printer : public tint::TextGenerator {
                 [&](core::ir::LoadVectorElement*) { /* inlined */ },  //
                 [&](core::ir::Swizzle*) { /* inlined */ },            //
                 [&](core::ir::Bitcast*) { /* inlined */ },            //
-                [&](core::ir::Unary*) { /* inlined */ },              //
-                [&](core::ir::Binary*) { /* inlined */ },             //
+                [&](core::ir::CoreBinary*) { /* inlined */ },         //
+                [&](core::ir::CoreUnary*) { /* inlined */ },          //
                 [&](core::ir::Load*) { /* inlined */ },               //
                 [&](core::ir::Construct*) { /* inlined */ },          //
                 [&](core::ir::Access*) { /* inlined */ },             //
@@ -365,8 +366,8 @@ class Printer : public tint::TextGenerator {
             [&](const core::ir::InstructionResult* r) {
                 Switch(
                     r->Instruction(),                                                          //
-                    [&](const core::ir::Unary* u) { EmitUnary(out, u); },                      //
-                    [&](const core::ir::Binary* b) { EmitBinary(out, b); },                    //
+                    [&](const core::ir::CoreBinary* b) { EmitBinary(out, b); },                //
+                    [&](const core::ir::CoreUnary* u) { EmitUnary(out, u); },                  //
                     [&](const core::ir::Convert* b) { EmitConvert(out, b); },                  //
                     [&](const core::ir::Let* l) { out << NameOf(l->Result(0)); },              //
                     [&](const core::ir::Load* l) { EmitValue(out, l->From()); },               //
@@ -387,13 +388,16 @@ class Printer : public tint::TextGenerator {
             TINT_ICE_ON_NO_MATCH);
     }
 
-    void EmitUnary(StringStream& out, const core::ir::Unary* u) {
+    void EmitUnary(StringStream& out, const core::ir::CoreUnary* u) {
         switch (u->Op()) {
-            case core::ir::UnaryOp::kNegation:
+            case core::UnaryOp::kNegation:
                 out << "-";
                 break;
-            case core::ir::UnaryOp::kComplement:
+            case core::UnaryOp::kComplement:
                 out << "~";
+                break;
+            default:
+                TINT_UNIMPLEMENTED() << u->Op();
                 break;
         }
         out << "(";
@@ -403,8 +407,8 @@ class Printer : public tint::TextGenerator {
 
     /// Emit a binary instruction
     /// @param b the binary instruction
-    void EmitBinary(StringStream& out, const core::ir::Binary* b) {
-        if (b->Op() == core::ir::BinaryOp::kEqual) {
+    void EmitBinary(StringStream& out, const core::ir::CoreBinary* b) {
+        if (b->Op() == core::BinaryOp::kEqual) {
             auto* rhs = b->RHS()->As<core::ir::Constant>();
             if (rhs && rhs->Type()->Is<core::type::Bool>() &&
                 rhs->Value()->ValueAs<bool>() == false) {
@@ -418,38 +422,42 @@ class Printer : public tint::TextGenerator {
 
         auto kind = [&] {
             switch (b->Op()) {
-                case core::ir::BinaryOp::kAdd:
+                case core::BinaryOp::kAdd:
                     return "+";
-                case core::ir::BinaryOp::kSubtract:
+                case core::BinaryOp::kSubtract:
                     return "-";
-                case core::ir::BinaryOp::kMultiply:
+                case core::BinaryOp::kMultiply:
                     return "*";
-                case core::ir::BinaryOp::kDivide:
+                case core::BinaryOp::kDivide:
                     return "/";
-                case core::ir::BinaryOp::kModulo:
+                case core::BinaryOp::kModulo:
                     return "%";
-                case core::ir::BinaryOp::kAnd:
+                case core::BinaryOp::kAnd:
                     return "&";
-                case core::ir::BinaryOp::kOr:
+                case core::BinaryOp::kOr:
                     return "|";
-                case core::ir::BinaryOp::kXor:
+                case core::BinaryOp::kXor:
                     return "^";
-                case core::ir::BinaryOp::kEqual:
+                case core::BinaryOp::kEqual:
                     return "==";
-                case core::ir::BinaryOp::kNotEqual:
+                case core::BinaryOp::kNotEqual:
                     return "!=";
-                case core::ir::BinaryOp::kLessThan:
+                case core::BinaryOp::kLessThan:
                     return "<";
-                case core::ir::BinaryOp::kGreaterThan:
+                case core::BinaryOp::kGreaterThan:
                     return ">";
-                case core::ir::BinaryOp::kLessThanEqual:
+                case core::BinaryOp::kLessThanEqual:
                     return "<=";
-                case core::ir::BinaryOp::kGreaterThanEqual:
+                case core::BinaryOp::kGreaterThanEqual:
                     return ">=";
-                case core::ir::BinaryOp::kShiftLeft:
+                case core::BinaryOp::kShiftLeft:
                     return "<<";
-                case core::ir::BinaryOp::kShiftRight:
+                case core::BinaryOp::kShiftRight:
                     return ">>";
+                case core::BinaryOp::kLogicalAnd:
+                    return "&&";
+                case core::BinaryOp::kLogicalOr:
+                    return "||";
             }
             return "<error>";
         };
@@ -1255,20 +1263,20 @@ class Printer : public tint::TextGenerator {
 
             if (auto location = attributes.location) {
                 auto& pipeline_stage_uses = str->PipelineStageUses();
-                if (TINT_UNLIKELY(pipeline_stage_uses.size() != 1)) {
+                if (TINT_UNLIKELY(pipeline_stage_uses.Count() != 1)) {
                     TINT_IR_ICE(ir_) << "invalid entry point IO struct uses";
                     return;
                 }
 
-                if (pipeline_stage_uses.count(core::type::PipelineStageUsage::kVertexInput)) {
+                if (pipeline_stage_uses.Contains(core::type::PipelineStageUsage::kVertexInput)) {
                     out << " [[attribute(" + std::to_string(location.value()) + ")]]";
-                } else if (pipeline_stage_uses.count(
+                } else if (pipeline_stage_uses.Contains(
                                core::type::PipelineStageUsage::kVertexOutput)) {
                     out << " [[user(locn" + std::to_string(location.value()) + ")]]";
-                } else if (pipeline_stage_uses.count(
+                } else if (pipeline_stage_uses.Contains(
                                core::type::PipelineStageUsage::kFragmentInput)) {
                     out << " [[user(locn" + std::to_string(location.value()) + ")]]";
-                } else if (TINT_LIKELY(pipeline_stage_uses.count(
+                } else if (TINT_LIKELY(pipeline_stage_uses.Contains(
                                core::type::PipelineStageUsage::kFragmentOutput))) {
                     out << " [[color(" + std::to_string(location.value()) + ")]]";
                 } else {
@@ -1424,8 +1432,8 @@ class Printer : public tint::TextGenerator {
     std::string StructName(const core::type::Struct* s) {
         auto name = s->Name().Name();
         if (HasPrefix(name, "__")) {
-            name = tint::GetOrCreate(builtin_struct_names_, s,
-                                     [&] { return UniqueIdentifier(name.substr(2)); });
+            name = tint::GetOrAdd(builtin_struct_names_, s,
+                                  [&] { return UniqueIdentifier(name.substr(2)); });
         }
         return name;
     }
@@ -1434,7 +1442,7 @@ class Printer : public tint::TextGenerator {
     /// @returns the name of the given value, creating a new unique name if the value is unnamed in
     /// the module.
     std::string NameOf(const core::ir::Value* value) {
-        return names_.GetOrCreate(value, [&] {
+        return names_.GetOrAdd(value, [&] {
             if (auto sym = ir_.NameOf(value); sym.IsValid()) {
                 return sym.Name();
             }

@@ -31,6 +31,8 @@
 #include <string>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
+#include "dawn/common/MatchVariant.h"
 #include "dawn/native/CacheRequest.h"
 #include "dawn/native/PhysicalDevice.h"
 #include "dawn/native/Serializable.h"
@@ -45,6 +47,7 @@
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 #include "tint/tint.h"
 
 #ifdef DAWN_ENABLE_SPIRV_VALIDATION
@@ -145,11 +148,12 @@ class ShaderModule::ConcurrentTransformedShaderModuleCache {
         }
     };
 
-    Device* mDevice;
+    // TODO(https://crbug.com/dawn/2349): Investigate DanglingUntriaged in dawn/native.
+    raw_ptr<Device, DanglingUntriaged> mDevice;
     std::mutex mMutex;
-    std::unordered_map<TransformedShaderModuleCacheKey,
-                       Entry,
-                       TransformedShaderModuleCacheKeyHashFunc>
+    absl::flat_hash_map<TransformedShaderModuleCacheKey,
+                        Entry,
+                        TransformedShaderModuleCacheKeyHashFunc>
         mTransformedShaderModuleCache;
 };
 
@@ -207,6 +211,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     const ProgrammableStage& programmableStage,
     const PipelineLayout* layout,
     bool clampFragDepth,
+    bool emitPointSize,
     std::optional<uint32_t> maxSubgroupSizeForFullSubgroups) {
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "ShaderModuleVk::GetHandleAndSpirv");
 
@@ -235,16 +240,22 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
         const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
 
-        for (const auto& [binding, bindingInfo] : moduleBindingInfo[group]) {
+        for (const auto& currentModuleBindingInfo : moduleBindingInfo[group]) {
+            // We cannot use structured binding here because lambda expressions can only capture
+            // variables, while structured binding doesn't introduce variables.
+            const auto& binding = currentModuleBindingInfo.first;
+            const auto& shaderBindingInfo = currentModuleBindingInfo.second;
+
             tint::BindingPoint srcBindingPoint{static_cast<uint32_t>(group),
                                                static_cast<uint32_t>(binding)};
 
             tint::BindingPoint dstBindingPoint{
                 static_cast<uint32_t>(group), static_cast<uint32_t>(bgl->GetBindingIndex(binding))};
 
-            switch (bindingInfo.bindingType) {
-                case BindingInfoType::Buffer:
-                    switch (bindingInfo.buffer.type) {
+            MatchVariant(
+                shaderBindingInfo.bindingInfo,
+                [&](const BufferBindingInfo& bindingInfo) {
+                    switch (bindingInfo.type) {
                         case wgpu::BufferBindingType::Uniform:
                             bindings.uniform.emplace(
                                 srcBindingPoint,
@@ -263,23 +274,23 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                             DAWN_UNREACHABLE();
                             break;
                     }
-                    break;
-                case BindingInfoType::Sampler:
+                },
+                [&](const SamplerBindingInfo& bindingInfo) {
                     bindings.sampler.emplace(srcBindingPoint,
                                              tint::spirv::writer::binding::Sampler{
                                                  dstBindingPoint.group, dstBindingPoint.binding});
-                    break;
-                case BindingInfoType::Texture:
+                },
+                [&](const SampledTextureBindingInfo& bindingInfo) {
                     bindings.texture.emplace(srcBindingPoint,
                                              tint::spirv::writer::binding::Texture{
                                                  dstBindingPoint.group, dstBindingPoint.binding});
-                    break;
-                case BindingInfoType::StorageTexture:
+                },
+                [&](const StorageTextureBindingInfo& bindingInfo) {
                     bindings.storage_texture.emplace(
                         srcBindingPoint, tint::spirv::writer::binding::StorageTexture{
                                              dstBindingPoint.group, dstBindingPoint.binding});
-                    break;
-                case BindingInfoType::ExternalTexture: {
+                },
+                [&](const ExternalTextureBindingInfo& bindingInfo) {
                     const auto& bindingMap = bgl->GetExternalTextureBindingExpansionMap();
                     const auto& expansion = bindingMap.find(binding);
                     DAWN_ASSERT(expansion != bindingMap.end());
@@ -298,9 +309,7 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                     bindings.external_texture.emplace(
                         srcBindingPoint,
                         tint::spirv::writer::binding::ExternalTexture{metadata, plane0, plane1});
-                    break;
-                }
-            }
+                });
         }
     }
 
@@ -311,7 +320,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
     SpirvCompilationRequest req = {};
     req.stage = stage;
-    req.inputProgram = GetTintProgram();
+    auto tintProgram = GetTintProgram();
+    req.inputProgram = &(tintProgram->program);
     req.entryPointName = programmableStage.entryPoint;
     req.disableSymbolRenaming = GetDevice()->IsToggleEnabled(Toggle::DisableSymbolRenaming);
     req.platform = UnsafeUnkeyedValue(GetDevice()->GetPlatform());
@@ -320,11 +330,13 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
 
     req.tintOptions.clamp_frag_depth = clampFragDepth;
     req.tintOptions.disable_robustness = !GetDevice()->IsRobustnessEnabled();
-    req.tintOptions.emit_vertex_point_size = true;
+    req.tintOptions.emit_vertex_point_size = emitPointSize;
     req.tintOptions.disable_workgroup_init =
         GetDevice()->IsToggleEnabled(Toggle::DisableWorkgroupInit);
     req.tintOptions.use_zero_initialize_workgroup_memory_extension =
         GetDevice()->IsToggleEnabled(Toggle::VulkanUseZeroInitializeWorkgroupMemoryExtension);
+    req.tintOptions.use_storage_input_output_16 =
+        GetDevice()->IsToggleEnabled(Toggle::VulkanUseStorageInputOutput16);
     req.tintOptions.bindings = std::move(bindings);
     req.tintOptions.disable_image_robustness =
         GetDevice()->IsToggleEnabled(Toggle::VulkanUseImageRobustAccess2);
@@ -335,6 +347,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
     req.tintOptions.polyfill_dot_4x8_packed =
         GetDevice()->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
     req.use_tint_ir = GetDevice()->IsToggleEnabled(Toggle::UseTintIR);
+    req.tintOptions.disable_polyfill_integer_div_mod =
+        GetDevice()->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
 
     // Set subgroup uniform control flow flag for subgroup experiment, if device has
     // Chromium-experimental-subgroup-uniform-control-flow feature. (dawn:464)
@@ -415,15 +429,17 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
             if (r.use_tint_ir) {
                 // Convert the AST program to an IR module.
                 auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
-                DAWN_INVALID_IF(!ir, "An error occurred while generating Tint IR\n%s",
-                                ir.Failure().reason.str());
+                DAWN_INVALID_IF(ir != tint::Success,
+                                "An error occurred while generating Tint IR\n%s",
+                                ir.Failure().reason.Str());
 
                 tintResult = tint::spirv::writer::Generate(ir.Get(), r.tintOptions);
             } else {
                 tintResult = tint::spirv::writer::Generate(program, r.tintOptions);
             }
-            DAWN_INVALID_IF(!tintResult, "An error occurred while generating SPIR-V\n%s",
-                            tintResult.Failure().reason.str());
+            DAWN_INVALID_IF(tintResult != tint::Success,
+                            "An error occurred while generating SPIR-V\n%s",
+                            tintResult.Failure().reason.Str());
 
             CompiledSpirv result;
             result.spirv = std::move(tintResult.Get().spirv);

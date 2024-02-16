@@ -1,6 +1,7 @@
 cbuffer cbuffer_u : register(b0) {
   uint4 u[16];
 };
+RWByteAddressBuffer s : register(u1);
 
 float4x4 u_load(uint offset) {
   const uint scalar_offset = ((offset + 0u)) / 4;
@@ -12,8 +13,9 @@ float4x4 u_load(uint offset) {
 
 [numthreads(1, 1, 1)]
 void f() {
-  const float4x4 t = transpose(u_load(128u));
-  const float l = length(asfloat(u[1]).ywxz);
-  const float a = abs(asfloat(u[1]).ywxz.x);
+  float4x4 t = transpose(u_load(128u));
+  float l = length(asfloat(u[1]).ywxz);
+  float a = abs(asfloat(u[1]).ywxz.x);
+  s.Store(0u, asuint(((t[0].x + float(l)) + float(a))));
   return;
 }

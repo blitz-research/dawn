@@ -99,17 +99,19 @@ TEST_P(DeviceLifetimeTests, DroppedInsideQueueOnSubmittedWorkDone) {
 // Test that the device can be dropped while a popErrorScope callback is in flight.
 TEST_P(DeviceLifetimeTests, DroppedWhilePopErrorScope) {
     device.PushErrorScope(wgpu::ErrorFilter::Validation);
-    bool wire = UsesWire();
+    bool done = false;
+
     device.PopErrorScope(
         [](WGPUErrorType type, const char*, void* userdata) {
-            const bool wire = *static_cast<bool*>(userdata);
-            // On the wire, all callbacks get rejected immediately with once the device is deleted.
-            // In native, popErrorScope is called synchronously.
-            // TODO(crbug.com/dawn/1122): These callbacks should be made consistent.
-            EXPECT_EQ(type, wire ? WGPUErrorType_Unknown : WGPUErrorType_NoError);
+            *static_cast<bool*>(userdata) = true;
+            EXPECT_EQ(type, WGPUErrorType_NoError);
         },
-        &wire);
+        &done);
     device = nullptr;
+
+    while (!done) {
+        WaitABit();
+    }
 }
 
 // Test that the device can be dropped inside an onSubmittedWorkDone callback.
@@ -131,11 +133,6 @@ TEST_P(DeviceLifetimeTests, DroppedInsidePopErrorScope) {
         &data);
 
     while (!data.done) {
-        // WaitABit no longer can call tick since we've moved the device from the fixture into the
-        // userdata.
-        if (data.device) {
-            data.device.Tick();
-        }
         WaitABit();
     }
 }
@@ -349,7 +346,6 @@ TEST_P(DeviceLifetimeTests, DroppedWhileCreatePipelineAsync) {
     desc.compute.module = utils::CreateShaderModule(device, R"(
     @compute @workgroup_size(1) fn main() {
     })");
-    desc.compute.entryPoint = "main";
 
     device.CreateComputePipelineAsync(
         &desc,
@@ -370,7 +366,6 @@ TEST_P(DeviceLifetimeTests, DroppedInsideCreatePipelineAsync) {
     desc.compute.module = utils::CreateShaderModule(device, R"(
     @compute @workgroup_size(1) fn main() {
     })");
-    desc.compute.entryPoint = "main";
 
     struct Userdata {
         wgpu::Device device;
@@ -407,7 +402,6 @@ TEST_P(DeviceLifetimeTests, DroppedWhileCreatePipelineAsyncAlreadyCached) {
     desc.compute.module = utils::CreateShaderModule(device, R"(
     @compute @workgroup_size(1) fn main() {
     })");
-    desc.compute.entryPoint = "main";
 
     // Create a pipeline ahead of time so it's in the cache.
     wgpu::ComputePipeline p = device.CreateComputePipeline(&desc);
@@ -438,7 +432,6 @@ TEST_P(DeviceLifetimeTests, DroppedInsideCreatePipelineAsyncAlreadyCached) {
     desc.compute.module = utils::CreateShaderModule(device, R"(
     @compute @workgroup_size(1) fn main() {
     })");
-    desc.compute.entryPoint = "main";
 
     // Create a pipeline ahead of time so it's in the cache.
     wgpu::ComputePipeline p = device.CreateComputePipeline(&desc);
@@ -480,7 +473,6 @@ TEST_P(DeviceLifetimeTests, DroppedWhileCreatePipelineAsyncRaceCache) {
     desc.compute.module = utils::CreateShaderModule(device, R"(
     @compute @workgroup_size(1) fn main() {
     })");
-    desc.compute.entryPoint = "main";
 
     device.CreateComputePipelineAsync(
         &desc,
@@ -505,7 +497,6 @@ TEST_P(DeviceLifetimeTests, DroppedInsideCreatePipelineAsyncRaceCache) {
     desc.compute.module = utils::CreateShaderModule(device, R"(
     @compute @workgroup_size(1) fn main() {
     })");
-    desc.compute.entryPoint = "main";
 
     struct Userdata {
         wgpu::Device device;

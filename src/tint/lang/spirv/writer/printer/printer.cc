@@ -189,7 +189,7 @@ class Printer {
 
     /// @returns the generated SPIR-V code on success, or failure
     Result<std::vector<uint32_t>> Code() {
-        if (auto res = Generate(); !res) {
+        if (auto res = Generate(); res != Success) {
             return res.Failure();
         }
 
@@ -202,7 +202,7 @@ class Printer {
 
     /// @returns the generated SPIR-V module on success, or failure
     Result<writer::Module> Module() {
-        if (auto res = Generate(); !res) {
+        if (auto res = Generate(); res != Success) {
             return res.Failure();
         }
 
@@ -225,18 +225,14 @@ class Printer {
         uint32_t return_type_id;
         Vector<uint32_t, 4> param_type_ids;
 
-        /// Hasher provides a hash function for the FunctionType.
-        struct Hasher {
-            /// @param ft the FunctionType to create a hash for
-            /// @return the hash value
-            inline std::size_t operator()(const FunctionType& ft) const {
-                size_t hash = Hash(ft.return_type_id);
-                for (auto& p : ft.param_type_ids) {
-                    hash = HashCombine(hash, p);
-                }
-                return hash;
+        /// @returns the hash code of the FunctionType
+        tint::HashCode HashCode() const {
+            auto hash = Hash(return_type_id);
+            for (auto& p : param_type_ids) {
+                hash = HashCombine(hash, p);
             }
-        };
+            return hash;
+        }
 
         /// Equality operator for FunctionType.
         bool operator==(const FunctionType& other) const {
@@ -249,7 +245,7 @@ class Printer {
     Hashmap<const core::type::Type*, uint32_t, 8> types_;
 
     /// The map of function types to their result IDs.
-    Hashmap<FunctionType, uint32_t, 8, FunctionType::Hasher> function_types_;
+    Hashmap<FunctionType, uint32_t, 8> function_types_;
 
     /// The map of constants to their result IDs.
     Hashmap<const core::constant::Value*, uint32_t, 16> constants_;
@@ -292,7 +288,7 @@ class Printer {
     /// Builds the SPIR-V from the IR
     Result<SuccessType> Generate() {
         auto valid = core::ir::ValidateAndDumpIfNeeded(ir_, "SPIR-V writer");
-        if (!valid) {
+        if (valid != Success) {
             return valid.Failure();
         }
 
@@ -386,7 +382,7 @@ class Printer {
     /// @param constant the constant to get the ID for
     /// @returns the result ID of the constant
     uint32_t Constant(const core::constant::Value* constant) {
-        return constants_.GetOrCreate(constant, [&] {
+        return constants_.GetOrAdd(constant, [&] {
             auto* ty = constant->Type();
 
             // Use OpConstantNull for zero-valued composite constants.
@@ -455,7 +451,7 @@ class Printer {
     /// @param type the type to get the ID for
     /// @returns the result ID of the OpConstantNull instruction
     uint32_t ConstantNull(const core::type::Type* type) {
-        return constant_nulls_.GetOrCreate(type, [&] {
+        return constant_nulls_.GetOrAdd(type, [&] {
             auto id = module_.NextId();
             module_.PushType(spv::Op::OpConstantNull, {Type(type), id});
             return id;
@@ -466,7 +462,7 @@ class Printer {
     /// @param type the type of the undef value
     /// @returns the result ID of the instruction
     uint32_t Undef(const core::type::Type* type) {
-        return undef_values_.GetOrCreate(type, [&] {
+        return undef_values_.GetOrAdd(type, [&] {
             auto id = module_.NextId();
             module_.PushType(spv::Op::OpUndef, {Type(type), id});
             return id;
@@ -478,7 +474,7 @@ class Printer {
     /// @returns the result ID of the type
     uint32_t Type(const core::type::Type* ty) {
         ty = DedupType(ty, ir_.Types());
-        return types_.GetOrCreate(ty, [&] {
+        return types_.GetOrAdd(ty, [&] {
             auto id = module_.NextId();
             Switch(
                 ty,  //
@@ -497,7 +493,6 @@ class Printer {
                     module_.PushCapability(SpvCapabilityFloat16);
                     module_.PushCapability(SpvCapabilityUniformAndStorageBuffer16BitAccess);
                     module_.PushCapability(SpvCapabilityStorageBuffer16BitAccess);
-                    module_.PushCapability(SpvCapabilityStorageInputOutput16);
                     module_.PushType(spv::Op::OpTypeFloat, {id, 16u});
                 },
                 [&](const core::type::Vector* vec) {
@@ -548,7 +543,7 @@ class Printer {
             value,  //
             [&](core::ir::Constant* constant) { return Constant(constant); },
             [&](core::ir::Value*) {
-                return values_.GetOrCreate(value, [&] { return module_.NextId(); });
+                return values_.GetOrAdd(value, [&] { return module_.NextId(); });
             });
     }
 
@@ -556,7 +551,7 @@ class Printer {
     /// @param block the block to get the label ID for
     /// @returns the ID of the block's label
     uint32_t Label(const core::ir::Block* block) {
-        return block_labels_.GetOrCreate(block, [&] { return module_.NextId(); });
+        return block_labels_.GetOrAdd(block, [&] { return module_.NextId(); });
     }
 
     /// Emit a struct type.
@@ -717,7 +712,7 @@ class Printer {
         }
 
         // Get the ID for the function type (creating it if needed).
-        auto function_type_id = function_types_.GetOrCreate(function_type, [&] {
+        auto function_type_id = function_types_.GetOrAdd(function_type, [&] {
             auto func_ty_id = module_.NextId();
             OperandList operands = {func_ty_id, return_type_id};
             operands.insert(operands.end(), function_type.param_type_ids.begin(),
@@ -790,7 +785,7 @@ class Printer {
             // Determine if this IO variable is used by the entry point.
             bool used = false;
             for (const auto& use : var->Result(0)->Usages()) {
-                auto* block = use.instruction->Block();
+                auto* block = use->instruction->Block();
                 while (block->Parent()) {
                     block = block->Parent()->Block();
                 }
@@ -879,8 +874,8 @@ class Printer {
             Switch(
                 inst,                                                                 //
                 [&](core::ir::Access* a) { EmitAccess(a); },                          //
-                [&](core::ir::Binary* b) { EmitBinary(b); },                          //
                 [&](core::ir::Bitcast* b) { EmitBitcast(b); },                        //
+                [&](core::ir::CoreBinary* b) { EmitBinary(b); },                      //
                 [&](core::ir::CoreBuiltinCall* b) { EmitCoreBuiltinCall(b); },        //
                 [&](spirv::ir::BuiltinCall* b) { EmitSpirvBuiltinCall(b); },          //
                 [&](core::ir::Construct* c) { EmitConstruct(c); },                    //
@@ -893,7 +888,7 @@ class Printer {
                 [&](core::ir::Store* s) { EmitStore(s); },                            //
                 [&](core::ir::StoreVectorElement* s) { EmitStoreVectorElement(s); },  //
                 [&](core::ir::UserCall* c) { EmitUserCall(c); },                      //
-                [&](core::ir::Unary* u) { EmitUnary(u); },                            //
+                [&](core::ir::CoreUnary* u) { EmitUnary(u); },                        //
                 [&](core::ir::Var* v) { EmitVar(v); },                                //
                 [&](core::ir::Let* l) { EmitLet(l); },                                //
                 [&](core::ir::If* i) { EmitIf(i); },                                  //
@@ -1060,7 +1055,7 @@ class Printer {
 
     /// Emit a binary instruction.
     /// @param binary the binary instruction to emit
-    void EmitBinary(core::ir::Binary* binary) {
+    void EmitBinary(core::ir::CoreBinary* binary) {
         auto id = Value(binary);
         auto lhs = Value(binary->LHS());
         auto rhs = Value(binary->RHS());
@@ -1070,11 +1065,11 @@ class Printer {
         // Determine the opcode.
         spv::Op op = spv::Op::Max;
         switch (binary->Op()) {
-            case core::ir::BinaryOp::kAdd: {
+            case core::BinaryOp::kAdd: {
                 op = ty->is_integer_scalar_or_vector() ? spv::Op::OpIAdd : spv::Op::OpFAdd;
                 break;
             }
-            case core::ir::BinaryOp::kDivide: {
+            case core::BinaryOp::kDivide: {
                 if (ty->is_signed_integer_scalar_or_vector()) {
                     op = spv::Op::OpSDiv;
                 } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -1084,7 +1079,7 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kMultiply: {
+            case core::BinaryOp::kMultiply: {
                 if (ty->is_integer_scalar_or_vector()) {
                     op = spv::Op::OpIMul;
                 } else if (ty->is_float_scalar_or_vector()) {
@@ -1092,11 +1087,11 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kSubtract: {
+            case core::BinaryOp::kSubtract: {
                 op = ty->is_integer_scalar_or_vector() ? spv::Op::OpISub : spv::Op::OpFSub;
                 break;
             }
-            case core::ir::BinaryOp::kModulo: {
+            case core::BinaryOp::kModulo: {
                 if (ty->is_signed_integer_scalar_or_vector()) {
                     op = spv::Op::OpSRem;
                 } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -1107,7 +1102,7 @@ class Printer {
                 break;
             }
 
-            case core::ir::BinaryOp::kAnd: {
+            case core::BinaryOp::kAnd: {
                 if (ty->is_integer_scalar_or_vector()) {
                     op = spv::Op::OpBitwiseAnd;
                 } else if (ty->is_bool_scalar_or_vector()) {
@@ -1115,7 +1110,7 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kOr: {
+            case core::BinaryOp::kOr: {
                 if (ty->is_integer_scalar_or_vector()) {
                     op = spv::Op::OpBitwiseOr;
                 } else if (ty->is_bool_scalar_or_vector()) {
@@ -1123,16 +1118,16 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kXor: {
+            case core::BinaryOp::kXor: {
                 op = spv::Op::OpBitwiseXor;
                 break;
             }
 
-            case core::ir::BinaryOp::kShiftLeft: {
+            case core::BinaryOp::kShiftLeft: {
                 op = spv::Op::OpShiftLeftLogical;
                 break;
             }
-            case core::ir::BinaryOp::kShiftRight: {
+            case core::BinaryOp::kShiftRight: {
                 if (ty->is_signed_integer_scalar_or_vector()) {
                     op = spv::Op::OpShiftRightArithmetic;
                 } else if (ty->is_unsigned_integer_scalar_or_vector()) {
@@ -1141,7 +1136,7 @@ class Printer {
                 break;
             }
 
-            case core::ir::BinaryOp::kEqual: {
+            case core::BinaryOp::kEqual: {
                 if (lhs_ty->is_bool_scalar_or_vector()) {
                     op = spv::Op::OpLogicalEqual;
                 } else if (lhs_ty->is_float_scalar_or_vector()) {
@@ -1151,7 +1146,7 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kNotEqual: {
+            case core::BinaryOp::kNotEqual: {
                 if (lhs_ty->is_bool_scalar_or_vector()) {
                     op = spv::Op::OpLogicalNotEqual;
                 } else if (lhs_ty->is_float_scalar_or_vector()) {
@@ -1161,7 +1156,7 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kGreaterThan: {
+            case core::BinaryOp::kGreaterThan: {
                 if (lhs_ty->is_float_scalar_or_vector()) {
                     op = spv::Op::OpFOrdGreaterThan;
                 } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1171,7 +1166,7 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kGreaterThanEqual: {
+            case core::BinaryOp::kGreaterThanEqual: {
                 if (lhs_ty->is_float_scalar_or_vector()) {
                     op = spv::Op::OpFOrdGreaterThanEqual;
                 } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1181,7 +1176,7 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kLessThan: {
+            case core::BinaryOp::kLessThan: {
                 if (lhs_ty->is_float_scalar_or_vector()) {
                     op = spv::Op::OpFOrdLessThan;
                 } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1191,7 +1186,7 @@ class Printer {
                 }
                 break;
             }
-            case core::ir::BinaryOp::kLessThanEqual: {
+            case core::BinaryOp::kLessThanEqual: {
                 if (lhs_ty->is_float_scalar_or_vector()) {
                     op = spv::Op::OpFOrdLessThanEqual;
                 } else if (lhs_ty->is_signed_integer_scalar_or_vector()) {
@@ -1201,6 +1196,9 @@ class Printer {
                 }
                 break;
             }
+            default:
+                TINT_UNIMPLEMENTED() << binary->Op();
+                break;
         }
 
         // Emit the instruction.
@@ -1382,7 +1380,7 @@ class Printer {
         auto glsl_ext_inst = [&](enum GLSLstd450 inst) {
             constexpr const char* kGLSLstd450 = "GLSL.std.450";
             op = spv::Op::OpExtInst;
-            operands.push_back(imports_.GetOrCreate(kGLSLstd450, [&] {
+            operands.push_back(imports_.GetOrAdd(kGLSLstd450, [&] {
                 // Import the instruction set the first time it is requested.
                 auto import = module_.NextId();
                 module_.PushExtImport(spv::Op::OpExtInstImport, {import, Operand(kGLSLstd450)});
@@ -1961,20 +1959,23 @@ class Printer {
 
     /// Emit a unary instruction.
     /// @param unary the unary instruction to emit
-    void EmitUnary(core::ir::Unary* unary) {
+    void EmitUnary(core::ir::CoreUnary* unary) {
         auto id = Value(unary);
         auto* ty = unary->Result(0)->Type();
         spv::Op op = spv::Op::Max;
         switch (unary->Op()) {
-            case core::ir::UnaryOp::kComplement:
+            case core::UnaryOp::kComplement:
                 op = spv::Op::OpNot;
                 break;
-            case core::ir::UnaryOp::kNegation:
+            case core::UnaryOp::kNegation:
                 if (ty->is_float_scalar_or_vector()) {
                     op = spv::Op::OpFNegate;
                 } else if (ty->is_signed_integer_scalar_or_vector()) {
                     op = spv::Op::OpSNegate;
                 }
+                break;
+            default:
+                TINT_UNIMPLEMENTED() << unary->Op();
                 break;
         }
         current_function_.push_inst(op, {Type(ty), id, Value(unary->Val())});
@@ -2002,9 +2003,9 @@ class Printer {
             module_.PushAnnot(spv::Op::OpDecorate,
                               {id, U32Operand(SpvDecorationLocation), *attrs.location});
         }
-        if (attrs.index) {
+        if (attrs.blend_src) {
             module_.PushAnnot(spv::Op::OpDecorate,
-                              {id, U32Operand(SpvDecorationIndex), *attrs.index});
+                              {id, U32Operand(SpvDecorationIndex), *attrs.blend_src});
         }
         if (attrs.interpolation) {
             switch (attrs.interpolation->type) {
@@ -2063,6 +2064,9 @@ class Printer {
             }
             case core::AddressSpace::kIn: {
                 TINT_ASSERT(!current_function_);
+                if (store_ty->DeepestElement()->Is<core::type::F16>()) {
+                    module_.PushCapability(SpvCapabilityStorageInputOutput16);
+                }
                 module_.PushType(spv::Op::OpVariable, {ty, id, U32Operand(SpvStorageClassInput)});
                 EmitIOAttributes(id, var->Attributes(), core::AddressSpace::kIn);
                 break;
@@ -2087,6 +2091,9 @@ class Printer {
             }
             case core::AddressSpace::kOut: {
                 TINT_ASSERT(!current_function_);
+                if (store_ty->DeepestElement()->Is<core::type::F16>()) {
+                    module_.PushCapability(SpvCapabilityStorageInputOutput16);
+                }
                 module_.PushType(spv::Op::OpVariable, {ty, id, U32Operand(SpvStorageClassOutput)});
                 EmitIOAttributes(id, var->Attributes(), core::AddressSpace::kOut);
                 break;
@@ -2191,7 +2198,7 @@ class Printer {
     /// @param ci the control instruction to get the merge label for
     /// @returns the label ID
     uint32_t GetMergeLabel(core::ir::ControlInstruction* ci) {
-        return merge_block_labels_.GetOrCreate(ci, [&] { return module_.NextId(); });
+        return merge_block_labels_.GetOrAdd(ci, [&] { return module_.NextId(); });
     }
 
     /// Get the ID of the label of the block that will contain a terminator instruction.

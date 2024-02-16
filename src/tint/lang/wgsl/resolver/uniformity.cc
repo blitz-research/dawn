@@ -294,8 +294,8 @@ struct FunctionInfo {
     /// @returns a LoopSwitchInfo for the given statement, allocating the LoopSwitchInfo if this is
     /// the first call with the given statement.
     LoopSwitchInfo& LoopSwitchInfoFor(const sem::Statement* stmt) {
-        return *loop_switch_infos.GetOrCreate(stmt,
-                                              [&] { return loop_switch_info_allocator.Create(); });
+        return *loop_switch_infos.GetOrAdd(stmt,
+                                           [&] { return loop_switch_info_allocator.Create(); });
     }
 
     /// Disassociates the LoopSwitchInfo for the given statement.
@@ -431,7 +431,7 @@ class UniformityGraph {
     /// @param func the function to process
     /// @returns true if there are no uniformity issues, false otherwise
     bool ProcessFunction(const ast::Function* func) {
-        current_function_ = functions_.Add(func, FunctionInfo(func, b)).value;
+        current_function_ = &functions_.Add(func, FunctionInfo(func, b)).value;
 
         // Process function body.
         if (func->body) {
@@ -627,7 +627,7 @@ class UniformityGraph {
                 // 'Next'.
                 auto& behaviors = sem->Behaviors();
                 if (behaviors.Contains(sem::Behavior::kNext)) {
-                    for (auto var : scoped_assignments) {
+                    for (auto& var : scoped_assignments) {
                         current_function_->variables.Set(var.key, var.value);
                     }
                 }
@@ -649,7 +649,7 @@ class UniformityGraph {
                 auto& info = current_function_->LoopSwitchInfoFor(parent);
 
                 // Propagate variable values to the loop/switch exit nodes.
-                for (auto* var : current_function_->local_var_decls) {
+                for (auto& var : current_function_->local_var_decls) {
                     // Skip variables that were declared inside this loop/switch.
                     if (auto* lv = var->As<sem::LocalVariable>();
                         lv &&
@@ -658,7 +658,7 @@ class UniformityGraph {
                     }
 
                     // Add an edge from the variable exit node to its value at this point.
-                    auto* exit_node = info.var_exit_nodes.GetOrCreate(var, [&] {
+                    auto* exit_node = info.var_exit_nodes.GetOrAdd(var, [&] {
                         auto name = NameFor(var);
                         return CreateNode({name, "_value_", info.type, "_exit"});
                     });
@@ -686,7 +686,7 @@ class UniformityGraph {
                     auto& info = current_function_->LoopSwitchInfoFor(parent);
 
                     // Propagate variable values to the loop exit nodes.
-                    for (auto* var : current_function_->local_var_decls) {
+                    for (auto& var : current_function_->local_var_decls) {
                         // Skip variables that were declared inside this loop.
                         if (auto* lv = var->As<sem::LocalVariable>();
                             lv && lv->Statement()->FindFirstParent(
@@ -695,7 +695,7 @@ class UniformityGraph {
                         }
 
                         // Add an edge from the variable exit node to its value at this point.
-                        auto* exit_node = info.var_exit_nodes.GetOrCreate(var, [&] {
+                        auto* exit_node = info.var_exit_nodes.GetOrAdd(var, [&] {
                             auto name = NameFor(var);
                             return CreateNode({name, "_value_", info.type, "_exit"});
                         });
@@ -780,7 +780,7 @@ class UniformityGraph {
                 info.type = "forloop";
 
                 // Create input nodes for any variables declared before this loop.
-                for (auto* v : current_function_->local_var_decls) {
+                for (auto& v : current_function_->local_var_decls) {
                     auto* in_node = CreateNode({NameFor(v), "_value_forloop_in"});
                     in_node->AddEdge(current_function_->variables.Get(v));
                     info.var_in_nodes.Replace(v, in_node);
@@ -796,8 +796,8 @@ class UniformityGraph {
                     cf_start = cf_condition_end;
 
                     // Propagate assignments to the loop exit nodes.
-                    for (auto* var : current_function_->local_var_decls) {
-                        auto* exit_node = info.var_exit_nodes.GetOrCreate(var, [&] {
+                    for (auto& var : current_function_->local_var_decls) {
+                        auto* exit_node = info.var_exit_nodes.GetOrAdd(var, [&] {
                             auto name = NameFor(var);
                             return CreateNode({name, "_value_", info.type, "_exit"});
                         });
@@ -816,7 +816,7 @@ class UniformityGraph {
                 cfx->AddEdge(cf);
 
                 // Add edges from variable loop input nodes to their values at the end of the loop.
-                for (auto v : info.var_in_nodes) {
+                for (auto& v : info.var_in_nodes) {
                     auto* in_node = v.value;
                     auto* out_node = current_function_->variables.Get(v.key);
                     if (out_node != in_node) {
@@ -825,7 +825,7 @@ class UniformityGraph {
                 }
 
                 // Set each variable's exit node as its value in the outer scope.
-                for (auto v : info.var_exit_nodes) {
+                for (auto& v : info.var_exit_nodes) {
                     current_function_->variables.Set(v.key, v.value);
                 }
 
@@ -855,7 +855,7 @@ class UniformityGraph {
                 info.type = "whileloop";
 
                 // Create input nodes for any variables declared before this loop.
-                for (auto* v : current_function_->local_var_decls) {
+                for (auto& v : current_function_->local_var_decls) {
                     auto* in_node = CreateNode({NameFor(v), "_value_forloop_in"});
                     in_node->AddEdge(current_function_->variables.Get(v));
                     info.var_in_nodes.Replace(v, in_node);
@@ -872,8 +872,8 @@ class UniformityGraph {
                 }
 
                 // Propagate assignments to the loop exit nodes.
-                for (auto* var : current_function_->local_var_decls) {
-                    auto* exit_node = info.var_exit_nodes.GetOrCreate(var, [&] {
+                for (auto& var : current_function_->local_var_decls) {
+                    auto* exit_node = info.var_exit_nodes.GetOrAdd(var, [&] {
                         auto name = NameFor(var);
                         return CreateNode({name, "_value_", info.type, "_exit"});
                     });
@@ -951,7 +951,7 @@ class UniformityGraph {
                 }
 
                 // Update values for any variables assigned in the if or else blocks.
-                for (auto* var : current_function_->local_var_decls) {
+                for (auto& var : current_function_->local_var_decls) {
                     // Skip variables not assigned in either block.
                     if (!true_vars.Contains(var) && !false_vars.Contains(var)) {
                         continue;
@@ -964,14 +964,14 @@ class UniformityGraph {
                     // Only add edges if the behavior for that block contains 'Next'.
                     if (true_has_next) {
                         if (true_vars.Contains(var)) {
-                            out_node->AddEdge(*true_vars.Find(var));
+                            out_node->AddEdge(*true_vars.Get(var));
                         } else {
                             out_node->AddEdge(current_function_->variables.Get(var));
                         }
                     }
                     if (false_has_next) {
                         if (false_vars.Contains(var)) {
-                            out_node->AddEdge(*false_vars.Find(var));
+                            out_node->AddEdge(*false_vars.Get(var));
                         } else {
                             out_node->AddEdge(current_function_->variables.Get(var));
                         }
@@ -1022,7 +1022,7 @@ class UniformityGraph {
                 info.type = "loop";
 
                 // Create input nodes for any variables declared before this loop.
-                for (auto* v : current_function_->local_var_decls) {
+                for (auto& v : current_function_->local_var_decls) {
                     auto name = NameFor(v);
                     auto* in_node = CreateNode({name, "_value_loop_in"}, v->Declaration());
                     in_node->AddEdge(current_function_->variables.Get(v));
@@ -1112,7 +1112,7 @@ class UniformityGraph {
 
                     if (sem_case->Behaviors().Contains(sem::Behavior::kNext)) {
                         // Propagate variable values to the switch exit nodes.
-                        for (auto* var : current_function_->local_var_decls) {
+                        for (auto& var : current_function_->local_var_decls) {
                             // Skip variables that were declared inside the switch.
                             if (auto* lv = var->As<sem::LocalVariable>();
                                 lv && lv->Statement()->FindFirstParent(
@@ -1121,7 +1121,7 @@ class UniformityGraph {
                             }
 
                             // Add an edge from the variable exit node to its new value.
-                            auto* exit_node = info.var_exit_nodes.GetOrCreate(var, [&] {
+                            auto* exit_node = info.var_exit_nodes.GetOrAdd(var, [&] {
                                 auto name = NameFor(var);
                                 return CreateNode({name, "_value_", info.type, "_exit"});
                             });
@@ -1232,10 +1232,18 @@ class UniformityGraph {
                     node->AddEdge(cf);
 
                     auto* current_value = current_function_->variables.Get(param);
-                    if (param->Type()->Is<core::type::Pointer>()) {
+                    if (auto* ptr = param->Type()->As<core::type::Pointer>()) {
                         if (load_rule) {
-                            // We are loading from the pointer, so add an edge to its contents.
-                            node->AddEdge(current_value);
+                            if (ptr->AddressSpace() == core::AddressSpace::kFunction ||
+                                ptr->Access() == core::Access::kRead) {
+                                // We are loading from a pointer to a function-scope variable or an
+                                // immutable module-scope variable, so add an edge to its contents.
+                                node->AddEdge(current_value);
+                            } else {
+                                // We are loading from a pointer to a mutable module-scope variable,
+                                // which always has non-uniform contents.
+                                node->AddEdge(current_function_->may_be_non_uniform);
+                            }
                         } else {
                             // This is a pointer parameter that we are not loading from, so add an
                             // edge to the pointer value itself.
@@ -1412,68 +1420,116 @@ class UniformityGraph {
     /// Process an LValue expression.
     /// @param cf the input control flow node
     /// @param expr the expression to process
-    /// @returns a pair of (control flow node, variable node)
+    /// @param is_dereferencing `true` if we are dereferencing a pointer
+    /// @param is_partial_reference `true` if we are referencing a subset of a variable
+    /// @returns a tuple of (control flow node, variable node, root identifier)
     LValue ProcessLValueExpression(Node* cf,
                                    const ast::Expression* expr,
+                                   bool is_dereferencing = false,
                                    bool is_partial_reference = false) {
         return Switch(
             expr,
 
             [&](const ast::IdentifierExpression* i) {
                 auto* sem = sem_.GetVal(i)->UnwrapLoad()->As<sem::VariableUser>();
-                if (sem->Variable()->Is<sem::GlobalVariable>()) {
-                    return LValue{cf, current_function_->may_be_non_uniform, nullptr};
-                } else if (auto* local = sem->Variable()->As<sem::LocalVariable>()) {
-                    // Create a new value node for this variable.
-                    auto* value = CreateNode({NameFor(i), "_lvalue"});
+                auto result = Switch(
+                    sem->Variable(),
+                    [&](const sem::GlobalVariable*) {
+                        // Pointers cannot be stored in module-scope variables, so we should never
+                        // be dereferencing here.
+                        TINT_ASSERT(!is_dereferencing);
 
-                    // If i is part of an expression that is a partial reference to a variable (e.g.
-                    // index or member access), we link back to the variable's previous value. If
-                    // the previous value was non-uniform, a partial assignment will not make it
-                    // uniform.
-                    auto* old_value = current_function_->variables.Get(local);
-                    if (is_partial_reference && old_value) {
-                        value->AddEdge(old_value);
-                    }
+                        return LValue{cf, current_function_->may_be_non_uniform, nullptr};
+                    },
+                    [&](const sem::LocalVariable* local) {
+                        Node* value = nullptr;
+                        const sem::Variable* root_ident = local;
+                        if (is_dereferencing) {
+                            // If we are dereferencing then we must have a pointer, and the only
+                            // declaration that can hold a pointer is a `let`.
+                            TINT_ASSERT(local->Declaration()->Is<ast::Let>() &&
+                                        local->Type()->Is<core::type::Pointer>());
 
-                    return LValue{cf, value, local};
-                } else {
-                    TINT_ICE() << "unknown lvalue identifier expression type: "
-                               << std::string(sem->Variable()->TypeInfo().name);
-                    return LValue{};
+                            // Determine the root identifier for the contents of the pointer.
+                            root_ident = local->Initializer()->RootIdentifier();
+
+                            // Create a new value node for the contents of the pointer.
+                            value = CreateNode({NameFor(root_ident), "_contents"});
+
+                            // The uniformity of the value depends on the pointer itself.
+                            value->AddEdge(current_function_->variables.Get(local));
+                        } else {
+                            // Create a new value node for this variable.
+                            value = CreateNode({NameFor(i), "_lvalue"});
+                        }
+
+                        return LValue{cf, value, root_ident};
+                    },
+                    [&](const sem::Parameter* param) {
+                        // Parameters can only be LValues when we are dereferencing a pointer.
+                        TINT_ASSERT(is_dereferencing && param->Type()->Is<core::type::Pointer>());
+
+                        // Create a new value node for the contents of the pointer.
+                        auto* value = CreateNode({NameFor(i), "_contents"});
+
+                        // The uniformity of the value depends on the pointer itself.
+                        value->AddEdge(current_function_->parameters[param->Index()].value);
+
+                        return LValue{cf, value, param};
+                    },
+                    [&](Default) {
+                        TINT_ICE() << "unknown lvalue identifier expression type: "
+                                   << std::string(sem->Variable()->TypeInfo().name);
+                        return LValue{};
+                    });
+
+                // If the identifier is part of an expression that is a partial reference to a
+                // variable (e.g. index or member access), we link back to the variable's previous
+                // value. If the previous value was non-uniform, a partial assignment will not make
+                // it uniform.
+                auto* old_value = current_function_->variables.Get(result.root_identifier);
+                if (is_partial_reference && old_value) {
+                    result.new_val->AddEdge(old_value);
                 }
+
+                return result;
             },
 
             [&](const ast::IndexAccessorExpression* i) {
+                // If the source object is a pointer, there is an implicit dereference due to the
+                // pointer_composite_access language feature.
+                is_dereferencing =
+                    is_dereferencing || sem_.GetVal(i->object)->Type()->Is<core::type::Pointer>();
+
                 auto [cf1, l1, root_ident] =
-                    ProcessLValueExpression(cf, i->object, /*is_partial_reference*/ true);
+                    ProcessLValueExpression(cf, i->object, is_dereferencing,
+                                            /*is_partial_reference*/ true);
                 auto [cf2, v2] = ProcessExpression(cf1, i->index);
                 l1->AddEdge(v2);
                 return LValue{cf2, l1, root_ident};
             },
 
             [&](const ast::MemberAccessorExpression* m) {
-                return ProcessLValueExpression(cf, m->object, /*is_partial_reference*/ true);
+                // If the source object is a pointer, there is an implicit dereference due to the
+                // pointer_composite_access language feature.
+                is_dereferencing =
+                    is_dereferencing || sem_.GetVal(m->object)->Type()->Is<core::type::Pointer>();
+
+                return ProcessLValueExpression(cf, m->object, is_dereferencing,
+                                               /*is_partial_reference*/ true);
             },
 
             [&](const ast::UnaryOpExpression* u) {
                 if (u->op == core::UnaryOp::kIndirection) {
-                    // Cut the analysis short, since we only need to know the originating variable
-                    // that is being written to.
-                    auto* root_ident = sem_.Get(u)->RootIdentifier();
-                    auto* deref = CreateNode({NameFor(root_ident), "_deref"});
-
-                    if (auto* old_value = current_function_->variables.Get(root_ident)) {
-                        // If dereferencing a partial reference or partial pointer, we link back to
-                        // the variable's previous value. If the previous value was non-uniform, a
-                        // partial assignment will not make it uniform.
-                        if (is_partial_reference || IsDerefOfPartialPointer(u)) {
-                            deref->AddEdge(old_value);
-                        }
-                    }
-                    return LValue{cf, deref, root_ident};
+                    return ProcessLValueExpression(
+                        cf, u->expr,
+                        /* is_dereferencing */ true,
+                        /* is_partial_reference */ is_partial_reference ||
+                            IsDerefOfPartialPointer(u));
                 }
-                return ProcessLValueExpression(cf, u->expr, is_partial_reference);
+                return ProcessLValueExpression(cf, u->expr,
+                                               /* is_dereferencing */ false,
+                                               /* is_partial_reference */ is_partial_reference);
             },
 
             TINT_ICE_ON_NO_MATCH);
@@ -1581,11 +1637,11 @@ class UniformityGraph {
             [&](const sem::Function* func) {
                 // We must have already analyzed the user-defined function since we process
                 // functions in dependency order.
-                auto info = functions_.Find(func->Declaration());
-                TINT_ASSERT(info != nullptr);
+                auto info = functions_.Get(func->Declaration());
+                TINT_ASSERT(info);
                 callsite_tag = info->callsite_tag;
                 function_tag = info->function_tag;
-                func_info = info;
+                func_info = info.value;
             },
             [&](const sem::ValueConstructor*) {
                 callsite_tag = {CallSiteTag::CallSiteNoRestriction};
@@ -1742,7 +1798,7 @@ class UniformityGraph {
         } else if (auto* user = target->As<sem::Function>()) {
             // This is a call to a user-defined function, so inspect the functions called by that
             // function and look for one whose node has an edge from the RequiredToBeUniform node.
-            auto target_info = functions_.Find(user->Declaration());
+            auto target_info = functions_.Get(user->Declaration());
             for (auto* call_node : target_info->RequiredToBeUniform(severity)->edges) {
                 if (call_node->type == Node::kRegular) {
                     auto* child_call = call_node->ast->As<ast::CallExpression>();
@@ -1775,9 +1831,9 @@ class UniformityGraph {
         auto* control_flow = TraceBackAlongPathUntil(
             non_uniform_source, [](Node* node) { return node->affects_control_flow; });
         if (control_flow) {
-            diagnostics_.add_note(diag::System::Resolver,
-                                  "control flow depends on possibly non-uniform value",
-                                  control_flow->ast->source);
+            diagnostics_.AddNote(diag::System::Resolver,
+                                 "control flow depends on possibly non-uniform value",
+                                 control_flow->ast->source);
             // TODO(jrprice): There are cases where the function with uniformity requirements is not
             // actually inside this control flow construct, for example:
             // - A conditional interrupt (e.g. break), with a barrier elsewhere in the loop
@@ -1831,20 +1887,20 @@ class UniformityGraph {
                     ss << "reading from " << var_type(var) << "'" << NameFor(ident)
                        << "' may result in a non-uniform value";
                 }
-                diagnostics_.add_note(diag::System::Resolver, ss.str(), ident->source);
+                diagnostics_.AddNote(diag::System::Resolver, ss.str(), ident->source);
             },
             [&](const ast::Variable* v) {
                 auto* var = sem_.Get(v);
                 StringStream ss;
                 ss << "reading from " << var_type(var) << "'" << NameFor(v)
                    << "' may result in a non-uniform value";
-                diagnostics_.add_note(diag::System::Resolver, ss.str(), v->source);
+                diagnostics_.AddNote(diag::System::Resolver, ss.str(), v->source);
             },
             [&](const ast::CallExpression* c) {
                 auto target_name = NameFor(c->target);
                 switch (non_uniform_source->type) {
                     case Node::kFunctionCallReturnValue: {
-                        diagnostics_.add_note(
+                        diagnostics_.AddNote(
                             diag::System::Resolver,
                             "return value of '" + target_name + "' may be non-uniform", c->source);
                         break;
@@ -1855,21 +1911,21 @@ class UniformityGraph {
                         StringStream ss;
                         ss << "reading from " << var_type(var) << "'" << NameFor(var)
                            << "' may result in a non-uniform value";
-                        diagnostics_.add_note(diag::System::Resolver, ss.str(),
-                                              var->Declaration()->source);
+                        diagnostics_.AddNote(diag::System::Resolver, ss.str(),
+                                             var->Declaration()->source);
                         break;
                     }
                     case Node::kFunctionCallArgumentValue: {
                         auto* arg = c->args[non_uniform_source->arg_index];
                         // TODO(jrprice): Which output? (return value vs another pointer argument).
-                        diagnostics_.add_note(diag::System::Resolver,
-                                              "passing non-uniform pointer to '" + target_name +
-                                                  "' may produce a non-uniform output",
-                                              arg->source);
+                        diagnostics_.AddNote(diag::System::Resolver,
+                                             "passing non-uniform pointer to '" + target_name +
+                                                 "' may produce a non-uniform output",
+                                             arg->source);
                         break;
                     }
                     case Node::kFunctionCallPointerArgumentResult: {
-                        diagnostics_.add_note(
+                        diagnostics_.AddNote(
                             diag::System::Resolver,
                             "contents of pointer may become non-uniform after calling '" +
                                 target_name + "'",
@@ -1883,8 +1939,8 @@ class UniformityGraph {
                 }
             },
             [&](const ast::Expression* e) {
-                diagnostics_.add_note(diag::System::Resolver,
-                                      "result of expression may be non-uniform", e->source);
+                diagnostics_.AddNote(diag::System::Resolver,
+                                     "result of expression may be non-uniform", e->source);
             },  //
             TINT_ICE_ON_NO_MATCH);
     }
@@ -1901,7 +1957,7 @@ class UniformityGraph {
             error.system = diag::System::Resolver;
             error.source = source;
             error.message = msg;
-            diagnostics_.add(std::move(error));
+            diagnostics_.Add(std::move(error));
         };
 
         // Traverse the graph to generate a path from RequiredToBeUniform to the source node.
@@ -1927,7 +1983,7 @@ class UniformityGraph {
             auto* user_func = target->As<sem::Function>();
             if (user_func) {
                 // Recurse into the called function to show the reason for the requirement.
-                auto next_function = functions_.Find(user_func->Declaration());
+                auto next_function = functions_.Get(user_func->Declaration());
                 auto& param_info = next_function->parameters[cause->arg_index];
                 MakeError(*next_function,
                           is_value ? param_info.value : param_info.ptr_input_contents, severity);

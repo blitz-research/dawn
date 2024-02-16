@@ -50,6 +50,7 @@
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/tracing/TraceEvent.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 
@@ -136,7 +137,7 @@ struct BufferBase::MapAsyncEvent final : public EventManager::TrackedEvent {
     MutexProtected<std::variant<BufferBase*, wgpu::BufferMapAsyncStatus>> mBufferOrEarlyStatus;
 
     WGPUBufferMapCallback mCallback;
-    void* mUserdata;
+    raw_ptr<void> mUserdata;
 
     // Create an event backed by the given queue execution serial.
     MapAsyncEvent(DeviceBase* device,
@@ -174,7 +175,7 @@ struct BufferBase::MapAsyncEvent final : public EventManager::TrackedEvent {
         }
 
         if (completionType == EventCompletionType::Shutdown) {
-            mCallback(ToAPI(wgpu::BufferMapAsyncStatus::Unknown), mUserdata);
+            mCallback(ToAPI(wgpu::BufferMapAsyncStatus::InstanceDropped), mUserdata);
             return;
         }
 
@@ -368,8 +369,8 @@ void BufferBase::DestroyImpl() {
 }
 
 // static
-BufferBase* BufferBase::MakeError(DeviceBase* device, const BufferDescriptor* descriptor) {
-    return new ErrorBuffer(device, descriptor);
+Ref<BufferBase> BufferBase::MakeError(DeviceBase* device, const BufferDescriptor* descriptor) {
+    return AcquireRef(new ErrorBuffer(device, descriptor));
 }
 
 ObjectType BufferBase::GetType() const {
@@ -629,8 +630,7 @@ Future BufferBase::APIMapAsyncF(wgpu::MapMode mode,
         event = mPendingMapEvent;
     }
 
-    FutureID futureID =
-        GetInstance()->GetEventManager()->TrackEvent(callbackInfo.mode, std::move(event));
+    FutureID futureID = GetInstance()->GetEventManager()->TrackEvent(std::move(event));
     return {futureID};
 }
 
@@ -858,7 +858,7 @@ void BufferBase::SetIsDataInitialized() {
 }
 
 void BufferBase::MarkUsedInPendingCommands() {
-    ExecutionSerial serial = GetDevice()->GetPendingCommandSerial();
+    ExecutionSerial serial = GetDevice()->GetQueue()->GetPendingCommandSerial();
     DAWN_ASSERT(serial >= mLastUsageSerial);
     mLastUsageSerial = serial;
 }

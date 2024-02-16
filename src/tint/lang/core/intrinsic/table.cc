@@ -90,7 +90,7 @@ struct Candidate {
 using Candidates = Vector<Candidate, kNumFixedCandidates>;
 
 /// Callback function when no overloads match.
-using OnNoMatch = std::function<void(VectorRef<Candidate>)>;
+using OnNoMatch = std::function<std::string(VectorRef<Candidate>)>;
 
 /// Sorts the candidates based on their score, with the lowest (best-ranking) scores first.
 static inline void SortCandidates(Candidates& candidates) {
@@ -109,13 +109,13 @@ static inline void SortCandidates(Candidates& candidates) {
 /// @param on_no_match an error callback when no intrinsic overloads matched the provided
 ///                    arguments.
 /// @returns the matched intrinsic
-Result<Overload> MatchIntrinsic(Context& context,
-                                const IntrinsicInfo& intrinsic,
-                                std::string_view intrinsic_name,
-                                VectorRef<const core::type::Type*> args,
-                                EvaluationStage earliest_eval_stage,
-                                TemplateState templates,
-                                const OnNoMatch& on_no_match);
+Result<Overload, std::string> MatchIntrinsic(Context& context,
+                                             const IntrinsicInfo& intrinsic,
+                                             std::string_view intrinsic_name,
+                                             VectorRef<const core::type::Type*> args,
+                                             EvaluationStage earliest_eval_stage,
+                                             TemplateState templates,
+                                             const OnNoMatch& on_no_match);
 
 /// Evaluates the single overload for the provided argument types.
 /// @param context the intrinsic context
@@ -142,11 +142,11 @@ Candidate ScoreOverload(Context& context,
 ///                  template as `f32`.
 /// @see https://www.w3.org/TR/WGSL/#overload-resolution-section
 /// @returns the resolved Candidate.
-Candidate ResolveCandidate(Context& context,
-                           Candidates&& candidates,
-                           std::string_view intrinsic_name,
-                           VectorRef<const core::type::Type*> args,
-                           TemplateState templates);
+Result<Candidate, std::string> ResolveCandidate(Context& context,
+                                                Candidates&& candidates,
+                                                std::string_view intrinsic_name,
+                                                VectorRef<const core::type::Type*> args,
+                                                TemplateState templates);
 
 /// Match constructs a new MatchState
 /// @param context the intrinsic context
@@ -161,24 +161,18 @@ MatchState Match(Context& context,
                  const NumberMatcherIndex* number_matcher_indices,
                  EvaluationStage earliest_eval_stage);
 
-// Prints the overload for emitting diagnostics
-void PrintOverload(StringStream& ss,
-                   Context& context,
-                   const OverloadInfo& overload,
-                   std::string_view intrinsic_name);
-
 // Prints the list of candidates for emitting diagnostics
 void PrintCandidates(StringStream& ss,
                      Context& context,
                      VectorRef<Candidate> candidates,
                      std::string_view intrinsic_name);
 
-/// Raises an error when no overload is a clear winner of overload resolution
-void ErrAmbiguousOverload(Context& context,
-                          std::string_view intrinsic_name,
-                          VectorRef<const core::type::Type*> args,
-                          TemplateState templates,
-                          VectorRef<Candidate> candidates);
+/// Raises an ICE when no overload is a clear winner of overload resolution
+std::string ErrAmbiguousOverload(Context& context,
+                                 std::string_view intrinsic_name,
+                                 VectorRef<const core::type::Type*> args,
+                                 TemplateState templates,
+                                 VectorRef<Candidate> candidates);
 
 /// @return a string representing a call to a builtin with the given argument
 /// types.
@@ -198,7 +192,7 @@ std::string CallSignature(std::string_view intrinsic_name,
                 ss << ", ";
             }
             first = false;
-            ss << arg->UnwrapRef()->FriendlyName();
+            ss << arg->FriendlyName();
         }
     }
     ss << ")";
@@ -206,13 +200,13 @@ std::string CallSignature(std::string_view intrinsic_name,
     return ss.str();
 }
 
-Result<Overload> MatchIntrinsic(Context& context,
-                                const IntrinsicInfo& intrinsic,
-                                std::string_view intrinsic_name,
-                                VectorRef<const core::type::Type*> args,
-                                EvaluationStage earliest_eval_stage,
-                                TemplateState templates,
-                                const OnNoMatch& on_no_match) {
+Result<Overload, std::string> MatchIntrinsic(Context& context,
+                                             const IntrinsicInfo& intrinsic,
+                                             std::string_view intrinsic_name,
+                                             VectorRef<const core::type::Type*> args,
+                                             EvaluationStage earliest_eval_stage,
+                                             TemplateState templates,
+                                             const OnNoMatch& on_no_match) {
     size_t num_matched = 0;
     size_t match_idx = 0;
     Vector<Candidate, kNumFixedCandidates> candidates;
@@ -232,8 +226,7 @@ Result<Overload> MatchIntrinsic(Context& context,
     if (num_matched == 0) {
         // Sort the candidates with the most promising first
         SortCandidates(candidates);
-        on_no_match(std::move(candidates));
-        return Failure{};
+        return on_no_match(std::move(candidates));
     }
 
     Candidate match;
@@ -241,12 +234,12 @@ Result<Overload> MatchIntrinsic(Context& context,
     if (num_matched == 1) {
         match = std::move(candidates[match_idx]);
     } else {
-        match = ResolveCandidate(context, std::move(candidates), intrinsic_name, args,
-                                 std::move(templates));
-        if (!match.overload) {
-            // Ambiguous overload. ResolveCandidate() will have already raised an error diagnostic.
-            return Failure{};
+        auto result = ResolveCandidate(context, std::move(candidates), intrinsic_name, args,
+                                       std::move(templates));
+        if (TINT_UNLIKELY(result != Success)) {
+            return result.Failure();
         }
+        match = result.Get();
     }
 
     // Build the return type
@@ -258,8 +251,9 @@ Result<Overload> MatchIntrinsic(Context& context,
                             earliest_eval_stage)
                           .Type(&any);
         if (TINT_UNLIKELY(!return_type)) {
-            TINT_ICE() << "MatchState.Match() returned null";
-            return Failure{};
+            std::string err = "MatchState.Match() returned null";
+            TINT_ICE() << err;
+            return err;
         }
     } else {
         return_type = context.types.void_();
@@ -321,7 +315,7 @@ Candidate ScoreOverload(Context& context,
         auto* type_indices = context.data[parameter.type_matcher_indices];
         auto* number_indices = context.data[parameter.number_matcher_indices];
         if (!Match(context, templates, overload, type_indices, number_indices, earliest_eval_stage)
-                 .Type(args[p]->UnwrapRef())) {
+                 .Type(args[p])) {
             score += kMismatchedParamTypePenalty;
         }
     }
@@ -380,7 +374,7 @@ Candidate ScoreOverload(Context& context,
             auto* number_indices = context.data[parameter.number_matcher_indices];
             auto* ty = Match(context, templates, overload, type_indices, number_indices,
                              earliest_eval_stage)
-                           .Type(args[p]->UnwrapRef());
+                           .Type(args[p]);
             parameters.Emplace(ty, parameter.usage);
         }
     }
@@ -388,11 +382,11 @@ Candidate ScoreOverload(Context& context,
     return Candidate{&overload, templates, parameters, score};
 }
 
-Candidate ResolveCandidate(Context& context,
-                           Candidates&& candidates,
-                           std::string_view intrinsic_name,
-                           VectorRef<const core::type::Type*> args,
-                           TemplateState templates) {
+Result<Candidate, std::string> ResolveCandidate(Context& context,
+                                                Candidates&& candidates,
+                                                std::string_view intrinsic_name,
+                                                VectorRef<const core::type::Type*> args,
+                                                TemplateState templates) {
     Vector<uint32_t, kNumFixedParams> best_ranks;
     best_ranks.Resize(args.Length(), 0xffffffff);
     size_t num_matched = 0;
@@ -447,8 +441,7 @@ Candidate ResolveCandidate(Context& context,
         // Re-sort the candidates with the most promising first
         SortCandidates(candidates);
         // Raise an error
-        ErrAmbiguousOverload(context, intrinsic_name, args, templates, candidates);
-        return {};
+        return ErrAmbiguousOverload(context, intrinsic_name, args, templates, candidates);
     }
 
     return std::move(*best);
@@ -464,6 +457,57 @@ MatchState Match(Context& context,
                       context.data,           overload,           type_matcher_indices,
                       number_matcher_indices, earliest_eval_stage};
 }
+
+void PrintCandidates(StringStream& ss,
+                     Context& context,
+                     VectorRef<Candidate> candidates,
+                     std::string_view intrinsic_name) {
+    for (auto& candidate : candidates) {
+        ss << "  ";
+        PrintOverload(ss, context, *candidate.overload, intrinsic_name);
+        ss << std::endl;
+    }
+}
+
+std::string ErrAmbiguousOverload(Context& context,
+                                 std::string_view intrinsic_name,
+                                 VectorRef<const core::type::Type*> args,
+                                 TemplateState templates,
+                                 VectorRef<Candidate> candidates) {
+    StringStream ss;
+    ss << "ambiguous overload while attempting to match " << intrinsic_name;
+    for (size_t i = 0; i < std::numeric_limits<size_t>::max(); i++) {
+        if (auto* ty = templates.Type(i)) {
+            ss << ((i == 0) ? "<" : ", ") << ty->FriendlyName();
+        } else {
+            if (i > 0) {
+                ss << ">";
+            }
+            break;
+        }
+    }
+    ss << "(";
+    bool first = true;
+    for (auto* arg : args) {
+        if (!first) {
+            ss << ", ";
+        }
+        first = false;
+        ss << arg->FriendlyName();
+    }
+    ss << "):\n";
+    for (auto& candidate : candidates) {
+        if (candidate.score == 0) {
+            ss << "  ";
+            PrintOverload(ss, context, *candidate.overload, intrinsic_name);
+            ss << std::endl;
+        }
+    }
+    TINT_ICE() << ss.str();
+    return ss.str();
+}
+
+}  // namespace
 
 void PrintOverload(StringStream& ss,
                    Context& context,
@@ -546,62 +590,11 @@ void PrintOverload(StringStream& ss,
     }
 }
 
-void PrintCandidates(StringStream& ss,
-                     Context& context,
-                     VectorRef<Candidate> candidates,
-                     std::string_view intrinsic_name) {
-    for (auto& candidate : candidates) {
-        ss << "  ";
-        PrintOverload(ss, context, *candidate.overload, intrinsic_name);
-        ss << std::endl;
-    }
-}
-
-void ErrAmbiguousOverload(Context& context,
-                          std::string_view intrinsic_name,
-                          VectorRef<const core::type::Type*> args,
-                          TemplateState templates,
-                          VectorRef<Candidate> candidates) {
-    StringStream ss;
-    ss << "ambiguous overload while attempting to match " << intrinsic_name;
-    for (size_t i = 0; i < std::numeric_limits<size_t>::max(); i++) {
-        if (auto* ty = templates.Type(i)) {
-            ss << ((i == 0) ? "<" : ", ") << ty->FriendlyName();
-        } else {
-            if (i > 0) {
-                ss << ">";
-            }
-            break;
-        }
-    }
-    ss << "(";
-    bool first = true;
-    for (auto* arg : args) {
-        if (!first) {
-            ss << ", ";
-        }
-        first = false;
-        ss << arg->FriendlyName();
-    }
-    ss << "):\n";
-    for (auto& candidate : candidates) {
-        if (candidate.score == 0) {
-            ss << "  ";
-            PrintOverload(ss, context, *candidate.overload, intrinsic_name);
-            ss << std::endl;
-        }
-    }
-    TINT_ICE() << ss.str();
-}
-
-}  // namespace
-
-Result<Overload> LookupFn(Context& context,
-                          std::string_view intrinsic_name,
-                          size_t function_id,
-                          VectorRef<const core::type::Type*> args,
-                          EvaluationStage earliest_eval_stage,
-                          const Source& source) {
+Result<Overload, std::string> LookupFn(Context& context,
+                                       std::string_view intrinsic_name,
+                                       size_t function_id,
+                                       VectorRef<const core::type::Type*> args,
+                                       EvaluationStage earliest_eval_stage) {
     // Generates an error when no overloads match the provided arguments
     auto on_no_match = [&](VectorRef<Candidate> candidates) {
         StringStream ss;
@@ -612,7 +605,7 @@ Result<Overload> LookupFn(Context& context,
                << (candidates.Length() > 1 ? "s:" : ":") << std::endl;
             PrintCandidates(ss, context, candidates, intrinsic_name);
         }
-        context.diags.add_error(diag::System::Intrinsics, ss.str(), source);
+        return ss.str();
     };
 
     // Resolve the intrinsic overload
@@ -620,11 +613,10 @@ Result<Overload> LookupFn(Context& context,
                           earliest_eval_stage, TemplateState{}, on_no_match);
 }
 
-Result<Overload> LookupUnary(Context& context,
-                             core::UnaryOp op,
-                             const core::type::Type* arg,
-                             EvaluationStage earliest_eval_stage,
-                             const Source& source) {
+Result<Overload, std::string> LookupUnary(Context& context,
+                                          core::UnaryOp op,
+                                          const core::type::Type* arg,
+                                          EvaluationStage earliest_eval_stage) {
     const IntrinsicInfo* intrinsic_info = nullptr;
     std::string_view intrinsic_name;
     switch (op) {
@@ -636,13 +628,18 @@ Result<Overload> LookupUnary(Context& context,
             intrinsic_info = &context.data.unary_minus;
             intrinsic_name = "operator - ";
             break;
+        case core::UnaryOp::kAddressOf:
+            intrinsic_info = &context.data.unary_and;
+            intrinsic_name = "operator & ";
+            break;
+        case core::UnaryOp::kIndirection:
+            intrinsic_info = &context.data.unary_star;
+            intrinsic_name = "operator * ";
+            break;
         case core::UnaryOp::kNot:
             intrinsic_info = &context.data.unary_not;
             intrinsic_name = "operator ! ";
             break;
-        default:
-            TINT_UNREACHABLE() << "invalid unary op: " << op;
-            return Failure{};
     }
 
     Vector args{arg};
@@ -657,7 +654,7 @@ Result<Overload> LookupUnary(Context& context,
                << (candidates.Length() > 1 ? "s:" : ":") << std::endl;
             PrintCandidates(ss, context, candidates, name);
         }
-        context.diags.add_error(diag::System::Intrinsics, ss.str(), source);
+        return ss.str();
     };
 
     // Resolve the intrinsic overload
@@ -665,13 +662,12 @@ Result<Overload> LookupUnary(Context& context,
                           TemplateState{}, on_no_match);
 }
 
-Result<Overload> LookupBinary(Context& context,
-                              core::BinaryOp op,
-                              const core::type::Type* lhs,
-                              const core::type::Type* rhs,
-                              EvaluationStage earliest_eval_stage,
-                              const Source& source,
-                              bool is_compound) {
+Result<Overload, std::string> LookupBinary(Context& context,
+                                           core::BinaryOp op,
+                                           const core::type::Type* lhs,
+                                           const core::type::Type* rhs,
+                                           EvaluationStage earliest_eval_stage,
+                                           bool is_compound) {
     const IntrinsicInfo* intrinsic_info = nullptr;
     std::string_view intrinsic_name;
     switch (op) {
@@ -761,7 +757,7 @@ Result<Overload> LookupBinary(Context& context,
                << (candidates.Length() > 1 ? "s:" : ":") << std::endl;
             PrintCandidates(ss, context, candidates, name);
         }
-        context.diags.add_error(diag::System::Intrinsics, ss.str(), source);
+        return ss.str();
     };
 
     // Resolve the intrinsic overload
@@ -769,13 +765,12 @@ Result<Overload> LookupBinary(Context& context,
                           TemplateState{}, on_no_match);
 }
 
-Result<Overload> LookupCtorConv(Context& context,
-                                std::string_view type_name,
-                                size_t type_id,
-                                const core::type::Type* template_arg,
-                                VectorRef<const core::type::Type*> args,
-                                EvaluationStage earliest_eval_stage,
-                                const Source& source) {
+Result<Overload, std::string> LookupCtorConv(Context& context,
+                                             std::string_view type_name,
+                                             size_t type_id,
+                                             const core::type::Type* template_arg,
+                                             VectorRef<const core::type::Type*> args,
+                                             EvaluationStage earliest_eval_stage) {
     // Generates an error when no overloads match the provided arguments
     auto on_no_match = [&](VectorRef<Candidate> candidates) {
         StringStream ss;
@@ -801,7 +796,7 @@ Result<Overload> LookupCtorConv(Context& context,
                << std::endl;
             PrintCandidates(ss, context, conv, type_name);
         }
-        context.diags.add_error(diag::System::Intrinsics, ss.str(), source);
+        return ss.str();
     };
 
     // If a template type was provided, then close the 0'th type with this.

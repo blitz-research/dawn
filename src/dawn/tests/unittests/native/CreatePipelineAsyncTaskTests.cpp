@@ -60,11 +60,10 @@ class CreatePipelineAsyncTaskTests : public DawnMockTest {};
 TEST_F(CreatePipelineAsyncTaskTests, InitializationValidationErrorInCreateRenderPipelineAsync) {
     wgpu::RenderPipelineDescriptor desc = {};
     desc.vertex.module = utils::CreateShaderModule(device, kVertexShader.data());
-    desc.vertex.entryPoint = "main";
     Ref<RenderPipelineMock> renderPipelineMock =
         RenderPipelineMock::Create(mDeviceMock, FromCppAPI(&desc));
 
-    ON_CALL(*renderPipelineMock.Get(), Initialize)
+    ON_CALL(*renderPipelineMock.Get(), InitializeImpl)
         .WillByDefault(testing::Return(testing::ByMove(
             DAWN_MAKE_ERROR(InternalErrorType::Validation, "Initialization Error"))));
 
@@ -88,11 +87,10 @@ TEST_F(CreatePipelineAsyncTaskTests, InitializationValidationErrorInCreateRender
 TEST_F(CreatePipelineAsyncTaskTests, InitializationInternalErrorInCreateRenderPipelineAsync) {
     wgpu::RenderPipelineDescriptor desc = {};
     desc.vertex.module = utils::CreateShaderModule(device, kVertexShader.data());
-    desc.vertex.entryPoint = "main";
     Ref<RenderPipelineMock> renderPipelineMock =
         RenderPipelineMock::Create(mDeviceMock, FromCppAPI(&desc));
 
-    ON_CALL(*renderPipelineMock.Get(), Initialize)
+    ON_CALL(*renderPipelineMock.Get(), InitializeImpl)
         .WillByDefault(testing::Return(testing::ByMove(
             DAWN_MAKE_ERROR(dawn::native::InternalErrorType::Internal, "Initialization Error"))));
 
@@ -116,11 +114,10 @@ TEST_F(CreatePipelineAsyncTaskTests, InitializationInternalErrorInCreateRenderPi
 TEST_F(CreatePipelineAsyncTaskTests, InitializationValidationErrorInCreateComputePipelineAsync) {
     wgpu::ComputePipelineDescriptor desc = {};
     desc.compute.module = utils::CreateShaderModule(device, kComputeShader.data());
-    desc.compute.entryPoint = "main";
     Ref<ComputePipelineMock> computePipelineMock =
         ComputePipelineMock::Create(mDeviceMock, FromCppAPI(&desc));
 
-    ON_CALL(*computePipelineMock.Get(), Initialize)
+    ON_CALL(*computePipelineMock.Get(), InitializeImpl)
         .WillByDefault(testing::Return(testing::ByMove(
             DAWN_MAKE_ERROR(InternalErrorType::Validation, "Initialization Error"))));
 
@@ -144,11 +141,10 @@ TEST_F(CreatePipelineAsyncTaskTests, InitializationValidationErrorInCreateComput
 TEST_F(CreatePipelineAsyncTaskTests, InitializationInternalErrorInCreateComputePipelineAsync) {
     wgpu::ComputePipelineDescriptor desc = {};
     desc.compute.module = utils::CreateShaderModule(device, kComputeShader.data());
-    desc.compute.entryPoint = "main";
     Ref<ComputePipelineMock> computePipelineMock =
         ComputePipelineMock::Create(mDeviceMock, FromCppAPI(&desc));
 
-    ON_CALL(*computePipelineMock.Get(), Initialize)
+    ON_CALL(*computePipelineMock.Get(), InitializeImpl)
         .WillByDefault(testing::Return(testing::ByMove(
             DAWN_MAKE_ERROR(dawn::native::InternalErrorType::Internal, "Initialization Error"))));
 
@@ -172,12 +168,11 @@ TEST_F(CreatePipelineAsyncTaskTests, InitializationInternalErrorInCreateComputeP
 TEST_F(CreatePipelineAsyncTaskTests, LongAsyncTaskFinishesBeforeDeviceIsDropped) {
     wgpu::RenderPipelineDescriptor desc = {};
     desc.vertex.module = utils::CreateShaderModule(device, kVertexShader.data());
-    desc.vertex.entryPoint = "main";
     Ref<RenderPipelineMock> renderPipelineMock =
         RenderPipelineMock::Create(mDeviceMock, FromCppAPI(&desc));
 
     // Simulate that Initialize() would take a long time to finish.
-    ON_CALL(*renderPipelineMock.Get(), Initialize).WillByDefault([]() -> MaybeError {
+    ON_CALL(*renderPipelineMock.Get(), InitializeImpl).WillByDefault([]() -> MaybeError {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         return {};
     });
