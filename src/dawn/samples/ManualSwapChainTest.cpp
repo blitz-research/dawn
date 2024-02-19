@@ -284,6 +284,7 @@ int main(int argc, const char* argv[]) {
     dawnProcSetProcs(&procs);
 
     instance = std::make_unique<dawn::native::Instance>();
+    instance->EnableBackendValidation(true);
 
     dawn::native::Adapter chosenAdapter = instance->EnumerateAdapters()[0];
     DAWN_ASSERT(chosenAdapter);

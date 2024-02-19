@@ -44,12 +44,11 @@ class Texture;
 class CommandRecordingContext {
   public:
     void AddToSharedTextureList(Texture* texture);
-    MaybeError Open(ID3D12Device* d3d12Device, CommandAllocatorManager* commandAllocationManager);
+    void Open(ComPtr<ID3D12GraphicsCommandList> commandList);
 
     ID3D12GraphicsCommandList* GetCommandList() const;
     ID3D12GraphicsCommandList4* GetCommandList4() const;
     void Release();
-    bool IsOpen() const;
     bool NeedsSubmit() const;
     void SetNeedsSubmit();
 
