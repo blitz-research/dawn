@@ -49,7 +49,7 @@ DAWN_NATIVE_EXPORT uint32_t GetGraphicsQueueFamily(WGPUDevice device);
 
 DAWN_NATIVE_EXPORT WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
                                                           const WGPUTextureDescriptor* descriptor,
-                                                          VkImage_T* image);
+                                                          VkImage image);
 
 struct OpenXRConfig {
     std::function<::VkResult(PFN_vkGetInstanceProcAddr,
