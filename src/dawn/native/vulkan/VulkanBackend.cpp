@@ -63,7 +63,7 @@ uint32_t GetGraphicsQueueFamily(WGPUDevice device) {
 
 WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
                                        const WGPUTextureDescriptor* descriptor,
-                                       VkImage_T* image) {
+                                       VkImage image) {
     Device* backendDevice = ToBackend(FromAPI(device));
     auto texture = Texture::CreateForSwapChain(backendDevice, ValidateAndUnpack(FromAPI(descriptor)).AcquireSuccess(),
                                                VkImage::CreateFromHandle(image));
