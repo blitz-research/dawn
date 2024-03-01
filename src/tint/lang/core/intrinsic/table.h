@@ -40,6 +40,8 @@
 #include "src/tint/lang/core/unary_op.h"
 #include "src/tint/utils/containers/vector.h"
 #include "src/tint/utils/text/string.h"
+#include "src/tint/utils/text/string_stream.h"
+#include "src/tint/utils/text/styled_text.h"
 
 // Forward declarations
 namespace tint::diag {
@@ -50,6 +52,8 @@ namespace tint::core::intrinsic {
 
 /// Overload describes a fully matched builtin function overload
 struct Overload {
+    static constexpr size_t kNumFixedParameters = 8;
+
     /// Parameter describes a single parameter
     struct Parameter {
         /// Parameter type
@@ -77,7 +81,7 @@ struct Overload {
     core::type::Type const* return_type = nullptr;
 
     /// The resolved overload parameters
-    Vector<Parameter, 8> parameters;
+    Vector<Parameter, kNumFixedParameters> parameters;
 
     /// The constant evaluation function
     constant::Eval::Function const_eval_fn = nullptr;
@@ -106,17 +110,35 @@ struct Context {
     SymbolTable& symbols;
 };
 
-// Prints the overload for emitting diagnostics
-void PrintOverload(StringStream& ss,
-                   Context& context,
-                   const OverloadInfo& overload,
-                   std::string_view intrinsic_name);
+/// Candidate holds information about an overload evaluated for resolution.
+struct Candidate {
+    /// The match-score of the candidate overload.
+    /// A score of zero indicates an exact match.
+    /// Non-zero scores are used for diagnostics when no overload matches.
+    /// Lower scores are displayed first (top-most).
+    size_t score = 0;
+    /// The candidate overload
+    const OverloadInfo* overload = nullptr;
+    /// The template types and numbers
+    TemplateState templates{};
+    /// The parameter types for the candidate overload
+    Vector<Overload::Parameter, Overload::kNumFixedParameters> parameters{};
+};
+
+// Prints the candidate overload for emitting diagnostics
+void PrintCandidate(StyledText& ss,
+                    Context& context,
+                    const Candidate& candidate,
+                    std::string_view intrinsic_name,
+                    VectorRef<const core::type::Type*> template_args,
+                    VectorRef<const core::type::Type*> args);
 
 /// Lookup looks for the builtin overload with the given signature, raising an error diagnostic
 /// if the builtin was not found.
 /// @param context the intrinsic context
 /// @param function_name the name of the function
 /// @param function_id the function identifier
+/// @param template_args the optional template arguments
 /// @param args the argument types passed to the builtin function
 /// @param earliest_eval_stage the the earliest evaluation stage that a call to
 ///        the builtin can be made. This can alter the overloads considered.
@@ -125,11 +147,12 @@ void PrintOverload(StringStream& ss,
 ///        abstract-numerics will have been materialized after shader creation time
 ///        (EvaluationStage::kConstant).
 /// @return the resolved builtin function overload
-Result<Overload, std::string> LookupFn(Context& context,
-                                       std::string_view function_name,
-                                       size_t function_id,
-                                       VectorRef<const core::type::Type*> args,
-                                       EvaluationStage earliest_eval_stage);
+Result<Overload, StyledText> LookupFn(Context& context,
+                                      std::string_view function_name,
+                                      size_t function_id,
+                                      VectorRef<const core::type::Type*> template_args,
+                                      VectorRef<const core::type::Type*> args,
+                                      EvaluationStage earliest_eval_stage);
 
 /// Lookup looks for the unary op overload with the given signature, raising an error
 /// diagnostic if the operator was not found.
@@ -143,10 +166,10 @@ Result<Overload, std::string> LookupFn(Context& context,
 ///        will be considered, as all abstract-numerics will have been materialized
 ///        after shader creation time (EvaluationStage::kConstant).
 /// @return the resolved unary operator overload
-Result<Overload, std::string> LookupUnary(Context& context,
-                                          core::UnaryOp op,
-                                          const core::type::Type* arg,
-                                          EvaluationStage earliest_eval_stage);
+Result<Overload, StyledText> LookupUnary(Context& context,
+                                         core::UnaryOp op,
+                                         const core::type::Type* arg,
+                                         EvaluationStage earliest_eval_stage);
 
 /// Lookup looks for the binary op overload with the given signature, raising an error
 /// diagnostic if the operator was not found.
@@ -162,18 +185,18 @@ Result<Overload, std::string> LookupUnary(Context& context,
 ///        after shader creation time (EvaluationStage::kConstant).
 /// @param is_compound true if the binary operator is being used as a compound assignment
 /// @return the resolved binary operator overload
-Result<Overload, std::string> LookupBinary(Context& context,
-                                           core::BinaryOp op,
-                                           const core::type::Type* lhs,
-                                           const core::type::Type* rhs,
-                                           EvaluationStage earliest_eval_stage,
-                                           bool is_compound);
+Result<Overload, StyledText> LookupBinary(Context& context,
+                                          core::BinaryOp op,
+                                          const core::type::Type* lhs,
+                                          const core::type::Type* rhs,
+                                          EvaluationStage earliest_eval_stage,
+                                          bool is_compound);
 
 /// Lookup looks for the value constructor or conversion overload for the given CtorConv.
 /// @param context the intrinsic context
 /// @param type_name the name of the type being constructed or converted
 /// @param type_id the type identifier
-/// @param template_arg the optional template argument
+/// @param template_args the optional template arguments
 /// @param args the argument types passed to the constructor / conversion call
 /// @param earliest_eval_stage the the earliest evaluation stage that a call to
 ///        the constructor or conversion can be made. This can alter the overloads considered.
@@ -182,12 +205,12 @@ Result<Overload, std::string> LookupBinary(Context& context,
 ///        will be considered, as all abstract-numerics will have been materialized
 ///        after shader creation time (EvaluationStage::kConstant).
 /// @return the resolved type constructor or conversion function overload
-Result<Overload, std::string> LookupCtorConv(Context& context,
-                                             std::string_view type_name,
-                                             size_t type_id,
-                                             const core::type::Type* template_arg,
-                                             VectorRef<const core::type::Type*> args,
-                                             EvaluationStage earliest_eval_stage);
+Result<Overload, StyledText> LookupCtorConv(Context& context,
+                                            std::string_view type_name,
+                                            size_t type_id,
+                                            VectorRef<const core::type::Type*> template_args,
+                                            VectorRef<const core::type::Type*> args,
+                                            EvaluationStage earliest_eval_stage);
 
 /// Table is a wrapper around a dialect to provide type-safe interface to the intrinsic table.
 template <typename DIALECT>
@@ -209,6 +232,7 @@ struct Table {
     /// Lookup looks for the builtin overload with the given signature, raising an error diagnostic
     /// if the builtin was not found.
     /// @param builtin_fn the builtin function
+    /// @param template_args the optional template arguments
     /// @param args the argument types passed to the builtin function
     /// @param earliest_eval_stage the the earliest evaluation stage that a call to
     ///        the builtin can be made. This can alter the overloads considered.
@@ -216,14 +240,15 @@ struct Table {
     ///        only overloads with concrete argument types will be considered, as all
     ///        abstract-numerics will have been materialized after shader creation time
     ///        (EvaluationStage::kConstant).
-
     /// @return the resolved builtin function overload
-    Result<Overload, std::string> Lookup(BuiltinFn builtin_fn,
-                                         VectorRef<const core::type::Type*> args,
-                                         EvaluationStage earliest_eval_stage) {
+    Result<Overload, StyledText> Lookup(BuiltinFn builtin_fn,
+                                        VectorRef<const core::type::Type*> template_args,
+                                        VectorRef<const core::type::Type*> args,
+                                        EvaluationStage earliest_eval_stage) {
         std::string_view name = DIALECT::ToString(builtin_fn);
         size_t id = static_cast<size_t>(builtin_fn);
-        return LookupFn(context, name, id, std::move(args), earliest_eval_stage);
+        return LookupFn(context, name, id, std::move(template_args), std::move(args),
+                        earliest_eval_stage);
     }
 
     /// Lookup looks for the unary op overload with the given signature, raising an error
@@ -238,9 +263,9 @@ struct Table {
     ///        after shader creation time (EvaluationStage::kConstant).
 
     /// @return the resolved unary operator overload
-    Result<Overload, std::string> Lookup(core::UnaryOp op,
-                                         const core::type::Type* arg,
-                                         EvaluationStage earliest_eval_stage) {
+    Result<Overload, StyledText> Lookup(core::UnaryOp op,
+                                        const core::type::Type* arg,
+                                        EvaluationStage earliest_eval_stage) {
         return LookupUnary(context, op, arg, earliest_eval_stage);
     }
 
@@ -258,17 +283,17 @@ struct Table {
 
     /// @param is_compound true if the binary operator is being used as a compound assignment
     /// @return the resolved binary operator overload
-    Result<Overload, std::string> Lookup(core::BinaryOp op,
-                                         const core::type::Type* lhs,
-                                         const core::type::Type* rhs,
-                                         EvaluationStage earliest_eval_stage,
-                                         bool is_compound) {
+    Result<Overload, StyledText> Lookup(core::BinaryOp op,
+                                        const core::type::Type* lhs,
+                                        const core::type::Type* rhs,
+                                        EvaluationStage earliest_eval_stage,
+                                        bool is_compound) {
         return LookupBinary(context, op, lhs, rhs, earliest_eval_stage, is_compound);
     }
 
     /// Lookup looks for the value constructor or conversion overload for the given CtorConv.
     /// @param type the type being constructed or converted
-    /// @param template_arg the optional template argument
+    /// @param template_args the optional template arguments
     /// @param args the argument types passed to the constructor / conversion call
     /// @param earliest_eval_stage the the earliest evaluation stage that a call to
     ///        the constructor or conversion can be made. This can alter the overloads considered.
@@ -276,15 +301,14 @@ struct Table {
     ///        `EvaluationStage::kRuntime`, then only overloads with concrete argument types
     ///        will be considered, as all abstract-numerics will have been materialized
     ///        after shader creation time (EvaluationStage::kConstant).
-
     /// @return the resolved type constructor or conversion function overload
-    Result<Overload, std::string> Lookup(CtorConv type,
-                                         const core::type::Type* template_arg,
-                                         VectorRef<const core::type::Type*> args,
-                                         EvaluationStage earliest_eval_stage) {
+    Result<Overload, StyledText> Lookup(CtorConv type,
+                                        VectorRef<const core::type::Type*> template_args,
+                                        VectorRef<const core::type::Type*> args,
+                                        EvaluationStage earliest_eval_stage) {
         std::string_view name = DIALECT::ToString(type);
         size_t id = static_cast<size_t>(type);
-        return LookupCtorConv(context, name, id, template_arg, std::move(args),
+        return LookupCtorConv(context, name, id, std::move(template_args), std::move(args),
                               earliest_eval_stage);
     }
 

@@ -279,8 +279,9 @@ bool Builder::Build() {
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
-                wgsl::Extension::kF16,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
+                wgsl::Extension::kChromiumInternalGraphite,
+                wgsl::Extension::kF16,
             })) {
         return false;
     }
@@ -528,7 +529,6 @@ uint32_t Builder::GenerateExpression(const sem::Expression* expr) {
         expr->Declaration(),  //
         [&](const ast::AccessorExpression* a) { return GenerateAccessorExpression(a); },
         [&](const ast::BinaryExpression* b) { return GenerateBinaryExpression(b); },
-        [&](const ast::BitcastExpression* b) { return GenerateBitcastExpression(b); },
         [&](const ast::CallExpression* c) { return GenerateCallExpression(c); },
         [&](const ast::IdentifierExpression* i) { return GenerateIdentifierExpression(i); },
         [&](const ast::LiteralExpression* l) { return GenerateLiteralIfNeeded(l); },
@@ -2258,6 +2258,10 @@ uint32_t Builder::GenerateFunctionCall(const sem::Call* call, const sem::Functio
 }
 
 uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinFn* builtin) {
+    if (builtin->Fn() == wgsl::BuiltinFn::kBitcast) {
+        return GenerateBitcastExpression(call->Declaration());
+    }
+
     auto result = result_op();
     auto result_id = std::get<uint32_t>(result);
 
@@ -3310,24 +3314,26 @@ uint32_t Builder::GenerateSampledImage(const core::type::Type* texture_type,
     return std::get<uint32_t>(sampled_image);
 }
 
-uint32_t Builder::GenerateBitcastExpression(const ast::BitcastExpression* expr) {
+uint32_t Builder::GenerateBitcastExpression(const ast::CallExpression* call) {
     auto result = result_op();
     auto result_id = std::get<uint32_t>(result);
 
-    auto result_type_id = GenerateTypeIfNeeded(TypeOf(expr));
+    auto* arg = call->args[0];
+    auto* src_type = TypeOf(arg)->UnwrapRef();
+    auto* dst_type = TypeOf(call);
+
+    auto result_type_id = GenerateTypeIfNeeded(dst_type);
     if (result_type_id == 0) {
         return 0;
     }
 
-    auto val_id = GenerateExpression(expr->expr);
+    auto val_id = GenerateExpression(arg);
     if (val_id == 0) {
         return 0;
     }
 
     // Bitcast does not allow same types, just emit a CopyObject
-    auto* to_type = TypeOf(expr)->UnwrapRef();
-    auto* from_type = TypeOf(expr->expr)->UnwrapRef();
-    if (to_type == from_type) {
+    if (src_type == dst_type) {
         if (!push_function_inst(spv::Op::OpCopyObject,
                                 {Operand(result_type_id), result, Operand(val_id)})) {
             return 0;
@@ -4104,6 +4110,9 @@ SpvImageFormat Builder::convert_texel_format_to_spv(const core::TexelFormat form
         case core::TexelFormat::kBgra8Unorm:
             TINT_ICE() << "bgra8unorm should have been polyfilled to rgba8unorm";
             return SpvImageFormatUnknown;
+        case core::TexelFormat::kR8Unorm:
+            module_.PushCapability(SpvCapabilityStorageImageExtendedFormats);
+            return SpvImageFormatR8;
         case core::TexelFormat::kR32Uint:
             return SpvImageFormatR32ui;
         case core::TexelFormat::kR32Sint:

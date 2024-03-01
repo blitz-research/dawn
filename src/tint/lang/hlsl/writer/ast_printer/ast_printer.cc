@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/constant/value.h"
 #include "src/tint/lang/core/fluent_types.h"
@@ -48,7 +49,6 @@
 #include "src/tint/lang/hlsl/writer/ast_raise/localize_struct_array_assignment.h"
 #include "src/tint/lang/hlsl/writer/ast_raise/num_workgroups_from_uniform.h"
 #include "src/tint/lang/hlsl/writer/ast_raise/pixel_local.h"
-#include "src/tint/lang/hlsl/writer/ast_raise/remove_continue_in_switch.h"
 #include "src/tint/lang/hlsl/writer/ast_raise/truncate_interstage_variables.h"
 #include "src/tint/lang/hlsl/writer/common/option_helpers.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
@@ -67,6 +67,7 @@
 #include "src/tint/lang/wgsl/ast/transform/multiplanar_external_texture.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_initializers_to_let.h"
 #include "src/tint/lang/wgsl/ast/transform/promote_side_effects_to_decl.h"
+#include "src/tint/lang/wgsl/ast/transform/remove_continue_in_switch.h"
 #include "src/tint/lang/wgsl/ast/transform/remove_phonies.h"
 #include "src/tint/lang/wgsl/ast/transform/robustness.h"
 #include "src/tint/lang/wgsl/ast/transform/simplify_pointers.h"
@@ -105,8 +106,9 @@ namespace {
 
 const char kTempNamePrefix[] = "tint_tmp";
 
-const char* image_format_to_rwtexture_type(core::TexelFormat image_format) {
+const char* ImageFormatToRWtextureType(core::TexelFormat image_format) {
     switch (image_format) {
+        case core::TexelFormat::kR8Unorm:
         case core::TexelFormat::kBgra8Unorm:
         case core::TexelFormat::kRgba8Unorm:
         case core::TexelFormat::kRgba8Snorm:
@@ -333,12 +335,6 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
     manager.Add<ast::transform::SimplifyPointers>();
     manager.Add<ast::transform::RemovePhonies>();
 
-    // Build the config for the internal ArrayLengthFromUniform transform.
-    ast::transform::ArrayLengthFromUniform::Config array_length_from_uniform_cfg(
-        array_length_from_uniform_options.ubo_binding);
-    array_length_from_uniform_cfg.bindpoint_to_size_index =
-        std::move(array_length_from_uniform_options.bindpoint_to_size_index);
-
     // DemoteToHelper must come after CanonicalizeEntryPointIO, PromoteSideEffectsToDecl, and
     // ExpandCompoundAssignment.
     // TODO(crbug.com/tint/1752): This is only necessary when FXC is being used.
@@ -347,6 +343,12 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
     // ArrayLengthFromUniform must come after SimplifyPointers as it assumes that the form of the
     // array length argument is &var.array.
     manager.Add<ast::transform::ArrayLengthFromUniform>();
+    // Build the config for the internal ArrayLengthFromUniform transform.
+    ast::transform::ArrayLengthFromUniform::Config array_length_from_uniform_cfg(
+        BindingPoint{array_length_from_uniform_options.ubo_binding.group,
+                     array_length_from_uniform_options.ubo_binding.binding});
+    array_length_from_uniform_cfg.bindpoint_to_size_index =
+        std::move(array_length_from_uniform_options.bindpoint_to_size_index);
     data.Add<ast::transform::ArrayLengthFromUniform::Config>(
         std::move(array_length_from_uniform_cfg));
     // DecomposeMemoryAccess must come after:
@@ -362,7 +364,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
     manager.Add<CalculateArrayLength>();
     manager.Add<ast::transform::PromoteInitializersToLet>();
 
-    manager.Add<RemoveContinueInSwitch>();
+    manager.Add<ast::transform::RemoveContinueInSwitch>();
 
     manager.Add<ast::transform::AddEmptyEntryPoint>();
 
@@ -388,11 +390,12 @@ bool ASTPrinter::Generate() {
             "HLSL", builder_.AST(), diagnostics_,
             Vector{
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
+                wgsl::Extension::kChromiumExperimentalPixelLocal,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
-                wgsl::Extension::kF16,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
-                wgsl::Extension::kChromiumExperimentalPixelLocal,
+                wgsl::Extension::kChromiumInternalGraphite,
+                wgsl::Extension::kF16,
             })) {
         return false;
     }
@@ -693,22 +696,23 @@ bool ASTPrinter::EmitIndexAccessor(StringStream& out, const ast::IndexAccessorEx
     return true;
 }
 
-bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* expr) {
-    auto* dst_type = TypeOf(expr)->UnwrapRef();
-    auto* src_type = TypeOf(expr->expr)->UnwrapRef();
+bool ASTPrinter::EmitBitcastCall(StringStream& out, const ast::CallExpression* call) {
+    auto* arg = call->args[0];
+    auto* src_type = TypeOf(arg)->UnwrapRef();
+    auto* dst_type = TypeOf(call);
 
     auto* src_el_type = src_type->DeepestElement();
     auto* dst_el_type = dst_type->DeepestElement();
 
     if (!dst_el_type->is_integer_scalar() && !dst_el_type->is_float_scalar()) {
-        diagnostics_.AddError(diag::System::Writer,
-                              "Unable to do bitcast to type " + dst_el_type->FriendlyName());
+        diagnostics_.AddError(diag::System::Writer, Source{})
+            << "Unable to do bitcast to type " << dst_el_type->FriendlyName();
         return false;
     }
 
     // Handle identity bitcast.
     if (src_type == dst_type) {
-        return EmitExpression(out, expr->expr);
+        return EmitExpression(out, arg);
     }
 
     // Handle the f16 types using polyfill functions
@@ -867,7 +871,7 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
         out << fn;
         {
             ScopedParen sp(out);
-            if (!EmitExpression(out, expr->expr)) {
+            if (!EmitExpression(out, arg)) {
                 return false;
             }
         }
@@ -882,7 +886,7 @@ bool ASTPrinter::EmitBitcast(StringStream& out, const ast::BitcastExpression* ex
         return false;
     }
     out << "(";
-    if (!EmitExpression(out, expr->expr)) {
+    if (!EmitExpression(out, arg)) {
         return false;
     }
     out << ")";
@@ -1210,6 +1214,9 @@ bool ASTPrinter::EmitBuiltinCall(StringStream& out,
     auto* expr = call->Declaration();
     if (builtin->IsTexture()) {
         return EmitTextureCall(out, call, builtin);
+    }
+    if (type == wgsl::BuiltinFn::kBitcast) {
+        return EmitBitcastCall(out, expr);
     }
     if (type == wgsl::BuiltinFn::kSelect) {
         return EmitSelectCall(out, expr);
@@ -2446,8 +2453,7 @@ bool ASTPrinter::EmitDataPackingCall(StringStream& out,
                     break;
                 }
                 default:
-                    diagnostics_.AddError(diag::System::Writer,
-                                          "Internal error: unhandled data packing builtin");
+                    TINT_ICE() << " unhandled data packing builtin";
                     return false;
             }
 
@@ -2513,8 +2519,7 @@ bool ASTPrinter::EmitDataUnpackingCall(StringStream& out,
                     Line(b) << "return f16tof32(uint2(i & 0xffff, i >> 16));";
                     break;
                 default:
-                    diagnostics_.AddError(diag::System::Writer,
-                                          "Internal error: unhandled data packing builtin");
+                    TINT_ICE() << "unhandled data packing builtin";
                     return false;
             }
 
@@ -2575,28 +2580,27 @@ bool ASTPrinter::EmitPacked4x8IntegerDotProductBuiltinCall(StringStream& out,
             return false;
     }
 
-    return CallBuiltinHelper(
-        out, expr, builtin, [&](TextBuffer* b, const std::vector<std::string>& params) {
-            std::string functionName;
-            switch (builtin->Fn()) {
-                case wgsl::BuiltinFn::kDot4I8Packed:
-                    Line(b) << "int accumulator = 0;";
-                    functionName = "dot4add_i8packed";
-                    break;
-                case wgsl::BuiltinFn::kDot4U8Packed:
-                    Line(b) << "uint accumulator = 0u;";
-                    functionName = "dot4add_u8packed";
-                    break;
-                default:
-                    diagnostics_.AddError(diag::System::Writer,
-                                          "Internal error: unhandled DP4a builtin");
-                    return false;
-            }
-            Line(b) << "return " << functionName << "(" << params[0] << ", " << params[1]
-                    << ", accumulator);";
+    return CallBuiltinHelper(out, expr, builtin,
+                             [&](TextBuffer* b, const std::vector<std::string>& params) {
+                                 std::string functionName;
+                                 switch (builtin->Fn()) {
+                                     case wgsl::BuiltinFn::kDot4I8Packed:
+                                         Line(b) << "int accumulator = 0;";
+                                         functionName = "dot4add_i8packed";
+                                         break;
+                                     case wgsl::BuiltinFn::kDot4U8Packed:
+                                         Line(b) << "uint accumulator = 0u;";
+                                         functionName = "dot4add_u8packed";
+                                         break;
+                                     default:
+                                         TINT_ICE() << "Internal error: unhandled DP4a builtin";
+                                         return false;
+                                 }
+                                 Line(b) << "return " << functionName << "(" << params[0] << ", "
+                                         << params[1] << ", accumulator);";
 
-            return true;
-        });
+                                 return true;
+                             });
 }
 
 bool ASTPrinter::EmitBarrierCall(StringStream& out, const sem::BuiltinFn* builtin) {
@@ -2928,9 +2932,7 @@ bool ASTPrinter::EmitTextureCall(StringStream& out,
             out << "[";
             break;
         default:
-            diagnostics_.AddError(diag::System::Writer,
-                                  "Internal compiler error: Unhandled texture builtin '" +
-                                      std::string(builtin->str()) + "'");
+            TINT_ICE() << "Unhandled texture builtin '" << builtin << "'";
             return false;
     }
 
@@ -3116,8 +3118,8 @@ std::string ASTPrinter::generate_builtin_name(const sem::BuiltinFn* builtin) {
         case wgsl::BuiltinFn::kSubgroupBroadcast:
             return "WaveReadLaneAt";
         default:
-            diagnostics_.AddError(diag::System::Writer,
-                                  "Unknown builtin method: " + std::string(builtin->str()));
+            diagnostics_.AddError(diag::System::Writer, Source{})
+                << "Unknown builtin method: " << builtin->str();
     }
 
     return "";
@@ -3191,7 +3193,6 @@ bool ASTPrinter::EmitExpression(StringStream& out, const ast::Expression* expr) 
         expr,  //
         [&](const ast::IndexAccessorExpression* a) { return EmitIndexAccessor(out, a); },
         [&](const ast::BinaryExpression* b) { return EmitBinary(out, b); },
-        [&](const ast::BitcastExpression* b) { return EmitBitcast(out, b); },
         [&](const ast::CallExpression* c) { return EmitCall(out, c); },
         [&](const ast::IdentifierExpression* i) { return EmitIdentifier(out, i); },
         [&](const ast::LiteralExpression* l) { return EmitLiteral(out, l); },
@@ -3389,9 +3390,8 @@ bool ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
                 case core::AddressSpace::kWorkgroup:
                     return EmitWorkgroupVariable(sem);
                 case core::AddressSpace::kPushConstant:
-                    diagnostics_.AddError(
-                        diag::System::Writer,
-                        "unhandled address space " + tint::ToString(sem->AddressSpace()));
+                    diagnostics_.AddError(diag::System::Writer, Source{})
+                        << "unhandled address space " << sem->AddressSpace();
                     return false;
                 default: {
                     TINT_ICE() << "unhandled address space " << sem->AddressSpace();
@@ -3401,9 +3401,9 @@ bool ASTPrinter::EmitGlobalVariable(const ast::Variable* global) {
         },
         [&](const ast::Override*) {
             // Override is removed with SubstituteOverride
-            diagnostics_.AddError(diag::System::Writer,
-                                  "override-expressions should have been removed with the "
-                                  "SubstituteOverride transform");
+            diagnostics_.AddError(diag::System::Writer, Source{})
+                << "override-expressions should have been removed with the SubstituteOverride "
+                   "transform";
             return false;
         },
         [&](const ast::Const*) {
@@ -3462,7 +3462,7 @@ bool ASTPrinter::EmitHandleVariable(const ast::Var* var, const sem::Variable* se
             return false;
         }
         out << "RasterizerOrderedTexture2D";
-        auto* component = image_format_to_rwtexture_type(storage->texel_format());
+        auto* component = ImageFormatToRWtextureType(storage->texel_format());
         if (TINT_UNLIKELY(!component)) {
             TINT_ICE() << "Unsupported StorageTexture TexelFormat: "
                        << static_cast<int>(storage->texel_format());
@@ -3626,10 +3626,9 @@ bool ASTPrinter::EmitEntryPointFunction(const ast::Function* func) {
                     out << ", ";
                 }
                 if (!wgsize[i].has_value()) {
-                    diagnostics_.AddError(
-                        diag::System::Writer,
-                        "override-expressions should have been removed with the SubstituteOverride "
-                        "transform");
+                    diagnostics_.AddError(diag::System::Writer, Source{})
+                        << "override-expressions should have been removed with the "
+                           "SubstituteOverride transform";
                     return false;
                 }
                 out << std::to_string(wgsize[i].value());
@@ -3781,8 +3780,8 @@ bool ASTPrinter::EmitConstant(StringStream& out,
 
             auto count = a->ConstantCount();
             if (!count) {
-                diagnostics_.AddError(diag::System::Writer,
-                                      core::type::Array::kErrExpectedConstantCount);
+                diagnostics_.AddError(diag::System::Writer, Source{})
+                    << core::type::Array::kErrExpectedConstantCount;
                 return false;
             }
 
@@ -3877,7 +3876,8 @@ bool ASTPrinter::EmitLiteral(StringStream& out, const ast::LiteralExpression* li
                     out << "u";
                     return true;
             }
-            diagnostics_.AddError(diag::System::Writer, "unknown integer literal suffix type");
+            diagnostics_.AddError(diag::System::Writer, Source{})
+                << "unknown integer literal suffix type";
             return false;
         },  //
         TINT_ICE_ON_NO_MATCH);
@@ -4344,8 +4344,8 @@ bool ASTPrinter::EmitType(StringStream& out,
                 }
                 const auto count = arr->ConstantCount();
                 if (!count) {
-                    diagnostics_.AddError(diag::System::Writer,
-                                          core::type::Array::kErrExpectedConstantCount);
+                    diagnostics_.AddError(diag::System::Writer, Source{})
+                        << core::type::Array::kErrExpectedConstantCount;
                     return false;
                 }
 
@@ -4463,7 +4463,7 @@ bool ASTPrinter::EmitType(StringStream& out,
             }
 
             if (storage) {
-                auto* component = image_format_to_rwtexture_type(storage->texel_format());
+                auto* component = ImageFormatToRWtextureType(storage->texel_format());
                 if (TINT_UNLIKELY(!component)) {
                     TINT_ICE() << "Unsupported StorageTexture TexelFormat: "
                                << static_cast<int>(storage->texel_format());
@@ -4584,7 +4584,7 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
             if (auto builtin = attributes.builtin) {
                 auto name = builtin_to_attribute(builtin.value());
                 if (name.empty()) {
-                    diagnostics_.AddError(diag::System::Writer, "unsupported builtin");
+                    diagnostics_.AddError(diag::System::Writer, Source{}) << "unsupported builtin";
                     return false;
                 }
                 post += " : " + name;
@@ -4592,7 +4592,8 @@ bool ASTPrinter::EmitStructType(TextBuffer* b, const core::type::Struct* str) {
             if (auto interpolation = attributes.interpolation) {
                 auto mod = interpolation_to_modifiers(interpolation->type, interpolation->sampling);
                 if (mod.empty()) {
-                    diagnostics_.AddError(diag::System::Writer, "unsupported interpolation");
+                    diagnostics_.AddError(diag::System::Writer, Source{})
+                        << "unsupported interpolation";
                     return false;
                 }
                 pre += mod;

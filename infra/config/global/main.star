@@ -46,6 +46,7 @@ luci.project(
     notify = "luci-notify.appspot.com",
     scheduler = "luci-scheduler.appspot.com",
     swarming = "chromium-swarm.appspot.com",
+    tricium = "tricium-prod.appspot.com",
     acls = [
         acl.entry(
             roles = [
@@ -111,6 +112,10 @@ luci.bucket(
     acls = [
         acl.entry(
             acl.BUILDBUCKET_TRIGGERER,
+            # Allow Tricium prod to trigger analyzer tryjobs.
+            users = [
+                "tricium-prod@appspot.gserviceaccount.com",
+            ],
             groups = [
                 "project-dawn-tryjob-access",
                 "service-account-cq",
@@ -171,7 +176,7 @@ def get_builder_executable():
       A luci.recipe
     """
     return luci.recipe(
-        name = "dawn",
+        name = "dawn/gn",
         cipd_package = "infra/recipe_bundles/chromium.googlesource.com/chromium/tools/build",
         cipd_version = "refs/heads/main",
     )
@@ -184,6 +189,18 @@ def get_presubmit_executable():
     """
     return luci.recipe(
         name = "run_presubmit",
+        cipd_package = "infra/recipe_bundles/chromium.googlesource.com/chromium/tools/build",
+        cipd_version = "refs/heads/main",
+    )
+
+def get_tricium_executable():
+    """Get standard executable for tricium
+
+    Returns:
+      A luci.recipe
+    """
+    return luci.recipe(
+        name = "dawn/analysis",
         cipd_package = "infra/recipe_bundles/chromium.googlesource.com/chromium/tools/build",
         cipd_version = "refs/heads/main",
     )
@@ -218,9 +235,7 @@ def get_default_caches(os, clang):
       A list of caches
     """
     caches = []
-    if os.category == os_category.WINDOWS and clang:
-        caches.append(swarming.cache(name = "win_toolchain", path = "win_toolchain"))
-    elif os.category == os_category.MAC:
+    if os.category == os_category.MAC:
         # Cache for mac_toolchain tool and XCode.app
         caches.append(swarming.cache(name = "osx_sdk", path = "osx_sdk"))
     return caches
@@ -338,6 +353,25 @@ def add_try_builder(name, os, clang, debug, cpu, fuzzer):
         properties = properties_try,
         dimensions = dimensions_try,
         caches = get_default_caches(os, clang),
+        service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+    )
+
+def add_tricium_builder():
+    """Add a Try builder
+    """
+    luci.builder(
+        name = "dawn_analysis",
+        bucket = "try",
+        executable = get_tricium_executable(),
+        properties = {
+            "builder_group": "tryserver.client.dawn",
+        },
+        dimensions = {
+            "cores": "8",
+            "cpu": "x86-64",
+            "os": "Ubuntu-20.04",
+            "pool": "luci.flex.try",
+        },
         service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
     )
 
@@ -494,6 +528,42 @@ def chromium_dawn_tryjob(os, arch = None):
         )
         _add_branch_verifiers(_os_arch_to_branch_builder[os], os)
 
+def tricium_dawn_tryjob():
+    """Adds a tryjob that tests against Chromium
+
+    Args:
+      os: string for the OS, should be one or linux|mac|win
+      arch: string for the arch, or None
+    """
+
+    add_tricium_builder()
+
+    luci.cq_tryjob_verifier(
+        cq_group = "Dawn-CQ",
+        builder = "dawn:try/dawn_analysis",
+        owner_whitelist = ["project-dawn-tryjob-access"],
+        mode_allowlist = [cq.MODE_ANALYZER_RUN],
+    )
+
+    luci.cq_tryjob_verifier(
+        cq_group = "Dawn-CQ",
+        builder = "chromium:try/tricium-clang-tidy",
+        owner_whitelist = ["project-dawn-tryjob-access"],
+        mode_allowlist = [cq.MODE_ANALYZER_RUN],
+        location_filters = [
+          cq.location_filter(path_regexp = ".+\\.h"),
+          cq.location_filter(path_regexp = ".+\\.c"),
+          cq.location_filter(path_regexp = ".+\\.cc"),
+          cq.location_filter(path_regexp = ".+\\.cpp")
+        ],
+    )
+
+    luci.list_view_entry(
+        list_view = "try",
+        builder = "try/dawn_analysis",
+    )
+
+
 luci.gitiles_poller(
     name = "primary-poller",
     bucket = "ci",
@@ -586,6 +656,8 @@ chromium_dawn_tryjob("win")
 chromium_dawn_tryjob("android", "arm")
 chromium_dawn_tryjob("android", "arm64")
 
+tricium_dawn_tryjob()
+
 luci.cq_tryjob_verifier(
     cq_group = "Dawn-CQ",
     builder = "chromium:try/dawn-try-win10-x86-rel",
@@ -596,6 +668,32 @@ _add_branch_verifiers("dawn-win10-x86-deps-rel", "win", includable_only = True)
 luci.cq_tryjob_verifier(
     cq_group = "Dawn-CQ",
     builder = "chromium:try/dawn-try-mac-arm64-rel",
+    includable_only = True,
+)
+
+# Experimental builders that usually don't actually run any tests, but will when
+# qualifying a new configuration.
+luci.cq_tryjob_verifier(
+    cq_group = "Dawn-CQ",
+    builder = "chromium:try/android-dawn-arm64-exp-rel",
+    includable_only = True,
+)
+
+luci.cq_tryjob_verifier(
+    cq_group = "Dawn-CQ",
+    builder = "chromium:try/dawn-try-mac-intel-exp",
+    includable_only = True,
+)
+
+luci.cq_tryjob_verifier(
+    cq_group = "Dawn-CQ",
+    builder = "chromium:try/dawn-try-win-x64-intel-exp",
+    includable_only = True,
+)
+
+luci.cq_tryjob_verifier(
+    cq_group = "Dawn-CQ",
+    builder = "chromium:try/dawn-try-win-x64-nvidia-exp",
     includable_only = True,
 )
 

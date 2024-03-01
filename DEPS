@@ -57,7 +57,9 @@ vars = {
 
   # 'magic' text to tell depot_tools that git submodules should be accepted
   # but parity with DEPS file is expected.
-  'SUBMODULE_MIGRATION': 'True'
+  'SUBMODULE_MIGRATION': 'True',
+
+  'fetch_cmake': False
 }
 
 deps = {
@@ -92,6 +94,11 @@ deps = {
     }],
     'dep_type': 'cipd',
     'condition': 'dawn_standalone and host_os == "win"',
+  },
+
+  'third_party/depot_tools': {
+    'url': '{chromium_git}/chromium/tools/depot_tools.git@35a5306635084412e01fa23d64654907f39bc44a',
+    'condition': 'dawn_standalone',
   },
 
   'third_party/libc++/src': {
@@ -172,17 +179,17 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@3ca8befb24123fcfa3d0225df7a47f4be99075cb',
+    'url': '{chromium_git}/angle/angle@21381f5e1c4dffe6ce43121e8cd55803647896ca',
     'condition': 'dawn_standalone',
   },
 
   'third_party/swiftshader': {
-    'url': '{swiftshader_git}/SwiftShader@eb75201a4e0354a36d315dd01077092ec9aa2356',
+    'url': '{swiftshader_git}/SwiftShader@bbe6452b420c5ddc4b0fd421b0a3ce271262f4ca',
     'condition': 'dawn_standalone',
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@16c7058465af46e49cd1e976d499c07b3eb46a2b',
+    'url': '{chromium_git}/vulkan-deps@d275305f4581e0413a9adf9f4ac0a000f8e6b4df',
     'condition': 'dawn_standalone',
   },
 
@@ -197,7 +204,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@df588beb485958a3ece128bfbeda5fb888e2dfce',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@aaab2a708a7d70006674f52b2f72739d63f98fe2',
   },
 
   'third_party/dxheaders': {
@@ -216,7 +223,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@559c806e5bf504bd103bb7a7a6a30517c52e0c21',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@bc5d36d244b3d6fe7c1a20297e261f6c0e05f664',
     'condition': 'build_with_chromium',
   },
 
@@ -243,7 +250,7 @@ deps = {
   },
 
   'tools/cmake': {
-    'condition': 'dawn_node and (host_os == "mac" or host_os == "linux")',
+    'condition': '(fetch_cmake or dawn_node) and (host_os == "mac" or host_os == "linux")',
     'packages': [{
       'package': 'infra/3pp/tools/cmake/${{platform}}',
       'version': Var('dawn_cmake_version'),
@@ -293,6 +300,19 @@ deps = {
 }
 
 hooks = [
+  {
+    # Ensure that the DEPS'd "depot_tools" has its self-update capability
+    # disabled.
+    'name': 'disable_depot_tools_selfupdate',
+    'pattern': '.',
+    'condition': 'dawn_standalone',
+    'action': [
+        'python3',
+        'third_party/depot_tools/update_depot_tools_toggle.py',
+        '--disable',
+    ],
+  },
+
   # Pull the compilers and system libraries for hermetic builds
   {
     'name': 'sysroot_x86',
@@ -321,7 +341,8 @@ hooks = [
     'name': 'ciopfs_linux',
     'pattern': '.',
     'condition': 'dawn_standalone and checkout_win and host_os == "linux"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-browser-clang/ciopfs',
@@ -362,7 +383,8 @@ hooks = [
     'name': 'rc_win',
     'pattern': '.',
     'condition': 'dawn_standalone and checkout_win and host_os == "win"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-browser-clang/rc',
@@ -373,7 +395,8 @@ hooks = [
     'name': 'rc_linux',
     'pattern': '.',
     'condition': 'dawn_standalone and checkout_win and host_os == "linux"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-browser-clang/rc',
@@ -384,7 +407,8 @@ hooks = [
     'name': 'rc_mac',
     'pattern': '.',
     'condition': 'dawn_standalone and checkout_win and host_os == "mac"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-browser-clang/rc',
@@ -396,7 +420,8 @@ hooks = [
     'name': 'clang_format_win',
     'pattern': '.',
     'condition': 'dawn_standalone and host_os == "win"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-clang-format',
@@ -407,7 +432,8 @@ hooks = [
     'name': 'clang_format_mac_x64',
     'pattern': '.',
     'condition': 'dawn_standalone and host_os == "mac" and host_cpu == "x64"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-clang-format',
@@ -419,7 +445,8 @@ hooks = [
     'name': 'clang_format_mac_arm64',
     'pattern': '.',
     'condition': 'dawn_standalone and host_os == "mac" and host_cpu == "arm64"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-clang-format',
@@ -431,7 +458,8 @@ hooks = [
     'name': 'clang_format_linux',
     'pattern': '.',
     'condition': 'dawn_standalone and host_os == "linux"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-clang-format',
@@ -450,8 +478,9 @@ hooks = [
   {
     'name': 'cmake_win32',
     'pattern': '.',
-    'condition': 'dawn_node and host_os == "win"',
-    'action': [ 'download_from_google_storage',
+    'condition': '(fetch_cmake or dawn_node) and host_os == "win"',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--platform=win32',
                 '--no_auth',
@@ -463,7 +492,7 @@ hooks = [
   {
     'name': 'cmake_win32_extract',
     'pattern': '.',
-    'condition': 'dawn_node and host_os == "win"',
+    'condition': '(fetch_cmake or dawn_node) and host_os == "win"',
     'action': [ 'python3',
                 'scripts/extract.py',
                 'tools/cmake-win32.zip',
@@ -476,7 +505,8 @@ hooks = [
     'name': 'node_linux64',
     'pattern': '.',
     'condition': 'dawn_node and host_os == "linux"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--extract',
                 '--no_auth',
@@ -489,7 +519,8 @@ hooks = [
     'name': 'node_mac',
     'pattern': '.',
     'condition': 'dawn_node and host_os == "mac"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--extract',
                 '--no_auth',
@@ -502,7 +533,8 @@ hooks = [
     'name': 'node_mac_arm64',
     'pattern': '.',
     'condition': 'dawn_node and host_os == "mac"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--extract',
                 '--no_auth',
@@ -515,7 +547,8 @@ hooks = [
     'name': 'node_win',
     'pattern': '.',
     'condition': 'dawn_node and host_os == "win"',
-    'action': [ 'download_from_google_storage',
+    'action': [ 'python3',
+                'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
                 '--bucket', 'chromium-nodejs/20.11.0',

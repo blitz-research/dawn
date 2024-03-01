@@ -36,7 +36,6 @@
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ast/assignment_statement.h"
-#include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 #include "src/tint/lang/wgsl/ast/break_if_statement.h"
 #include "src/tint/lang/wgsl/ast/break_statement.h"
 #include "src/tint/lang/wgsl/ast/call_statement.h"
@@ -243,22 +242,28 @@ Parser::Failure::Errored Parser::AddError(const Token& t, std::string_view err) 
 
 Parser::Failure::Errored Parser::AddError(const Source& source, std::string_view err) {
     if (silence_diags_ == 0) {
-        builder_.Diagnostics().AddError(diag::System::Reader, err, source);
+        builder_.Diagnostics().AddError(diag::System::Reader, source) << err;
+    }
+    return Failure::kErrored;
+}
+
+Parser::Failure::Errored Parser::AddError(const Source& source, StyledText&& err) {
+    if (silence_diags_ == 0) {
+        builder_.Diagnostics().AddError(diag::System::Reader, source) << std::move(err);
     }
     return Failure::kErrored;
 }
 
 void Parser::AddNote(const Source& source, std::string_view err) {
     if (silence_diags_ == 0) {
-        builder_.Diagnostics().AddNote(diag::System::Reader, err, source);
+        builder_.Diagnostics().AddNote(diag::System::Reader, source) << err;
     }
 }
 
 void Parser::deprecated(const Source& source, std::string_view msg) {
     if (silence_diags_ == 0) {
-        builder_.Diagnostics().AddWarning(diag::System::Reader,
-                                          "use of deprecated language feature: " + std::string(msg),
-                                          source);
+        builder_.Diagnostics().AddWarning(diag::System::Reader, source)
+            << "use of deprecated language feature: " << msg;
     }
 }
 
@@ -928,7 +933,7 @@ Expect<ENUM> Parser::expect_enum(std::string_view name,
     }
 
     /// Create a sensible error message
-    StringStream err;
+    StyledText err;
     err << "expected " << name;
 
     if (!use.empty()) {
@@ -952,7 +957,7 @@ Expect<ENUM> Parser::expect_enum(std::string_view name,
     }
 
     synchronized_ = false;
-    return AddError(t.source(), err.str());
+    return AddError(t.source(), std::move(err));
 }
 
 Expect<ast::Type> Parser::expect_type(std::string_view use) {
@@ -2057,32 +2062,13 @@ Maybe<const ast::BlockStatement*> Parser::continuing_statement() {
 }
 
 // primary_expression
-//   : BITCAST LESS_THAN type_specifier GREATER_THAN paren_expression
-//   | const_literal
+//   : const_literal
 //   | IDENT argument_expression_list?
 //   | paren_expression
 //
 // Note, PAREN_LEFT ( expression ( COMMA expression ) * COMMA? )? PAREN_RIGHT is replaced
 // with `argument_expression_list`.
 Maybe<const ast::Expression*> Parser::primary_expression() {
-    auto& t = peek();
-
-    if (match(Token::Type::kBitcast)) {
-        const char* use = "bitcast expression";
-
-        auto type = expect_template_arg_block(use, [&] { return expect_type(use); });
-        if (type.errored) {
-            return Failure::kErrored;
-        }
-
-        auto params = expect_paren_expression();
-        if (params.errored) {
-            return Failure::kErrored;
-        }
-
-        return builder_.Bitcast(t.source(), type.value, params.value);
-    }
-
     auto lit = const_literal();
     if (lit.errored) {
         return Failure::kErrored;
@@ -2091,6 +2077,7 @@ Maybe<const ast::Expression*> Parser::primary_expression() {
         return lit.value;
     }
 
+    auto& t = peek();
     if (t.IsIdentifier()) {
         MultiTokenSource source(this);
         next();

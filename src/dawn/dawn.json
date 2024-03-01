@@ -893,6 +893,15 @@
             {"name": "userdata", "type": "void *"}
         ]
     },
+    "compilation info callback info": {
+        "category": "structure",
+        "extensible": "in",
+        "members": [
+            {"name": "mode", "type": "callback mode"},
+            {"name": "callback", "type": "compilation info callback"},
+            {"name": "userdata", "type": "void *", "default": "nullptr"}
+        ]
+    },
     "compilation info request status": {
         "category": "enum",
         "values": [
@@ -1165,6 +1174,7 @@
             },
             {
                 "name": "create buffer",
+                "no autolock": true,
                 "returns": "buffer",
                 "args": [
                     {"name": "descriptor", "type": "buffer descriptor", "annotation": "const*"}
@@ -1187,6 +1197,7 @@
             },
             {
                 "name": "create compute pipeline",
+                "no autolock": true,
                 "returns": "compute pipeline",
                 "args": [
                     {"name": "descriptor", "type": "compute pipeline descriptor", "annotation": "const*"}
@@ -1266,6 +1277,7 @@
             },
             {
                 "name": "create render pipeline",
+                "no autolock": true,
                 "returns": "render pipeline",
                 "args": [
                     {"name": "descriptor", "type": "render pipeline descriptor", "annotation": "const*"}
@@ -1280,6 +1292,7 @@
             },
             {
                 "name": "create shader module",
+                "no autolock": true,
                 "returns": "shader module",
                 "args": [
                     {"name": "descriptor", "type": "shader module descriptor", "annotation": "const*"}
@@ -1308,6 +1321,14 @@
                 "returns": "texture",
                 "args": [
                     {"name": "descriptor", "type": "texture descriptor", "annotation": "const*"}
+                ]
+            },
+            {
+                "name": "import shared buffer memory",
+                "returns": "shared buffer memory",
+                "tags": ["dawn", "native"],
+                "args": [
+                    {"name": "descriptor", "type": "shared buffer memory descriptor", "annotation": "const*"}
                 ]
             },
             {
@@ -1423,7 +1444,7 @@
             {
                 "name": "pop error scope",
                 "args": [
-                    {"name": "callback", "type": "error callback"},
+                    {"name": "old callback", "type": "error callback"},
                     {"name": "userdata", "type": "void *"}
                 ]
             },
@@ -1691,6 +1712,71 @@
             {"name": "rotation", "type": "external texture rotation", "default": "rotate 0 degrees"}
         ]
     },
+    "shared buffer memory": {
+        "category": "object",
+        "tags": ["dawn", "native"],
+        "methods": [
+            {
+                "name": "set label",
+                "returns": "void",
+                "args": [
+                    {"name": "label", "type": "char", "annotation": "const*", "length": "strlen"}
+                ]
+            },
+            {
+                "name": "get properties",
+                "returns": "void",
+                "args": [
+                    {"name": "properties", "type": "shared buffer memory properties", "annotation": "*"}
+                ]
+            },
+            {
+                "name": "create buffer",
+                "returns": "buffer",
+                "args": [
+                    {"name": "descriptor", "type": "buffer descriptor", "annotation": "const*", "optional": true, "default": "nullptr"}
+                ]
+            },
+            {
+                "name": "begin access",
+                "returns": "bool",
+                "args": [
+                    {"name": "buffer", "type": "buffer"},
+                    {"name": "descriptor", "type": "shared buffer memory begin access descriptor", "annotation": "const*"}
+                ]
+            },
+            {
+                "name": "end access",
+                "returns": "bool",
+                "args": [
+                    {"name": "buffer", "type": "buffer"},
+                    {"name": "descriptor", "type": "shared buffer memory end access state", "annotation": "*"}
+                ]
+            },
+            {
+                "name": "is device lost",
+                "returns": "bool",
+                "args": []
+            }
+        ]
+    },
+    "shared buffer memory properties": {
+        "category": "structure",
+        "extensible": "out",
+        "tags": ["dawn", "native"],
+        "members": [
+            {"name": "usage", "type": "buffer usage"},
+            {"name": "size", "type": "uint64_t"}
+        ]
+    },
+    "shared buffer memory descriptor": {
+        "category": "structure",
+        "extensible": "in",
+        "tags": ["dawn", "native"],
+        "members": [
+            {"name": "label", "type": "char", "annotation": "const*", "length": "strlen", "optional": true}
+        ]
+    },
     "shared texture memory": {
         "category": "object",
         "tags": ["dawn", "native"],
@@ -1755,6 +1841,28 @@
         "tags": ["dawn", "native"],
         "members": [
             {"name": "label", "type": "char", "annotation": "const*", "length": "strlen", "optional": true}
+        ]
+    },
+    "shared buffer memory begin access descriptor": {
+        "category": "structure",
+        "extensible": "in",
+        "tags": ["dawn", "native"],
+        "members": [
+            {"name": "initialized", "type": "bool"},
+            {"name": "fence count", "type": "size_t"},
+            {"name": "fences", "type": "shared fence", "annotation": "const*", "length": "fence count"},
+            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "fence count"}
+        ]
+    },
+    "shared buffer memory end access state": {
+        "category": "structure",
+        "extensible": "out",
+        "tags": ["dawn", "native"],
+        "members": [
+            {"name": "initialized", "type": "bool"},
+            {"name": "fence count", "type": "size_t"},
+            {"name": "fences", "type": "shared fence", "annotation": "const*", "length": "fence count"},
+            {"name": "signaled values", "type": "uint64_t", "annotation": "const*", "length": "fence count"}
         ]
     },
     "shared texture memory vk image descriptor": {
@@ -1838,7 +1946,8 @@
         "tags": ["dawn", "native"],
         "_comment": "TODO(crbug.com/dawn/1745): improve type safety",
         "members": [
-            {"name": "handle", "type": "void *"}
+            {"name": "handle", "type": "void *"},
+            {"name": "use keyed mutex", "type": "bool"}
         ]
     },
     "shared texture memory IO surface descriptor": {
@@ -2094,7 +2203,8 @@
             {"value": 1201, "name": "shared fence vk semaphore sync FD", "tags": ["dawn", "native"]},
             {"value": 1202, "name": "shared fence vk semaphore zircon handle", "tags": ["dawn", "native"]},
             {"value": 1203, "name": "shared fence DXGI shared handle", "tags": ["dawn", "native"]},
-            {"value": 1204, "name": "shared fence MTL shared event", "tags": ["dawn", "native"]}
+            {"value": 1204, "name": "shared fence MTL shared event", "tags": ["dawn", "native"]},
+            {"value": 1205, "name": "shared buffer memory D3D12 resource", "tags": ["dawn", "native"]}
         ]
     },
     "filter mode": {
@@ -3194,6 +3304,15 @@
                 ]
             },
             {
+                "name": "get compilation info f",
+                "_comment": "TODO(crbug.com/dawn/2021): This is dawn/emscripten-only until we rename it to replace the old API. See bug for details.",
+                "tags": ["dawn", "emscripten"],
+                "returns": "future",
+                "args": [
+                    {"name": "callback info", "type": "compilation info callback info"}
+                ]
+            },
+            {
                 "name": "set label",
                 "returns": "void",
                 "args": [
@@ -3520,9 +3639,9 @@
             {"value": 1211, "name": "shared fence DXGI shared handle export info", "tags": ["dawn", "native"]},
             {"value": 1212, "name": "shared fence MTL shared event descriptor", "tags": ["dawn", "native"]},
             {"value": 1213, "name": "shared fence MTL shared event export info", "tags": ["dawn", "native"]},
-
+            {"value": 1214, "name": "shared buffer memory D3D12 resource descriptor", "tags": ["dawn", "native"]},
+            
             {"value": 9990, "name": "request adapter options OpenXR config", "tags":  ["dawn", "native"]}
-
         ]
     },
     "texture": {

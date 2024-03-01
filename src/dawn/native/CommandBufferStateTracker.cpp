@@ -525,7 +525,8 @@ void CommandBufferStateTracker::RecomputeLazyAspects(ValidationAspects aspects) 
 
         for (BindGroupIndex i : IterateBitSet(mLastPipelineLayout->GetBindGroupLayoutsMask())) {
             if (mBindgroups[i] == nullptr ||
-                mLastPipelineLayout->GetBindGroupLayout(i) != mBindgroups[i]->GetLayout() ||
+                !mLastPipelineLayout->GetFrontendBindGroupLayout(i)->IsLayoutEqual(
+                    mBindgroups[i]->GetFrontendLayout()) ||
                 FindFirstUndersizedBuffer(mBindgroups[i]->GetUnverifiedBufferSizes(),
                                           (*mMinBufferSizes)[i])
                     .has_value()) {
@@ -753,10 +754,13 @@ void CommandBufferStateTracker::SetBindGroup(BindGroupIndex index,
     mAspects.reset(VALIDATION_ASPECT_BIND_GROUPS);
 }
 
-void CommandBufferStateTracker::SetIndexBuffer(wgpu::IndexFormat format, uint64_t size) {
+void CommandBufferStateTracker::SetIndexBuffer(wgpu::IndexFormat format,
+                                               uint64_t offset,
+                                               uint64_t size) {
     mIndexBufferSet = true;
     mIndexFormat = format;
     mIndexBufferSize = size;
+    mIndexBufferOffset = offset;
 }
 
 void CommandBufferStateTracker::UnsetVertexBuffer(VertexBufferSlot slot) {
@@ -814,6 +818,10 @@ wgpu::IndexFormat CommandBufferStateTracker::GetIndexFormat() const {
 
 uint64_t CommandBufferStateTracker::GetIndexBufferSize() const {
     return mIndexBufferSize;
+}
+
+uint64_t CommandBufferStateTracker::GetIndexBufferOffset() const {
+    return mIndexBufferOffset;
 }
 
 }  // namespace dawn::native
