@@ -53,7 +53,7 @@ WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
                                                           const WGPUTextureDescriptor* descriptor,
                                                           ID3D12Resource* d3dTexture) {
     auto texture = Texture::CreateExternalImage(ToBackend(FromAPI(device)), ValidateAndUnpack(FromAPI(descriptor)).AcquireSuccess(),
-                                                d3dTexture, {}, true, true);
+                                                d3dTexture, {}, {}, true, true);
     if (texture.IsSuccess()) {
         return ToAPI(texture.AcquireSuccess().Detach());
     }
