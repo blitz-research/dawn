@@ -33,6 +33,7 @@
 #include "dawn/common/FutureUtils.h"
 #include "dawn/tests/DawnTest.h"
 #include "dawn/webgpu.h"
+#include "gmock/gmock.h"
 
 namespace dawn {
 namespace {
@@ -359,14 +360,8 @@ TEST_P(EventCompletionTests, WorkDoneAcrossDeviceLoss) {
 TEST_P(EventCompletionTests, WorkDoneAfterDeviceLoss) {
     TrivialSubmit();
     LoseTestDevice();
-    // Tracking and waiting need to be done together w.r.t the device error assertion because error
-    // assertion in DawnTest.h currently calls ProcessEvents which will cause the work done event to
-    // trigger before the TestWaitAll call.
-    auto TestF = [&]() {
-        TrackForTest(OnSubmittedWorkDone(WGPUQueueWorkDoneStatus_Success));
-        TestWaitAll();
-    };
-    ASSERT_DEVICE_ERROR_ON(testDevice, TestF());
+    TrackForTest(OnSubmittedWorkDone(WGPUQueueWorkDoneStatus_Success));
+    TestWaitAll();
 }
 
 // WorkDone event twice after submitting some trivial work.
@@ -631,6 +626,32 @@ TEST_P(WaitAnyTests, UnsupportedMixedSources) {
 }
 
 DAWN_INSTANTIATE_TEST(WaitAnyTests,
+                      D3D11Backend(),
+                      D3D12Backend(),
+                      MetalBackend(),
+                      VulkanBackend(),
+                      OpenGLBackend(),
+                      OpenGLESBackend());
+
+class FutureTests : public DawnTest {};
+
+// Regression test for crbug.com/dawn/2460 where when we have mixed source futures in a process
+// events call we were crashing.
+TEST_P(FutureTests, MixedSourcePolling) {
+    // OnSubmittedWorkDone is implemented via a queue serial.
+    device.GetQueue().OnSubmittedWorkDone({nullptr, wgpu::CallbackMode::AllowProcessEvents,
+                                           [](WGPUQueueWorkDoneStatus, void*) {}, nullptr});
+
+    // PopErrorScope is implemented via a signal.
+    device.PushErrorScope(wgpu::ErrorFilter::Validation);
+    device.PopErrorScope({nullptr, wgpu::CallbackMode::AllowProcessEvents,
+                          [](WGPUPopErrorScopeStatus, WGPUErrorType, char const*, void*) {},
+                          nullptr, nullptr});
+
+    instance.ProcessEvents();
+}
+
+DAWN_INSTANTIATE_TEST(FutureTests,
                       D3D11Backend(),
                       D3D12Backend(),
                       MetalBackend(),

@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -270,6 +271,16 @@ ObjectType QueueBase::GetType() const {
     return ObjectType::Queue;
 }
 
+// It doesn't make much sense right now to mark the default queue as "unlabeled", so this override
+// prevents that. Consider removing when multiqueue is implemented.
+void QueueBase::FormatLabel(absl::FormatSink* s) const {
+    s->Append(ObjectTypeAsString(GetType()));
+    const std::string& label = GetLabel();
+    if (!label.empty()) {
+        s->Append(absl::StrFormat(" \"%s\"", label));
+    }
+}
+
 void QueueBase::APISubmit(uint32_t commandCount, CommandBufferBase* const* commands) {
     MaybeError result = SubmitInternal(commandCount, commands);
 
@@ -311,20 +322,25 @@ Future QueueBase::APIOnSubmittedWorkDoneF(const QueueWorkDoneCallbackInfo& callb
     DAWN_ASSERT(callbackInfo.nextInChain == nullptr);
 
     Ref<EventManager::TrackedEvent> event;
+    {
+        // TODO(crbug.com/dawn/831) Manually acquire device lock instead of relying on code-gen for
+        // re-entrancy.
+        auto deviceLock(GetDevice()->GetScopedLock());
 
-    wgpu::QueueWorkDoneStatus validationEarlyStatus;
-    if (GetDevice()->ConsumedError(ValidateOnSubmittedWorkDone(&validationEarlyStatus))) {
-        // TODO(crbug.com/dawn/2021): This is here to pretend that things succeed when the device is
-        // lost. When the old OnSubmittedWorkDone is removed then we can update
-        // ValidateOnSubmittedWorkDone to just return the correct thing here.
-        if (validationEarlyStatus == wgpu::QueueWorkDoneStatus::DeviceLost) {
-            validationEarlyStatus = wgpu::QueueWorkDoneStatus::Success;
+        wgpu::QueueWorkDoneStatus validationEarlyStatus;
+        if (GetDevice()->ConsumedError(ValidateOnSubmittedWorkDone(&validationEarlyStatus))) {
+            // TODO(crbug.com/dawn/2021): This is here to pretend that things succeed when the
+            // device is lost. When the old OnSubmittedWorkDone is removed then we can update
+            // ValidateOnSubmittedWorkDone to just return the correct thing here.
+            if (validationEarlyStatus == wgpu::QueueWorkDoneStatus::DeviceLost) {
+                validationEarlyStatus = wgpu::QueueWorkDoneStatus::Success;
+            }
+
+            // Note: if the callback is spontaneous, it'll get called in here.
+            event = AcquireRef(new WorkDoneEvent(callbackInfo, this, validationEarlyStatus));
+        } else {
+            event = AcquireRef(new WorkDoneEvent(callbackInfo, this, GetScheduledWorkDoneSerial()));
         }
-
-        // Note: if the callback is spontaneous, it'll get called in here.
-        event = AcquireRef(new WorkDoneEvent(callbackInfo, this, validationEarlyStatus));
-    } else {
-        event = AcquireRef(new WorkDoneEvent(callbackInfo, this, GetScheduledWorkDoneSerial()));
     }
 
     FutureID futureID = GetInstance()->GetEventManager()->TrackEvent(std::move(event));

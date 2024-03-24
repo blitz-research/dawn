@@ -118,7 +118,13 @@ RenderBundleEncoder::RenderBundleEncoder(DeviceBase* device, ErrorTag errorTag, 
     : RenderEncoderBase(device, &mBundleEncodingContext, errorTag, label),
       mBundleEncodingContext(device, this) {}
 
+RenderBundleEncoder::~RenderBundleEncoder() {
+    mEncodingContext = nullptr;
+}
+
 void RenderBundleEncoder::DestroyImpl() {
+    mIndirectDrawMetadata.ClearIndexedIndirectBufferValidationInfo();
+    mCommandBufferState.End();
     RenderEncoderBase::DestroyImpl();
     mBundleEncodingContext.Destroy();
 }
@@ -157,6 +163,8 @@ RenderBundleBase* RenderBundleEncoder::APIFinish(const RenderBundleDescriptor* d
 
 ResultOrError<Ref<RenderBundleBase>> RenderBundleEncoder::FinishImpl(
     const RenderBundleDescriptor* descriptor) {
+    mCommandBufferState.End();
+
     // Even if mBundleEncodingContext.Finish() validation fails, calling it will mutate the
     // internal state of the encoding context. Subsequent calls to encode commands will generate
     // errors.

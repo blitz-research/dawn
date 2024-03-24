@@ -149,6 +149,11 @@ void Adapter::SetProperties(const WGPUAdapterProperties* properties) {
                 mD3DProperties.shaderModel = d3dProperties->shaderModel;
                 break;
             }
+            case WGPUSType_AdapterPropertiesVk: {
+                auto* vkProperties = reinterpret_cast<WGPUAdapterPropertiesVk*>(chain);
+                mVkProperties.driverVersion = vkProperties->driverVersion;
+                break;
+            }
             default:
                 DAWN_UNREACHABLE();
                 break;
@@ -177,6 +182,11 @@ void Adapter::GetProperties(WGPUAdapterProperties* properties) const {
             case WGPUSType_AdapterPropertiesD3D: {
                 auto* d3dProperties = reinterpret_cast<WGPUAdapterPropertiesD3D*>(chain);
                 d3dProperties->shaderModel = mD3DProperties.shaderModel;
+                break;
+            }
+            case WGPUSType_AdapterPropertiesVk: {
+                auto* vkProperties = reinterpret_cast<WGPUAdapterPropertiesVk*>(chain);
+                vkProperties->driverVersion = mVkProperties.driverVersion;
                 break;
             }
             default:
@@ -221,6 +231,10 @@ void ClientAdapterPropertiesFreeMembers(WGPUAdapterProperties properties) {
 void ClientAdapterPropertiesMemoryHeapsFreeMembers(
     WGPUAdapterPropertiesMemoryHeaps memoryHeapProperties) {
     delete[] memoryHeapProperties.heapInfo;
+}
+
+void ClientDrmFormatCapabilitiesFreeMembers(WGPUDrmFormatCapabilities capabilities) {
+    delete[] capabilities.properties;
 }
 
 void Adapter::RequestDevice(const WGPUDeviceDescriptor* descriptor,
@@ -283,6 +297,12 @@ WGPUInstance Adapter::GetInstance() const {
 WGPUDevice Adapter::CreateDevice(const WGPUDeviceDescriptor*) {
     dawn::ErrorLog() << "adapter.CreateDevice not supported with dawn_wire.";
     return nullptr;
+}
+
+bool Adapter::GetFormatCapabilities(WGPUTextureFormat format,
+                                    WGPUFormatCapabilities* capabilities) {
+    dawn::ErrorLog() << "adapter.GetFormatCapabilities not supported with dawn_wire.";
+    return false;
 }
 
 }  // namespace dawn::wire::client

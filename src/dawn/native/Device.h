@@ -380,6 +380,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     std::vector<const char*> GetTogglesUsed() const;
     const tint::wgsl::AllowedFeatures& GetWGSLAllowedFeatures() const;
     bool IsToggleEnabled(Toggle toggle) const;
+    const TogglesState& GetTogglesState() const;
     bool IsValidationEnabled() const;
     bool IsRobustnessEnabled() const;
     bool IsCompatibilityMode() const;
@@ -606,7 +607,6 @@ class DeviceBase : public RefCountedWithExternalCount {
     Ref<TextureViewBase> mExternalTexturePlaceholderView;
 
     std::unique_ptr<DynamicUploader> mDynamicUploader;
-    std::unique_ptr<AsyncTaskManager> mAsyncTaskManager;
     Ref<QueueBase> mQueue;
 
     struct DeprecationWarnings;
@@ -634,6 +634,9 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     Ref<CallbackTaskManager> mCallbackTaskManager;
     std::unique_ptr<dawn::platform::WorkerTaskPool> mWorkerTaskPool;
+
+    // Ensure `mAsyncTaskManager` is always destroyed before mWorkerTaskPool
+    std::unique_ptr<AsyncTaskManager> mAsyncTaskManager;
     std::string mLabel;
 
     CacheKey mDeviceCacheKey;

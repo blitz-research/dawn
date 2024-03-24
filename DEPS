@@ -97,7 +97,7 @@ deps = {
   },
 
   'third_party/depot_tools': {
-    'url': '{chromium_git}/chromium/tools/depot_tools.git@35a5306635084412e01fa23d64654907f39bc44a',
+    'url': '{chromium_git}/chromium/tools/depot_tools.git@1cba129f31738c18656b500b7c3a0c6906807cb9',
     'condition': 'dawn_standalone',
   },
 
@@ -179,7 +179,7 @@ deps = {
   },
 
   'third_party/angle': {
-    'url': '{chromium_git}/angle/angle@21381f5e1c4dffe6ce43121e8cd55803647896ca',
+    'url': '{chromium_git}/angle/angle@ee02014d875f45635779762a8ffd0aee1ec29990',
     'condition': 'dawn_standalone',
   },
 
@@ -189,7 +189,7 @@ deps = {
   },
 
   'third_party/vulkan-deps': {
-    'url': '{chromium_git}/vulkan-deps@d275305f4581e0413a9adf9f4ac0a000f8e6b4df',
+    'url': '{chromium_git}/vulkan-deps@46287e4a45a738a51a7660a938887fb73d26b4e6',
     'condition': 'dawn_standalone',
   },
 
@@ -204,7 +204,7 @@ deps = {
   },
 
   'third_party/dxc': {
-    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@aaab2a708a7d70006674f52b2f72739d63f98fe2',
+    'url': '{chromium_git}/external/github.com/microsoft/DirectXShaderCompiler@40e27eb4e912062a07622ea6a6993b524715d3b3',
   },
 
   'third_party/dxheaders': {
@@ -223,7 +223,7 @@ deps = {
 
   # WebGPU CTS - not used directly by Dawn, only transitively by Chromium.
   'third_party/webgpu-cts': {
-    'url': '{chromium_git}/external/github.com/gpuweb/cts@bc5d36d244b3d6fe7c1a20297e261f6c0e05f664',
+    'url': '{chromium_git}/external/github.com/gpuweb/cts@68753bbc67e91effa0c2c804d64440350e03e21f',
     'condition': 'build_with_chromium',
   },
 
@@ -288,6 +288,17 @@ deps = {
 
   'tools/protoc_wrapper': {
     'url': '{chromium_git}/chromium/src/tools/protoc_wrapper@b5ea227bd88235ab3ccda964d5f3819c4e2d8032',
+    'condition': 'dawn_standalone',
+  },
+
+  # Dependencies for tintd.
+  'third_party/jsoncpp': {
+    'url': '{github_git}/open-source-parsers/jsoncpp.git@69098a18b9af0c47549d9a271c054d13ca92b006',
+    'condition': 'dawn_standalone',
+  },
+
+  'third_party/langsvr': {
+    'url': '{github_git}/google/langsvr.git@a79fcb7068cb9c75ad77df9abe16d726402477aa',
     'condition': 'dawn_standalone',
   },
 

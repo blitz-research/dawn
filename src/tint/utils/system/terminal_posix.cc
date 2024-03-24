@@ -38,31 +38,18 @@
 #include <string_view>
 #include <utility>
 
+#include "src/tint/utils/containers/vector.h"
+#include "src/tint/utils/macros/compiler.h"
 #include "src/tint/utils/macros/defer.h"
 #include "src/tint/utils/system/env.h"
 #include "src/tint/utils/system/terminal.h"
 
 namespace tint {
+namespace {
 
-bool TerminalSupportsColors(FILE* f) {
-    if (!isatty(fileno(f))) {
-        return false;
-    }
-
-    if (auto term = GetEnvVar("TERM"); !term.empty()) {
-        return term == "cygwin" || term == "linux" || term == "rxvt-unicode-256color" ||
-               term == "rxvt-unicode" || term == "screen-256color" || term == "screen" ||
-               term == "tmux-256color" || term == "tmux" || term == "xterm-256color" ||
-               term == "xterm-color" || term == "xterm";
-    }
-
-    return false;
-}
-
-/// Probes the terminal using a Device Control escape sequence to get the background color.
-/// @see https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Device-Control-functions
-std::optional<bool> TerminalIsDark(FILE* out) {
-    if (!TerminalSupportsColors(out)) {
+std::optional<bool> TerminalIsDarkImpl(FILE* out) {
+    // Check the terminal can be queried, and supports colors.
+    if (!isatty(STDIN_FILENO) || !TerminalSupportsColors(out)) {
         return std::nullopt;
     }
 
@@ -74,34 +61,56 @@ std::optional<bool> TerminalIsDark(FILE* out) {
 
     // Store the current attributes for 'out', restore it before returning
     termios original_state{};
-    tcgetattr(out_fd, &original_state);
+    if (tcgetattr(out_fd, &original_state) != 0) {
+        return std::nullopt;
+    }
     TINT_DEFER(tcsetattr(out_fd, TCSADRAIN, &original_state));
 
     // Prevent echoing.
     termios state = original_state;
     state.c_lflag &= ~static_cast<tcflag_t>(ECHO | ICANON);
-    tcsetattr(out_fd, TCSADRAIN, &state);
+    if (tcsetattr(out_fd, TCSADRAIN, &state) != 0) {
+        return std::nullopt;
+    }
 
     // Emit the device control escape sequence to query the terminal colors.
-    static constexpr std::string_view kQuery = "\x1b]11;?\x07";
+    static constexpr std::string_view kQuery = "\033]11;?\033\\";
     fwrite(kQuery.data(), 1, kQuery.length(), out);
     fflush(out);
 
     // Timeout for attempting to read the response.
-    static constexpr auto kTimeout = std::chrono::milliseconds(100);
+    static constexpr auto kTimeout = std::chrono::milliseconds(300);
 
     // Record the start time.
     auto start = std::chrono::steady_clock::now();
 
+    // Returns true if there's data available on stdin, or false if no data was available after
+    // 100ms.
+    auto poll_stdin = [] {
+        // Note: These macros introduce identifiers that start with `__`.
+        TINT_BEGIN_DISABLE_WARNING(RESERVED_IDENTIFIER);
+        fd_set rfds{};
+        FD_ZERO(&rfds);
+        FD_SET(STDIN_FILENO, &rfds);
+        timeval tv{};
+        tv.tv_sec = 0;
+        tv.tv_usec = 100'000;
+        int res = select(STDIN_FILENO + 1, &rfds, nullptr, nullptr, &tv);
+        return res > 0 && FD_ISSET(STDIN_FILENO, &rfds);
+        TINT_END_DISABLE_WARNING(RESERVED_IDENTIFIER);
+    };
+
     // Helpers for parsing the response.
-    std::optional<char> peek;
+    Vector<char, 8> peek;
     auto read = [&]() -> std::optional<char> {
-        if (peek) {
-            char c = *peek;
-            peek.reset();
-            return c;
+        if (!peek.IsEmpty()) {
+            return peek.Pop();
         }
         while ((std::chrono::steady_clock::now() - start) < kTimeout) {
+            if (!poll_stdin()) {
+                return std::nullopt;
+            }
+
             char c;
             if (fread(&c, 1, 1, stdin) == 1) {
                 return c;
@@ -111,8 +120,15 @@ std::optional<bool> TerminalIsDark(FILE* out) {
     };
 
     auto match = [&](std::string_view str) {
-        for (char c : str) {
-            if (c != read()) {
+        for (size_t i = 0; i < str.length(); i++) {
+            auto c = read();
+            if (c != str[i]) {
+                if (c) {
+                    peek.Push(*c);
+                }
+                while (i != 0) {
+                    peek.Push(str[--i]);
+                }
                 return false;
             }
         }
@@ -137,7 +153,7 @@ std::optional<bool> TerminalIsDark(FILE* out) {
                 num = num * 16 + 10 + static_cast<uint32_t>(*c - 'A');
                 len++;
             } else {
-                peek = c;
+                peek.Push(*c);
                 break;
             }
         }
@@ -174,11 +190,39 @@ std::optional<bool> TerminalIsDark(FILE* out) {
             return std::nullopt;
     }
 
+    if (!match("\x07") && !match("\x1b")) {
+        return std::nullopt;
+    }
+
     // https://en.wikipedia.org/wiki/Relative_luminance
     float r = static_cast<float>(r_i.num) / static_cast<float>(max);
     float g = static_cast<float>(g_i.num) / static_cast<float>(max);
     float b = static_cast<float>(b_i.num) / static_cast<float>(max);
     return (0.2126f * r + 0.7152f * g + 0.0722f * b) < 0.5f;
+}
+
+}  // namespace
+
+bool TerminalSupportsColors(FILE* f) {
+    if (!isatty(fileno(f))) {
+        return false;
+    }
+
+    if (auto term = GetEnvVar("TERM"); !term.empty()) {
+        return term == "cygwin" || term == "linux" || term == "rxvt-unicode-256color" ||
+               term == "rxvt-unicode" || term == "screen-256color" || term == "screen" ||
+               term == "tmux-256color" || term == "tmux" || term == "xterm-256color" ||
+               term == "xterm-color" || term == "xterm";
+    }
+
+    return false;
+}
+
+/// Probes the terminal using a Device Control escape sequence to get the background color.
+/// @see https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Device-Control-functions
+std::optional<bool> TerminalIsDark(FILE* out) {
+    static std::optional<bool> result = TerminalIsDarkImpl(out);
+    return result;
 }
 
 }  // namespace tint

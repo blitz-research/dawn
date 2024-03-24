@@ -930,6 +930,9 @@ class MultithreadTextureCopyTests : public MultithreadTests {
 // CopyTextureToTexture() command might internally allocate resources and we need to make sure that
 // it won't race with other threads' works.
 TEST_P(MultithreadTextureCopyTests, CopyDepthToDepthNoRace) {
+    // TODO(crbug.com/dawn/1766): TSAN reported race conditions in NVIDIA's vk driver.
+    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsNvidia() && IsTsan());
+
     enum class Step {
         Begin,
         WriteTexture,
@@ -1077,6 +1080,9 @@ TEST_P(MultithreadTextureCopyTests, CopyStencilToStencilNoRace) {
 
     // TODO(dawn:1924): Intel Gen9 specific.
     DAWN_SUPPRESS_TEST_IF(IsD3D11() && IsIntelGen9());
+
+    // TODO(crbug.com/dawn/1766): TSAN reported race conditions in NVIDIA's vk driver.
+    DAWN_SUPPRESS_TEST_IF(IsVulkan() && IsNvidia() && IsTsan());
 
     enum class Step {
         Begin,

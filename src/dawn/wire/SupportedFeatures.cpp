@@ -41,6 +41,8 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_D3D11MultithreadProtected:
         case WGPUFeatureName_HostMappedPointer:
         case WGPUFeatureName_BufferMapExtendedUsages:
+        case WGPUFeatureName_FormatCapabilities:
+        case WGPUFeatureName_DrmFormatCapabilities:
             return false;
         // NOTE: SharedTextureMemory/SharedFence are not actually intended
         // for usage over the wire (and are not exposed over the wire as
@@ -95,6 +97,9 @@ bool IsFeatureSupported(WGPUFeatureName feature) {
         case WGPUFeatureName_FramebufferFetch:
         case WGPUFeatureName_AdapterPropertiesMemoryHeaps:
         case WGPUFeatureName_AdapterPropertiesD3D:
+        case WGPUFeatureName_AdapterPropertiesVk:
+        case WGPUFeatureName_R8UnormStorage:
+        case WGPUFeatureName_StaticSamplers:
             return true;
     }
 

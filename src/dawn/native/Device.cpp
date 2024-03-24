@@ -581,7 +581,7 @@ void DeviceBase::APIDestroy() {
 
 void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
                              InternalErrorType additionalAllowedErrors,
-                             WGPUDeviceLostReason lost_reason) {
+                             WGPUDeviceLostReason lostReason) {
     AppendDebugLayerMessages(error.get());
 
     InternalErrorType type = error->GetType();
@@ -634,13 +634,13 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
 
     const std::string messageStr = error->GetFormattedMessage();
     if (type == InternalErrorType::DeviceLost) {
-        // The device was lost, schedule the application callback's executation.
+        // The device was lost, schedule the application callback's execution.
         // Note: we don't invoke the callbacks directly here because it could cause re-entrances ->
         // possible deadlock.
         if (mDeviceLostCallback != nullptr) {
-            mCallbackTaskManager->AddCallbackTask([callback = mDeviceLostCallback, lost_reason,
+            mCallbackTaskManager->AddCallbackTask([callback = mDeviceLostCallback, lostReason,
                                                    messageStr, userdata = mDeviceLostUserdata] {
-                callback(lost_reason, messageStr.c_str(), userdata);
+                callback(lostReason, messageStr.c_str(), userdata);
             });
             mDeviceLostCallback = nullptr;
         }
@@ -658,9 +658,13 @@ void DeviceBase::HandleError(std::unique_ptr<ErrorData> error,
         // if it isn't handled. DeviceLost is not handled here because it should be
         // handled by the lost callback.
         bool captured = mErrorScopeStack->HandleError(ToWGPUErrorType(type), messageStr);
-        if (!captured && mUncapturedErrorCallback != nullptr) {
-            mUncapturedErrorCallback(static_cast<WGPUErrorType>(ToWGPUErrorType(type)),
-                                     messageStr.c_str(), mUncapturedErrorUserdata);
+        if (!captured) {
+            // Only call the uncaptured error callback if the device is alive. After the
+            // device is lost, the uncaptured error callback should cease firing.
+            if (mUncapturedErrorCallback != nullptr && mState == State::Alive) {
+                mUncapturedErrorCallback(static_cast<WGPUErrorType>(ToWGPUErrorType(type)),
+                                         messageStr.c_str(), mUncapturedErrorUserdata);
+            }
         }
     }
 }
@@ -771,10 +775,16 @@ Future DeviceBase::APIPopErrorScopeF(const PopErrorScopeCallbackInfo& callbackIn
     };
 
     std::optional<ErrorScope> scope;
-    if (IsLost()) {
-        scope = ErrorScope(wgpu::ErrorType::DeviceLost, "GPU device disconnected");
-    } else if (!mErrorScopeStack->Empty()) {
-        scope = mErrorScopeStack->Pop();
+    {
+        // TODO(crbug.com/dawn/831) Manually acquire device lock instead of relying on code-gen for
+        // re-entrancy.
+        auto deviceLock(GetScopedLock());
+
+        if (IsLost()) {
+            scope = ErrorScope(wgpu::ErrorType::DeviceLost, "GPU device disconnected");
+        } else if (!mErrorScopeStack->Empty()) {
+            scope = mErrorScopeStack->Pop();
+        }
     }
 
     FutureID futureID = GetInstance()->GetEventManager()->TrackEvent(
@@ -1615,6 +1625,7 @@ void DeviceBase::SetWGSLExtensionAllowList() {
     if (IsToggleEnabled(Toggle::AllowUnsafeAPIs)) {
         mWGSLAllowedFeatures.extensions.insert(
             tint::wgsl::Extension::kChromiumDisableUniformityAnalysis);
+        mWGSLAllowedFeatures.extensions.insert(tint::wgsl::Extension::kChromiumInternalGraphite);
     }
     if (mEnabledFeatures.IsEnabled(Feature::DualSourceBlending)) {
         mWGSLAllowedFeatures.extensions.insert(
@@ -2182,6 +2193,10 @@ bool DeviceBase::IsToggleEnabled(Toggle toggle) const {
     return mToggles.IsEnabled(toggle);
 }
 
+const TogglesState& DeviceBase::GetTogglesState() const {
+    return mToggles;
+}
+
 void DeviceBase::ForceSetToggleForTesting(Toggle toggle, bool isEnabled) {
     mToggles.ForceSet(toggle, isEnabled);
 }
@@ -2295,27 +2310,27 @@ void DeviceBase::AddRenderPipelineAsyncCallbackTask(std::unique_ptr<ErrorData> e
 void DeviceBase::AddRenderPipelineAsyncCallbackTask(Ref<RenderPipelineBase> pipeline,
                                                     WGPUCreateRenderPipelineAsyncCallback callback,
                                                     void* userdata) {
-    mCallbackTaskManager->AddCallbackTask([callback, pipeline = std::move(pipeline),
-                                           userdata]() mutable {
-        // TODO(dawn:529): call AddOrGetCachedRenderPipeline() asynchronously in
-        // CreateRenderPipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
-        // thread-safe.
-        DAWN_ASSERT(pipeline != nullptr);
-        {
-            // This is called inside a callback, and no lock will be held by default so we have
-            // to lock now to protect the cache.
-            // Note: we don't lock inside AddOrGetCachedRenderPipeline() to avoid deadlock
-            // because many places calling that method might already have the lock held. For
-            // example, APICreateRenderPipeline()
-            DeviceBase* device = pipeline->GetDevice();
-            auto deviceLock(device->GetScopedLock());
-            if (device->GetState() == State::Alive) {
-                pipeline = device->AddOrGetCachedRenderPipeline(std::move(pipeline));
+    mCallbackTaskManager->AddCallbackTask(
+        [callback, pipeline = std::move(pipeline), userdata]() mutable {
+            // TODO(dawn:529): call AddOrGetCachedRenderPipeline() asynchronously in
+            // CreateRenderPipelineAsyncTaskImpl::Run() when the front-end pipeline cache is
+            // thread-safe.
+            DAWN_ASSERT(pipeline != nullptr);
+            {
+                // This is called inside a callback, and no lock will be held by default so we have
+                // to lock now to protect the cache.
+                // Note: we don't lock inside AddOrGetCachedRenderPipeline() to avoid deadlock
+                // because many places calling that method might already have the lock held. For
+                // example, APICreateRenderPipeline()
+                DeviceBase* device = pipeline->GetDevice();
+                auto deviceLock(device->GetScopedLock());
+                if (device->GetState() == State::Alive) {
+                    pipeline = device->AddOrGetCachedRenderPipeline(std::move(pipeline));
+                }
             }
-        }
-        callback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(ReturnToAPI(std::move(pipeline))), "",
-                 userdata);
-    });
+            callback(WGPUCreatePipelineAsyncStatus_Success, ToAPI(ReturnToAPI(std::move(pipeline))),
+                     "", userdata);
+        });
 }
 
 PipelineCompatibilityToken DeviceBase::GetNextPipelineCompatibilityToken() {

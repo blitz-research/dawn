@@ -36,6 +36,8 @@
 #include "dawn/native/Limits.h"
 #include "dawn/native/vulkan/BackendVk.h"
 #include "dawn/native/vulkan/DeviceVk.h"
+#include "dawn/native/vulkan/TextureVk.h"
+#include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/platform/DawnPlatform.h"
 
 #if DAWN_PLATFORM_IS(ANDROID)
@@ -246,6 +248,10 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::DualSourceBlending);
     }
 
+    if (mDeviceInfo.features.shaderStorageImageExtendedFormats == VK_TRUE) {
+        EnableFeature(Feature::R8UnormStorage);
+    }
+
     if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
         mDeviceInfo.HasExt(DeviceExt::_16BitStorage) &&
         mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
@@ -341,6 +347,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
     EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::TransientAttachments);
+    EnableFeature(Feature::AdapterPropertiesVk);
 
     // Enable ChromiumExperimentalSubgroups feature if:
     // 1. Vulkan API version is 1.1 or later, and
@@ -399,6 +406,10 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     if (CheckSemaphoreSupport(DeviceExt::ExternalSemaphoreFD,
                               VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHR)) {
         EnableFeature(Feature::SharedFenceVkSemaphoreOpaqueFD);
+    }
+
+    if (mDeviceInfo.HasExt(DeviceExt::ImageDrmFormatModifier)) {
+        EnableFeature(Feature::DrmFormatCapabilities);
     }
 }
 
@@ -856,6 +867,35 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& p
                 heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostCached;
             } else {
                 heapInfo[memoryType.heapIndex].properties |= wgpu::HeapProperty::HostUncached;
+            }
+        }
+    }
+    if (auto* vkProperties = properties.Get<AdapterPropertiesVk>()) {
+        vkProperties->driverVersion = mDeviceInfo.properties.driverVersion;
+    }
+}
+
+void PhysicalDevice::PopulateBackendFormatCapabilities(
+    wgpu::TextureFormat format,
+    UnpackedPtr<FormatCapabilities>& capabilities) const {
+    if (auto* drmCapabilities = capabilities.Get<DrmFormatCapabilities>()) {
+        auto vk_format = ColorVulkanImageFormat(format);
+        if (vk_format == VK_FORMAT_UNDEFINED) {
+            drmCapabilities->properties = nullptr;
+            drmCapabilities->propertiesCount = 0;
+        }
+        auto drmFormatModifiers =
+            GetFormatModifierProps(mVulkanInstance->GetFunctions(), mVkPhysicalDevice, vk_format);
+        if (!drmFormatModifiers.empty()) {
+            size_t count = drmFormatModifiers.size();
+            auto* properties = new DrmFormatProperties[count];
+            drmCapabilities->properties = properties;
+            drmCapabilities->propertiesCount = count;
+
+            for (size_t i = 0; i < count; i++) {
+                properties[i].modifier = drmFormatModifiers[i].drmFormatModifier;
+                properties[i].modifierPlaneCount =
+                    drmFormatModifiers[i].drmFormatModifierPlaneCount;
             }
         }
     }

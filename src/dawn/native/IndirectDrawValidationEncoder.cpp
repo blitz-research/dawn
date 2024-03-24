@@ -28,6 +28,7 @@
 #include "dawn/native/IndirectDrawValidationEncoder.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <memory>
@@ -376,7 +377,9 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
             }
 
             Pass* currentPass = passes.empty() ? nullptr : &passes.back();
-            if (currentPass && currentPass->inputIndirectBuffer == config.inputIndirectBuffer &&
+            if (currentPass &&
+                reinterpret_cast<uintptr_t>(currentPass->inputIndirectBuffer.get()) ==
+                    config.inputIndirectBufferPtr &&
                 currentPass->drawType == config.drawType) {
                 uint64_t nextBatchDataOffset =
                     Align(currentPass->batchDataSize, minStorageBufferOffsetAlignment);
@@ -394,7 +397,7 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
             newBatch.dataBufferOffset = 0;
 
             Pass newPass{};
-            newPass.inputIndirectBuffer = config.inputIndirectBuffer.get();
+            newPass.inputIndirectBuffer = validationInfo.GetIndirectBuffer();
             newPass.drawType = config.drawType;
             newPass.batchDataSize = newBatch.dataSize;
             newPass.batches.push_back(newBatch);

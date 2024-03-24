@@ -240,6 +240,8 @@ option_if_not_defined(TINT_BUILD_BENCHMARKS "Build Tint benchmarks" OFF)
 option_if_not_defined(TINT_BUILD_TESTS "Build tests" ON)
 option_if_not_defined(TINT_BUILD_AS_OTHER_OS "Override OS detection to force building of *_other.cc files" OFF)
 
+option_if_not_defined(TINT_BUILD_TINTD "Build the WGSL language server" OFF)
+
 set_if_not_defined(TINT_EXTERNAL_BENCHMARK_CORPUS_DIR "" "Directory that holds a corpus of external shaders to benchmark.")
 
 option_if_not_defined(TINT_ENABLE_BREAK_IN_DEBUGGER "Enable tint::debugger::Break()" OFF)
@@ -383,6 +385,7 @@ function(common_compile_options TARGET)
 
       -Wno-deprecated-builtins
       -Wno-unknown-warning-option
+      -Wno-switch-default
     )
 
     if (${DAWN_ENABLE_MSAN})

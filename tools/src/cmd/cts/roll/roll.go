@@ -83,6 +83,8 @@ type rollerFlags struct {
 	nodePath            string
 	auth                authcli.Flags
 	cacheDir            string
+	ctsGitURL           string
+	ctsRevision         string
 	force               bool // Create a new roll, even if CTS is up to date
 	rebuild             bool // Rebuild the expectations file from scratch
 	preserve            bool // If false, abandon past roll changes
@@ -112,6 +114,8 @@ func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, e
 	flag.StringVar(&c.flags.npmPath, "npm", npmPath, "path to npm")
 	flag.StringVar(&c.flags.nodePath, "node", fileutils.NodePath(), "path to node")
 	flag.StringVar(&c.flags.cacheDir, "cache", common.DefaultCacheDir, "path to the results cache")
+	flag.StringVar(&c.flags.ctsGitURL, "repo", cfg.Git.CTS.HttpsURL(), "the CTS source repo")
+	flag.StringVar(&c.flags.ctsRevision, "revision", refMain, "revision of the CTS to roll")
 	flag.BoolVar(&c.flags.force, "force", false, "create a new roll, even if CTS is up to date")
 	flag.BoolVar(&c.flags.rebuild, "rebuild", false, "rebuild the expectation file from scratch")
 	flag.BoolVar(&c.flags.preserve, "preserve", false, "do not abandon existing rolls")
@@ -159,10 +163,6 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 	if err != nil {
 		return err
 	}
-	chromium, err := gitiles.New(ctx, cfg.Git.CTS.Host, cfg.Git.CTS.Project)
-	if err != nil {
-		return err
-	}
 	dawn, err := gitiles.New(ctx, cfg.Git.Dawn.Host, cfg.Git.Dawn.Project)
 	if err != nil {
 		return err
@@ -186,11 +186,14 @@ func (c *cmd) Run(ctx context.Context, cfg common.Config) error {
 		rdb:                 rdb,
 		git:                 git,
 		gerrit:              gerrit,
-		chromium:            chromium,
-		dawn:                dawn,
+		gitiles:             gitilesRepos{dawn: dawn},
 		ctsDir:              ctsDir,
 	}
 	return r.roll(ctx)
+}
+
+type gitilesRepos struct {
+	dawn *gitiles.Gitiles
 }
 
 type roller struct {
@@ -202,20 +205,32 @@ type roller struct {
 	rdb                 *resultsdb.ResultsDB
 	git                 *git.Git
 	gerrit              *gerrit.Gerrit
-	chromium            *gitiles.Gitiles
-	dawn                *gitiles.Gitiles
+	gitiles             gitilesRepos
 	ctsDir              string
 }
 
 func (r *roller) roll(ctx context.Context) error {
 	// Fetch the latest Dawn main revision
-	dawnHash, err := r.dawn.Hash(ctx, refMain)
+	dawnHash, err := r.gitiles.dawn.Hash(ctx, refMain)
 	if err != nil {
 		return err
 	}
 
+	// Checkout the CTS at the latest revision
+	ctsRepo, err := r.checkout("cts", r.ctsDir, r.flags.ctsGitURL, r.flags.ctsRevision)
+	if err != nil {
+		return err
+	}
+
+	// Obtain the target CTS revision hash
+	ctsRevisionLog, err := ctsRepo.Log(&git.LogOptions{From: r.flags.ctsRevision + "^", To: r.flags.ctsRevision})
+	if err != nil {
+		return err
+	}
+	newCTSHash := ctsRevisionLog[0].Hash.String()
+
 	// Update the DEPS file
-	updatedDEPS, newCTSHash, oldCTSHash, err := r.updateDEPS(ctx, dawnHash)
+	updatedDEPS, oldCTSHash, err := r.updateDEPS(ctx, dawnHash, newCTSHash)
 	if err != nil {
 		return err
 	}
@@ -226,12 +241,6 @@ func (r *roller) roll(ctx context.Context) error {
 	}
 
 	log.Printf("starting CTS roll from %v to %v...", oldCTSHash[:8], newCTSHash[:8])
-
-	// Checkout the CTS at the latest revision
-	ctsRepo, err := r.checkout("cts", r.ctsDir, r.cfg.Git.CTS.HttpsURL(), newCTSHash)
-	if err != nil {
-		return err
-	}
 
 	// Fetch the log of changes between last roll and now
 	ctsLog, err := ctsRepo.Log(&git.LogOptions{From: oldCTSHash, To: newCTSHash})
@@ -263,7 +272,7 @@ func (r *roller) roll(ctx context.Context) error {
 
 	// Download and parse the expectations files
 	for _, exInfo := range exInfos {
-		expectationsFile, err := r.dawn.DownloadFile(ctx, refMain, exInfo.path)
+		expectationsFile, err := r.gitiles.dawn.DownloadFile(ctx, refMain, exInfo.path)
 		if err != nil {
 			return err
 		}
@@ -304,7 +313,7 @@ func (r *roller) roll(ctx context.Context) error {
 	}()
 
 	deletedFiles := []string{}
-	if currentWebTestFiles, err := r.dawn.ListFiles(ctx, dawnHash, webTestsPath); err != nil {
+	if currentWebTestFiles, err := r.gitiles.dawn.ListFiles(ctx, dawnHash, webTestsPath); err != nil {
 		// If there's an error, allow NotFound. It means the directory did not exist, so no files
 		// need to be deleted.
 		if e, ok := status.FromError(err); !ok || e.Code() != codes.NotFound {
@@ -522,7 +531,14 @@ func (r *roller) rollCommitMessage(
 	ctsLog []git.CommitInfo,
 	changeID string) string {
 
+	isExternalRepo := r.flags.ctsGitURL != r.cfg.Git.CTS.HttpsURL()
+
 	msg := &strings.Builder{}
+	if isExternalRepo {
+		// note: intentionally split to fool the pre-submit checks!
+		msg.WriteString("[DO NOT")
+		msg.WriteString(" SUBMIT] ")
+	}
 	msg.WriteString(common.RollSubjectPrefix)
 	msg.WriteString(oldCTSHash[:9])
 	msg.WriteString("..")
@@ -535,6 +551,11 @@ func (r *roller) rollCommitMessage(
 		msg.WriteString(" commits)")
 	}
 	msg.WriteString("\n\n")
+	if isExternalRepo {
+		msg.WriteString("Rolled from external repo: ")
+		msg.WriteString(r.flags.ctsGitURL)
+		msg.WriteString("\n\n")
+	}
 	msg.WriteString("Regenerated:\n")
 	msg.WriteString(" - expectations.txt\n")
 	msg.WriteString(" - compat-expectations.txt\n")
@@ -582,11 +603,15 @@ func (r *roller) rollCommitMessage(
 		msg.WriteString("\n")
 	}
 	msg.WriteString("Include-Ci-Only-Tests: true\n")
+	if isExternalRepo {
+		msg.WriteString("Commit: false\n")
+	}
 	if changeID != "" {
 		msg.WriteString("Change-Id: ")
 		msg.WriteString(changeID)
 		msg.WriteString("\n")
 	}
+
 	return msg.String()
 }
 
@@ -760,23 +785,18 @@ func (r *roller) generateFiles(ctx context.Context) (map[string]string, error) {
 	return files, nil
 }
 
-// updateDEPS fetches and updates the Dawn DEPS file at 'dawnRef' so that all
-// CTS hashes are changed to the latest CTS hash.
-func (r *roller) updateDEPS(ctx context.Context, dawnRef string) (newDEPS, newCTSHash, oldCTSHash string, err error) {
-	newCTSHash, err = r.chromium.Hash(ctx, refMain)
+// updateDEPS fetches and updates the Dawn DEPS file at 'dawnRef' so that all CTS hashes are changed to newCTSHash
+func (r *roller) updateDEPS(ctx context.Context, dawnRef, newCTSHash string) (newDEPS, oldCTSHash string, err error) {
+	deps, err := r.gitiles.dawn.DownloadFile(ctx, dawnRef, depsRelPath)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
-	deps, err := r.dawn.DownloadFile(ctx, dawnRef, depsRelPath)
+	newDEPS, oldCTSHash, err = common.UpdateCTSHashInDeps(deps, r.flags.ctsGitURL, newCTSHash)
 	if err != nil {
-		return "", "", "", err
-	}
-	newDEPS, oldCTSHash, err = common.UpdateCTSHashInDeps(deps, newCTSHash)
-	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
-	return newDEPS, newCTSHash, oldCTSHash, nil
+	return newDEPS, oldCTSHash, nil
 }
 
 // genTSDepList returns a list of source files, for the CTS checkout at r.ctsDir

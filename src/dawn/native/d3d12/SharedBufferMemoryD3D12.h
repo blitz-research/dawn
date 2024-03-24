@@ -42,6 +42,19 @@ class SharedBufferMemory final : public SharedBufferMemoryBase {
         Device* device,
         const char* label,
         const SharedBufferMemoryD3D12ResourceDescriptor* descriptor);
+
+    ID3D12Resource* GetD3DResource() const;
+
+  private:
+    SharedBufferMemory(Device* device,
+                       const char* label,
+                       SharedBufferMemoryProperties properties,
+                       ComPtr<ID3D12Resource> resource);
+
+    ResultOrError<Ref<BufferBase>> CreateBufferImpl(
+        const UnpackedPtr<BufferDescriptor>& descriptor) override;
+
+    ComPtr<ID3D12Resource> mResource;
 };
 
 }  // namespace dawn::native::d3d12

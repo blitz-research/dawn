@@ -56,6 +56,9 @@ class Queue final : public d3d::Queue {
     // DeviceBase is fully created.
     MaybeError InitializePendingContext();
 
+    // Register the pending map buffer to be checked.
+    void TrackPendingMapBuffer(Ref<Buffer>&& buffer, ExecutionSerial readySerial);
+
   private:
     using d3d::Queue::Queue;
 
@@ -83,11 +86,15 @@ class Queue final : public d3d::Queue {
     ResultOrError<Ref<d3d::SharedFence>> GetOrCreateSharedFence() override;
     void SetEventOnCompletion(ExecutionSerial serial, HANDLE event) override;
 
+    // Check all pending map buffers, and actually map the ready ones.
+    MaybeError CheckAndMapReadyBuffers(ExecutionSerial completedSerial);
+
     ComPtr<ID3D11Fence> mFence;
     HANDLE mFenceEvent = nullptr;
     Ref<SharedFence> mSharedFence;
     MutexProtected<CommandRecordingContext, CommandRecordingContextGuard> mPendingCommands;
     std::atomic<bool> mPendingCommandsNeedSubmit = false;
+    SerialMap<ExecutionSerial, Ref<Buffer>> mPendingMapBuffers;
 };
 
 }  // namespace dawn::native::d3d11
