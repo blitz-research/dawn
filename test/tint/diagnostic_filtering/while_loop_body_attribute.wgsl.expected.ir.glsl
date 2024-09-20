@@ -12,7 +12,7 @@ SKIP: FAILED
     v = textureSample(t, s, vec2(0, 0));
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:350 internal compiler error: Switch() matched no cases. Type: tint::core::type::SampledTexture
+<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:1451 internal compiler error: TINT_UNREACHABLE unhandled core builtin: textureSample
 ********************************************************************
 *  The tint shader compiler has encountered an unexpected error.   *
 *                                                                  *
@@ -20,4 +20,4 @@ SKIP: FAILED
 *  crbug.com/tint with the source program that triggered the bug.  *
 ********************************************************************
 
-tint executable returned error: signal: illegal instruction
+tint executable returned error: signal: trace/BPT trap

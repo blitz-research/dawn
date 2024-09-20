@@ -1,5 +1,6 @@
 #version 310 es
 
+
 struct S {
   float a;
 };
@@ -36,4 +37,14 @@ S ret_struct() {
 }
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
+  bool a = ret_bool();
+  int b = ret_i32();
+  uint c = ret_u32();
+  float d = ret_f32();
+  ivec2 e = ret_v2i32();
+  uvec3 f = ret_v3u32();
+  vec4 g = ret_v4f32();
+  mat2x3 h = ret_m2x3();
+  float i[4] = ret_arr();
+  S j = ret_struct();
 }

@@ -5884,6 +5884,8 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BuiltinWorkgroupAtomicSub) {
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), core::BuiltinFn::kAtomicSub,
                           b.Access(ty.ptr<workgroup, atomic<i32>, read_write>(), var, 1_u), 123_i));
+        b.Let("y", b.Call(ty.u32(), core::BuiltinFn::kAtomicSub,
+                          b.Access(ty.ptr<workgroup, atomic<u32>, read_write>(), var, 2_u), 123_u));
         b.Return(func);
     });
 
@@ -5903,6 +5905,9 @@ $B1: {  # root
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:i32 = atomicSub %3, 123i
     %x:i32 = let %4
+    %6:ptr<workgroup, atomic<u32>, read_write> = access %v, 2u
+    %7:u32 = atomicSub %6, 123u
+    %y:u32 = let %7
     ret
   }
 }
@@ -5924,10 +5929,16 @@ $B1: {  # root
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:ptr<function, i32, read_write> = var, 0i
-    %5:i32 = negation 123i
+    %5:i32 = sub 0i, 123i
     %6:void = hlsl.InterlockedAdd %3, %5, %4
     %7:i32 = load %4
     %x:i32 = let %7
+    %9:ptr<workgroup, atomic<u32>, read_write> = access %v, 2u
+    %10:ptr<function, u32, read_write> = var, 0u
+    %11:u32 = sub 0u, 123u
+    %12:void = hlsl.InterlockedAdd %9, %11, %10
+    %13:u32 = load %10
+    %y:u32 = let %13
     ret
   }
 }
@@ -6983,6 +6994,78 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupShuffleXor) {
     %3:u32 = xor %2, 1u
     %4:i32 = hlsl.WaveReadLaneAt 1i, %3
     %a:i32 = let %4
+    ret
+  }
+}
+)";
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupInclusiveAdd) {
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        auto* let_a = b.Let("a", 2_f);
+        b.Let("b", b.Call(ty.f32(), core::BuiltinFn::kSubgroupInclusiveAdd, let_a->Result(0)));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %a:f32 = let 2.0f
+    %3:f32 = subgroupInclusiveAdd %a
+    %b:f32 = let %3
+    ret
+  }
+}
+)";
+
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %a:f32 = let 2.0f
+    %3:f32 = subgroupExclusiveAdd %a
+    %4:f32 = add %3, %a
+    %b:f32 = let %4
+    ret
+  }
+}
+)";
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, SubgroupInclusiveMul) {
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        auto* let_a = b.Let("a", 2_f);
+        b.Let("b", b.Call(ty.f32(), core::BuiltinFn::kSubgroupInclusiveMul, let_a->Result(0)));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %a:f32 = let 2.0f
+    %3:f32 = subgroupInclusiveMul %a
+    %b:f32 = let %3
+    ret
+  }
+}
+)";
+
+    ASSERT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %a:f32 = let 2.0f
+    %3:f32 = subgroupExclusiveMul %a
+    %4:f32 = mul %3, %a
+    %b:f32 = let %4
     ret
   }
 }

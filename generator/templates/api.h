@@ -72,6 +72,8 @@
 #define {{API}}_NULLABLE
 #endif
 
+#define WGPU_BREAKING_CHANGE_DROP_DESCRIPTOR
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -221,7 +223,7 @@ typedef struct {{API}}ChainedStructOut {
             /*.nextInChain=*/nullptr {{API}}_COMMA \
         {% endif %}
         {% if type.chained %}
-            /*.chain=*/{} {{API}}_COMMA \
+            /*.chain=*/{/*.nextInChain*/nullptr {{API}}_COMMA /*.sType*/{{API}}SType_{{type.name.CamelCase()}}} {{API}}_COMMA \
         {% endif %}
         {% for member in type.members %}
             /*.{{as_varName(member.name)}}=*/{{render_c_default_value(member)}} {{API}}_COMMA \

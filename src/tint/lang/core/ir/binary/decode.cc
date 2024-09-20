@@ -236,12 +236,17 @@ struct Decoder {
     // Functions
     ////////////////////////////////////////////////////////////////////////////
     ir::Function* CreateFunction(const pb::Function&) {
-        return mod_out_.allocators.values.Create<ir::Function>();
+        return mod_out_.CreateValue<ir::Function>();
     }
 
     void PopulateFunction(ir::Function* fn_out, const pb::Function& fn_in) {
         if (!fn_in.name().empty()) {
-            mod_out_.SetName(fn_out, fn_in.name());
+            if (DAWN_UNLIKELY(fn_in.name().find('\0') != std::string::npos)) {
+                Error() << "function name '" << fn_in.name()
+                        << "' contains '\\0' before end of the string";
+            } else {
+                mod_out_.SetName(fn_out, fn_in.name());
+            }
         }
         fn_out->SetReturnType(Type(fn_in.return_type()));
         if (fn_in.has_pipeline_stage()) {
@@ -466,99 +471,89 @@ struct Decoder {
     }
 
     ir::Access* CreateInstructionAccess(const pb::InstructionAccess&) {
-        return mod_out_.allocators.instructions.Create<ir::Access>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Access>();
     }
 
     ir::CoreBinary* CreateInstructionBinary(const pb::InstructionBinary& binary_in) {
-        auto* binary_out =
-            mod_out_.allocators.instructions.Create<ir::CoreBinary>(mod_out_.NextInstructionId());
+        auto* binary_out = mod_out_.CreateInstruction<ir::CoreBinary>();
         binary_out->SetOp(BinaryOp(binary_in.op()));
         return binary_out;
     }
 
     ir::Bitcast* CreateInstructionBitcast(const pb::InstructionBitcast&) {
-        return mod_out_.allocators.instructions.Create<ir::Bitcast>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Bitcast>();
     }
 
     ir::BreakIf* CreateInstructionBreakIf(const pb::InstructionBreakIf&) {
-        auto* break_if_out =
-            mod_out_.allocators.instructions.Create<ir::BreakIf>(mod_out_.NextInstructionId());
+        auto* break_if_out = mod_out_.CreateInstruction<ir::BreakIf>();
         break_ifs_.Push(break_if_out);
         return break_if_out;
     }
 
     ir::CoreBuiltinCall* CreateInstructionBuiltinCall(const pb::InstructionBuiltinCall& call_in) {
-        auto* call_out = mod_out_.allocators.instructions.Create<ir::CoreBuiltinCall>(
-            mod_out_.NextInstructionId());
+        auto* call_out = mod_out_.CreateInstruction<ir::CoreBuiltinCall>();
         call_out->SetFunc(BuiltinFn(call_in.builtin()));
         return call_out;
     }
 
     ir::Construct* CreateInstructionConstruct(const pb::InstructionConstruct&) {
-        return mod_out_.allocators.instructions.Create<ir::Construct>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Construct>();
     }
 
     ir::Continue* CreateInstructionContinue(const pb::InstructionContinue&) {
-        auto* continue_ =
-            mod_out_.allocators.instructions.Create<ir::Continue>(mod_out_.NextInstructionId());
+        auto* continue_ = mod_out_.CreateInstruction<ir::Continue>();
         continues_.Push(continue_);
         return continue_;
     }
 
     ir::Convert* CreateInstructionConvert(const pb::InstructionConvert&) {
-        return mod_out_.allocators.instructions.Create<ir::Convert>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Convert>();
     }
 
     ir::ExitIf* CreateInstructionExitIf(const pb::InstructionExitIf&) {
-        auto* exit_out =
-            mod_out_.allocators.instructions.Create<ir::ExitIf>(mod_out_.NextInstructionId());
+        auto* exit_out = mod_out_.CreateInstruction<ir::ExitIf>();
         exit_ifs_.Push(exit_out);
         return exit_out;
     }
 
     ir::ExitLoop* CreateInstructionExitLoop(const pb::InstructionExitLoop&) {
-        auto* exit_out =
-            mod_out_.allocators.instructions.Create<ir::ExitLoop>(mod_out_.NextInstructionId());
+        auto* exit_out = mod_out_.CreateInstruction<ir::ExitLoop>();
         exit_loops_.Push(exit_out);
         return exit_out;
     }
 
     ir::ExitSwitch* CreateInstructionExitSwitch(const pb::InstructionExitSwitch&) {
-        auto* exit_out =
-            mod_out_.allocators.instructions.Create<ir::ExitSwitch>(mod_out_.NextInstructionId());
+        auto* exit_out = mod_out_.CreateInstruction<ir::ExitSwitch>();
         exit_switches_.Push(exit_out);
         return exit_out;
     }
 
     ir::Discard* CreateInstructionDiscard(const pb::InstructionDiscard&) {
-        return mod_out_.allocators.instructions.Create<ir::Discard>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Discard>();
     }
 
     ir::If* CreateInstructionIf(const pb::InstructionIf& if_in) {
-        auto* if_out =
-            mod_out_.allocators.instructions.Create<ir::If>(mod_out_.NextInstructionId());
+        auto* if_out = mod_out_.CreateInstruction<ir::If>();
         if_out->SetTrue(if_in.has_true_() ? Block(if_in.true_()) : b.Block());
         if_out->SetFalse(if_in.has_false_() ? Block(if_in.false_()) : b.Block());
         return if_out;
     }
 
     ir::Let* CreateInstructionLet(const pb::InstructionLet&) {
-        return mod_out_.allocators.instructions.Create<ir::Let>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Let>();
     }
 
     ir::Load* CreateInstructionLoad(const pb::InstructionLoad&) {
-        return mod_out_.allocators.instructions.Create<ir::Load>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Load>();
     }
 
     ir::LoadVectorElement* CreateInstructionLoadVectorElement(
         const pb::InstructionLoadVectorElement&) {
-        return mod_out_.allocators.instructions.Create<ir::LoadVectorElement>(
-            mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::LoadVectorElement>();
     }
 
     ir::Loop* CreateInstructionLoop(const pb::InstructionLoop& loop_in) {
-        auto* loop_out =
-            mod_out_.allocators.instructions.Create<ir::Loop>(mod_out_.NextInstructionId());
+        auto* loop_out = mod_out_.CreateInstruction<ir::Loop>();
         if (loop_in.has_initializer()) {
             loop_out->SetInitializer(Block(loop_in.initializer()));
         } else {
@@ -574,29 +569,26 @@ struct Decoder {
     }
 
     ir::NextIteration* CreateInstructionNextIteration(const pb::InstructionNextIteration&) {
-        auto* next_it_out = mod_out_.allocators.instructions.Create<ir::NextIteration>(
-            mod_out_.NextInstructionId());
+        auto* next_it_out = mod_out_.CreateInstruction<ir::NextIteration>();
         next_iterations_.Push(next_it_out);
         return next_it_out;
     }
 
     ir::Return* CreateInstructionReturn(const pb::InstructionReturn&) {
-        return mod_out_.allocators.instructions.Create<ir::Return>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Return>();
     }
 
     ir::Store* CreateInstructionStore(const pb::InstructionStore&) {
-        return mod_out_.allocators.instructions.Create<ir::Store>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::Store>();
     }
 
     ir::StoreVectorElement* CreateInstructionStoreVectorElement(
         const pb::InstructionStoreVectorElement&) {
-        return mod_out_.allocators.instructions.Create<ir::StoreVectorElement>(
-            mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::StoreVectorElement>();
     }
 
     ir::Swizzle* CreateInstructionSwizzle(const pb::InstructionSwizzle& swizzle_in) {
-        auto* swizzle_out =
-            mod_out_.allocators.instructions.Create<ir::Swizzle>(mod_out_.NextInstructionId());
+        auto* swizzle_out = mod_out_.CreateInstruction<ir::Swizzle>();
         Vector<uint32_t, 4> indices;
         for (auto idx : swizzle_in.indices()) {
             indices.Push(idx);
@@ -606,8 +598,7 @@ struct Decoder {
     }
 
     ir::Switch* CreateInstructionSwitch(const pb::InstructionSwitch& switch_in) {
-        auto* switch_out =
-            mod_out_.allocators.instructions.Create<ir::Switch>(mod_out_.NextInstructionId());
+        auto* switch_out = mod_out_.CreateInstruction<ir::Switch>();
         for (auto& case_in : switch_in.cases()) {
             ir::Switch::Case case_out{};
             case_out.block = Block(case_in.block());
@@ -627,19 +618,17 @@ struct Decoder {
     }
 
     ir::CoreUnary* CreateInstructionUnary(const pb::InstructionUnary& unary_in) {
-        auto* unary_out =
-            mod_out_.allocators.instructions.Create<ir::CoreUnary>(mod_out_.NextInstructionId());
+        auto* unary_out = mod_out_.CreateInstruction<ir::CoreUnary>();
         unary_out->SetOp(UnaryOp(unary_in.op()));
         return unary_out;
     }
 
     ir::UserCall* CreateInstructionUserCall(const pb::InstructionUserCall&) {
-        return mod_out_.allocators.instructions.Create<ir::UserCall>(mod_out_.NextInstructionId());
+        return mod_out_.CreateInstruction<ir::UserCall>();
     }
 
     ir::Var* CreateInstructionVar(const pb::InstructionVar& var_in) {
-        auto* var_out =
-            mod_out_.allocators.instructions.Create<ir::Var>(mod_out_.NextInstructionId());
+        auto* var_out = mod_out_.CreateInstruction<ir::Var>();
         if (var_in.has_binding_point()) {
             auto& bp_in = var_in.binding_point();
             var_out->SetBindingPoint(bp_in.group(), bp_in.binding());
@@ -956,6 +945,11 @@ struct Decoder {
         auto* type = Type(res_in.type());
         auto* res_out = b.InstructionResult(type);
         if (!res_in.name().empty()) {
+            if (DAWN_UNLIKELY(res_in.name().find('\0') != std::string::npos)) {
+                Error() << "result name '" << res_in.name()
+                        << "' contains '\\0' before end of the string";
+                return nullptr;
+            }
             mod_out_.SetName(res_out, res_in.name());
         }
         return res_out;
@@ -965,6 +959,11 @@ struct Decoder {
         auto* type = Type(param_in.type());
         auto* param_out = b.FunctionParam(type);
         if (!param_in.name().empty()) {
+            if (DAWN_UNLIKELY(param_in.name().find('\0') != std::string::npos)) {
+                Error() << "param name '" << param_in.name()
+                        << "' contains '\\0' before end of the string";
+                return nullptr;
+            }
             mod_out_.SetName(param_out, param_in.name());
         }
 
@@ -998,6 +997,11 @@ struct Decoder {
         auto* type = Type(param_in.type());
         auto* param_out = b.BlockParam(type);
         if (!param_in.name().empty()) {
+            if (DAWN_UNLIKELY(param_in.name().find('\0') != std::string::npos)) {
+                Error() << "param name '" << param_in.name()
+                        << "' contains '\\0' before end of the string";
+                return nullptr;
+            }
             mod_out_.SetName(param_out, param_in.name());
         }
         return param_out;
@@ -1661,10 +1665,14 @@ struct Decoder {
                 return core::BuiltinFn::kInputAttachmentLoad;
             case pb::BuiltinFn::subgroup_add:
                 return core::BuiltinFn::kSubgroupAdd;
+            case pb::BuiltinFn::subgroup_inclusive_add:
+                return core::BuiltinFn::kSubgroupInclusiveAdd;
             case pb::BuiltinFn::subgroup_exclusive_add:
                 return core::BuiltinFn::kSubgroupExclusiveAdd;
             case pb::BuiltinFn::subgroup_mul:
                 return core::BuiltinFn::kSubgroupMul;
+            case pb::BuiltinFn::subgroup_inclusive_mul:
+                return core::BuiltinFn::kSubgroupInclusiveMul;
             case pb::BuiltinFn::subgroup_exclusive_mul:
                 return core::BuiltinFn::kSubgroupExclusiveMul;
             case pb::BuiltinFn::subgroup_and:

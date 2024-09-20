@@ -79,9 +79,6 @@ struct State {
     /// A map from an integer vector type to a dot polyfill.
     Hashmap<const core::type::Vector*, core::ir::Function*, 4> integer_dot_polyfills{};
 
-    /// A map from an integer type to a packed 8-bit dot polyfill.
-    Hashmap<const core::type::Type*, core::ir::Function*, 2> packed_8bit_integer_dot_polyfills{};
-
     /// Process the module.
     void Process() {
         // Find the builtins that need replacing.
@@ -102,12 +99,13 @@ struct State {
                     case core::BuiltinFn::kAtomicXor:
                     case core::BuiltinFn::kDistance:
                     case core::BuiltinFn::kDot:
-                    case core::BuiltinFn::kDot4I8Packed:
-                    case core::BuiltinFn::kDot4U8Packed:
                     case core::BuiltinFn::kFrexp:
                     case core::BuiltinFn::kLength:
                     case core::BuiltinFn::kModf:
                     case core::BuiltinFn::kPack2X16Float:
+                    case core::BuiltinFn::kQuadSwapDiagonal:
+                    case core::BuiltinFn::kQuadSwapX:
+                    case core::BuiltinFn::kQuadSwapY:
                     case core::BuiltinFn::kQuantizeToF16:
                     case core::BuiltinFn::kSign:
                     case core::BuiltinFn::kTextureDimensions:
@@ -181,10 +179,6 @@ struct State {
                 case core::BuiltinFn::kDot:
                     Dot(builtin);
                     break;
-                case core::BuiltinFn::kDot4I8Packed:
-                case core::BuiltinFn::kDot4U8Packed:
-                    Dot4x8Packed(builtin);
-                    break;
                 case core::BuiltinFn::kFrexp:
                     Frexp(builtin);
                     break;
@@ -256,6 +250,17 @@ struct State {
                     ThreadgroupBarrier(builtin, BarrierType::kTexture);
                     break;
 
+                // QuadSwap builtins.
+                case core::BuiltinFn::kQuadSwapDiagonal:
+                    QuadSwap(builtin, 0b11);
+                    break;
+                case core::BuiltinFn::kQuadSwapX:
+                    QuadSwap(builtin, 0b01);
+                    break;
+                case core::BuiltinFn::kQuadSwapY:
+                    QuadSwap(builtin, 0b10);
+                    break;
+
                 // Pack/unpack builtins.
                 case core::BuiltinFn::kPack2X16Float:
                     Pack2x16Float(builtin);
@@ -274,8 +279,8 @@ struct State {
     /// @param builtin the builtin call instruction
     void AtomicCall(core::ir::CoreBuiltinCall* builtin, msl::BuiltinFn intrinsic) {
         auto args = Vector<core::ir::Value*, 4>{builtin->Args()};
-        args.Push(ir.allocators.values.Create<msl::ir::MemoryOrder>(
-            b.ConstantValue(u32(std::memory_order_relaxed))));
+        args.Push(
+            ir.CreateValue<msl::ir::MemoryOrder>(b.ConstantValue(u32(std::memory_order_relaxed))));
         auto* call = b.CallWithResult<msl::ir::BuiltinCall>(builtin->DetachResult(), intrinsic,
                                                             std::move(args));
         call->InsertBefore(builtin);
@@ -301,7 +306,7 @@ struct State {
             func->SetParams({ptr, cmp, val});
             b.Append(func->Block(), [&] {
                 auto* old_value = b.Var<function>("old_value", cmp)->Result(0);
-                auto* order = ir.allocators.values.Create<msl::ir::MemoryOrder>(
+                auto* order = ir.CreateValue<msl::ir::MemoryOrder>(
                     b.ConstantValue(u32(std::memory_order_relaxed)));
                 auto* call = b.Call<msl::ir::BuiltinCall>(
                     ty.bool_(), BuiltinFn::kAtomicCompareExchangeWeakExplicit,
@@ -377,51 +382,6 @@ struct State {
                 b.CallWithResult<msl::ir::BuiltinCall>(builtin->DetachResult(),
                                                        msl::BuiltinFn::kDot, arg0, arg1);
             }
-        });
-        builtin->Destroy();
-    }
-
-    /// Polyfill a packed 8-bit dot product call.
-    /// @param builtin the builtin call instruction
-    void Dot4x8Packed(core::ir::CoreBuiltinCall* builtin) {
-        b.InsertBefore(builtin, [&] {
-            auto* arg0 = builtin->Args()[0];
-            auto* arg1 = builtin->Args()[1];
-            auto* int32 = builtin->Result(0)->Type();
-            auto* int8 = int32->Is<core::type::I32>()
-                             ? static_cast<const core::type::Type*>(ty.i8())
-                             : static_cast<const core::type::Type*>(ty.u8());
-            // Calls to packed 8-bit dot products are polyfilled by casting to [u]char4, performing
-            // the dot product, and converting the result to a {i,u}32:
-            //   uchar4 vec1 = as_type<uchar4>(param_0);
-            //   uchar4 vec2 = as_type<uchar4>(param_1);
-            //   result = uint(vec1[0] * vec2[0] + vec1[1] * vec2[1]
-            //               + vec1[2] * vec2[2] + vec1[3] * vec2[3]);
-            auto* polyfill = packed_8bit_integer_dot_polyfills.GetOrAdd(int32, [&] {
-                auto* lhs_32 = b.FunctionParam("lhs", ty.u32());
-                auto* rhs_32 = b.FunctionParam("rhs", ty.u32());
-                auto* func = b.Function("tint_packed_8bit_dot", int32);
-                func->SetParams({lhs_32, rhs_32});
-                b.Append(func->Block(), [&] {
-                    auto* lhs = b.Bitcast(ty.vec4(int8), lhs_32);
-                    auto* rhs = b.Bitcast(ty.vec4(int8), rhs_32);
-                    core::ir::Value* sum = nullptr;
-                    for (uint32_t i = 0; i < 4; i++) {
-                        auto* l = b.Access(int8, lhs, u32(i));
-                        auto* r = b.Access(int8, rhs, u32(i));
-                        auto* mul = b.Binary<ir::Binary>(core::BinaryOp::kMultiply, int8, l, r);
-                        if (sum) {
-                            auto* add = b.Binary<ir::Binary>(core::BinaryOp::kAdd, int8, sum, mul);
-                            sum = add->Result(0);
-                        } else {
-                            sum = mul->Result(0);
-                        }
-                    }
-                    b.Return(func, b.Convert(int32, sum));
-                });
-                return func;
-            });
-            b.CallWithResult(builtin->DetachResult(), polyfill, arg0, arg1);
         });
         builtin->Destroy();
     }
@@ -517,7 +477,7 @@ struct State {
         // Convert the argument to f16 and then back again.
         b.InsertBefore(builtin, [&] {
             b.ConvertWithResult(builtin->DetachResult(),
-                                b.Convert(ty.match_width(ty.f16(), arg->Type()), arg));
+                                b.Convert(ty.MatchWidth(ty.f16(), arg->Type()), arg));
         });
         builtin->Destroy();
     }
@@ -533,7 +493,7 @@ struct State {
             if (type->IsIntegerScalarOrVector()) {
                 core::ir::Value* pos_one = b.MatchWidth(i32(1), type);
                 core::ir::Value* neg_one = b.MatchWidth(i32(-1), type);
-                const core::type::Type* bool_type = ty.match_width(ty.bool_(), type);
+                const core::type::Type* bool_type = ty.MatchWidth(ty.bool_(), type);
                 auto* zero = b.Zero(type);
                 auto* sign = b.Call(type, core::BuiltinFn::kSelect, neg_one, pos_one,
                                     b.GreaterThan(bool_type, arg, zero));
@@ -623,7 +583,7 @@ struct State {
             if (component->Type()->Is<core::type::I32>()) {
                 component = b.Constant(component->Value()->ValueAs<u32>());
             }
-            args.Push(ir.allocators.values.Create<msl::ir::Component>(component->Value()));
+            args.Push(ir.CreateValue<msl::ir::Component>(component->Value()));
         }
 
         // Call the `gather()` member function.
@@ -669,7 +629,7 @@ struct State {
         b.InsertBefore(builtin, [&] {
             // Convert the coordinates to unsigned integers if necessary.
             if (coords->Type()->IsSignedIntegerScalarOrVector()) {
-                coords = b.Convert(ty.match_width(ty.u32(), coords->Type()), coords)->Result(0);
+                coords = b.Convert(ty.MatchWidth(ty.u32(), coords->Type()), coords)->Result(0);
             }
 
             // Call the `read()` member function.
@@ -912,7 +872,7 @@ struct State {
         b.InsertBefore(builtin, [&] {
             // Convert the coordinates to unsigned integers if necessary.
             if (coords->Type()->IsSignedIntegerScalarOrVector()) {
-                coords = b.Convert(ty.match_width(ty.u32(), coords->Type()), coords)->Result(0);
+                coords = b.Convert(ty.MatchWidth(ty.u32(), coords->Type()), coords)->Result(0);
             }
 
             // Call the `write()` member function.
@@ -942,6 +902,18 @@ struct State {
         auto args = Vector<core::ir::Value*, 1>{b.Constant(u32(type))};
         auto* call = b.CallWithResult<msl::ir::BuiltinCall>(
             builtin->DetachResult(), msl::BuiltinFn::kThreadgroupBarrier, std::move(args));
+        call->InsertBefore(builtin);
+        builtin->Destroy();
+    }
+
+    /// Replace a quadSwap* builtin with the `quad_shuffle_xor()` intrinsic.
+    /// @param builtin the builtin call instruction
+    /// @param mask the shuffle mask
+    void QuadSwap(core::ir::CoreBuiltinCall* builtin, uint32_t mask) {
+        // Replace the builtin call with a call to the msl.quad_shuffle_xor intrinsic.
+        auto args = Vector<core::ir::Value*, 2>{builtin->Args()[0], b.Constant(u32(mask))};
+        auto* call = b.CallWithResult<msl::ir::BuiltinCall>(
+            builtin->DetachResult(), msl::BuiltinFn::kQuadShuffleXor, std::move(args));
         call->InsertBefore(builtin);
         builtin->Destroy();
     }

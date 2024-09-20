@@ -1,18 +1,11 @@
-SKIP: FAILED
-
 #version 310 es
+precision highp float;
+precision highp int;
 
-void const_decls() {
-}
-vec4 main() {
+layout(location = 0) out vec4 tint_symbol_loc0_Output;
+vec4 tint_symbol_inner() {
   return vec4(0.0f);
 }
-error: Error parsing GLSL shader:
-ERROR: 0:5: 'float' : type requires declaration of default precision qualifier 
-ERROR: 0:5: '' : compilation terminated 
-ERROR: 2 compilation errors.  No code generated.
-
-
-
-
-tint executable returned error: exit status 1
+void main() {
+  tint_symbol_loc0_Output = tint_symbol_inner();
+}

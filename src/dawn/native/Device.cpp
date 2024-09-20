@@ -490,7 +490,7 @@ MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
                 @fragment fn fs_empty_main() {}
             )";
         ShaderModuleDescriptor descriptor;
-        ShaderModuleWGSLDescriptor wgslDesc;
+        ShaderSourceWGSL wgslDesc;
         wgslDesc.code = kEmptyFragmentShader;
         descriptor.nextInChain = &wgslDesc;
 
@@ -2519,6 +2519,10 @@ bool DeviceBase::MayRequireDuplicationOfIndirectParameters() const {
 
 bool DeviceBase::ShouldDuplicateParametersForDrawIndirect(
     const RenderPipelineBase* renderPipelineBase) const {
+    return false;
+}
+
+bool DeviceBase::BackendWillValidateMultiDraw() const {
     return false;
 }
 

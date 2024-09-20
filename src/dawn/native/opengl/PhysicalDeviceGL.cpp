@@ -332,7 +332,7 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     // TODO(dawn:685, dawn:1448): Support higher values as ANGLE compiler always generates
     // additional shader varyings (gl_PointSize and dx_Position) on ANGLE D3D backends.
     limits->v1.maxInterStageShaderComponents =
-        std::min(limits->v1.maxInterStageShaderComponents, kMaxInterStageShaderComponents);
+        std::min(limits->v1.maxInterStageShaderComponents, kMaxInterStageShaderVariables * 4);
     limits->v1.maxInterStageShaderVariables =
         std::min(limits->v1.maxInterStageShaderVariables, kMaxInterStageShaderVariables);
 
@@ -477,6 +477,6 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     return {};
 }
 
-void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {}
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {}
 
 }  // namespace dawn::native::opengl

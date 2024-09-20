@@ -1,4 +1,4 @@
-SKIP: FAILED
+SKIP: INVALID
 
 
 enable subgroups;
@@ -52,3 +52,5 @@ Failed to generate: <dawn>/test/tint/builtins/gen/var/subgroupBroadcast/5196c8.w
 enable subgroups;
        ^^^^^^^^^
 
+
+tint executable returned error: exit status 1

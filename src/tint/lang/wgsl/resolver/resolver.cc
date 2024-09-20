@@ -71,6 +71,7 @@
 #include "src/tint/lang/wgsl/ast/interpolate_attribute.h"
 #include "src/tint/lang/wgsl/ast/loop_statement.h"
 #include "src/tint/lang/wgsl/ast/return_statement.h"
+#include "src/tint/lang/wgsl/ast/row_major_attribute.h"
 #include "src/tint/lang/wgsl/ast/switch_statement.h"
 #include "src/tint/lang/wgsl/ast/traverse_expressions.h"
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
@@ -133,9 +134,7 @@ constexpr size_t kMaxNestDepthOfCompositeType = 255;
 
 }  // namespace
 
-Resolver::Resolver(ProgramBuilder* builder,
-                   const wgsl::AllowedFeatures& allowed_features,
-                   wgsl::ValidationMode mode)
+Resolver::Resolver(ProgramBuilder* builder, const wgsl::AllowedFeatures& allowed_features)
     : b(*builder),
       diagnostics_(builder->Diagnostics()),
       const_eval_(builder->constants, diagnostics_),
@@ -145,7 +144,6 @@ Resolver::Resolver(ProgramBuilder* builder,
                  sem_,
                  enabled_extensions_,
                  allowed_features_,
-                 mode,
                  atomic_composite_info_,
                  valid_type_storage_layouts_),
       allowed_features_(allowed_features) {}
@@ -1595,6 +1593,13 @@ sem::Expression* Resolver::Expression(const ast::Expression* root) {
                     auto r = ast::TraverseExpressions(  //
                         (*binary)->rhs, [&](const ast::Expression* e) {
                             not_evaluated_.Add(e);
+                            if (e->Is<ast::IdentifierExpression>()) {
+                                // Template arguments are still evaluated when the outer identifier
+                                // expression is skipped. This happens in expressions like:
+                                //    false && array<T, N>()[i]
+                                // where we still need to evaluate and validate `N`.
+                                return ast::TraverseAction::Skip;
+                            }
                             return ast::TraverseAction::Descend;
                         });
                     if (!r) {
@@ -4174,10 +4179,7 @@ const core::type::ArrayCount* Resolver::ArrayCount(const ast::Expression* count_
 
     switch (count_sem->Stage()) {
         case core::EvaluationStage::kNotEvaluated:
-            // Happens in expressions like:
-            //    false && array<T, N>()[i]
-            // The end result will not be used, so just make N=1.
-            return b.create<core::type::ConstantArrayCount>(static_cast<uint32_t>(1));
+            ICE(count_expr->source) << "array element count was not evaluated";
 
         case core::EvaluationStage::kOverride: {
             // array count is an override expression.
@@ -4534,6 +4536,14 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                         return false;
                     }
                     attributes.invariant = true;
+                    return true;
+                },
+                [&](const ast::RowMajorAttribute* attr) {
+                    if (!type->Is<core::type::Matrix>()) {
+                        AddError(attr->source)
+                            << style::Attribute("@row_major") << " can only be applied to matrices";
+                        return false;
+                    }
                     return true;
                 },
                 [&](const ast::StrideAttribute* attr) {

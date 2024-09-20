@@ -1,4 +1,4 @@
-SKIP: FAILED
+SKIP: INVALID
 
 
 enable subgroups;
@@ -52,3 +52,5 @@ Failed to generate: <dawn>/test/tint/builtins/gen/literal/quadSwapDiagonal/2be5e
 enable subgroups;
        ^^^^^^^^^
 
+
+tint executable returned error: exit status 1

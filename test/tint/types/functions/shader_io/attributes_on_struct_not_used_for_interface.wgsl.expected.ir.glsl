@@ -1,11 +1,23 @@
-SKIP: FAILED
+#version 310 es
+precision highp float;
+precision highp int;
 
-<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:252 internal compiler error: Switch() matched no cases. Type: tint::core::ir::Store
-********************************************************************
-*  The tint shader compiler has encountered an unexpected error.   *
-*                                                                  *
-*  Please help us fix this issue by submitting a bug report at     *
-*  crbug.com/tint with the source program that triggered the bug.  *
-********************************************************************
 
-tint executable returned error: signal: illegal instruction
+struct S {
+  float f;
+  uint u;
+  vec4 v;
+};
+
+layout(binding = 0, std430)
+buffer tint_symbol_2_1_ssbo {
+  S tint_symbol_1;
+} v_1;
+void tint_store_and_preserve_padding(inout S target, S value_param) {
+  target.f = value_param.f;
+  target.u = value_param.u;
+  target.v = value_param.v;
+}
+void main() {
+  tint_store_and_preserve_padding(v_1.tint_symbol_1, S(1.0f, 2u, vec4(3.0f)));
+}

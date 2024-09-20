@@ -49,7 +49,6 @@
 #include "src/tint/lang/wgsl/ast/transform/renamer.h"
 #include "src/tint/lang/wgsl/ast/transform/single_entry_point.h"
 #include "src/tint/lang/wgsl/ast/transform/substitute_override.h"
-#include "src/tint/lang/wgsl/common/validation_mode.h"
 #include "src/tint/lang/wgsl/helpers/flatten_bindings.h"
 #include "src/tint/utils/cli/cli.h"
 #include "src/tint/utils/command/command.h"
@@ -181,7 +180,6 @@ struct Options {
     bool parse_only = false;
     bool disable_workgroup_init = false;
     bool validate = false;
-    bool compatibility_mode = false;
     bool print_hash = false;
     bool dump_inspector_bindings = false;
     bool enable_robustness = false;
@@ -218,6 +216,10 @@ struct Options {
 
     tint::hlsl::writer::PixelLocalOptions pixel_local_options;
 #endif  // TINT_BUILD_HLSL_WRITER
+
+#if TINT_BUILD_GLSL_WRITER
+    bool glsl_desktop = false;
+#endif  // TINT_BUILD_GLSL_WRITER
 
 #if TINT_BUILD_MSL_WRITER
     std::string xcrun_path;
@@ -325,6 +327,12 @@ When specified, automatically enables HLSL validation with DXC)",
     TINT_DEFER(opts->dxc_path = dxc_path.value.value_or(""));
 #endif  // TINT_BUILD_HLSL_WRITER
 
+#if TINT_BUILD_GLSL_WRITER
+    auto& glsl_desktop = options.Add<BoolOption>(
+        "glsl-desktop", "Set the version to the desktop GL instead of ES", Default{false});
+    TINT_DEFER(opts->glsl_desktop = *glsl_desktop.value);
+#endif  // TINT_BUILD_GLSL_WRITER
+
 #if TINT_BUILD_MSL_WRITER
     auto& xcrun =
         options.Add<StringOption>("xcrun", R"(Path to xcrun executable, used to validate MSL output.
@@ -361,11 +369,6 @@ When specified, automatically enables MSL validation)",
     auto& parse_only =
         options.Add<BoolOption>("parse-only", "Stop after parsing the input", Default{false});
     TINT_DEFER(opts->parse_only = *parse_only.value);
-
-    auto& compatibility_mode = options.Add<BoolOption>(
-        "compatibility-mode", "Validate WGSL input using \"compatibility mode\"",
-        ShortName{"compat"}, Default{false});
-    TINT_DEFER(opts->compatibility_mode = *compatibility_mode.value);
 
 #if TINT_BUILD_SPV_READER
     auto& allow_nud =
@@ -1056,7 +1059,32 @@ bool GenerateGlsl([[maybe_unused]] const tint::Program& program,
 
     auto generate = [&](const tint::Program& prg, const std::string entry_point_name,
                         [[maybe_unused]] tint::ast::PipelineStage stage) -> bool {
+        // The GLSL backend assumes single entry point
+        tint::ast::transform::Manager transform_manager;
+        tint::ast::transform::DataMap transform_inputs;
+
+        if (options.use_ir && !entry_point_name.empty()) {
+            transform_manager.append(std::make_unique<tint::ast::transform::SingleEntryPoint>());
+            transform_inputs.Add<tint::ast::transform::SingleEntryPoint::Config>(entry_point_name);
+        }
+
+        tint::ast::transform::DataMap outputs;
+        auto single_prog = transform_manager.Run(prg, std::move(transform_inputs), outputs);
+        if (!single_prog.IsValid()) {
+            tint::cmd::PrintWGSL(std::cerr, single_prog);
+            std::cerr << single_prog.Diagnostics() << "\n";
+            return 1;
+        }
+
         tint::glsl::writer::Options gen_options;
+
+        if (options.glsl_desktop) {
+            gen_options.version =
+                tint::glsl::writer::Version(tint::glsl::writer::Version::Standard::kDesktop, 4, 6);
+        } else {
+            gen_options.version = tint::glsl::writer::Version();
+        }
+
         gen_options.disable_robustness = !options.enable_robustness;
         gen_options.bindings = tint::glsl::writer::GenerateBindings(program);
 
@@ -1092,17 +1120,17 @@ bool GenerateGlsl([[maybe_unused]] const tint::Program& program,
         tint::Result<tint::glsl::writer::Output> result;
         if (options.use_ir) {
             // Convert the AST program to an IR module.
-            auto ir = tint::wgsl::reader::ProgramToLoweredIR(prg);
+            auto ir = tint::wgsl::reader::ProgramToLoweredIR(single_prog);
             if (ir != tint::Success) {
                 std::cerr << "Failed to generate IR: " << ir << "\n";
                 return false;
             }
-            result = tint::glsl::writer::Generate(ir.Get(), gen_options, entry_point_name);
+            result = tint::glsl::writer::Generate(ir.Get(), gen_options, "");
         } else {
-            result = tint::glsl::writer::Generate(prg, gen_options, entry_point_name);
+            result = tint::glsl::writer::Generate(single_prog, gen_options, entry_point_name);
         }
         if (result != tint::Success) {
-            tint::cmd::PrintWGSL(std::cerr, prg);
+            tint::cmd::PrintWGSL(std::cerr, single_prog);
             std::cerr << "Failed to generate: " << result.Failure() << "\n";
             return false;
         }
@@ -1293,8 +1321,6 @@ int main(int argc, const char** argv) {
 
     tint::cmd::LoadProgramOptions opts;
     opts.filename = options.input_filename;
-    opts.mode = options.compatibility_mode ? tint::wgsl::ValidationMode::kCompat
-                                           : tint::wgsl::ValidationMode::kFull;
     opts.printer = options.printer.get();
 #if TINT_BUILD_SPV_READER
     opts.use_ir = options.use_ir_reader;

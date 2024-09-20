@@ -1,11 +1,57 @@
-SKIP: FAILED
+#version 310 es
 
-<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:252 internal compiler error: Switch() matched no cases. Type: tint::core::ir::Store
-********************************************************************
-*  The tint shader compiler has encountered an unexpected error.   *
-*                                                                  *
-*  Please help us fix this issue by submitting a bug report at     *
-*  crbug.com/tint with the source program that triggered the bug.  *
-********************************************************************
+int a = 0;
+void uses_a() {
+  a = (a + 1);
+}
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  a = 42;
+  uses_a();
+}
+#version 310 es
 
-tint executable returned error: signal: illegal instruction
+int b = 0;
+void uses_b() {
+  b = (b * 2);
+}
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  b = 7;
+  uses_b();
+}
+#version 310 es
+
+int a = 0;
+int b = 0;
+void uses_a() {
+  a = (a + 1);
+}
+void uses_b() {
+  b = (b * 2);
+}
+void uses_a_and_b() {
+  b = a;
+}
+void no_uses() {
+}
+void outer() {
+  a = 0;
+  uses_a();
+  uses_a_and_b();
+  uses_b();
+  no_uses();
+}
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  outer();
+  no_uses();
+}
+#version 310 es
+
+void no_uses() {
+}
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  no_uses();
+}

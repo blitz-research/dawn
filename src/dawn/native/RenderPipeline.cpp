@@ -203,12 +203,12 @@ ResultOrError<ShaderModuleEntryPoint> ValidateVertexState(
     const EntryPointMetadata& vertexMetadata = descriptor->module->GetEntryPoint(entryPoint.name);
     if (primitiveTopology == wgpu::PrimitiveTopology::PointList) {
         DAWN_INVALID_IF(
-            vertexMetadata.totalInterStageShaderComponents + 1 >
-                limits.v1.maxInterStageShaderComponents,
-            "Total vertex output components count (%u) exceeds the maximum (%u) when primitive "
-            "topology is %s as another component is implicitly used for the point size.",
-            vertexMetadata.totalInterStageShaderComponents,
-            limits.v1.maxInterStageShaderComponents - 1, primitiveTopology);
+            vertexMetadata.totalInterStageShaderVariables + 1 >
+                limits.v1.maxInterStageShaderVariables,
+            "Total vertex output variables count (%u) exceeds the maximum (%u) when primitive "
+            "topology is %s as another variable is implicitly used for the point size.",
+            vertexMetadata.totalInterStageShaderVariables,
+            limits.v1.maxInterStageShaderVariables - 1, primitiveTopology);
     }
 
     VertexAttributeMask attributesSetMask;
@@ -731,6 +731,16 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
     }
 
     if (device->IsCompatibilityMode()) {
+        DAWN_INVALID_IF(
+            fragmentMetadata.usesSampleMaskOutput,
+            "sample_mask is not supported in compatibility mode in the fragment stage (%s, %s)",
+            descriptor->module, &entryPoint);
+
+        DAWN_INVALID_IF(
+            fragmentMetadata.usesSampleIndex,
+            "sample_index is not supported in compatibility mode in the fragment stage (%s, %s)",
+            descriptor->module, &entryPoint);
+
         // Check that all the color target states match.
         ColorAttachmentIndex firstColorTargetIndex{};
         const ColorTargetState* firstColorTargetState = nullptr;
@@ -802,6 +812,29 @@ MaybeError ValidateInterStageMatching(DeviceBase* device,
             "different from the interpolation sampling (%s) of the fragment input at "
             "location %u.",
             vertexOutputInfo.interpolationSampling, i, fragmentInputInfo.interpolationSampling, i);
+
+        if (device->IsCompatibilityMode()) {
+            DAWN_INVALID_IF(
+                vertexOutputInfo.interpolationType == InterpolationType::Linear,
+                "The interpolation type (%s) of the vertex output at location %u is not "
+                "supported in compatibility mode",
+                vertexOutputInfo.interpolationType, i);
+
+            DAWN_INVALID_IF(
+                vertexOutputInfo.interpolationSampling == InterpolationSampling::Sample ||
+                    vertexOutputInfo.interpolationSampling == InterpolationSampling::First,
+                "The interpolation sampling (%s) of the vertex output at location %u is "
+                "not supported in compatibility mode",
+                vertexOutputInfo.interpolationSampling, i);
+
+            DAWN_INVALID_IF(
+                vertexOutputInfo.interpolationType == InterpolationType::Flat &&
+                    vertexOutputInfo.interpolationSampling == InterpolationSampling::None,
+                "The interpolation sampling (%s) of the vertex output at location %u when "
+                "interpolation type is (%s)"
+                "not supported in compatibility mode",
+                vertexOutputInfo.interpolationSampling, i, vertexOutputInfo.interpolationType);
+        }
     }
 
     return {};
@@ -865,15 +898,17 @@ MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
                                   descriptor->depthStencil, descriptor->multisample),
             "validating fragment state.");
 
-        bool hasStorageAttachments =
-            descriptor->layout != nullptr && descriptor->layout->HasAnyStorageAttachments();
-        DAWN_INVALID_IF(descriptor->fragment->targetCount == 0 && !descriptor->depthStencil &&
-                            !hasStorageAttachments,
-                        "No attachment was specified (color, depth-stencil or other).");
-
         DAWN_TRY(ValidateInterStageMatching(device, descriptor->vertex, vertexEntryPoint,
                                             *(descriptor->fragment), fragmentEntryPoint));
     }
+
+    bool hasStorageAttachments =
+        descriptor->layout != nullptr && descriptor->layout->HasAnyStorageAttachments();
+    bool hasColorAttachments =
+        descriptor->fragment != nullptr && descriptor->fragment->targetCount != 0;
+    bool hasDepthStencilAttachment = descriptor->depthStencil != nullptr;
+    DAWN_INVALID_IF(!hasColorAttachments && !hasDepthStencilAttachment && !hasStorageAttachments,
+                    "No attachment was specified.");
 
     return {};
 }

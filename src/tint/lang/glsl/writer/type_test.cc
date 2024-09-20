@@ -96,6 +96,32 @@ void main() {
 )");
 }
 
+TEST_F(GlslWriterTest, EmitType_StructArrayVec) {
+    auto* Inner =
+        ty.Struct(mod.symbols.New("Inner"), {
+                                                {mod.symbols.New("t"), ty.array<vec3<f32>, 5>()},
+                                            });
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
+    func->SetWorkgroupSize(1, 1, 1);
+    b.Append(func->Block(), [&] {
+        b.Var("a", ty.ptr(core::AddressSpace::kPrivate, Inner));
+        b.Return(func);
+    });
+
+    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+
+struct Inner {
+  vec3 t[5];
+};
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  Inner a = Inner(vec3[5](vec3(0.0f), vec3(0.0f), vec3(0.0f), vec3(0.0f), vec3(0.0f)));
+}
+)");
+}
+
 TEST_F(GlslWriterTest, EmitType_Bool) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
     func->SetWorkgroupSize(1, 1, 1);
@@ -234,34 +260,28 @@ void main() {
 )");
 }
 
-// TODO(dsinclair): Add atomic support
-TEST_F(GlslWriterTest, DISABLED_EmitType_Atomic_U32) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    auto* param = b.FunctionParam("a", ty.ptr(core::AddressSpace::kWorkgroup, ty.atomic<u32>()));
-    func->SetParams({param});
-    func->SetWorkgroupSize(1, 1, 1);
-    b.Append(func->Block(), [&] { b.Return(func); });
-
+TEST_F(GlslWriterTest, EmitType_Atomic_U32) {
+    b.Append(b.ir.root_block, [&] {
+        b.Var("a", ty.ptr(core::AddressSpace::kWorkgroup, ty.atomic<u32>()))->Result(0);
+    });
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+shared uint a;
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
-void main(inout uint a) {
+void main() {
 }
 )");
 }
 
-// TODO(dsinclair): Add atomic support
-TEST_F(GlslWriterTest, DISABLED_EmitType_Atomic_I32) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    auto* param = b.FunctionParam("a", ty.ptr(core::AddressSpace::kWorkgroup, ty.atomic<i32>()));
-    func->SetParams({param});
-    func->SetWorkgroupSize(1, 1, 1);
-    b.Append(func->Block(), [&] { b.Return(func); });
-
+TEST_F(GlslWriterTest, EmitType_Atomic_I32) {
+    b.Append(b.ir.root_block, [&] {
+        b.Var("a", ty.ptr(core::AddressSpace::kWorkgroup, ty.atomic<i32>()))->Result(0);
+    });
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+shared int a;
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
-void main(inout int a) {
+void main() {
 }
 )");
 }
@@ -380,6 +400,7 @@ TEST_F(GlslWriterTest, EmitType_Struct) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+
 struct S {
   int a;
   float b;
@@ -407,6 +428,7 @@ TEST_F(GlslWriterTest, EmitType_Struct_Dedup) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+
 struct S {
   int a;
   float b;
@@ -440,6 +462,7 @@ TEST_F(GlslWriterTest, EmitType_Struct_Nested) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+
 struct Inner {
   uint x;
   vec4 y;
@@ -841,7 +864,6 @@ TEST_P(GlslWriterStorageTextureESTest, Emit) {
     auto* func = b.Function("foo", ty.void_());
     auto* param = b.FunctionParam("a", s);
     func->SetParams({param});
-    func->SetWorkgroupSize(1, 1, 1);
     b.Append(func->Block(), [&] { b.Return(func); });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
@@ -942,7 +964,6 @@ TEST_P(GlslWriterStorageTextureNonESTest, Emit) {
     auto* func = b.Function("foo", ty.void_());
     auto* param = b.FunctionParam("a", s);
     func->SetParams({param});
-    func->SetWorkgroupSize(1, 1, 1);
     b.Append(func->Block(), [&] { b.Return(func); });
 
     Options opts{};

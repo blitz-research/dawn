@@ -31,6 +31,8 @@
 
 #include "gtest/gtest.h"
 #include "src/tint/lang/core/ir/transform/helper_test.h"
+#include "src/tint/lang/core/type/depth_texture.h"
+#include "src/tint/lang/core/type/sampled_texture.h"
 
 namespace tint::core::ir::transform {
 namespace {
@@ -97,6 +99,33 @@ TEST_F(IR_ValueToLetTest, NoModify_Unsequenced) {
 
     EXPECT_EQ(str(), expect);
 }
+
+TEST_F(IR_ValueToLetTest, NoModify_Bitcast) {
+    auto* fn = b.Function("F", ty.u32());
+    b.Append(fn->Block(), [&] {
+        auto* x = b.Let("x", 1_i);
+        auto* y = b.Bitcast<u32>(x);
+        b.Return(fn, y);
+    });
+
+    auto* src = R"(
+%F = func():u32 {
+  $B1: {
+    %x:i32 = let 1i
+    %3:u32 = bitcast %x
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(str(), src);
+
+    auto* expect = src;
+
+    Run(ValueToLet);
+
+    EXPECT_EQ(str(), expect);
+}
+
 TEST_F(IR_ValueToLetTest, NoModify_SequencedValueUsedWithNonSequenced) {
     auto* i = b.Var<private_, i32>("i");
     b.ir.root_block->Append(i);
@@ -506,6 +535,198 @@ $B1: {  # root
     EXPECT_EQ(str(), expect);
 }
 
+TEST_F(IR_ValueToLetTest, Call_WithUseThatIsNeverUsed) {
+    auto* v = b.Var<private_, i32>("v");
+    mod.root_block->Append(v);
+
+    auto* foo = b.Function("foo", ty.i32());
+    b.Append(foo->Block(), [&] {
+        b.Store(v, 42_i);
+        b.Return(foo, 1_i);
+    });
+
+    auto* fn = b.Function("F", ty.void_());
+    b.Append(fn->Block(), [&] {
+        auto* c = b.Name("call", b.Call<i32>(foo));
+        b.Name("add", b.Add<i32>(c, 1_i));
+        b.Return(fn);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %v:ptr<private, i32, read_write> = var
+}
+
+%foo = func():i32 {
+  $B2: {
+    store %v, 42i
+    ret 1i
+  }
+}
+%F = func():void {
+  $B3: {
+    %call:i32 = call %foo
+    %add:i32 = add %call, 1i
+    ret
+  }
+}
+)";
+    EXPECT_EQ(str(), src);
+
+    auto* expect = R"(
+$B1: {  # root
+  %v:ptr<private, i32, read_write> = var
+}
+
+%foo = func():i32 {
+  $B2: {
+    store %v, 42i
+    ret 1i
+  }
+}
+%F = func():void {
+  $B3: {
+    %call:i32 = call %foo
+    %5:i32 = add %call, 1i
+    %add:i32 = let %5
+    ret
+  }
+}
+)";
+
+    Run(ValueToLet);
+
+    EXPECT_EQ(str(), expect);
+}
+
+TEST_F(IR_ValueToLetTest, ConstructIsNeverUsed) {
+    auto* v = b.Var<private_, i32>("v");
+    mod.root_block->Append(v);
+
+    auto* foo = b.Function("foo", ty.i32());
+    b.Append(foo->Block(), [&] {
+        b.Store(v, 42_i);
+        b.Return(foo, 1_i);
+    });
+
+    auto* fn = b.Function("F", ty.void_());
+    b.Append(fn->Block(), [&] {
+        auto* c = b.Name("call", b.Call<i32>(foo));
+        b.Name("construct", b.Construct<vec4<i32>>(c));
+        b.Return(fn);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %v:ptr<private, i32, read_write> = var
+}
+
+%foo = func():i32 {
+  $B2: {
+    store %v, 42i
+    ret 1i
+  }
+}
+%F = func():void {
+  $B3: {
+    %call:i32 = call %foo
+    %construct:vec4<i32> = construct %call
+    ret
+  }
+}
+)";
+    EXPECT_EQ(str(), src);
+
+    auto* expect = R"(
+$B1: {  # root
+  %v:ptr<private, i32, read_write> = var
+}
+
+%foo = func():i32 {
+  $B2: {
+    store %v, 42i
+    ret 1i
+  }
+}
+%F = func():void {
+  $B3: {
+    %call:i32 = call %foo
+    %5:vec4<i32> = construct %call
+    %construct:vec4<i32> = let %5
+    ret
+  }
+}
+)";
+
+    Run(ValueToLet);
+
+    EXPECT_EQ(str(), expect);
+}
+
+TEST_F(IR_ValueToLetTest, ConvertIsNeverUsed) {
+    auto* v = b.Var<private_, i32>("v");
+    mod.root_block->Append(v);
+
+    auto* foo = b.Function("foo", ty.i32());
+    b.Append(foo->Block(), [&] {
+        b.Store(v, 42_i);
+        b.Return(foo, 1_i);
+    });
+
+    auto* fn = b.Function("F", ty.void_());
+    b.Append(fn->Block(), [&] {
+        auto* c = b.Name("call", b.Call<i32>(foo));
+        b.Name("convert", b.Convert<u32>(c));
+        b.Return(fn);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %v:ptr<private, i32, read_write> = var
+}
+
+%foo = func():i32 {
+  $B2: {
+    store %v, 42i
+    ret 1i
+  }
+}
+%F = func():void {
+  $B3: {
+    %call:i32 = call %foo
+    %convert:u32 = convert %call
+    ret
+  }
+}
+)";
+    EXPECT_EQ(str(), src);
+
+    auto* expect = R"(
+$B1: {  # root
+  %v:ptr<private, i32, read_write> = var
+}
+
+%foo = func():i32 {
+  $B2: {
+    store %v, 42i
+    ret 1i
+  }
+}
+%F = func():void {
+  $B3: {
+    %call:i32 = call %foo
+    %5:u32 = convert %call
+    %convert:u32 = let %5
+    ret
+  }
+}
+)";
+
+    Run(ValueToLet);
+
+    EXPECT_EQ(str(), expect);
+}
+
 TEST_F(IR_ValueToLetTest, TwoCalls_ThenUseReturnValues) {
     auto* i = b.Var<private_, i32>("i");
     b.ir.root_block->Append(i);
@@ -762,12 +983,78 @@ TEST_F(IR_ValueToLetTest, NameMe2) {
 )";
 
     Run(ValueToLet);
-
     EXPECT_EQ(str(), expect);
 
     Run(ValueToLet);  // running a second time should be no-op
-
     EXPECT_EQ(str(), expect);
 }
+
+TEST_F(IR_ValueToLetTest, TextureInline) {
+    core::ir::Var* tex = nullptr;
+    core::ir::Var* sampler = nullptr;
+    b.Append(b.ir.root_block, [&] {
+        tex = b.Var(
+            ty.ptr(handle, ty.Get<core::type::DepthTexture>(core::type::TextureDimension::k2d)));
+        tex->SetBindingPoint(0, 0);
+
+        sampler =
+            b.Var(ty.ptr(handle, ty.Get<core::type::Sampler>(core::type::SamplerKind::kSampler)));
+        sampler->SetBindingPoint(0, 1);
+    });
+
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        auto* coords = b.Construct(ty.vec2<f32>(), b.Value(1_f), b.Value(2_f));
+
+        auto* t = b.Load(tex);
+        auto* s = b.Load(sampler);
+        b.Let("x", b.Call<vec4<f32>>(core::BuiltinFn::kTextureGather, t, s, coords));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %1:ptr<handle, texture_depth_2d, read> = var @binding_point(0, 0)
+  %2:ptr<handle, sampler, read> = var @binding_point(0, 1)
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    %4:vec2<f32> = construct 1.0f, 2.0f
+    %5:texture_depth_2d = load %1
+    %6:sampler = load %2
+    %7:vec4<f32> = textureGather %5, %6, %4
+    %x:vec4<f32> = let %7
+    ret
+  }
+}
+)";
+    EXPECT_EQ(str(), src);
+
+    auto* expect = R"(
+$B1: {  # root
+  %1:ptr<handle, texture_depth_2d, read> = var @binding_point(0, 0)
+  %2:ptr<handle, sampler, read> = var @binding_point(0, 1)
+}
+
+%foo = @fragment func():void {
+  $B2: {
+    %4:vec2<f32> = construct 1.0f, 2.0f
+    %5:texture_depth_2d = load %1
+    %6:sampler = load %2
+    %7:vec4<f32> = textureGather %5, %6, %4
+    %x:vec4<f32> = let %7
+    ret
+  }
+}
+)";
+
+    Run(ValueToLet);
+    EXPECT_EQ(str(), expect);
+
+    Run(ValueToLet);  // running a second time should be no-op
+    EXPECT_EQ(str(), expect);
+}
+
 }  // namespace
 }  // namespace tint::core::ir::transform

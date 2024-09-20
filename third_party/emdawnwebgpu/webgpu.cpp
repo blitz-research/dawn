@@ -84,7 +84,9 @@ class RefCounted : NonMovable {
   static constexpr bool HasExternalRefCount = false;
 
   void AddRef() {
-    assert(mRefCount.fetch_add(1u, std::memory_order_relaxed) >= 1);
+    [[maybe_unused]] uint64_t oldRefCount =
+        mRefCount.fetch_add(1u, std::memory_order_relaxed);
+    assert(oldRefCount >= 1);
   }
 
   void Release() {
@@ -135,11 +137,7 @@ class Ref {
                 "Cannot make a Ref<T> when T is not a Refcounted type.");
 
   Ref() : mValue(nullptr) {}
-  ~Ref() {
-    if (mValue) {
-      mValue->Release();
-    }
-  }
+  ~Ref() { Release(mValue); }
 
   // Constructors from nullptr.
   // NOLINTNEXTLINE(runtime/explicit)
@@ -639,10 +637,12 @@ class DeviceLostEvent final : public TrackedEvent {
 
   void ReadyHook(WGPUDeviceLostReason reason, const char* message) {
     mReason = reason;
-    mMessage = message;
+    if (message) {
+      mMessage = message;
+    }
   }
 
-  void Complete(FutureID futureId, EventCompletionType type) override {
+  void Complete(FutureID, EventCompletionType type) override {
     if (type == EventCompletionType::Shutdown) {
       mReason = WGPUDeviceLostReason_InstanceDropped;
       mMessage = "A valid external Instance reference no longer exists.";
@@ -685,10 +685,12 @@ class RequestAdapterEvent final : public TrackedEvent {
                  const char* message) {
     mStatus = status;
     mAdapter.Acquire(adapter);
-    mMessage = message;
+    if (message) {
+      mMessage = message;
+    }
   }
 
-  void Complete(FutureID futureId, EventCompletionType type) override {
+  void Complete(FutureID, EventCompletionType type) override {
     if (type == EventCompletionType::Shutdown) {
       mStatus = WGPURequestAdapterStatus_InstanceDropped;
       mMessage = "A valid external Instance reference no longer exists.";
@@ -730,10 +732,12 @@ class RequestDeviceEvent final : public TrackedEvent {
                  const char* message) {
     mStatus = status;
     mDevice.Acquire(device);
-    mMessage = message;
+    if (message) {
+      mMessage = message;
+    }
   }
 
-  void Complete(FutureID futureId, EventCompletionType type) override {
+  void Complete(FutureID, EventCompletionType type) override {
     if (type == EventCompletionType::Shutdown) {
       mStatus = WGPURequestDeviceStatus_InstanceDropped;
       mMessage = "A valid external Instance reference no longer exists.";
@@ -979,6 +983,12 @@ WGPUFuture wgpuAdapterRequestDevice2(
           adapter->GetInstanceId(), callbackInfo));
   if (!tracked) {
     return WGPUFuture{kNullFutureId};
+  }
+
+  static const WGPUDeviceDescriptor kDefaultDescriptor =
+      WGPU_DEVICE_DESCRIPTOR_INIT;
+  if (descriptor == nullptr) {
+    descriptor = &kDefaultDescriptor;
   }
 
   // For RequestDevice, we always create a Device and Queue up front. The

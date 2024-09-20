@@ -1,11 +1,11 @@
-SKIP: FAILED
+#version 310 es
+precision highp float;
+precision highp int;
 
-<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:482 internal compiler error: Switch() matched no cases. Type: tint::core::ir::LoadVectorElement
-********************************************************************
-*  The tint shader compiler has encountered an unexpected error.   *
-*                                                                  *
-*  Please help us fix this issue by submitting a bug report at     *
-*  crbug.com/tint with the source program that triggered the bug.  *
-********************************************************************
-
-tint executable returned error: signal: illegal instruction
+layout(binding = 0, std140)
+uniform tint_symbol_2_1_ubo {
+  vec2 tint_symbol_1;
+} v;
+void main() {
+  float a = v.tint_symbol_1.x;
+}

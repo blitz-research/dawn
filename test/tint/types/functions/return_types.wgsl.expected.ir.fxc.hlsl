@@ -8,7 +8,7 @@ bool ret_bool() {
 }
 
 int ret_i32() {
-  return 0;
+  return int(0);
 }
 
 uint ret_u32() {
@@ -20,7 +20,7 @@ float ret_f32() {
 }
 
 int2 ret_v2i32() {
-  return (0).xx;
+  return (int(0)).xx;
 }
 
 uint3 ret_v3u32() {
@@ -48,5 +48,15 @@ S ret_struct() {
 
 [numthreads(1, 1, 1)]
 void main() {
+  bool a = ret_bool();
+  int b = ret_i32();
+  uint c = ret_u32();
+  float d = ret_f32();
+  int2 e = ret_v2i32();
+  uint3 f = ret_v3u32();
+  float4 g = ret_v4f32();
+  float2x3 h = ret_m2x3();
+  float i[4] = ret_arr();
+  S j = ret_struct();
 }
 

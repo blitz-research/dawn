@@ -58,6 +58,7 @@ if (tint_build_unittests) {
       "${tint_src_dir}/lang/core/ir/transform:unittests",
       "${tint_src_dir}/lang/core/ir/transform/common:unittests",
       "${tint_src_dir}/lang/core/type:unittests",
+      "${tint_src_dir}/lang/glsl/ir:unittests",
       "${tint_src_dir}/lang/hlsl/ir:unittests",
       "${tint_src_dir}/lang/hlsl/type:unittests",
       "${tint_src_dir}/lang/hlsl/writer/common:unittests",
@@ -101,6 +102,7 @@ if (tint_build_unittests) {
       deps += [
         "${tint_src_dir}/lang/glsl/writer/ast_printer:unittests",
         "${tint_src_dir}/lang/glsl/writer/common:unittests",
+        "${tint_src_dir}/lang/glsl/writer/raise:unittests",
       ]
     }
 

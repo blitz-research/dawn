@@ -52,6 +52,7 @@ tint_target_add_dependencies(tint_cmd_test_test_cmd test_cmd
   tint_lang_core_ir_test
   tint_lang_core_type_test
   tint_lang_core_test
+  tint_lang_glsl_ir_test
   tint_lang_hlsl_ir_test
   tint_lang_hlsl_type_test
   tint_lang_hlsl_writer_common_test
@@ -99,6 +100,7 @@ if(TINT_BUILD_GLSL_WRITER)
   tint_target_add_dependencies(tint_cmd_test_test_cmd test_cmd
     tint_lang_glsl_writer_ast_printer_test
     tint_lang_glsl_writer_common_test
+    tint_lang_glsl_writer_raise_test
   )
 endif(TINT_BUILD_GLSL_WRITER)
 

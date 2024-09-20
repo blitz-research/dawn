@@ -31,19 +31,25 @@
 #include "src/tint/lang/core/ir/transform/array_length_from_uniform.h"
 #include "src/tint/lang/core/ir/transform/binary_polyfill.h"
 #include "src/tint/lang/core/ir/transform/binding_remapper.h"
+#include "src/tint/lang/core/ir/transform/block_decorated_structs.h"
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
 #include "src/tint/lang/core/ir/transform/direct_variable_access.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
 #include "src/tint/lang/core/ir/transform/preserve_padding.h"
+#include "src/tint/lang/core/ir/transform/remove_continue_in_switch.h"
 #include "src/tint/lang/core/ir/transform/remove_terminator_args.h"
 #include "src/tint/lang/core/ir/transform/rename_conflicts.h"
 #include "src/tint/lang/core/ir/transform/robustness.h"
+#include "src/tint/lang/core/ir/transform/std140.h"
 #include "src/tint/lang/core/ir/transform/value_to_let.h"
 #include "src/tint/lang/core/ir/transform/vectorize_scalar_matrix_constructors.h"
 #include "src/tint/lang/core/ir/transform/zero_init_workgroup_memory.h"
 #include "src/tint/lang/glsl/writer/common/option_helpers.h"
+#include "src/tint/lang/glsl/writer/raise/bitcast_polyfill.h"
+#include "src/tint/lang/glsl/writer/raise/builtin_polyfill.h"
+#include "src/tint/lang/glsl/writer/raise/shader_io.h"
 
 namespace tint::glsl::writer {
 
@@ -103,16 +109,12 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     RUN_TRANSFORM(core::ir::transform::MultiplanarExternalTexture, module, multiplanar_map);
 
-    // TODO(dsinclair): SingleEntryPoint
+    RUN_TRANSFORM(core::ir::transform::BlockDecoratedStructs, module);
+
     // TODO(dsinclair): TextureBuiltinsFromUniform
-    // TODO(dsinclair): AddBlockAttribute
     // TODO(dsinclair): OffsetFirstIndex
-    // TODO(dsinclair): ClampFragDepth
-    // TODO(dsinclair): ShaderIO
     // TODO(dsinclair): CombineSamplers
     // TODO(dsinclair): PadStructs
-    // TODO(dsinclair): RemoveContinueInSwitch
-    // TODO(dsinclair): Std140
     // TODO(dsinclair): Texture1DTo2D
 
     RUN_TRANSFORM(core::ir::transform::DirectVariableAccess, module,
@@ -122,13 +124,23 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         RUN_TRANSFORM(core::ir::transform::ZeroInitWorkgroupMemory, module);
     }
 
+    // Must come after zero-init as it will add builtins
+    RUN_TRANSFORM(raise::BuiltinPolyfill, module);
+    // Must come after BuiltinPolyfill as builtins can add bitcasts
+    RUN_TRANSFORM(raise::BitcastPolyfill, module);
+
     RUN_TRANSFORM(core::ir::transform::PreservePadding, module);
     RUN_TRANSFORM(core::ir::transform::VectorizeScalarMatrixConstructors, module);
+    RUN_TRANSFORM(core::ir::transform::RemoveContinueInSwitch, module);
 
     // DemoteToHelper must come before any transform that introduces non-core instructions.
     RUN_TRANSFORM(core::ir::transform::DemoteToHelper, module);
 
     RUN_TRANSFORM(core::ir::transform::AddEmptyEntryPoint, module);
+
+    RUN_TRANSFORM(raise::ShaderIO, module, raise::ShaderIOConfig{options.depth_range_offsets});
+
+    RUN_TRANSFORM(core::ir::transform::Std140, module);
 
     // These transforms need to be run last as various transforms introduce terminator arguments,
     // naming conflicts, and expressions that need to be explicitly not inlined.

@@ -1,4 +1,4 @@
-SKIP: FAILED
+SKIP: INVALID
 
 
 enable subgroups;
@@ -52,3 +52,5 @@ Failed to generate: <dawn>/test/tint/builtins/gen/literal/subgroupShuffle/fb4ab9
 enable subgroups;
        ^^^^^^^^^
 
+
+tint executable returned error: exit status 1

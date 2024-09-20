@@ -1,4 +1,4 @@
-SKIP: FAILED
+SKIP: INVALID
 
 
 enable subgroups;
@@ -48,3 +48,5 @@ Failed to generate: <dawn>/test/tint/builtins/gen/literal/quadBroadcast/0e0e6e.w
 enable subgroups;
        ^^^^^^^^^
 
+
+tint executable returned error: exit status 1

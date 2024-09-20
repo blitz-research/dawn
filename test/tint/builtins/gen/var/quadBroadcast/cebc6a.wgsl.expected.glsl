@@ -1,4 +1,4 @@
-SKIP: FAILED
+SKIP: INVALID
 
 
 enable subgroups;
@@ -56,3 +56,5 @@ Failed to generate: <dawn>/test/tint/builtins/gen/var/quadBroadcast/cebc6a.wgsl:
 enable subgroups;
        ^^^^^^^^^
 
+
+tint executable returned error: exit status 1

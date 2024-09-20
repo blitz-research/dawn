@@ -1,11 +1,88 @@
-SKIP: FAILED
+#version 310 es
 
-<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:252 internal compiler error: Switch() matched no cases. Type: tint::core::ir::Loop
-********************************************************************
-*  The tint shader compiler has encountered an unexpected error.   *
-*                                                                  *
-*  Please help us fix this issue by submitting a bug report at     *
-*  crbug.com/tint with the source program that triggered the bug.  *
-********************************************************************
-
-tint executable returned error: signal: illegal instruction
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  int k = 0;
+  {
+    int i = 0;
+    while(true) {
+      if ((i < 2)) {
+      } else {
+        break;
+      }
+      bool tint_continue = false;
+      switch(i) {
+        case 0:
+        {
+          {
+            int j = 0;
+            while(true) {
+              if ((j < 2)) {
+              } else {
+                break;
+              }
+              bool tint_continue = false;
+              switch(j) {
+                case 0:
+                {
+                  tint_continue = true;
+                  break;
+                }
+                case 1:
+                {
+                  bool tint_continue_1 = false;
+                  switch(k) {
+                    case 0:
+                    {
+                      tint_continue_1 = true;
+                      break;
+                    }
+                    default:
+                    {
+                      break;
+                    }
+                  }
+                  if (tint_continue_1) {
+                    tint_continue = true;
+                    break;
+                  }
+                  break;
+                }
+                default:
+                {
+                  break;
+                }
+              }
+              if (tint_continue) {
+                {
+                  j = (j + 2);
+                }
+                continue;
+              }
+              {
+                j = (j + 2);
+              }
+              continue;
+            }
+          }
+          tint_continue = true;
+          break;
+        }
+        default:
+        {
+          break;
+        }
+      }
+      if (tint_continue) {
+        {
+          i = (i + 2);
+        }
+        continue;
+      }
+      {
+        i = (i + 2);
+      }
+      continue;
+    }
+  }
+}

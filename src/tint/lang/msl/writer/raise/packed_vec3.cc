@@ -64,11 +64,11 @@ struct State {
     /// when inside an array.
     Hashmap<const core::type::Type*, const core::type::Struct*, 4> packed_array_element_types{};
 
-    // A map from an unpacked type to a helper function that will load it from a packed pointer.
-    Hashmap<const core::type::Type*, core::ir::Function*, 4> packed_load_helpers{};
+    // A map from a packed pointer type to a helper function that will load it to an unpacked type.
+    Hashmap<const core::type::Pointer*, core::ir::Function*, 4> packed_load_helpers{};
 
-    // A map from an unpacked type to a helper function that will store it to a packed pointer.
-    Hashmap<const core::type::Type*, core::ir::Function*, 4> packed_store_helpers{};
+    // A map from a packed pointer type to a helper function that will store an unpacked type to it.
+    Hashmap<const core::type::Pointer*, core::ir::Function*, 4> packed_store_helpers{};
 
     /// Process the module.
     void Process() {
@@ -80,7 +80,7 @@ struct State {
                 continue;
             }
             auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
-            if (!core::IsHostShareable(ptr->AddressSpace())) {
+            if (!AddressSpaceNeedsPacking(ptr->AddressSpace())) {
                 continue;
             }
 
@@ -100,7 +100,7 @@ struct State {
         for (auto func : ir.functions) {
             for (auto* param : func->Params()) {
                 auto* ptr = param->Type()->As<core::type::Pointer>();
-                if (!ptr || !core::IsHostShareable(ptr->AddressSpace())) {
+                if (!ptr || !AddressSpaceNeedsPacking(ptr->AddressSpace())) {
                     continue;
                 }
 
@@ -115,6 +115,14 @@ struct State {
                 }
             }
         }
+    }
+
+    /// @returns true if @p addrspace requires vec3 types to be packed
+    bool AddressSpaceNeedsPacking(core::AddressSpace addrspace) {
+        // Host-shareable address spaces need to be packed to match the memory layout on the host.
+        // The workgroup address space needs to be packed so that the size of generated threadgroup
+        // variables matches the size of the original WGSL declarations.
+        return core::IsHostShareable(addrspace) || addrspace == core::AddressSpace::kWorkgroup;
     }
 
     /// Rewrite a type if necessary, decomposing contained matrices.
@@ -283,12 +291,12 @@ struct State {
                 auto* packed_result_type = RewriteType(unpacked_result_type);
                 let->Result(0)->SetType(packed_result_type);
                 let->Result(0)->ForEachUseSorted([&](core::ir::Usage let_use) {  //
-                    UpdateUsage(let_use, unpacked_result_type->UnwrapPtr(), packed_result_type);
+                    UpdateUsage(let_use, unpacked_result_type, packed_result_type);
                 });
             },
             [&](core::ir::Load* load) {
                 b.InsertAfter(load, [&] {
-                    auto* result = LoadPackedToUnpacked(unpacked_type, load->From());
+                    auto* result = LoadPackedToUnpacked(unpacked_type->UnwrapPtr(), load->From());
                     load->Result(0)->ReplaceAllUsesWith(result);
                 });
                 load->Destroy();
@@ -319,7 +327,7 @@ struct State {
         // Rebuild the indices of the access instruction.
         // Walk through the intermediate types that the access chain will be traversing, and
         // check for packed vectors that would be wrapped in structures.
-        auto* obj_type = unpacked_type;
+        auto* obj_type = unpacked_type->UnwrapPtr();
         Vector<core::ir::Value*, 4> operands;
         operands.Push(access->Object());
         for (auto* idx : access->Indices()) {
@@ -346,7 +354,7 @@ struct State {
         access->SetOperands(std::move(operands));
         access->Result(0)->SetType(packed_result_type);
         access->Result(0)->ForEachUseSorted([&](core::ir::Usage access_use) {  //
-            UpdateUsage(access_use, unpacked_result_type->UnwrapPtr(), packed_result_type);
+            UpdateUsage(access_use, unpacked_result_type, packed_result_type);
         });
     }
 
@@ -402,7 +410,7 @@ struct State {
     /// @returns the helper function
     core::ir::Function* LoadPackedArrayHelper(const core::type::Array* unpacked_arr,
                                               const core::type::Pointer* packed_ptr_type) {
-        return packed_load_helpers.GetOrAdd(unpacked_arr, [&] {
+        return packed_load_helpers.GetOrAdd(packed_ptr_type, [&] {
             auto* func = b.Function(sym.New("tint_load_array_packed_vec3").Name(), unpacked_arr);
             auto* from = b.FunctionParam("from", packed_ptr_type);
             func->SetParams({from});
@@ -464,7 +472,7 @@ struct State {
     /// @returns the helper function
     core::ir::Function* LoadPackedStructHelper(const core::type::Struct* unpacked_str,
                                                const core::type::Pointer* packed_ptr_type) {
-        return packed_load_helpers.GetOrAdd(unpacked_str, [&] {
+        return packed_load_helpers.GetOrAdd(packed_ptr_type, [&] {
             auto* func = b.Function(sym.New("tint_load_struct_packed_vec3").Name(), unpacked_str);
             auto* from = b.FunctionParam("from", packed_ptr_type);
             func->SetParams({from});
@@ -539,7 +547,7 @@ struct State {
     /// @returns the helper function
     core::ir::Function* StorePackedArrayHelper(const core::type::Array* unpacked_arr,
                                                const core::type::Pointer* packed_ptr_type) {
-        return packed_store_helpers.GetOrAdd(unpacked_arr, [&] {
+        return packed_store_helpers.GetOrAdd(packed_ptr_type, [&] {
             auto* func = b.Function(sym.New("tint_store_array_packed_vec3").Name(), ty.void_());
             auto* to = b.FunctionParam("to", packed_ptr_type);
             auto* value = b.FunctionParam("value", unpacked_arr);
@@ -595,7 +603,7 @@ struct State {
     /// @returns the helper function
     core::ir::Function* StorePackedStructHelper(const core::type::Struct* unpacked_str,
                                                 const core::type::Pointer* packed_ptr_type) {
-        return packed_store_helpers.GetOrAdd(unpacked_str, [&] {
+        return packed_store_helpers.GetOrAdd(packed_ptr_type, [&] {
             auto* func = b.Function(sym.New("tint_store_array_packed_vec3").Name(), ty.void_());
             auto* to = b.FunctionParam("to", packed_ptr_type);
             auto* value = b.FunctionParam("value", unpacked_str);

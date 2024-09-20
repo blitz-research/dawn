@@ -35,7 +35,6 @@
 #include <utility>
 
 #include "src/tint/lang/core/fluent_types.h"
-#include "src/tint/lang/core/parameter_usage.h"
 #include "src/tint/lang/core/type/abstract_numeric.h"
 #include "src/tint/lang/core/type/atomic.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
@@ -68,7 +67,6 @@
 #include "src/tint/lang/wgsl/ast/unary_op_expression.h"
 #include "src/tint/lang/wgsl/ast/variable_decl_statement.h"
 #include "src/tint/lang/wgsl/ast/workgroup_attribute.h"
-#include "src/tint/lang/wgsl/builtin_fn.h"
 #include "src/tint/lang/wgsl/sem/array.h"
 #include "src/tint/lang/wgsl/sem/break_if_statement.h"
 #include "src/tint/lang/wgsl/sem/call.h"
@@ -101,6 +99,7 @@ using namespace tint::core::fluent_types;  // NOLINT
 namespace tint::resolver {
 namespace {
 
+constexpr size_t kMaxArrayConstructorElements = 32767;
 constexpr size_t kMaxFunctionParameters = 255;
 constexpr size_t kMaxSwitchCaseSelectors = 16383;
 constexpr size_t kMaxClipDistancesSize = 8;
@@ -143,17 +142,6 @@ bool IsValidStorageTextureTexelFormat(core::TexelFormat format) {
     }
 }
 
-bool IsInvalidStorageTextureTexelFormatInCompatibilityMode(core::TexelFormat format) {
-    switch (format) {
-        case core::TexelFormat::kRg32Float:
-        case core::TexelFormat::kRg32Sint:
-        case core::TexelFormat::kRg32Uint:
-            return true;
-        default:
-            return false;
-    }
-}
-
 template <typename CALLBACK>
 void TraverseCallChain(const sem::Function* from, const sem::Function* to, CALLBACK&& callback) {
     for (auto* f : from->TransitivelyCalledFunctions()) {
@@ -177,7 +165,6 @@ Validator::Validator(
     SemHelper& sem,
     const wgsl::Extensions& enabled_extensions,
     const wgsl::AllowedFeatures& allowed_features,
-    const wgsl::ValidationMode mode,
     const Hashmap<const core::type::Type*, const Source*, 8>& atomic_composite_info,
     Hashset<TypeAndAddressSpace, 8>& valid_type_storage_layouts)
     : symbols_(builder->Symbols()),
@@ -185,7 +172,6 @@ Validator::Validator(
       sem_(sem),
       enabled_extensions_(enabled_extensions),
       allowed_features_(allowed_features),
-      mode_(mode),
       atomic_composite_info_(atomic_composite_info),
       valid_type_storage_layouts_(valid_type_storage_layouts) {
     // Set default severities for filterable diagnostic rules.
@@ -445,13 +431,6 @@ bool Validator::StorageTexture(const core::type::StorageTexture* t, const Source
     if (!IsValidStorageTextureTexelFormat(t->TexelFormat())) {
         AddError(source) << "image format must be one of the texel formats specified for storage "
                             "textures in https://gpuweb.github.io/gpuweb/wgsl/#texel-formats";
-        return false;
-    }
-
-    if (mode_ == wgsl::ValidationMode::kCompat &&
-        IsInvalidStorageTextureTexelFormatInCompatibilityMode(t->TexelFormat())) {
-        AddError(source) << "format " << t->TexelFormat()
-                         << " is not supported as a storage texture in compatibility mode";
         return false;
     }
 
@@ -1067,12 +1046,6 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
             }
             break;
         case core::BuiltinValue::kSampleMask:
-            if (mode_ == wgsl::ValidationMode::kCompat) {
-                AddError(attr->source) << "use of " << style::Attribute("@builtin")
-                                       << style::Code("(", style::Enum(builtin), ")")
-                                       << " is not allowed in compatibility mode";
-                return false;
-            }
             if (stage != ast::PipelineStage::kNone && !(stage == ast::PipelineStage::kFragment)) {
                 is_stage_mismatch = true;
             }
@@ -1082,12 +1055,6 @@ bool Validator::BuiltinAttribute(const ast::BuiltinAttribute* attr,
             }
             break;
         case core::BuiltinValue::kSampleIndex:
-            if (mode_ == wgsl::ValidationMode::kCompat) {
-                AddError(attr->source) << "use of " << style::Attribute("@builtin")
-                                       << style::Code("(", style::Enum(builtin), ")")
-                                       << " is not allowed in compatibility mode";
-                return false;
-            }
             if (stage != ast::PipelineStage::kNone &&
                 !(stage == ast::PipelineStage::kFragment && is_input)) {
                 is_stage_mismatch = true;
@@ -1193,38 +1160,13 @@ bool Validator::InterpolateAttribute(const ast::InterpolateAttribute* attr,
                     << "flat interpolation can only use 'first' and 'either' sampling parameters";
                 return false;
             }
-            if (mode_ == wgsl::ValidationMode::kCompat &&
-                i_sampling == core::InterpolationSampling::kFirst) {
-                AddError(attr->source) << "flat interpolation must use 'either' sampling parameter "
-                                          "in compatibility mode";
-                return false;
-            }
         } else {
             if (is_first_or_either) {
                 AddError(attr->source) << "'first' and 'either' sampling parameters can only be "
                                           "used with flat interpolation";
                 return false;
             }
-
-            if (mode_ == wgsl::ValidationMode::kCompat &&
-                i_sampling == core::InterpolationSampling::kSample) {
-                AddError(attr->source)
-                    << "use of '@interpolate(..., sample)' is not allowed in compatibility mode";
-                return false;
-            }
         }
-    } else {
-        if (mode_ == wgsl::ValidationMode::kCompat && i_type == core::InterpolationType::kFlat) {
-            AddError(attr->source)
-                << "flat interpolation must use 'either' sampling parameter in compatibility mode";
-            return false;
-        }
-    }
-
-    if (mode_ == wgsl::ValidationMode::kCompat && i_type == core::InterpolationType::kLinear) {
-        AddError(attr->source)
-            << "use of '@interpolate(linear)' is not allowed in compatibility mode";
-        return false;
     }
 
     return true;
@@ -1942,19 +1884,6 @@ bool Validator::TextureBuiltinFn(const sem::Call* call) const {
     std::string func_name = builtin->str();
     auto& signature = builtin->Signature();
 
-    if (mode_ == wgsl::ValidationMode::kCompat) {
-        if (builtin->Fn() == wgsl::BuiltinFn::kTextureLoad) {
-            auto* arg = call->Arguments()[0];
-            if (arg->Type()
-                    ->IsAnyOf<core::type::DepthTexture, core::type::DepthMultisampledTexture>()) {
-                AddError(arg->Declaration()->source)
-                    << "use of " << arg->Type()->FriendlyName()
-                    << " with textureLoad is not allowed in compatibility mode";
-                return false;
-            }
-        }
-    }
-
     auto check_arg_is_constexpr = [&](core::ParameterUsage usage, int min, int max) {
         auto signed_index = signature.IndexOf(usage);
         if (signed_index < 0) {
@@ -2275,6 +2204,11 @@ bool Validator::ArrayConstructor(const ast::CallExpression* ctor,
         std::string fm = values.Length() < count ? "few" : "many";
         AddError(ctor->source) << "array constructor has too " << fm << " elements: expected "
                                << count << ", found " << values.Length();
+        return false;
+    }
+    if (values.Length() > kMaxArrayConstructorElements) {
+        AddError(ctor->target->source) << "array constructor has excessive number of elements (>"
+                                       << kMaxArrayConstructorElements << ")";
         return false;
     }
     return true;

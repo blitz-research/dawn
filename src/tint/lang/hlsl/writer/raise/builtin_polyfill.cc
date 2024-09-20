@@ -122,6 +122,8 @@ struct State {
                     case core::BuiltinFn::kSubgroupShuffleXor:
                     case core::BuiltinFn::kSubgroupShuffleUp:
                     case core::BuiltinFn::kSubgroupShuffleDown:
+                    case core::BuiltinFn::kSubgroupInclusiveAdd:
+                    case core::BuiltinFn::kSubgroupInclusiveMul:
                     case core::BuiltinFn::kTextureDimensions:
                     case core::BuiltinFn::kTextureGather:
                     case core::BuiltinFn::kTextureGatherCompare:
@@ -269,6 +271,10 @@ struct State {
                 case core::BuiltinFn::kSubgroupShuffleUp:
                 case core::BuiltinFn::kSubgroupShuffleDown:
                     SubgroupShuffle(call);
+                    break;
+                case core::BuiltinFn::kSubgroupInclusiveAdd:
+                case core::BuiltinFn::kSubgroupInclusiveMul:
+                    SubgroupInclusive(call);
                     break;
                 case core::BuiltinFn::kTextureDimensions:
                     TextureDimensions(call);
@@ -450,8 +456,7 @@ struct State {
         b.InsertBefore(call, [&] {
             auto* original_value = b.Var(ty.ptr(function, type));
             original_value->SetInitializer(b.Zero(type));
-
-            auto* val = b.Negation(type, args[1]);
+            auto* val = b.Subtract(type, b.Zero(type), args[1]);
             b.Call<hlsl::ir::BuiltinCall>(ty.void_(), BuiltinFn::kInterlockedAdd, args[0], val,
                                           original_value);
             b.LoadWithResult(call->DetachResult(), original_value)->Result(0);
@@ -507,8 +512,7 @@ struct State {
 
     void Select(core::ir::CoreBuiltinCall* call) {
         Vector<core::ir::Value*, 4> args = call->Args();
-        auto* ternary = b.ir.allocators.instructions.Create<hlsl::ir::Ternary>(
-            b.ir.NextInstructionId(), call->DetachResult(), args);
+        auto* ternary = b.ir.CreateInstruction<hlsl::ir::Ternary>(call->DetachResult(), args);
         ternary->InsertBefore(call);
         call->Destroy();
     }
@@ -526,10 +530,9 @@ struct State {
         b.InsertBefore(call, [&] {
             args.Push(b.Call(type, core::BuiltinFn::kFloor, val)->Result(0));
             args.Push(b.Call(type, core::BuiltinFn::kCeil, val)->Result(0));
-            args.Push(b.LessThan(ty.match_width(ty.bool_(), type), val, b.Zero(type))->Result(0));
+            args.Push(b.LessThan(ty.MatchWidth(ty.bool_(), type), val, b.Zero(type))->Result(0));
         });
-        auto* trunc = b.ir.allocators.instructions.Create<hlsl::ir::Ternary>(
-            b.ir.NextInstructionId(), call->DetachResult(), args);
+        auto* trunc = b.ir.CreateInstruction<hlsl::ir::Ternary>(call->DetachResult(), args);
         trunc->InsertBefore(call);
 
         call->Destroy();
@@ -553,8 +556,23 @@ struct State {
             [&](const core::type::F32*) { fn = BuiltinFn::kAsfloat; },  //
             TINT_ICE_ON_NO_MATCH);
 
+        // TODO(crbug.com/361794783): work around DXC failing on 'as' casts of constant integral
+        // splats by wrapping it with an explicit vector constructor.
+        // e.g. asuint(123.xx) -> asuint(int2(123.xx)))
+        bool castToSrcType = false;
+        auto* src_type = bitcast->Val()->Type();
+        if (src_type->IsIntegerVector()) {
+            if (auto* c = bitcast->Val()->As<core::ir::Constant>()) {
+                castToSrcType = c->Value()->Is<core::constant::Splat>();
+            }
+        }
+
         b.InsertBefore(bitcast, [&] {
-            b.CallWithResult<hlsl::ir::BuiltinCall>(bitcast->DetachResult(), fn, bitcast->Val());
+            auto* source = bitcast->Val();
+            if (castToSrcType) {
+                source = b.Construct(src_type, source)->Result(0);
+            }
+            b.CallWithResult<hlsl::ir::BuiltinCall>(bitcast->DetachResult(), fn, source);
         });
         bitcast->Destroy();
     }
@@ -669,8 +687,8 @@ struct State {
                 auto* src = b.FunctionParam("src", src_type);
                 f->SetParams({src});
                 b.Append(f->Block(), [&] {
-                    const core::type::Type* uint_ty = ty.match_width(ty.u32(), src_type);
-                    const core::type::Type* float_ty = ty.match_width(ty.f32(), src_type);
+                    const core::type::Type* uint_ty = ty.MatchWidth(ty.u32(), src_type);
+                    const core::type::Type* float_ty = ty.MatchWidth(ty.f32(), src_type);
 
                     core::ir::Instruction* v = nullptr;
                     tint::Switch(
@@ -910,7 +928,8 @@ struct State {
                                                       tex, args);
             query = b.Load(query);
             if (!swizzle.IsEmpty()) {
-                query = b.Swizzle(ty.vec2<u32>(), query, swizzle);
+                query = b.Swizzle(ty.vec(ty.u32(), static_cast<uint32_t>(swizzle.Length())), query,
+                                  swizzle);
             }
             call->Result(0)->ReplaceAllUsesWith(query->Result(0));
         });
@@ -1733,7 +1752,7 @@ struct State {
     }
 
     void QuantizeToF16(core::ir::CoreBuiltinCall* call) {
-        auto* u32_type = ty.match_width(ty.u32(), call->Result(0)->Type());
+        auto* u32_type = ty.MatchWidth(ty.u32(), call->Result(0)->Type());
         b.InsertBefore(call, [&] {
             auto* inner = b.Call<hlsl::ir::BuiltinCall>(u32_type, hlsl::BuiltinFn::kF32Tof16,
                                                         call->Args()[0]);
@@ -1752,7 +1771,7 @@ struct State {
         auto* arg_type = arg->Type()->UnwrapRef();
         if (arg_type->IsSignedIntegerScalarOrVector()) {
             auto* result_ty = call->Result(0)->Type();
-            auto* u32_type = ty.match_width(ty.u32(), result_ty);
+            auto* u32_type = ty.MatchWidth(ty.u32(), result_ty);
             b.InsertBefore(call, [&] {
                 core::ir::Value* val = arg;
                 // Bitcast of literal int vectors fails in DXC so extract arg to a var. See
@@ -1804,6 +1823,49 @@ struct State {
         });
         call->Destroy();
     }
+
+    // The following subgroup builtin functions are translated to HLSL as follows:
+    // +-----------------------+----------------------+
+    // |        WGSL           |       HLSL           |
+    // +-----------------------+----------------------+
+    // | subgroupInclusiveAdd  | WavePrefixSum(x) + x |
+    // | subgroupInclusiveMul  | WavePrefixMul(x) * x |
+    // +-----------------------+----------------------+
+    void SubgroupInclusive(core::ir::CoreBuiltinCall* call) {
+        TINT_ASSERT(call->Args().Length() == 1);
+        b.InsertBefore(call, [&] {
+            auto builtin_sel = core::BuiltinFn::kNone;
+
+            switch (call->Func()) {
+                case core::BuiltinFn::kSubgroupInclusiveAdd:
+                    builtin_sel = core::BuiltinFn::kSubgroupExclusiveAdd;
+                    break;
+                case core::BuiltinFn::kSubgroupInclusiveMul:
+                    builtin_sel = core::BuiltinFn::kSubgroupExclusiveMul;
+                    break;
+                default:
+                    TINT_UNREACHABLE();
+            }
+
+            auto* arg1 = call->Args()[0];
+            auto call_type = arg1->Type();
+            auto* exclusive_call = b.Call<core::ir::CoreBuiltinCall>(call_type, builtin_sel, arg1);
+
+            core::ir::Instruction* inst = nullptr;
+            switch (call->Func()) {
+                case core::BuiltinFn::kSubgroupInclusiveAdd:
+                    inst = b.Add(call_type, exclusive_call, arg1);
+                    break;
+                case core::BuiltinFn::kSubgroupInclusiveMul:
+                    inst = b.Multiply(call_type, exclusive_call, arg1);
+                    break;
+                default:
+                    TINT_UNREACHABLE();
+            }
+            call->Result(0)->ReplaceAllUsesWith(inst->Result(0));
+        });
+        call->Destroy();
+    }
 };
 
 }  // namespace
@@ -1815,7 +1877,6 @@ Result<SuccessType> BuiltinPolyfill(core::ir::Module& ir) {
     }
 
     State{ir}.Process();
-
     return Success;
 }
 

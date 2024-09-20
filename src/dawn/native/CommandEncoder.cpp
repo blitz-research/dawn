@@ -386,8 +386,8 @@ MaybeError ValidateResolveTarget(const DeviceBase* device,
     const TextureViewBase* resolveTarget = colorAttachment.resolveTarget;
     const TextureViewBase* attachment = colorAttachment.view;
     DAWN_TRY(device->ValidateObject(colorAttachment.resolveTarget));
-    DAWN_TRY(ValidateCanUseAs(colorAttachment.resolveTarget->GetTexture(),
-                              wgpu::TextureUsage::RenderAttachment, usageValidationMode));
+    DAWN_TRY(ValidateCanUseAs(colorAttachment.resolveTarget, wgpu::TextureUsage::RenderAttachment,
+                              usageValidationMode));
 
     DAWN_INVALID_IF(!attachment->GetTexture()->IsMultisampledTexture(),
                     "Cannot set %s as a resolve target when the color attachment %s has a sample "
@@ -503,12 +503,12 @@ MaybeError ValidateExpandResolveTextureLoadOp(const DeviceBase* device,
                 !colorAttachment.resolveTarget->IsError());
     DAWN_ASSERT(colorAttachment.view->GetFormat().supportsResolveTarget);
 
-    DAWN_INVALID_IF((colorAttachment.resolveTarget->GetTexture()->GetUsage() &
-                     wgpu::TextureUsage::TextureBinding) == 0,
-                    "Resolve target %s was not created with %s usage, which is required for "
-                    "%s.",
-                    colorAttachment.resolveTarget, wgpu::TextureUsage::TextureBinding,
-                    wgpu::LoadOp::ExpandResolveTexture);
+    DAWN_INVALID_IF(
+        (colorAttachment.resolveTarget->GetUsage() & wgpu::TextureUsage::TextureBinding) == 0,
+        "Resolve target %s was not created with %s usage, which is required for "
+        "%s.",
+        colorAttachment.resolveTarget, wgpu::TextureUsage::TextureBinding,
+        wgpu::LoadOp::ExpandResolveTexture);
 
     // TODO(42240662): multiplanar textures are not supported as resolve target.
     // The RenderPassValidationState currently rejects such usage.
@@ -529,8 +529,8 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
     }
 
     DAWN_TRY(device->ValidateObject(attachment));
-    DAWN_TRY(ValidateCanUseAs(attachment->GetTexture(), wgpu::TextureUsage::RenderAttachment,
-                              usageValidationMode));
+    DAWN_TRY(
+        ValidateCanUseAs(attachment, wgpu::TextureUsage::RenderAttachment, usageValidationMode));
 
     UnpackedPtr<RenderPassColorAttachment> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(&colorAttachment));
@@ -558,16 +558,16 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
     DAWN_TRY(ValidateStoreOp(colorAttachment.storeOp));
     DAWN_INVALID_IF(colorAttachment.loadOp == wgpu::LoadOp::Undefined, "loadOp must be set.");
     DAWN_INVALID_IF(colorAttachment.storeOp == wgpu::StoreOp::Undefined, "storeOp must be set.");
-    if (attachment->GetTexture()->GetUsage() & wgpu::TextureUsage::TransientAttachment) {
+    if (attachment->GetUsage() & wgpu::TextureUsage::TransientAttachment) {
         DAWN_INVALID_IF(colorAttachment.loadOp != wgpu::LoadOp::Clear &&
                             colorAttachment.loadOp != wgpu::LoadOp::ExpandResolveTexture,
                         "The color attachment %s has the load op set to %s while its usage (%s) "
                         "has the transient attachment bit set.",
-                        attachment, colorAttachment.loadOp, attachment->GetTexture()->GetUsage());
+                        attachment, colorAttachment.loadOp, attachment->GetUsage());
         DAWN_INVALID_IF(colorAttachment.storeOp != wgpu::StoreOp::Discard,
                         "The color attachment %s has the store op set to %s while its usage (%s) "
                         "has the transient attachment bit set.",
-                        attachment, wgpu::StoreOp::Store, attachment->GetTexture()->GetUsage());
+                        attachment, wgpu::StoreOp::Store, attachment->GetUsage());
     }
 
     const dawn::native::Color& clearValue = colorAttachment.clearValue;
@@ -612,8 +612,8 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
 
     TextureViewBase* attachment = depthStencilAttachment->view;
     DAWN_TRY(device->ValidateObject(attachment));
-    DAWN_TRY(ValidateCanUseAs(attachment->GetTexture(), wgpu::TextureUsage::RenderAttachment,
-                              usageValidationMode));
+    DAWN_TRY(
+        ValidateCanUseAs(attachment, wgpu::TextureUsage::RenderAttachment, usageValidationMode));
 
     // DS attachments must encompass all aspects of the texture, so we first check that this is
     // true, which means that in the rest of the function we can assume that the view's format is
@@ -712,8 +712,8 @@ MaybeError ValidateRenderPassPLS(DeviceBase* device,
 
         // Validate the attachment can be used as a storage attachment.
         DAWN_TRY(device->ValidateObject(attachment.storage));
-        DAWN_TRY(ValidateCanUseAs(attachment.storage->GetTexture(),
-                                  wgpu::TextureUsage::StorageAttachment, usageValidationMode));
+        DAWN_TRY(ValidateCanUseAs(attachment.storage, wgpu::TextureUsage::StorageAttachment,
+                                  usageValidationMode));
         DAWN_TRY(ValidateAttachmentArrayLayersAndLevelCount(attachment.storage));
 
         // Validate the load/storeOp and the clearValue.
@@ -1114,6 +1114,10 @@ void CommandEncoder::TrackQueryAvailability(QuerySetBase* querySet, uint32_t que
     querySet->SetQueryAvailability(queryIndex, true);
 }
 
+std::vector<IndirectDrawMetadata> CommandEncoder::AcquireIndirectDrawMetadata() {
+    return mEncodingContext.AcquireIndirectDrawMetadata();
+}
+
 // Implementation of the API's command recording methods
 
 ComputePassEncoder* CommandEncoder::APIBeginComputePass(const ComputePassDescriptor* descriptor) {
@@ -1217,7 +1221,7 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
 
             DAWN_ASSERT(validationState.IsValidState());
 
-            DAWN_TRY(clearWithDrawHelper.Initialize(this, *descriptor));
+            DAWN_TRY(clearWithDrawHelper.Initialize(this, descriptor));
             DAWN_TRY(renderpassWorkaroundsHelper.Initialize(this, descriptor));
 
             mEncodingContext.WillBeginRenderPass();
@@ -2060,6 +2064,7 @@ CommandBufferBase* CommandEncoder::APIFinish(const CommandBufferDescriptor* desc
         errorCommandBuffer->SetEncoderLabel(this->GetLabel());
         return ReturnToAPI(std::move(errorCommandBuffer));
     }
+
     DAWN_ASSERT(!IsError());
     return ReturnToAPI(std::move(commandBuffer));
 }

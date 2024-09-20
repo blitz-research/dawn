@@ -593,8 +593,7 @@ class Printer : public tint::TextGenerator {
             out << " = ";
             EmitValue(out, var->Initializer());
         } else if (space == core::AddressSpace::kPrivate ||
-                   space == core::AddressSpace::kFunction ||
-                   space == core::AddressSpace::kUndefined) {
+                   space == core::AddressSpace::kFunction) {
             out << " = ";
             EmitZeroValue(out, ptr->UnwrapPtr());
         }
@@ -795,15 +794,17 @@ class Printer : public tint::TextGenerator {
                 EmitType(out, c->Result(0)->Type());
                 out << "(";  // For the type constructor
 
-                // We swizzle a single value, in order to do so, wrap it in it more brackets.
-                if (c->Args().Length() == 1) {
+                // Swizzle single value if it's not already the right type
+                // (typically a single scalar value).
+                const bool swizzle_value =
+                    (c->Args().Length() == 1) && (c->Args()[0]->Type() != c->Result(0)->Type());
+                if (swizzle_value) {
                     out << "(";
                 }
 
                 emit_args();
 
-                // Swizzle a single value constructor
-                if (c->Args().Length() == 1) {
+                if (swizzle_value) {
                     out << ")." << std::string(vec->Width(), 'x');
                 }
 
@@ -976,7 +977,6 @@ class Printer : public tint::TextGenerator {
                 break;
             case core::BuiltinFn::kFwidth:
             case core::BuiltinFn::kFwidthCoarse:
-            case core::BuiltinFn::kFwidthFine:
                 out << "fwidth";
                 break;
             case core::BuiltinFn::kInverseSqrt:
@@ -1157,7 +1157,7 @@ class Printer : public tint::TextGenerator {
             [&](const core::type::Bool*) { out << (c->ValueAs<AInt>() ? "true" : "false"); },
             [&](const core::type::F16*) { EmitConstantF16(out, c); },
             [&](const core::type::F32*) { PrintF32(out, c->ValueAs<f32>()); },
-            [&](const core::type::I32*) { out << c->ValueAs<i32>(); },
+            [&](const core::type::I32*) { PrintI32(out, c->ValueAs<i32>()); },
             [&](const core::type::U32*) { out << c->ValueAs<AInt>() << "u"; },
             [&](const core::type::Array* a) { EmitConstantArray(out, c, a); },
             [&](const core::type::Vector* v) { EmitConstantVector(out, c, v); },
@@ -1614,6 +1614,14 @@ class Printer : public tint::TextGenerator {
                 builtin_struct_names_.GetOrAdd(s, [&] { return UniqueIdentifier(name.substr(2)); });
         }
         return name;
+    }
+
+    void PrintI32(StringStream& out, int32_t value) {
+        // TODO(crbug.com/368092875): DXC workaround: unless we compile with '-HV 202x', constant
+        // signed integral values are interpreted 64-bit ints. Apart from this not matching our
+        // intent, there are bugs in DXC when handling 64-bit integer splats. Always emit as a
+        // 32-bit signed int.
+        out << "int(" << value << ")";
     }
 
     void PrintF32(StringStream& out, float value) {

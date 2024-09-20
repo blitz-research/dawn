@@ -1,11 +1,12 @@
-SKIP: FAILED
+#version 310 es
 
-<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:482 internal compiler error: Switch() matched no cases. Type: tint::core::ir::CoreBuiltinCall
-********************************************************************
-*  The tint shader compiler has encountered an unexpected error.   *
-*                                                                  *
-*  Please help us fix this issue by submitting a bug report at     *
-*  crbug.com/tint with the source program that triggered the bug.  *
-********************************************************************
-
-tint executable returned error: signal: illegal instruction
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  mat3x4 tint_symbol;
+} v;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  mat4x3 t = transpose(v.tint_symbol);
+  float l = length(v.tint_symbol[1]);
+  float a = abs(v.tint_symbol[0].ywxz[0u]);
+}

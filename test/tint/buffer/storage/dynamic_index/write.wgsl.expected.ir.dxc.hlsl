@@ -1,5 +1,3 @@
-SKIP: FAILED
-
 struct main_inputs {
   uint idx : SV_GroupIndex;
 };
@@ -82,22 +80,22 @@ void main_inner(uint idx) {
   uint v_12 = (0u + (uint(idx) * 544u));
   sb.Store(v_12, asuint(0.0f));
   uint v_13 = (4u + (uint(idx) * 544u));
-  sb.Store(v_13, asuint(0));
+  sb.Store(v_13, asuint(int(0)));
   sb.Store((8u + (uint(idx) * 544u)), 0u);
   uint v_14 = (16u + (uint(idx) * 544u));
   sb.Store2(v_14, asuint((0.0f).xx));
   uint v_15 = (24u + (uint(idx) * 544u));
-  sb.Store2(v_15, asuint((0).xx));
+  sb.Store2(v_15, asuint(int2((int(0)).xx)));
   sb.Store2((32u + (uint(idx) * 544u)), (0u).xx);
   uint v_16 = (48u + (uint(idx) * 544u));
   sb.Store3(v_16, asuint((0.0f).xxx));
   uint v_17 = (64u + (uint(idx) * 544u));
-  sb.Store3(v_17, asuint((0).xxx));
+  sb.Store3(v_17, asuint(int3((int(0)).xxx)));
   sb.Store3((80u + (uint(idx) * 544u)), (0u).xxx);
   uint v_18 = (96u + (uint(idx) * 544u));
   sb.Store4(v_18, asuint((0.0f).xxxx));
   uint v_19 = (112u + (uint(idx) * 544u));
-  sb.Store4(v_19, asuint((0).xxxx));
+  sb.Store4(v_19, asuint(int4((int(0)).xxxx)));
   sb.Store4((128u + (uint(idx) * 544u)), (0u).xxxx);
   v_11((144u + (uint(idx) * 544u)), float2x2((0.0f).xx, (0.0f).xx));
   v_10((160u + (uint(idx) * 544u)), float2x3((0.0f).xxx, (0.0f).xxx));
@@ -117,5 +115,3 @@ void main(main_inputs inputs) {
   main_inner(inputs.idx);
 }
 
-
-tint executable returned error: exit status 0xe0000001

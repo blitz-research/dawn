@@ -75,6 +75,7 @@ TEST_F(GlslWriterTest, AccessStruct) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+
 struct S {
   int a;
   float b;
@@ -88,8 +89,7 @@ void main() {
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessVector) {
+TEST_F(GlslWriterTest, AccessVector) {
     auto* func = b.Function("a", ty.void_(), core::ir::Function::PipelineStage::kCompute);
     func->SetWorkgroupSize(1, 1, 1);
 
@@ -101,12 +101,15 @@ TEST_F(GlslWriterTest, DISABLED_AccessVector) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
-
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  vec3 v = vec3(0.0f);
+  float x = v.y;
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessMatrix) {
+TEST_F(GlslWriterTest, AccessMatrix) {
     auto* func = b.Function("a", ty.void_(), core::ir::Function::PipelineStage::kCompute);
     func->SetWorkgroupSize(1, 1, 1);
 
@@ -119,12 +122,15 @@ TEST_F(GlslWriterTest, DISABLED_AccessMatrix) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
-
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  mat4 v = mat4(vec4(0.0f), vec4(0.0f), vec4(0.0f), vec4(0.0f));
+  float x = v[1u].z;
+}
 )");
 }
 
-// TODO(dsinclair): Support StoreVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStoreVectorElementConstantIndex) {
+TEST_F(GlslWriterTest, AccessStoreVectorElementConstantIndex) {
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
         auto* vec_var = b.Var("vec", ty.ptr<function, vec4<i32>>());
@@ -134,11 +140,17 @@ TEST_F(GlslWriterTest, DISABLED_AccessStoreVectorElementConstantIndex) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
-
+void foo() {
+  ivec4 vec = ivec4(0);
+  vec[1u] = 42;
+}
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+}
 )");
 }
 
-// TODO(dsinclair): Support StoreVectorElement
+// TODO(dsinclair): Needs ir::Convert
 TEST_F(GlslWriterTest, DISABLED_AccessStoreVectorElementDynamicIndex) {
     auto* idx = b.FunctionParam("idx", ty.i32());
     auto* func = b.Function("foo", ty.void_());
@@ -185,6 +197,7 @@ TEST_F(GlslWriterTest, AccessNested) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+
 struct A {
   int d;
   float e[3];
@@ -204,8 +217,7 @@ void main() {
 )");
 }
 
-// TODO(dsinclair): Support swizzle
-TEST_F(GlslWriterTest, DISABLED_AccessSwizzle) {
+TEST_F(GlslWriterTest, AccessSwizzle) {
     auto* f = b.Function("a", ty.void_(), core::ir::Function::PipelineStage::kCompute);
     f->SetWorkgroupSize(1, 1, 1);
 
@@ -217,12 +229,15 @@ TEST_F(GlslWriterTest, DISABLED_AccessSwizzle) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
-
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  vec3 v = vec3(0.0f);
+  float b = v.y;
+}
 )");
 }
 
-// TODO(dsinclair): Support swizzle
-TEST_F(GlslWriterTest, DISABLED_AccessSwizzleMulti) {
+TEST_F(GlslWriterTest, AccessSwizzleMulti) {
     auto* f = b.Function("a", ty.void_(), core::ir::Function::PipelineStage::kCompute);
     f->SetWorkgroupSize(1, 1, 1);
 
@@ -234,12 +249,15 @@ TEST_F(GlslWriterTest, DISABLED_AccessSwizzleMulti) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
-
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  vec4 v = vec4(0.0f);
+  vec4 b = v.wzyx;
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStorageVector) {
+TEST_F(GlslWriterTest, AccessStorageVector) {
     auto* var = b.Var<storage, vec4<f32>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -255,13 +273,24 @@ TEST_F(GlslWriterTest, DISABLED_AccessStorageVector) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  vec4 tint_symbol;
+} v_1;
+void main() {
+  vec4 a = v_1.tint_symbol;
+  float b = v_1.tint_symbol.x;
+  float c = v_1.tint_symbol.y;
+  float d = v_1.tint_symbol.z;
+  float e = v_1.tint_symbol.w;
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStorageVectorF16) {
+TEST_F(GlslWriterTest, AccessStorageVectorF16) {
     auto* var = b.Var<storage, vec4<f16>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -277,13 +306,25 @@ TEST_F(GlslWriterTest, DISABLED_AccessStorageVectorF16) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  f16vec4 tint_symbol;
+} v_1;
+void main() {
+  f16vec4 a = v_1.tint_symbol;
+  float16_t b = v_1.tint_symbol.x;
+  float16_t c = v_1.tint_symbol.y;
+  float16_t d = v_1.tint_symbol.z;
+  float16_t e = v_1.tint_symbol.w;
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStorageMatrix) {
+TEST_F(GlslWriterTest, AccessStorageMatrix) {
     auto* var = b.Var<storage, mat4x4<f32>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -298,13 +339,22 @@ TEST_F(GlslWriterTest, DISABLED_AccessStorageMatrix) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  mat4 tint_symbol;
+} v_1;
+void main() {
+  mat4 a = v_1.tint_symbol;
+  vec4 b = v_1.tint_symbol[3u];
+  float c = v_1.tint_symbol[1u].z;
+}
 )");
 }
 
-// TODO(dsinclair): Needs to create a buffer block
-TEST_F(GlslWriterTest, DISABLED_AccessStorageArray) {
+TEST_F(GlslWriterTest, AccessStorageArray) {
     auto* var = b.Var<storage, array<vec3<f32>, 5>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -320,13 +370,13 @@ TEST_F(GlslWriterTest, DISABLED_AccessStorageArray) {
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
-layout(binding = 0, std430) buffer v_block_ssbo {
-  vec3 inner[5];
-} v;
-
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  vec3 tint_symbol[5];
+} v_1;
 void main() {
-  vec3 a[5] = v.inner;
-  vec3 b = v.inner[3u];
+  vec3 a[5] = v_1.tint_symbol;
+  vec3 b = v_1.tint_symbol[3u];
 }
 )");
 }
@@ -349,25 +399,27 @@ TEST_F(GlslWriterTest, AccessStorageStruct) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
+
+
 struct SB {
   int a;
   float b;
 };
-precision highp float;
-precision highp int;
 
-
-SB v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
 void main() {
-  SB a = v;
-  float b = v.b;
+  SB a = v_1.tint_symbol;
+  float b = v_1.tint_symbol.b;
 }
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStorageNested) {
+TEST_F(GlslWriterTest, AccessStorageNested) {
     auto* Inner =
         ty.Struct(mod.symbols.New("Inner"), {
                                                 {mod.symbols.New("s"), ty.mat3x3<f32>()},
@@ -397,13 +449,37 @@ TEST_F(GlslWriterTest, DISABLED_AccessStorageNested) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+
+struct Inner {
+  mat3 s;
+  vec3 t[5];
+};
+
+struct Outer {
+  float x;
+  Inner y;
+};
+
+struct SB {
+  int a;
+  Outer b;
+};
+
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
+void main() {
+  SB a = v_1.tint_symbol;
+  float b = v_1.tint_symbol.b.y.t[3u].z;
+}
 )");
 }
 
-// TODO(dsinclair): Support StoreVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStorageStoreVector) {
+TEST_F(GlslWriterTest, AccessStorageStoreVector) {
     auto* var = b.Var<storage, vec4<f32>, core::Access::kReadWrite>("v");
     var->SetBindingPoint(0, 0);
 
@@ -418,13 +494,23 @@ TEST_F(GlslWriterTest, DISABLED_AccessStorageStoreVector) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  vec4 tint_symbol;
+} v_1;
+void main() {
+  v_1.tint_symbol[0u] = 2.0f;
+  v_1.tint_symbol[1u] = 4.0f;
+  v_1.tint_symbol[2u] = 8.0f;
+  v_1.tint_symbol[3u] = 16.0f;
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessDirectVariable) {
+TEST_F(GlslWriterTest, AccessDirectVariable) {
     auto* var1 = b.Var<storage, vec4<f32>, core::Access::kRead>("v1");
     var1->SetBindingPoint(0, 0);
     b.ir.root_block->Append(var1);
@@ -449,8 +535,27 @@ TEST_F(GlslWriterTest, DISABLED_AccessDirectVariable) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  vec4 tint_symbol;
+} v;
+layout(binding = 1, std430)
+buffer tint_symbol_3_1_ssbo {
+  vec4 tint_symbol_2;
+} v_1;
+void bar() {
+  float a = v.tint_symbol.y;
+}
+void bar_1() {
+  float a = v_1.tint_symbol_2.y;
+}
+void main() {
+  bar();
+  bar_1();
+}
 )");
 }
 
@@ -478,7 +583,10 @@ TEST_F(GlslWriterTest, AccessChainFromUnnamedAccessChain) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
+
+
 struct Inner {
   float c;
   uint d;
@@ -488,13 +596,13 @@ struct SB {
   int a;
   Inner b;
 };
-precision highp float;
-precision highp int;
 
-
-SB v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
 void main() {
-  uint b = v.b.d;
+  uint b = v_1.tint_symbol.b.d;
 }
 )");
 }
@@ -634,7 +742,10 @@ TEST_F(GlslWriterTest, AccessUniformChainFromUnnamedAccessChain) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
+
+
 struct Inner {
   float c;
   uint d;
@@ -644,13 +755,13 @@ struct SB {
   int a;
   Inner b;
 };
-precision highp float;
-precision highp int;
 
-
-uniform SB v;
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  SB tint_symbol;
+} v_1;
 void main() {
-  uint b = v.b.d;
+  uint b = v_1.tint_symbol.b.d;
 }
 )");
 }
@@ -703,10 +814,12 @@ TEST_F(GlslWriterTest, AccessUniformScalar) {
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
-
-uniform float v;
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  float tint_symbol;
+} v_1;
 void main() {
-  float a = v;
+  float a = v_1.tint_symbol;
 }
 )");
 }
@@ -727,16 +840,17 @@ TEST_F(GlslWriterTest, AccessUniformScalarF16) {
 precision highp float;
 precision highp int;
 
-
-uniform float16_t v;
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  float16_t tint_symbol;
+} v_1;
 void main() {
-  float16_t a = v;
+  float16_t a = v_1.tint_symbol;
 }
 )");
 }
 
-// TODO(dsinclair): Handle LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformVector) {
+TEST_F(GlslWriterTest, AccessUniformVector) {
     auto* var = b.Var<uniform, vec4<f32>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -752,13 +866,24 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformVector) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  vec4 tint_symbol;
+} v_1;
+void main() {
+  vec4 a = v_1.tint_symbol;
+  float b = v_1.tint_symbol.x;
+  float c = v_1.tint_symbol.y;
+  float d = v_1.tint_symbol.z;
+  float e = v_1.tint_symbol.w;
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformVectorF16) {
+TEST_F(GlslWriterTest, AccessUniformVectorF16) {
     auto* var = b.Var<uniform, vec4<f16>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -775,13 +900,26 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformVectorF16) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  f16vec4 tint_symbol;
+} v_1;
+void main() {
+  uint x = 1u;
+  f16vec4 a = v_1.tint_symbol;
+  float16_t b = v_1.tint_symbol.x;
+  float16_t c = v_1.tint_symbol[min(x, 3u)];
+  float16_t d = v_1.tint_symbol.z;
+  float16_t e = v_1.tint_symbol.w;
+}
 )");
 }
 
-// TODO(dsinclair): support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix) {
+TEST_F(GlslWriterTest, AccessUniformMatrix) {
     auto* var = b.Var<uniform, mat4x4<f32>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -796,13 +934,22 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  mat4 tint_symbol;
+} v_1;
+void main() {
+  mat4 a = v_1.tint_symbol;
+  vec4 b = v_1.tint_symbol[3u];
+  float c = v_1.tint_symbol[1u].z;
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix2x3) {
+TEST_F(GlslWriterTest, AccessUniformMatrix2x3) {
     auto* var = b.Var<uniform, mat2x3<f32>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -817,13 +964,23 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix2x3) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_std140_1_ubo {
+  vec3 tint_symbol_col0;
+  vec3 tint_symbol_col1;
+} v_1;
+void main() {
+  mat2x3 a = mat2x3(v_1.tint_symbol_col0, v_1.tint_symbol_col1);
+  vec3 b = mat2x3(v_1.tint_symbol_col0, v_1.tint_symbol_col1)[1u];
+  float c = mat2x3(v_1.tint_symbol_col0, v_1.tint_symbol_col1)[1u][2u];
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformMat2x3F16) {
+TEST_F(GlslWriterTest, AccessUniformMat2x3F16) {
     auto* var = b.Var<uniform, mat2x3<f16>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
     b.ir.root_block->Append(var);
@@ -837,13 +994,24 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformMat2x3F16) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_std140_1_ubo {
+  f16vec3 tint_symbol_col0;
+  f16vec3 tint_symbol_col1;
+} v_1;
+void main() {
+  f16mat2x3 a = f16mat2x3(v_1.tint_symbol_col0, v_1.tint_symbol_col1);
+  f16vec3 b = f16mat2x3(v_1.tint_symbol_col0, v_1.tint_symbol_col1)[1u];
+  float16_t c = f16mat2x3(v_1.tint_symbol_col0, v_1.tint_symbol_col1)[1u][2u];
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix3x2) {
+TEST_F(GlslWriterTest, AccessUniformMatrix3x2) {
     auto* var = b.Var<uniform, mat3x2<f32>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -858,13 +1026,24 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix3x2) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_std140_1_ubo {
+  vec2 tint_symbol_col0;
+  vec2 tint_symbol_col1;
+  vec2 tint_symbol_col2;
+} v_1;
+void main() {
+  mat3x2 a = mat3x2(v_1.tint_symbol_col0, v_1.tint_symbol_col1, v_1.tint_symbol_col2);
+  vec2 b = mat3x2(v_1.tint_symbol_col0, v_1.tint_symbol_col1, v_1.tint_symbol_col2)[1u];
+  float c = mat3x2(v_1.tint_symbol_col0, v_1.tint_symbol_col1, v_1.tint_symbol_col2)[1u][1u];
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix2x2) {
+TEST_F(GlslWriterTest, AccessUniformMatrix2x2) {
     auto* var = b.Var<uniform, mat2x2<f32>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -879,13 +1058,23 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix2x2) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_std140_1_ubo {
+  vec2 tint_symbol_col0;
+  vec2 tint_symbol_col1;
+} v_1;
+void main() {
+  mat2 a = mat2(v_1.tint_symbol_col0, v_1.tint_symbol_col1);
+  vec2 b = mat2(v_1.tint_symbol_col0, v_1.tint_symbol_col1)[1u];
+  float c = mat2(v_1.tint_symbol_col0, v_1.tint_symbol_col1)[1u][1u];
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix2x2F16) {
+TEST_F(GlslWriterTest, AccessUniformMatrix2x2F16) {
     auto* var = b.Var<uniform, mat2x2<f16>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -900,13 +1089,24 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformMatrix2x2F16) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_std140_1_ubo {
+  f16vec2 tint_symbol_col0;
+  f16vec2 tint_symbol_col1;
+} v_1;
+void main() {
+  f16mat2 a = f16mat2(v_1.tint_symbol_col0, v_1.tint_symbol_col1);
+  f16vec2 b = f16mat2(v_1.tint_symbol_col0, v_1.tint_symbol_col1)[1u];
+  float16_t c = f16mat2(v_1.tint_symbol_col0, v_1.tint_symbol_col1)[1u][1u];
+}
 )");
 }
 
-// TODO(dsinclair): Needs buffer block
-TEST_F(GlslWriterTest, DISABLED_AccessUniformArray) {
+TEST_F(GlslWriterTest, AccessUniformArray) {
     auto* var = b.Var<uniform, array<vec3<f32>, 5>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -919,13 +1119,21 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformArray) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  vec3 tint_symbol[5];
+} v_1;
+void main() {
+  vec3 a[5] = v_1.tint_symbol;
+  vec3 b = v_1.tint_symbol[3u];
+}
 )");
 }
 
-// TODO(dsinclair): Needs buffer block
-TEST_F(GlslWriterTest, DISABLED_AccessUniformArrayF16) {
+TEST_F(GlslWriterTest, AccessUniformArrayF16) {
     auto* var = b.Var<uniform, array<vec3<f16>, 5>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -938,13 +1146,22 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformArrayF16) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
 
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  f16vec3 tint_symbol[5];
+} v_1;
+void main() {
+  f16vec3 a[5] = v_1.tint_symbol;
+  f16vec3 b = v_1.tint_symbol[3u];
+}
 )");
 }
 
-// TODO(dsinclair): Needs buffer block
-TEST_F(GlslWriterTest, DISABLED_AccessUniformArrayWhichCanHaveSizesOtherThenFive) {
+TEST_F(GlslWriterTest, AccessUniformArrayWhichCanHaveSizesOtherThenFive) {
     auto* var = b.Var<uniform, array<vec3<f32>, 42>, core::Access::kRead>("v");
     var->SetBindingPoint(0, 0);
 
@@ -957,17 +1174,16 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformArrayWhichCanHaveSizesOtherThenFive
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
-precision highp float;
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
-layout(binding = 0, std140) uniform v_block_ubo {
-  vec3 inner[42];
-} v;
-
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  vec3 tint_symbol[42];
+} v_1;
 void main() {
-  vec3 a[42] = v.inner;
-  vec3 b = v.inner[3];
+  vec3 a[42] = v_1.tint_symbol;
+  vec3 b = v_1.tint_symbol[3u];
 }
 )");
 }
@@ -990,19 +1206,22 @@ TEST_F(GlslWriterTest, AccessUniformStruct) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
+
+
 struct SB {
   int a;
   float b;
 };
-precision highp float;
-precision highp int;
 
-
-uniform SB v;
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  SB tint_symbol;
+} v_1;
 void main() {
-  SB a = v;
-  float b = v.b;
+  SB a = v_1.tint_symbol;
+  float b = v_1.tint_symbol.b;
 }
 )");
 }
@@ -1026,25 +1245,27 @@ TEST_F(GlslWriterTest, AccessUniformStructF16) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
+
 
 struct SB {
   int a;
   float16_t b;
 };
-precision highp float;
-precision highp int;
 
-
-uniform SB v;
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  SB tint_symbol;
+} v_1;
 void main() {
-  SB a = v;
-  float16_t b = v.b;
+  SB a = v_1.tint_symbol;
+  float16_t b = v_1.tint_symbol.b;
 }
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessUniformStructNested) {
+TEST_F(GlslWriterTest, AccessUniformStructNested) {
     auto* Inner =
         ty.Struct(mod.symbols.New("Inner"), {
                                                 {mod.symbols.New("s"), ty.mat3x3<f32>()},
@@ -1074,8 +1295,59 @@ TEST_F(GlslWriterTest, DISABLED_AccessUniformStructNested) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+
+struct Inner_std140 {
+  vec3 s_col0;
+  vec3 s_col1;
+  vec3 s_col2;
+  vec3 t[5];
+};
+
+struct Outer_std140 {
+  float x;
+  Inner_std140 y;
+};
+
+struct SB_std140 {
+  int a;
+  Outer_std140 b;
+};
+
+struct Inner {
+  mat3 s;
+  vec3 t[5];
+};
+
+struct Outer {
+  float x;
+  Inner y;
+};
+
+struct SB {
+  int a;
+  Outer b;
+};
+
+layout(binding = 0, std140)
+uniform tint_symbol_1_std140_1_ubo {
+  SB_std140 tint_symbol;
+} v_1;
+Inner tint_convert_Inner(Inner_std140 tint_input) {
+  return Inner(mat3(tint_input.s_col0, tint_input.s_col1, tint_input.s_col2), tint_input.t);
+}
+Outer tint_convert_Outer(Outer_std140 tint_input) {
+  return Outer(tint_input.x, tint_convert_Inner(tint_input.y));
+}
+SB tint_convert_SB(SB_std140 tint_input) {
+  return SB(tint_input.a, tint_convert_Outer(tint_input.b));
+}
+void main() {
+  SB a = tint_convert_SB(v_1.tint_symbol);
+  float b = v_1.tint_symbol.b.y.t[3u].z;
+}
 )");
 }
 
@@ -1094,10 +1366,12 @@ TEST_F(GlslWriterTest, AccessStoreScalar) {
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
-
-float v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  float tint_symbol;
+} v_1;
 void main() {
-  v = 2.0f;
+  v_1.tint_symbol = 2.0f;
 }
 )");
 }
@@ -1118,16 +1392,17 @@ TEST_F(GlslWriterTest, AccessStoreScalarF16) {
 precision highp float;
 precision highp int;
 
-
-float16_t v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  float16_t tint_symbol;
+} v_1;
 void main() {
-  v = 2.0hf;
+  v_1.tint_symbol = 2.0hf;
 }
 )");
 }
 
-// TODO(dsinclair): Support StoreVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStoreVectorElement) {
+TEST_F(GlslWriterTest, AccessStoreVectorElement) {
     auto* var = b.Var<storage, vec3<f32>, core::Access::kReadWrite>("v");
     var->SetBindingPoint(0, 0);
 
@@ -1140,13 +1415,20 @@ TEST_F(GlslWriterTest, DISABLED_AccessStoreVectorElement) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  vec3 tint_symbol;
+} v_1;
+void main() {
+  v_1.tint_symbol[1u] = 2.0f;
+}
 )");
 }
 
-// TODO(dsinclair): Support StoreVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStoreVectorElementF16) {
+TEST_F(GlslWriterTest, AccessStoreVectorElementF16) {
     auto* var = b.Var<storage, vec3<f16>, core::Access::kReadWrite>("v");
     var->SetBindingPoint(0, 0);
 
@@ -1159,8 +1441,17 @@ TEST_F(GlslWriterTest, DISABLED_AccessStoreVectorElementF16) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  f16vec3 tint_symbol;
+} v_1;
+void main() {
+  v_1.tint_symbol[1u] = 2.0hf;
+}
 )");
 }
 
@@ -1180,10 +1471,12 @@ TEST_F(GlslWriterTest, AccessStoreVector) {
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
-
-vec3 v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  vec3 tint_symbol;
+} v_1;
 void main() {
-  v = vec3(2.0f, 3.0f, 4.0f);
+  v_1.tint_symbol = vec3(2.0f, 3.0f, 4.0f);
 }
 )");
 }
@@ -1205,16 +1498,17 @@ TEST_F(GlslWriterTest, AccessStoreVectorF16) {
 precision highp float;
 precision highp int;
 
-
-f16vec3 v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  f16vec3 tint_symbol;
+} v_1;
 void main() {
-  v = f16vec3(2.0hf, 3.0hf, 4.0hf);
+  v_1.tint_symbol = f16vec3(2.0hf, 3.0hf, 4.0hf);
 }
 )");
 }
 
-// TODO(dsinclair): Support StoreVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStoreMatrixElement) {
+TEST_F(GlslWriterTest, AccessStoreMatrixElement) {
     auto* var = b.Var<storage, mat4x4<f32>, core::Access::kReadWrite>("v");
     var->SetBindingPoint(0, 0);
 
@@ -1227,13 +1521,20 @@ TEST_F(GlslWriterTest, DISABLED_AccessStoreMatrixElement) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  mat4 tint_symbol;
+} v_1;
+void main() {
+  v_1.tint_symbol[1u][2u] = 5.0f;
+}
 )");
 }
 
-// TODO(dsinclair): Support StoreVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessStoreMatrixElementF16) {
+TEST_F(GlslWriterTest, AccessStoreMatrixElementF16) {
     auto* var = b.Var<storage, mat3x2<f16>, core::Access::kReadWrite>("v");
     var->SetBindingPoint(0, 0);
 
@@ -1246,8 +1547,17 @@ TEST_F(GlslWriterTest, DISABLED_AccessStoreMatrixElementF16) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  f16mat3x2 tint_symbol;
+} v_1;
+void main() {
+  v_1.tint_symbol[2u][1u] = 5.0hf;
+}
 )");
 }
 
@@ -1267,10 +1577,12 @@ TEST_F(GlslWriterTest, AccessStoreMatrixColumn) {
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
-
-mat4 v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  mat4 tint_symbol;
+} v_1;
 void main() {
-  v[1u] = vec4(5.0f);
+  v_1.tint_symbol[1u] = vec4(5.0f);
 }
 )");
 }
@@ -1292,10 +1604,12 @@ TEST_F(GlslWriterTest, AccessStoreMatrixColumnF16) {
 precision highp float;
 precision highp int;
 
-
-f16mat2x3 v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  f16mat2x3 tint_symbol;
+} v_1;
 void main() {
-  v[1u] = f16vec3(5.0hf);
+  v_1.tint_symbol[1u] = f16vec3(5.0hf);
 }
 )");
 }
@@ -1315,10 +1629,12 @@ TEST_F(GlslWriterTest, AccessStoreMatrix) {
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
-
-mat4 v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  mat4 tint_symbol;
+} v_1;
 void main() {
-  v = mat4(vec4(0.0f), vec4(0.0f), vec4(0.0f), vec4(0.0f));
+  v_1.tint_symbol = mat4(vec4(0.0f), vec4(0.0f), vec4(0.0f), vec4(0.0f));
 }
 )");
 }
@@ -1339,10 +1655,12 @@ TEST_F(GlslWriterTest, AccessStoreMatrixF16) {
 precision highp float;
 precision highp int;
 
-
-f16mat4 v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  f16mat4 tint_symbol;
+} v_1;
 void main() {
-  v = f16mat4(f16vec4(0.0hf), f16vec4(0.0hf), f16vec4(0.0hf), f16vec4(0.0hf));
+  v_1.tint_symbol = f16mat4(f16vec4(0.0hf), f16vec4(0.0hf), f16vec4(0.0hf), f16vec4(0.0hf));
 }
 )");
 }
@@ -1362,10 +1680,12 @@ TEST_F(GlslWriterTest, AccessStoreArrayElement) {
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
-
-float v[5];
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  float tint_symbol[5];
+} v_1;
 void main() {
-  v[3u] = 1.0f;
+  v_1.tint_symbol[3u] = 1.0f;
 }
 )");
 }
@@ -1386,16 +1706,17 @@ TEST_F(GlslWriterTest, AccessStoreArrayElementF16) {
 precision highp float;
 precision highp int;
 
-
-float16_t v[5];
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  float16_t tint_symbol[5];
+} v_1;
 void main() {
-  v[3u] = 1.0hf;
+  v_1.tint_symbol[3u] = 1.0hf;
 }
 )");
 }
 
-// TODO(dsinclair): Support Loop
-TEST_F(GlslWriterTest, DISABLED_AccessStoreArray) {
+TEST_F(GlslWriterTest, AccessStoreArray) {
     auto* var = b.Var<storage, array<vec3<f32>, 5>, core::Access::kReadWrite>("v");
     var->SetBindingPoint(0, 0);
 
@@ -1408,8 +1729,34 @@ TEST_F(GlslWriterTest, DISABLED_AccessStoreArray) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  vec3 tint_symbol[5];
+} v_1;
+void tint_store_and_preserve_padding(inout vec3 target[5], vec3 value_param[5]) {
+  {
+    uint v_2 = 0u;
+    v_2 = 0u;
+    while(true) {
+      uint v_3 = v_2;
+      if ((v_3 >= 5u)) {
+        break;
+      }
+      target[v_3] = value_param[v_3];
+      {
+        v_2 = (v_3 + 1u);
+      }
+      continue;
+    }
+  }
+}
+void main() {
+  vec3 ary[5] = vec3[5](vec3(0.0f), vec3(0.0f), vec3(0.0f), vec3(0.0f), vec3(0.0f));
+  tint_store_and_preserve_padding(v_1.tint_symbol, ary);
+}
 )");
 }
 
@@ -1430,18 +1777,21 @@ TEST_F(GlslWriterTest, AccessStoreStructMember) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
+
+
 struct SB {
   int a;
   float b;
 };
-precision highp float;
-precision highp int;
 
-
-SB v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
 void main() {
-  v.b = 3.0f;
+  v_1.tint_symbol.b = 3.0f;
 }
 )");
 }
@@ -1464,18 +1814,21 @@ TEST_F(GlslWriterTest, AccessStoreStructMemberF16) {
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_AMD_gpu_shader_half_float: require
+precision highp float;
+precision highp int;
+
 
 struct SB {
   int a;
   float16_t b;
 };
-precision highp float;
-precision highp int;
 
-
-SB v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
 void main() {
-  v.b = 3.0hf;
+  v_1.tint_symbol.b = 3.0hf;
 }
 )");
 }
@@ -1507,10 +1860,13 @@ TEST_F(GlslWriterTest, AccessStoreStructNested) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
+
+
 struct Inner {
   mat3 s;
-  float t[5];
+  vec3 t[5];
 };
 
 struct Outer {
@@ -1522,13 +1878,13 @@ struct SB {
   int a;
   Outer b;
 };
-precision highp float;
-precision highp int;
 
-
-SB v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
 void main() {
-  v.b.x = 2.0f;
+  v_1.tint_symbol.b.x = 2.0f;
 }
 )");
 }
@@ -1560,7 +1916,10 @@ TEST_F(GlslWriterTest, AccessStoreStruct) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
+
+
 struct Inner {
   float s;
   vec3 t;
@@ -1575,11 +1934,11 @@ struct SB {
   int a;
   Outer b;
 };
-precision highp float;
-precision highp int;
 
-
-SB v;
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
 void tint_store_and_preserve_padding_2(inout Inner target, Inner value_param) {
   target.s = value_param.s;
   target.t = value_param.t;
@@ -1594,13 +1953,12 @@ void tint_store_and_preserve_padding(inout SB target, SB value_param) {
 }
 void main() {
   SB s = SB(0, Outer(0.0f, Inner(0.0f, vec3(0.0f))));
-  tint_store_and_preserve_padding(v, s);
+  tint_store_and_preserve_padding(v_1.tint_symbol, s);
 }
 )");
 }
 
-// TODO(dsinclair): Support Loop
-TEST_F(GlslWriterTest, DISABLED_AccessStoreStructComplex) {
+TEST_F(GlslWriterTest, AccessStoreStructComplex) {
     auto* Inner =
         ty.Struct(mod.symbols.New("Inner"), {
                                                 {mod.symbols.New("s"), ty.mat3x3<f32>()},
@@ -1628,13 +1986,71 @@ TEST_F(GlslWriterTest, DISABLED_AccessStoreStructComplex) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+
+struct Inner {
+  mat3 s;
+  vec3 t[5];
+};
+
+struct Outer {
+  float x;
+  Inner y;
+};
+
+struct SB {
+  int a;
+  Outer b;
+};
+
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
+void tint_store_and_preserve_padding_4(inout vec3 target[5], vec3 value_param[5]) {
+  {
+    uint v_2 = 0u;
+    v_2 = 0u;
+    while(true) {
+      uint v_3 = v_2;
+      if ((v_3 >= 5u)) {
+        break;
+      }
+      target[v_3] = value_param[v_3];
+      {
+        v_2 = (v_3 + 1u);
+      }
+      continue;
+    }
+  }
+}
+void tint_store_and_preserve_padding_3(inout mat3 target, mat3 value_param) {
+  target[0u] = value_param[0u];
+  target[1u] = value_param[1u];
+  target[2u] = value_param[2u];
+}
+void tint_store_and_preserve_padding_2(inout Inner target, Inner value_param) {
+  tint_store_and_preserve_padding_3(target.s, value_param.s);
+  tint_store_and_preserve_padding_4(target.t, value_param.t);
+}
+void tint_store_and_preserve_padding_1(inout Outer target, Outer value_param) {
+  target.x = value_param.x;
+  tint_store_and_preserve_padding_2(target.y, value_param.y);
+}
+void tint_store_and_preserve_padding(inout SB target, SB value_param) {
+  target.a = value_param.a;
+  tint_store_and_preserve_padding_1(target.b, value_param.b);
+}
+void main() {
+  SB s = SB(0, Outer(0.0f, Inner(mat3(vec3(0.0f), vec3(0.0f), vec3(0.0f)), vec3[5](vec3(0.0f), vec3(0.0f), vec3(0.0f), vec3(0.0f), vec3(0.0f)))));
+  tint_store_and_preserve_padding(v_1.tint_symbol, s);
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_AccessChainReused) {
+TEST_F(GlslWriterTest, AccessChainReused) {
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
                                                     {mod.symbols.New("a"), ty.i32()},
                                                     {mod.symbols.New("b"), ty.vec3<f32>()},
@@ -1653,13 +2069,27 @@ TEST_F(GlslWriterTest, DISABLED_AccessChainReused) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+
+struct SB {
+  int a;
+  vec3 b;
+};
+
+layout(binding = 0, std430)
+buffer tint_symbol_1_1_ssbo {
+  SB tint_symbol;
+} v_1;
+void main() {
+  float b = v_1.tint_symbol.b.y;
+  float c = v_1.tint_symbol.b.z;
+}
 )");
 }
 
-// TODO(dsinclair): Support LoadVectorElement
-TEST_F(GlslWriterTest, DISABLED_UniformAccessChainReused) {
+TEST_F(GlslWriterTest, AccessUniformChainReused) {
     auto* sb = ty.Struct(mod.symbols.New("SB"), {
                                                     {mod.symbols.New("c"), ty.f32()},
                                                     {mod.symbols.New("d"), ty.vec3<f32>()},
@@ -1678,8 +2108,23 @@ TEST_F(GlslWriterTest, DISABLED_UniformAccessChainReused) {
     });
 
     ASSERT_TRUE(Generate()) << err_ << output_.glsl;
-    EXPECT_EQ(output_.glsl, GlslHeader() + R"(
+    EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
+precision highp int;
 
+
+struct SB {
+  float c;
+  vec3 d;
+};
+
+layout(binding = 0, std140)
+uniform tint_symbol_1_1_ubo {
+  SB tint_symbol;
+} v_1;
+void main() {
+  float b = v_1.tint_symbol.d.y;
+  float c = v_1.tint_symbol.d.z;
+}
 )");
 }
 

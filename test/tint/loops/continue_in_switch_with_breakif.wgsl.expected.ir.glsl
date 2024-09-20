@@ -1,11 +1,34 @@
-SKIP: FAILED
+#version 310 es
 
-../../src/tint/lang/glsl/writer/printer/printer.cc:252 internal compiler error: Switch() matched no cases. Type: tint::core::ir::Loop
-********************************************************************
-*  The tint shader compiler has encountered an unexpected error.   *
-*                                                                  *
-*  Please help us fix this issue by submitting a bug report at     *
-*  crbug.com/tint with the source program that triggered the bug.  *
-********************************************************************
-
-tint executable returned error: signal: trace/BPT trap
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  int i = 0;
+  {
+    while(true) {
+      bool tint_continue = false;
+      switch(i) {
+        case 0:
+        {
+          tint_continue = true;
+          break;
+        }
+        default:
+        {
+          break;
+        }
+      }
+      if (tint_continue) {
+        {
+          i = (i + 1);
+          if ((i >= 4)) { break; }
+        }
+        continue;
+      }
+      {
+        i = (i + 1);
+        if ((i >= 4)) { break; }
+      }
+      continue;
+    }
+  }
+}

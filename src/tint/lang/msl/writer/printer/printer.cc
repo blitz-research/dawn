@@ -182,6 +182,10 @@ class Printer : public tint::TextGenerator {
     /// Non-empty only if the template has been generated.
     std::string array_template_name_;
 
+    /// The name of the macro used to prevent UB affecting later control flow.
+    /// Do not use this directly, instead call IsolateUB().
+    std::string isolate_ub_macro_name_;
+
     /// Block to emit for a continuing
     std::function<void()> emit_continuing_;
 
@@ -213,6 +217,21 @@ class Printer : public tint::TextGenerator {
         Line() << "};";
 
         return array_template_name_;
+    }
+
+    /// @returns a call to the TINT_ISOLATE_UB macro, creating that macro on first call
+    std::string IsolateUB() {
+        if (isolate_ub_macro_name_.empty()) {
+            TINT_SCOPED_ASSIGNMENT(current_buffer_, &preamble_buffer_);
+            isolate_ub_macro_name_ = UniqueIdentifier("TINT_ISOLATE_UB");
+            Line();
+            Line() << "#define " << isolate_ub_macro_name_ << "(VOLATILE_NAME) \\";
+            Line() << "  volatile bool VOLATILE_NAME = true; \\";
+            Line() << "  if (VOLATILE_NAME)";
+        }
+        StringStream ss;
+        ss << isolate_ub_macro_name_ << "(" << UniqueIdentifier("tint_volatile_true") << ")";
+        return ss.str();
     }
 
     /// Find all structures that are used in host-shareable address spaces and mark them as such so
@@ -328,8 +347,6 @@ class Printer : public tint::TextGenerator {
             if (func->Stage() != core::ir::Function::PipelineStage::kUndefined) {
                 result_.workgroup_allocations.insert({func_name, {}});
             }
-
-            // TODO(dsinclair): Handle return type attributes
 
             EmitType(out, func->ReturnType());
             out << " " << func_name << "(";
@@ -592,8 +609,7 @@ class Printer : public tint::TextGenerator {
             out << " = ";
             EmitValue(out, v->Initializer());
         } else if (space == core::AddressSpace::kPrivate ||
-                   space == core::AddressSpace::kFunction ||
-                   space == core::AddressSpace::kUndefined) {
+                   space == core::AddressSpace::kFunction) {
             out << " = ";
             EmitZeroValue(out, ptr->UnwrapPtr());
         }
@@ -652,7 +668,7 @@ class Printer : public tint::TextGenerator {
             ScopedIndent init(current_buffer_);
             EmitBlock(l->Initializer());
 
-            Line() << "while(true) {";
+            Line() << IsolateUB() << " while(true) {";
             {
                 ScopedIndent si(current_buffer_);
                 EmitBlock(l->Body());
@@ -866,6 +882,11 @@ class Printer : public tint::TextGenerator {
 
             out << ")";
             return;
+        } else if (c->Func() == msl::BuiltinFn::kSimdBallot) {
+            out << "as_type<uint2>((simd_vote::vote_t)simd_ballot(";
+            EmitValue(out, c->Args()[0]);
+            out << "))";
+            return;
         }
 
         out << c->Func() << "(";
@@ -881,7 +902,20 @@ class Printer : public tint::TextGenerator {
     }
 
     void EmitMslMemberBuiltinCall(StringStream& out, const msl::ir::MemberBuiltinCall* c) {
-        EmitValue(out, c->Object());
+        if (c->Func() == BuiltinFn::kFence) {
+            // If this is a fence builtin, we need to `const_cast<>` the object to remove the
+            // `const` qualifier. We do this to work around an MSL bug that prevents us from being
+            // able to use texture fence intrinsics when texture handles are stored inside
+            // const-qualified structures (see crbug.com/365570202).
+            out << "const_cast<";
+            EmitType(out, c->Object()->Type());
+            out << "thread &>(";
+            EmitValue(out, c->Object());
+            out << ")";
+        } else {
+            EmitValue(out, c->Object());
+        }
+
         out << "." << c->Func() << "(";
         bool needs_comma = false;
         for (const auto* arg : c->Args()) {
@@ -911,8 +945,6 @@ class Printer : public tint::TextGenerator {
     }
 
     void EmitCoreBuiltinName(StringStream& out, core::BuiltinFn func) {
-        // TODO(crbug.com/360166776): Implement subgroupBallot and quadSwap{X,Y,Diagonal} builtins
-        // in MSL IR backend.
         switch (func) {
             case core::BuiltinFn::kAbs:
             case core::BuiltinFn::kAcos:
@@ -986,7 +1018,6 @@ class Printer : public tint::TextGenerator {
                 break;
             case core::BuiltinFn::kFwidth:
             case core::BuiltinFn::kFwidthCoarse:
-            case core::BuiltinFn::kFwidthFine:
                 out << "fwidth";
                 break;
             case core::BuiltinFn::kFaceForward:
@@ -1040,11 +1071,17 @@ class Printer : public tint::TextGenerator {
             case core::BuiltinFn::kSubgroupAdd:
                 out << "simd_sum";
                 break;
+            case core::BuiltinFn::kSubgroupInclusiveAdd:
+                out << "simd_prefix_inclusive_sum";
+                break;
             case core::BuiltinFn::kSubgroupExclusiveAdd:
                 out << "simd_prefix_exclusive_sum";
                 break;
             case core::BuiltinFn::kSubgroupMul:
                 out << "simd_product";
+                break;
+            case core::BuiltinFn::kSubgroupInclusiveMul:
+                out << "simd_prefix_inclusive_product";
                 break;
             case core::BuiltinFn::kSubgroupExclusiveMul:
                 out << "simd_prefix_exclusive_product";
@@ -1441,6 +1478,16 @@ class Printer : public tint::TextGenerator {
             }
 
             auto* ty = mem->Type();
+
+            // The clip distances builtin is an array, but needs to be emitted as a C-style array
+            // instead of using Tint's array wrapper. Additionally, the builtin attribute needs to
+            // be emitted after the member name and before the array count.
+            if (mem->Attributes().builtin == core::BuiltinValue::kClipDistances) {
+                auto* arr = ty->As<core::type::Array>();
+                out << "float " << mem_name << " [[clip_distance]] ["
+                    << arr->ConstantCount().value_or(0) << "];";
+                continue;
+            }
 
             EmitType(out, ty);
             out << " " << mem_name;

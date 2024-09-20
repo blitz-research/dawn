@@ -552,14 +552,6 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(
             Toggle::MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats, true);
     }
-
-    // Packed 4x8 integer dot products fail on Macbook Pro 16" with AMD Radeon Pro 5300M,
-    // which are the RDNA1 architecture.
-    // Conservatively, polyfill these functions on RDNA1 and RDNA2.
-    // crbug.com/355485146
-    if (gpu_info::IsAMDRDNA1(vendorId, deviceId) || gpu_info::IsAMDRDNA2(vendorId, deviceId)) {
-        deviceToggles->Default(Toggle::PolyFillPacked4x8DotProduct, true);
-    }
 #endif
 }
 
@@ -710,11 +702,13 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         }
     }
 
-    if (@available(macOS 11.0, iOS 10.0, *)) {
-        // Image block functionality is available starting from the Apple4 family.
-        if ([*mDevice supportsFamily:MTLGPUFamilyApple4]) {
-            EnableFeature(Feature::PixelLocalStorageCoherent);
-            EnableFeature(Feature::PixelLocalStorageNonCoherent);
+    // TODO(crbug.com/356461286): Intel and AMD GPUs support the indirect command buffer and
+    // argument buffer features which are required for multi draw. However, multi draw end2end tests
+    // fail on non-Apple GPUs. Disable the feature for non-Apple GPUs. Apple3 family is the minimum
+    // requirement and only includes Apple GPUs.
+    if (@available(macOS 10.15, iOS 13.0, *)) {
+        if ([*mDevice supportsFamily:MTLGPUFamilyApple3]) {
+            EnableFeature(Feature::MultiDrawIndirect);
         }
     }
 
@@ -911,7 +905,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     uint32_t vendorId = GetVendorId();
     if (gpu_info::IsApple(vendorId)) {
         limits->v1.maxInterStageShaderComponents = mtlLimits.maxFragmentInputComponents;
-        limits->v1.maxInterStageShaderVariables = mtlLimits.maxFragmentInputs;
+        limits->v1.maxInterStageShaderVariables =
+            std::min(mtlLimits.maxFragmentInputs, mtlLimits.maxFragmentInputComponents / 4);
     } else {
         // On non-Apple macOS each built-in consumes one individual inter-stage shader variable.
         limits->v1.maxInterStageShaderVariables = mtlLimits.maxFragmentInputs - 4;
@@ -953,8 +948,8 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     return {};
 }
 
-void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {
-    if (auto* memoryHeapProperties = properties.Get<AdapterPropertiesMemoryHeaps>()) {
+void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info) const {
+    if (auto* memoryHeapProperties = info.Get<AdapterPropertiesMemoryHeaps>()) {
         if ([*mDevice hasUnifiedMemory]) {
             auto* heapInfo = new MemoryHeapInfo[1];
             memoryHeapProperties->heapCount = 1;

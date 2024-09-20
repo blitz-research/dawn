@@ -1,31 +1,131 @@
-SKIP: FAILED
+#version 310 es
+#extension GL_AMD_gpu_shader_half_float: require
 
-<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:509:16: runtime error: member call on null pointer of type 'tint::core::constant::Value'
-SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:509:16 in 
-AddressSanitizer:DEADLYSIGNAL
-=================================================================
-==1757168==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000 (pc 0x55a734b3e4d3 bp 0x7ffd72737c80 sp 0x7ffd72737aa0 T0)
-==1757168==The signal is caused by a READ memory access.
-==1757168==Hint: address points to the zero page.
-    #0 0x55a734b3e4d3 in tint::glsl::writer::(anonymous namespace)::Printer::EmitConstant(tint::StringStream&, tint::core::constant::Value const*) <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:509:16
-    #1 0x55a734b5117c in tint::glsl::writer::(anonymous namespace)::Printer::EmitZeroValue(tint::StringStream&, tint::core::type::Type const*) <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:470:9
-    #2 0x55a734b50fd1 in tint::glsl::writer::(anonymous namespace)::Printer::EmitVar(tint::StringStream&, tint::core::ir::Var const*) <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:461:13
-    #3 0x55a734b5072f in tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Var const*)::operator()(tint::core::ir::Var const*) const <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:239:47
-    #4 0x55a734b3b704 in auto auto tint::Switch<tint::detail::Infer, tint::core::ir::Instruction const, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Call const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Let const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Return const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Unreachable const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Var const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::NextIteration const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::ExitIf const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Access const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Bitcast const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Construct const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::CoreBinary const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::CoreUnary const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Load const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::LoadVectorElement const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Swizzle const*), tint::SwitchMustMatchCase>(tint::core::ir::Instruction const*, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Call const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Let const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Return const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Unreachable const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Var const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::NextIteration const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::ExitIf const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Access const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Bitcast const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Construct const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::CoreBinary const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::CoreUnary const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Load const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::LoadVectorElement const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Swizzle const*)&&, tint::SwitchMustMatchCase&&)::'lambda'(auto&&)::operator()<tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Var const*)>(auto&&) const <dawn>/src/tint/utils/rtti/switch.h:347:25
-    #5 0x55a734b3aa63 in auto tint::Switch<tint::detail::Infer, tint::core::ir::Instruction const, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Call const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Let const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Return const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Unreachable const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Var const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::NextIteration const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::ExitIf const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Access const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Bitcast const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Construct const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::CoreBinary const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::CoreUnary const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Load const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::LoadVectorElement const*), tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Swizzle const*), tint::SwitchMustMatchCase>(tint::core::ir::Instruction const*, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Call const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Let const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Return const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Unreachable const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Var const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::NextIteration const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::ExitIf const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Access const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Bitcast const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Construct const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::CoreBinary const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::CoreUnary const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Load const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::LoadVectorElement const*)&&, tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*)::'lambda'(tint::core::ir::Swizzle const*)&&, tint::SwitchMustMatchCase&&) <dawn>/src/tint/utils/rtti/switch.h:358:22
-    #6 0x55a734b3893a in tint::glsl::writer::(anonymous namespace)::Printer::EmitBlock(tint::core::ir::Block const*) <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:233:13
-    #7 0x55a734b37b21 in tint::glsl::writer::(anonymous namespace)::Printer::Generate[abi:cxx11](tint::glsl::writer::Version const&) <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:105:9
-    #8 0x55a734b3702b in tint::glsl::writer::Print[abi:cxx11](tint::core::ir::Module&, tint::glsl::writer::Version const&) <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:596:28
-    #9 0x55a734683ebb in tint::glsl::writer::Generate(tint::core::ir::Module&, tint::glsl::writer::Options const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>> const&) <dawn>/src/tint/lang/glsl/writer/writer.cc:48:19
-    #10 0x55a733e9f455 in (anonymous namespace)::GenerateGlsl(tint::Program const&, (anonymous namespace)::Options const&)::$_0::operator()(tint::Program const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>, tint::ast::PipelineStage) const <dawn>/src/tint/cmd/tint/main.cc:1100:22
-    #11 0x55a733e87d35 in (anonymous namespace)::GenerateGlsl(tint::Program const&, (anonymous namespace)::Options const&) <dawn>/src/tint/cmd/tint/main.cc:1157:20
-    #12 0x55a733e6f861 in main <dawn>/src/tint/cmd/tint/main.cc:1434:23
-    #13 0x7fc226605b89 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
-    #14 0x7fc226605c44 in __libc_start_main csu/../csu/libc-start.c:360:3
-    #15 0x55a733d94000 in _start (<dawn>/out/Debug/tint+0x2b08000) (BuildId: e8af56752221240d6aa5bbe38e8d6c485d94acd9)
 
-AddressSanitizer can not provide additional info.
-SUMMARY: AddressSanitizer: SEGV <dawn>/src/tint/lang/glsl/writer/printer/printer.cc:509:16 in tint::glsl::writer::(anonymous namespace)::Printer::EmitConstant(tint::StringStream&, tint::core::constant::Value const*)
-==1757168==ABORTING
+struct Inner {
+  float scalar_f32;
+  int scalar_i32;
+  uint scalar_u32;
+  float16_t scalar_f16;
+  vec2 vec2_f32;
+  ivec2 vec2_i32;
+  uvec2 vec2_u32;
+  f16vec2 vec2_f16;
+  vec3 vec3_f32;
+  ivec3 vec3_i32;
+  uvec3 vec3_u32;
+  f16vec3 vec3_f16;
+  vec4 vec4_f32;
+  ivec4 vec4_i32;
+  uvec4 vec4_u32;
+  f16vec4 vec4_f16;
+  mat2 mat2x2_f32;
+  mat2x3 mat2x3_f32;
+  mat2x4 mat2x4_f32;
+  mat3x2 mat3x2_f32;
+  mat3 mat3x3_f32;
+  mat3x4 mat3x4_f32;
+  mat4x2 mat4x2_f32;
+  mat4x3 mat4x3_f32;
+  mat4 mat4x4_f32;
+  f16mat2 mat2x2_f16;
+  f16mat2x3 mat2x3_f16;
+  f16mat2x4 mat2x4_f16;
+  f16mat3x2 mat3x2_f16;
+  f16mat3 mat3x3_f16;
+  f16mat3x4 mat3x4_f16;
+  f16mat4x2 mat4x2_f16;
+  f16mat4x3 mat4x3_f16;
+  f16mat4 mat4x4_f16;
+  vec3 arr2_vec3_f32[2];
+  f16mat4x2 arr2_mat4x2_f16[2];
+};
 
-tint executable returned error: exit status 1
+layout(binding = 0, std430)
+buffer S_1_ssbo {
+  Inner arr[];
+} sb;
+layout(binding = 1, std430)
+buffer tint_symbol_2_1_ssbo {
+  int tint_symbol_1;
+} v;
+int tint_f32_to_i32(float value) {
+  return (((value <= 2147483520.0f)) ? ((((value >= -2147483648.0f)) ? (int(value)) : ((-2147483647 - 1)))) : (2147483647));
+}
+int tint_f16_to_i32(float16_t value) {
+  return (((value <= 65504.0hf)) ? ((((value >= -65504.0hf)) ? (int(value)) : ((-2147483647 - 1)))) : (2147483647));
+}
+void tint_symbol_inner(uint idx) {
+  float scalar_f32 = sb.arr[idx].scalar_f32;
+  int scalar_i32 = sb.arr[idx].scalar_i32;
+  uint scalar_u32 = sb.arr[idx].scalar_u32;
+  float16_t scalar_f16 = sb.arr[idx].scalar_f16;
+  vec2 vec2_f32 = sb.arr[idx].vec2_f32;
+  ivec2 vec2_i32 = sb.arr[idx].vec2_i32;
+  uvec2 vec2_u32 = sb.arr[idx].vec2_u32;
+  f16vec2 vec2_f16 = sb.arr[idx].vec2_f16;
+  vec3 vec3_f32 = sb.arr[idx].vec3_f32;
+  ivec3 vec3_i32 = sb.arr[idx].vec3_i32;
+  uvec3 vec3_u32 = sb.arr[idx].vec3_u32;
+  f16vec3 vec3_f16 = sb.arr[idx].vec3_f16;
+  vec4 vec4_f32 = sb.arr[idx].vec4_f32;
+  ivec4 vec4_i32 = sb.arr[idx].vec4_i32;
+  uvec4 vec4_u32 = sb.arr[idx].vec4_u32;
+  f16vec4 vec4_f16 = sb.arr[idx].vec4_f16;
+  mat2 mat2x2_f32 = sb.arr[idx].mat2x2_f32;
+  mat2x3 mat2x3_f32 = sb.arr[idx].mat2x3_f32;
+  mat2x4 mat2x4_f32 = sb.arr[idx].mat2x4_f32;
+  mat3x2 mat3x2_f32 = sb.arr[idx].mat3x2_f32;
+  mat3 mat3x3_f32 = sb.arr[idx].mat3x3_f32;
+  mat3x4 mat3x4_f32 = sb.arr[idx].mat3x4_f32;
+  mat4x2 mat4x2_f32 = sb.arr[idx].mat4x2_f32;
+  mat4x3 mat4x3_f32 = sb.arr[idx].mat4x3_f32;
+  mat4 mat4x4_f32 = sb.arr[idx].mat4x4_f32;
+  f16mat2 mat2x2_f16 = sb.arr[idx].mat2x2_f16;
+  f16mat2x3 mat2x3_f16 = sb.arr[idx].mat2x3_f16;
+  f16mat2x4 mat2x4_f16 = sb.arr[idx].mat2x4_f16;
+  f16mat3x2 mat3x2_f16 = sb.arr[idx].mat3x2_f16;
+  f16mat3 mat3x3_f16 = sb.arr[idx].mat3x3_f16;
+  f16mat3x4 mat3x4_f16 = sb.arr[idx].mat3x4_f16;
+  f16mat4x2 mat4x2_f16 = sb.arr[idx].mat4x2_f16;
+  f16mat4x3 mat4x3_f16 = sb.arr[idx].mat4x3_f16;
+  f16mat4 mat4x4_f16 = sb.arr[idx].mat4x4_f16;
+  vec3 arr2_vec3_f32[2] = sb.arr[idx].arr2_vec3_f32;
+  f16mat4x2 arr2_mat4x2_f16[2] = sb.arr[idx].arr2_mat4x2_f16;
+  int v_1 = (tint_f32_to_i32(scalar_f32) + scalar_i32);
+  int v_2 = (v_1 + int(scalar_u32));
+  int v_3 = (v_2 + tint_f16_to_i32(scalar_f16));
+  int v_4 = ((v_3 + tint_f32_to_i32(vec2_f32[0u])) + vec2_i32[0u]);
+  int v_5 = (v_4 + int(vec2_u32[0u]));
+  int v_6 = (v_5 + tint_f16_to_i32(vec2_f16[0u]));
+  int v_7 = ((v_6 + tint_f32_to_i32(vec3_f32[1u])) + vec3_i32[1u]);
+  int v_8 = (v_7 + int(vec3_u32[1u]));
+  int v_9 = (v_8 + tint_f16_to_i32(vec3_f16[1u]));
+  int v_10 = ((v_9 + tint_f32_to_i32(vec4_f32[2u])) + vec4_i32[2u]);
+  int v_11 = (v_10 + int(vec4_u32[2u]));
+  int v_12 = (v_11 + tint_f16_to_i32(vec4_f16[2u]));
+  int v_13 = (v_12 + tint_f32_to_i32(mat2x2_f32[0][0u]));
+  int v_14 = (v_13 + tint_f32_to_i32(mat2x3_f32[0][0u]));
+  int v_15 = (v_14 + tint_f32_to_i32(mat2x4_f32[0][0u]));
+  int v_16 = (v_15 + tint_f32_to_i32(mat3x2_f32[0][0u]));
+  int v_17 = (v_16 + tint_f32_to_i32(mat3x3_f32[0][0u]));
+  int v_18 = (v_17 + tint_f32_to_i32(mat3x4_f32[0][0u]));
+  int v_19 = (v_18 + tint_f32_to_i32(mat4x2_f32[0][0u]));
+  int v_20 = (v_19 + tint_f32_to_i32(mat4x3_f32[0][0u]));
+  int v_21 = (v_20 + tint_f32_to_i32(mat4x4_f32[0][0u]));
+  int v_22 = (v_21 + tint_f16_to_i32(mat2x2_f16[0][0u]));
+  int v_23 = (v_22 + tint_f16_to_i32(mat2x3_f16[0][0u]));
+  int v_24 = (v_23 + tint_f16_to_i32(mat2x4_f16[0][0u]));
+  int v_25 = (v_24 + tint_f16_to_i32(mat3x2_f16[0][0u]));
+  int v_26 = (v_25 + tint_f16_to_i32(mat3x3_f16[0][0u]));
+  int v_27 = (v_26 + tint_f16_to_i32(mat3x4_f16[0][0u]));
+  int v_28 = (v_27 + tint_f16_to_i32(mat4x2_f16[0][0u]));
+  int v_29 = (v_28 + tint_f16_to_i32(mat4x3_f16[0][0u]));
+  int v_30 = (v_29 + tint_f16_to_i32(mat4x4_f16[0][0u]));
+  int v_31 = (v_30 + tint_f16_to_i32(arr2_mat4x2_f16[0][0][0u]));
+  v.tint_symbol_1 = (v_31 + tint_f32_to_i32(arr2_vec3_f32[0][0u]));
+}
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  tint_symbol_inner(gl_LocalInvocationIndex);
+}

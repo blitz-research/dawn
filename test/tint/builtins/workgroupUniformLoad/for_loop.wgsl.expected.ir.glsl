@@ -1,11 +1,29 @@
-SKIP: FAILED
+#version 310 es
 
-<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:252 internal compiler error: Switch() matched no cases. Type: tint::core::ir::Loop
-********************************************************************
-*  The tint shader compiler has encountered an unexpected error.   *
-*                                                                  *
-*  Please help us fix this issue by submitting a bug report at     *
-*  crbug.com/tint with the source program that triggered the bug.  *
-********************************************************************
-
-tint executable returned error: signal: illegal instruction
+shared int a;
+shared int b;
+void foo() {
+  {
+    int i = 0;
+    while(true) {
+      int v = i;
+      barrier();
+      int v_1 = a;
+      barrier();
+      if ((v < v_1)) {
+      } else {
+        break;
+      }
+      {
+        barrier();
+        int v_2 = b;
+        barrier();
+        i = (i + v_2);
+      }
+      continue;
+    }
+  }
+}
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
+}
