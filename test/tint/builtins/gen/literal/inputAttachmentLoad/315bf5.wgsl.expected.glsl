@@ -1,25 +1,11 @@
 SKIP: INVALID
 
+<dawn>/src/tint/lang/glsl/writer/raise/texture_polyfill.cc:262 internal compiler error: TINT_UNREACHABLE unhandled texture function: inputAttachmentLoad
+********************************************************************
+*  The tint shader compiler has encountered an unexpected error.   *
+*                                                                  *
+*  Please help us fix this issue by submitting a bug report at     *
+*  crbug.com/tint with the source program that triggered the bug.  *
+********************************************************************
 
-enable chromium_internal_input_attachments;
-
-@group(0) @binding(0) var<storage, read_write> prevent_dce : vec4<i32>;
-
-@input_attachment_index(3) @group(1) @binding(0) var arg_0 : input_attachment<i32>;
-
-fn inputAttachmentLoad_315bf5() -> vec4<i32> {
-  var res : vec4<i32> = inputAttachmentLoad(arg_0);
-  return res;
-}
-
-@fragment
-fn fragment_main() {
-  prevent_dce = inputAttachmentLoad_315bf5();
-}
-
-Failed to generate: <dawn>/test/tint/builtins/gen/literal/inputAttachmentLoad/315bf5.wgsl:47:44 error: unresolved value 'arg_0'
-  var res: vec4<i32> = inputAttachmentLoad(arg_0);
-                                           ^^^^^
-
-
-tint executable returned error: exit status 1
+tint executable returned error: signal: trace/BPT trap

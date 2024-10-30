@@ -70,6 +70,8 @@ std::string_view ToString(ParameterUsage usage) {
             return "e";
         case ParameterUsage::kElements:
             return "elements";
+        case ParameterUsage::kExp:
+            return "exp";
         case ParameterUsage::kHeight:
             return "height";
         case ParameterUsage::kId:
@@ -90,6 +92,10 @@ std::string_view ToString(ParameterUsage usage) {
             return "offset";
         case ParameterUsage::kOriginalValue:
             return "original_value";
+        case ParameterUsage::kRefz:
+            return "refz";
+        case ParameterUsage::kResult:
+            return "result";
         case ParameterUsage::kSampleIndex:
             return "sample_index";
         case ParameterUsage::kSampler:

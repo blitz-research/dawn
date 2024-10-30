@@ -1,24 +1,21 @@
 #version 460
+precision highp float;
+precision highp int;
 
-layout(binding = 0, std430) buffer prevent_dce_block_ssbo {
+layout(binding = 0, std430)
+buffer prevent_dce_block_1_ssbo {
   float inner;
-} prevent_dce;
-
+} v;
 uniform highp samplerCubeArrayShadow arg_0_arg_1;
-
 float textureSampleCompare_1912e5() {
   vec3 arg_2 = vec3(1.0f);
   uint arg_3 = 1u;
   float arg_4 = 1.0f;
-  float res = texture(arg_0_arg_1, vec4(arg_2, float(arg_3)), arg_4);
+  vec3 v_1 = arg_2;
+  float v_2 = arg_4;
+  float res = texture(arg_0_arg_1, vec4(v_1, float(arg_3)), v_2);
   return res;
 }
-
-void fragment_main() {
-  prevent_dce.inner = textureSampleCompare_1912e5();
-}
-
 void main() {
-  fragment_main();
-  return;
+  v.inner = textureSampleCompare_1912e5();
 }

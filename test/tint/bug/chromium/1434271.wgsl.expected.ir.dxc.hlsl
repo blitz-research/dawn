@@ -138,7 +138,7 @@ void export_level_inner(uint3 coord) {
     uint v_19 = (uint(dst_offset) * 4u);
     float v_20 = (sum / 4.0f);
     float v_21 = floor(v_20);
-    buf_out.Store((0u + v_19), asuint(((sum - (((v_20 < 0.0f)) ? (ceil(v_20)) : (v_21))) * 4.0f)));
+    buf_out.Store((0u + v_19), asuint((sum - ((((v_20 < 0.0f)) ? (ceil(v_20)) : (v_21)) * 4.0f))));
     float4 v_22 = float4(a, (a * b), ((a / b) + c), sum);
     float4 probabilities = (v_22 + max(sum, 0.0f));
     tex_out[int2(coord.xy)] = probabilities;
@@ -153,11 +153,8 @@ vertex_main_outputs vertex_main() {
 vs_main_outputs vs_main(vs_main_inputs inputs) {
   VertexInput v_24 = {inputs.VertexInput_position, inputs.VertexInput_color, inputs.VertexInput_quad_pos};
   VertexOutput v_25 = vs_main_inner(v_24);
-  VertexOutput v_26 = v_25;
-  VertexOutput v_27 = v_25;
-  VertexOutput v_28 = v_25;
-  vs_main_outputs v_29 = {v_27.color, v_28.quad_pos, v_26.position};
-  return v_29;
+  vs_main_outputs v_26 = {v_25.color, v_25.quad_pos, v_25.position};
+  return v_26;
 }
 
 [numthreads(64, 1, 1)]

@@ -14,7 +14,7 @@ Texture2DArray arg_0 : register(t0, space1);
 SamplerState arg_1 : register(s1, space1);
 float textureSampleLevel_615583() {
   float3 v = float3((1.0f).xx, float(1u));
-  float res = arg_0.SampleLevel(arg_1, v, float(1u));
+  float res = arg_0.SampleLevel(arg_1, v, float(1u)).x;
   return res;
 }
 
@@ -37,9 +37,7 @@ VertexOutput vertex_main_inner() {
 
 vertex_main_outputs vertex_main() {
   VertexOutput v_2 = vertex_main_inner();
-  VertexOutput v_3 = v_2;
-  VertexOutput v_4 = v_2;
-  vertex_main_outputs v_5 = {v_4.prevent_dce, v_3.pos};
-  return v_5;
+  vertex_main_outputs v_3 = {v_2.prevent_dce, v_2.pos};
+  return v_3;
 }
 

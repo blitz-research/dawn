@@ -28,7 +28,6 @@
 #include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ast/disable_validation_attribute.h"
-#include "src/tint/lang/wgsl/ast/transform/add_block_attribute.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 #include "src/tint/utils/containers/transform.h"
@@ -1319,7 +1318,6 @@ TEST_F(EntryPointReturnTypeAttributeTest, DuplicateInternalAttribute) {
 
 namespace StructAndStructMemberTests {
 using StructAttributeTest = TestWithParams;
-using SpirvBlockAttribute = ast::transform::AddBlockAttribute::BlockAttribute;
 TEST_P(StructAttributeTest, IsValid) {
     EnableRequiredExtensions();
 
@@ -2944,13 +2942,34 @@ TEST_F(RowMajorAttributeTest, StructMember_Matrix) {
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 
+TEST_F(RowMajorAttributeTest, StructMember_ArrayOfMatrix) {
+    Structure("S",
+              Vector{
+                  Member(Source{{12, 34}}, "arr", ty.array<mat3x4<f32>, 4>(), Vector{RowMajor()}),
+              });
+
+    EXPECT_TRUE(r()->Resolve()) << r()->error();
+}
+
 TEST_F(RowMajorAttributeTest, StructMember_NonMatrix) {
     Structure("S", Vector{
                        Member(Source{{12, 34}}, "f", ty.vec4<f32>(), Vector{RowMajor()}),
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), R"(error: '@row_major' can only be applied to matrices)");
+    EXPECT_EQ(r()->error(),
+              R"(error: '@row_major' can only be applied to matrices or arrays of matrices)");
+}
+
+TEST_F(RowMajorAttributeTest, StructMember_ArrayOfNonMatrix) {
+    Structure("S",
+              Vector{
+                  Member(Source{{12, 34}}, "arr", ty.array<vec4<f32>, 4>(), Vector{RowMajor()}),
+              });
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(),
+              R"(error: '@row_major' can only be applied to matrices or arrays of matrices)");
 }
 
 TEST_F(RowMajorAttributeTest, Variable) {

@@ -42,6 +42,7 @@
 #include "dawn/native/vulkan/TextureVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
+#include "dawn/native/wgpu_structs_autogen.h"
 
 #if DAWN_PLATFORM_IS(ANDROID)
 #include <android/hardware_buffer.h>
@@ -214,7 +215,7 @@ ResultOrError<VkDeviceMemory> AllocateDeviceMemory(Device* device,
 // static
 ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     Device* device,
-    const char* label,
+    StringView label,
     const SharedTextureMemoryDmaBufDescriptor* descriptor) {
 #if DAWN_PLATFORM_IS(LINUX)
     VkDevice vkDevice = device->GetVkDevice();
@@ -477,7 +478,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 // static
 ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     Device* device,
-    const char* label,
+    StringView label,
     const SharedTextureMemoryAHardwareBufferDescriptor* descriptor) {
 #if DAWN_PLATFORM_IS(ANDROID)
     const auto* ahbFunctions =
@@ -743,7 +744,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 // static
 ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     Device* device,
-    const char* label,
+    StringView label,
     const SharedTextureMemoryOpaqueFDDescriptor* descriptor) {
 #if DAWN_PLATFORM_IS(POSIX)
     VkDevice vkDevice = device->GetVkDevice();
@@ -961,7 +962,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 // static
 Ref<SharedTextureMemory> SharedTextureMemory::Create(
     Device* device,
-    const char* label,
+    StringView label,
     const SharedTextureMemoryProperties& properties,
     uint32_t queueFamilyIndex) {
     Ref<SharedTextureMemory> sharedTextureMemory =
@@ -971,7 +972,7 @@ Ref<SharedTextureMemory> SharedTextureMemory::Create(
 }
 
 SharedTextureMemory::SharedTextureMemory(Device* device,
-                                         const char* label,
+                                         StringView label,
                                          const SharedTextureMemoryProperties& properties,
                                          uint32_t queueFamilyIndex)
     : SharedTextureMemoryBase(device, label, properties), mQueueFamilyIndex(queueFamilyIndex) {}
@@ -995,7 +996,7 @@ void SharedTextureMemory::DestroyImpl() {
 
 ResultOrError<Ref<TextureBase>> SharedTextureMemory::CreateTextureImpl(
     const UnpackedPtr<TextureDescriptor>& descriptor) {
-    return Texture::CreateFromSharedTextureMemory(this, descriptor);
+    return SharedTexture::Create(this, descriptor);
 }
 
 MaybeError SharedTextureMemory::BeginAccessImpl(
@@ -1020,7 +1021,7 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
         DAWN_INVALID_IF(descriptor->signaledValues[i] != 1, "%s signaled value (%u) was not 1.",
                         descriptor->fences[i], descriptor->signaledValues[i]);
     }
-    ToBackend(texture)->SetPendingAcquire(
+    static_cast<SharedTexture*>(texture)->SetPendingAcquire(
         static_cast<VkImageLayout>(vkLayoutBeginState->oldLayout),
         static_cast<VkImageLayout>(vkLayoutBeginState->newLayout));
     return {};
@@ -1059,8 +1060,8 @@ ResultOrError<FenceAndSignalValue> SharedTextureMemory::EndAccessImpl(
         ExternalSemaphoreHandle semaphoreHandle;
         VkImageLayout releasedOldLayout;
         VkImageLayout releasedNewLayout;
-        DAWN_TRY(ToBackend(texture)->EndAccess(&semaphoreHandle, &releasedOldLayout,
-                                               &releasedNewLayout));
+        DAWN_TRY(static_cast<SharedTexture*>(texture)->EndAccess(
+            &semaphoreHandle, &releasedOldLayout, &releasedNewLayout));
         // Handle is acquired from the texture so we need to make sure to close it.
         // TODO(dawn:1745): Consider using one event per submit that is tracked by the
         // CommandRecordingContext so that we don't need to create one handle per texture,

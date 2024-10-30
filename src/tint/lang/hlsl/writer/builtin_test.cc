@@ -291,7 +291,7 @@ TEST_F(HlslWriterTest, BuiltinStorageAtomicSub) {
 RWByteAddressBuffer v : register(u0);
 void foo() {
   int v_1 = int(0);
-  v.InterlockedAdd(int(16u), -(int(123)), v_1);
+  v.InterlockedAdd(int(16u), (int(0) - int(123)), v_1);
   int x = v_1;
 }
 
@@ -314,7 +314,7 @@ TEST_F(HlslWriterTest, BuiltinStorageAtomicSubDirect) {
 RWByteAddressBuffer v : register(u0);
 void foo() {
   int v_1 = int(0);
-  v.InterlockedAdd(int(0u), -(int(123)), v_1);
+  v.InterlockedAdd(int(0u), (int(0) - int(123)), v_1);
   int x = v_1;
 }
 
@@ -477,8 +477,7 @@ TEST_F(HlslWriterTest, BuiltinWorkgroupAtomicStore) {
     auto* var = b.Var("v", workgroup, sb, core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Call(ty.void_(), core::BuiltinFn::kAtomicStore,
                b.Access(ty.ptr<workgroup, atomic<i32>, read_write>(), var, 1_u), 123_i);
@@ -529,8 +528,7 @@ TEST_F(HlslWriterTest, BuiltinWorkgroupAtomicLoad) {
     auto* var = b.Var("v", workgroup, sb, core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), core::BuiltinFn::kAtomicLoad,
                           b.Access(ty.ptr<workgroup, atomic<i32>, read_write>(), var, 1_u)));
@@ -582,8 +580,7 @@ TEST_F(HlslWriterTest, BuiltinWorkgroupAtomicSub) {
     auto* var = b.Var("v", workgroup, sb, core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), core::BuiltinFn::kAtomicSub,
                           b.Access(ty.ptr<workgroup, atomic<i32>, read_write>(), var, 1_u), 123_i));
@@ -640,8 +637,7 @@ TEST_F(HlslWriterTest, BuiltinWorkgroupAtomicCompareExchangeWeak) {
     auto* var = b.Var("v", workgroup, sb, core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(core::type::CreateAtomicCompareExchangeResult(ty, mod.symbols, ty.i32()),
                           core::BuiltinFn::kAtomicCompareExchangeWeak,
@@ -697,8 +693,7 @@ TEST_P(HlslBuiltinWorkgroupAtomic, Access) {
     auto* var = b.Var("v", workgroup, ty.atomic<i32>(), core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
 
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), param.fn, var, 123_i));
@@ -777,8 +772,7 @@ void foo() {
 }
 
 TEST_F(HlslWriterTest, BuiltinStorageBarrier) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Call(ty.void_(), core::BuiltinFn::kStorageBarrier);
         b.Return(func);
@@ -795,8 +789,7 @@ void foo() {
 }
 
 TEST_F(HlslWriterTest, BuiltinTextureBarrier) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Call(ty.void_(), core::BuiltinFn::kTextureBarrier);
         b.Return(func);
@@ -813,8 +806,7 @@ void foo() {
 }
 
 TEST_F(HlslWriterTest, BuiltinWorkgroupBarrier) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Call(ty.void_(), core::BuiltinFn::kWorkgroupBarrier);
         b.Return(func);
@@ -2419,8 +2411,7 @@ void foo() {
 }
 
 TEST_F(HlslWriterTest, BuiltinSubgroupBallot) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
 
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.vec4<u32>(), core::BuiltinFn::kSubgroupBallot, true));
@@ -2781,7 +2772,8 @@ TEST_F(HlslWriterTest, BuiltinTextureSampleBias_2d) {
 Texture2D<float4> v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
-  float4 x = v.SampleBias(v_1, float2(1.0f, 2.0f), 3.0f);
+  float2 v_2 = float2(1.0f, 2.0f);
+  float4 x = v.SampleBias(v_1, v_2, clamp(3.0f, -16.0f, 15.9899997711181640625f));
 }
 
 )");
@@ -2817,7 +2809,8 @@ TEST_F(HlslWriterTest, BuiltinTextureSampleBias_2d_Offset) {
 Texture2D<float4> v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
-  float4 x = v.SampleBias(v_1, float2(1.0f, 2.0f), 3.0f, int2(int(4), int(5)));
+  float2 v_2 = float2(1.0f, 2.0f);
+  float4 x = v.SampleBias(v_1, v_2, clamp(3.0f, -16.0f, 15.9899997711181640625f), int2(int(4), int(5)));
 }
 
 )");
@@ -2854,7 +2847,8 @@ Texture2DArray<float4> v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
   float2 v_2 = float2(1.0f, 2.0f);
-  float4 x = v.SampleBias(v_1, float3(v_2, float(4u)), 3.0f);
+  float v_3 = clamp(3.0f, -16.0f, 15.9899997711181640625f);
+  float4 x = v.SampleBias(v_1, float3(v_2, float(4u)), v_3);
 }
 
 )");
@@ -2892,7 +2886,8 @@ Texture2DArray<float4> v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
   float2 v_2 = float2(1.0f, 2.0f);
-  float4 x = v.SampleBias(v_1, float3(v_2, float(4u)), 3.0f, int2(int(4), int(5)));
+  float v_3 = clamp(3.0f, -16.0f, 15.9899997711181640625f);
+  float4 x = v.SampleBias(v_1, float3(v_2, float(4u)), v_3, int2(int(4), int(5)));
 }
 
 )");
@@ -2926,7 +2921,8 @@ TEST_F(HlslWriterTest, BuiltinTextureSampleBias_3d) {
 Texture3D<float4> v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
-  float4 x = v.SampleBias(v_1, float3(1.0f, 2.0f, 3.0f), 3.0f);
+  float3 v_2 = float3(1.0f, 2.0f, 3.0f);
+  float4 x = v.SampleBias(v_1, v_2, clamp(3.0f, -16.0f, 15.9899997711181640625f));
 }
 
 )");
@@ -2962,7 +2958,8 @@ TEST_F(HlslWriterTest, BuiltinTextureSampleBias_3d_Offset) {
 Texture3D<float4> v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
-  float4 x = v.SampleBias(v_1, float3(1.0f, 2.0f, 3.0f), 3.0f, int3(int(4), int(5), int(6)));
+  float3 v_2 = float3(1.0f, 2.0f, 3.0f);
+  float4 x = v.SampleBias(v_1, v_2, clamp(3.0f, -16.0f, 15.9899997711181640625f), int3(int(4), int(5), int(6)));
 }
 
 )");
@@ -2996,7 +2993,8 @@ TEST_F(HlslWriterTest, BuiltinTextureSampleBias_Cube) {
 TextureCube<float4> v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
-  float4 x = v.SampleBias(v_1, float3(1.0f, 2.0f, 3.0f), 3.0f);
+  float3 v_2 = float3(1.0f, 2.0f, 3.0f);
+  float4 x = v.SampleBias(v_1, v_2, clamp(3.0f, -16.0f, 15.9899997711181640625f));
 }
 
 )");
@@ -3033,7 +3031,8 @@ TextureCubeArray<float4> v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
   float3 v_2 = float3(1.0f, 2.0f, 3.0f);
-  float4 x = v.SampleBias(v_1, float4(v_2, float(4u)), 3.0f);
+  float v_3 = clamp(3.0f, -16.0f, 15.9899997711181640625f);
+  float4 x = v.SampleBias(v_1, float4(v_2, float(4u)), v_3);
 }
 
 )");
@@ -3816,7 +3815,7 @@ TEST_F(HlslWriterTest, BuiltinTextureSample_Depth2d) {
 Texture2D v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
-  float x = v.Sample(v_1, float2(1.0f, 2.0f));
+  float x = v.Sample(v_1, float2(1.0f, 2.0f)).x;
 }
 
 )");
@@ -3851,7 +3850,7 @@ TEST_F(HlslWriterTest, BuiltinTextureSample_Depth2d_Offset) {
 Texture2D v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
-  float x = v.Sample(v_1, float2(1.0f, 2.0f), int2(int(4), int(5)));
+  float x = v.Sample(v_1, float2(1.0f, 2.0f), int2(int(4), int(5))).x;
 }
 
 )");
@@ -3887,7 +3886,7 @@ Texture2DArray v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
   float2 v_2 = float2(1.0f, 2.0f);
-  float x = v.Sample(v_1, float3(v_2, float(4u)));
+  float x = v.Sample(v_1, float3(v_2, float(4u))).x;
 }
 
 )");
@@ -3924,7 +3923,7 @@ Texture2DArray v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
   float2 v_2 = float2(1.0f, 2.0f);
-  float x = v.Sample(v_1, float3(v_2, float(4u)), int2(int(4), int(5)));
+  float x = v.Sample(v_1, float3(v_2, float(4u)), int2(int(4), int(5))).x;
 }
 
 )");
@@ -3960,7 +3959,7 @@ TextureCubeArray v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
   float3 v_2 = float3(1.0f, 2.0f, 3.0f);
-  float x = v.Sample(v_1, float4(v_2, float(4u)));
+  float x = v.Sample(v_1, float4(v_2, float(4u))).x;
 }
 
 )");
@@ -4289,7 +4288,7 @@ Texture2D v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
   float2 v_2 = float2(1.0f, 2.0f);
-  float x = v.SampleLevel(v_1, v_2, float(int(3)));
+  float x = v.SampleLevel(v_1, v_2, float(int(3))).x;
 }
 
 )");
@@ -4325,7 +4324,7 @@ Texture2D v : register(t0);
 SamplerState v_1 : register(s1);
 void foo() {
   float2 v_2 = float2(1.0f, 2.0f);
-  float x = v.SampleLevel(v_1, v_2, float(int(3)), int2(int(4), int(5)));
+  float x = v.SampleLevel(v_1, v_2, float(int(3)), int2(int(4), int(5))).x;
 }
 
 )");
@@ -4362,7 +4361,7 @@ SamplerState v_1 : register(s1);
 void foo() {
   float2 v_2 = float2(1.0f, 2.0f);
   float3 v_3 = float3(v_2, float(4u));
-  float x = v.SampleLevel(v_1, v_3, float(3u));
+  float x = v.SampleLevel(v_1, v_3, float(3u)).x;
 }
 
 )");
@@ -4401,7 +4400,7 @@ SamplerState v_1 : register(s1);
 void foo() {
   float2 v_2 = float2(1.0f, 2.0f);
   float3 v_3 = float3(v_2, float(4u));
-  float x = v.SampleLevel(v_1, v_3, float(int(3)), int2(int(4), int(5)));
+  float x = v.SampleLevel(v_1, v_3, float(int(3)), int2(int(4), int(5))).x;
 }
 
 )");
@@ -4438,7 +4437,7 @@ SamplerState v_1 : register(s1);
 void foo() {
   float3 v_2 = float3(1.0f, 2.0f, 3.0f);
   float4 v_3 = float4(v_2, float(4u));
-  float x = v.SampleLevel(v_1, v_3, float(3u));
+  float x = v.SampleLevel(v_1, v_3, float(3u)).x;
 }
 
 )");

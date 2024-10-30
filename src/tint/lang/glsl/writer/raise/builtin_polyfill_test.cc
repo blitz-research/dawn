@@ -66,7 +66,7 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, SelectScalar) {
     auto* expect = R"(
 %foo = func():f32 {
   $B1: {
-    %2:f32 = glsl.ternary 2.0f, 1.0f, false
+    %2:f32 = glsl.mix 2.0f, 1.0f, false
     ret %2
   }
 }
@@ -98,20 +98,8 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, SelectVector) {
     auto* expect = R"(
 %foo = func():vec3<f32> {
   $B1: {
-    %2:f32 = swizzle vec3<f32>(2.0f), x
-    %3:f32 = swizzle vec3<f32>(1.0f), x
-    %4:f32 = swizzle vec3<bool>(false), x
-    %5:f32 = glsl.ternary %2, %3, %4
-    %6:f32 = swizzle vec3<f32>(2.0f), y
-    %7:f32 = swizzle vec3<f32>(1.0f), y
-    %8:f32 = swizzle vec3<bool>(false), y
-    %9:f32 = glsl.ternary %6, %7, %8
-    %10:f32 = swizzle vec3<f32>(2.0f), z
-    %11:f32 = swizzle vec3<f32>(1.0f), z
-    %12:f32 = swizzle vec3<bool>(false), z
-    %13:f32 = glsl.ternary %10, %11, %12
-    %14:vec3<f32> = construct %5, %9, %13
-    ret %14
+    %2:vec3<f32> = glsl.mix vec3<f32>(2.0f), vec3<f32>(1.0f), vec3<bool>(false)
+    ret %2
   }
 }
 )";
@@ -121,15 +109,14 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, SelectVector) {
 }
 
 TEST_F(GlslWriter_BuiltinPolyfillTest, StorageBarrier) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Call(ty.void_(), core::BuiltinFn::kStorageBarrier);
         b.Return(func);
     });
 
     auto* src = R"(
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B1: {
     %2:void = storageBarrier
     ret
@@ -139,10 +126,10 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, StorageBarrier) {
     EXPECT_EQ(src, str());
 
     auto* expect = R"(
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B1: {
-    %2:void = glsl.barrier
-    %3:void = glsl.memoryBarrierBuffer
+    %2:void = glsl.memoryBarrierBuffer
+    %3:void = glsl.barrier
     ret
   }
 }
@@ -153,15 +140,14 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, StorageBarrier) {
 }
 
 TEST_F(GlslWriter_BuiltinPolyfillTest, TextureBarrier) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Call(ty.void_(), core::BuiltinFn::kTextureBarrier);
         b.Return(func);
     });
 
     auto* src = R"(
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B1: {
     %2:void = textureBarrier
     ret
@@ -171,10 +157,10 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, TextureBarrier) {
     EXPECT_EQ(src, str());
 
     auto* expect = R"(
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B1: {
-    %2:void = glsl.barrier
-    %3:void = glsl.memoryBarrierImage
+    %2:void = glsl.memoryBarrierImage
+    %3:void = glsl.barrier
     ret
   }
 }
@@ -185,15 +171,14 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, TextureBarrier) {
 }
 
 TEST_F(GlslWriter_BuiltinPolyfillTest, WorkgroupBarrier) {
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Call(ty.void_(), core::BuiltinFn::kWorkgroupBarrier);
         b.Return(func);
     });
 
     auto* src = R"(
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B1: {
     %2:void = workgroupBarrier
     ret
@@ -203,7 +188,7 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, WorkgroupBarrier) {
     EXPECT_EQ(src, str());
 
     auto* expect = R"(
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B1: {
     %2:void = glsl.barrier
     ret
@@ -220,8 +205,7 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, AtomicCompareExchangeWeak) {
     var->SetBindingPoint(0, 0);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(core::type::CreateAtomicCompareExchangeResult(ty, mod.symbols, ty.i32()),
                           core::BuiltinFn::kAtomicCompareExchangeWeak, var, 123_i, 345_i));
@@ -238,7 +222,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<i32>, read_write> = var @binding_point(0, 0)
 }
 
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:__atomic_compare_exchange_result_i32 = atomicCompareExchangeWeak %v, 123i, 345i
     %x:__atomic_compare_exchange_result_i32 = let %3
@@ -258,7 +242,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<i32>, read_write> = var @binding_point(0, 0)
 }
 
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:i32 = bitcast 123i
     %4:i32 = bitcast 345i
@@ -280,8 +264,7 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, AtomicSub) {
     var->SetBindingPoint(0, 0);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), core::BuiltinFn::kAtomicSub, var, 123_i));
         b.Return(func);
@@ -292,7 +275,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<i32>, read_write> = var @binding_point(0, 0)
 }
 
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:i32 = atomicSub %v, 123i
     %x:i32 = let %3
@@ -307,7 +290,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<i32>, read_write> = var @binding_point(0, 0)
 }
 
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:i32 = negation 123i
     %4:i32 = atomicAdd %v, %3
@@ -326,8 +309,7 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, AtomicSub_u32) {
     var->SetBindingPoint(0, 0);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.u32(), core::BuiltinFn::kAtomicSub, var, 123_u));
         b.Return(func);
@@ -338,7 +320,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<u32>, read_write> = var @binding_point(0, 0)
 }
 
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:u32 = atomicSub %v, 123u
     %x:u32 = let %3
@@ -353,7 +335,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<u32>, read_write> = var @binding_point(0, 0)
 }
 
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:u32 = glsl.atomicSub %v, 123u
     %x:u32 = let %3
@@ -371,8 +353,7 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, AtomicLoad) {
     var->SetBindingPoint(0, 0);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kCompute);
-    func->SetWorkgroupSize(1, 1, 1);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), core::BuiltinFn::kAtomicLoad, var));
         b.Return(func);
@@ -383,7 +364,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<i32>, read_write> = var @binding_point(0, 0)
 }
 
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:i32 = atomicLoad %v
     %x:i32 = let %3
@@ -398,220 +379,11 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<i32>, read_write> = var @binding_point(0, 0)
 }
 
-%foo = @compute @workgroup_size(1, 1, 1) func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:i32 = atomicOr %v, 0i
     %x:i32 = let %3
     ret
-  }
-}
-)";
-
-    Run(BuiltinPolyfill);
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureDimensions_1d) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k1d, ty.f32()));
-    auto* func = b.Function("foo", ty.u32());
-    func->SetParams({t});
-    b.Append(func->Block(), [&] {
-        auto* result = b.Call<u32>(core::BuiltinFn::kTextureDimensions, t);
-        b.Return(func, result);
-    });
-
-    auto* src = R"(
-%foo = func(%t:texture_1d<f32>):u32 {
-  $B1: {
-    %3:u32 = textureDimensions %t
-    ret %3
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-%foo = func(%t:texture_1d<f32>):u32 {
-  $B1: {
-    %3:i32 = glsl.textureSize %t, 0i
-    %4:u32 = bitcast %3
-    ret %4
-  }
-}
-)";
-
-    Run(BuiltinPolyfill);
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureDimensions_2d_WithoutLod) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k2d, ty.f32()));
-    auto* func = b.Function("foo", ty.vec2<u32>());
-    func->SetParams({t});
-    b.Append(func->Block(), [&] {
-        auto* result = b.Call<vec2<u32>>(core::BuiltinFn::kTextureDimensions, t);
-        b.Return(func, result);
-    });
-
-    auto* src = R"(
-%foo = func(%t:texture_2d<f32>):vec2<u32> {
-  $B1: {
-    %3:vec2<u32> = textureDimensions %t
-    ret %3
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-%foo = func(%t:texture_2d<f32>):vec2<u32> {
-  $B1: {
-    %3:vec2<i32> = glsl.textureSize %t, 0i
-    %4:vec2<u32> = bitcast %3
-    ret %4
-  }
-}
-)";
-
-    Run(BuiltinPolyfill);
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureDimensions_2d_WithU32Lod) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k2d, ty.f32()));
-    auto* func = b.Function("foo", ty.vec2<u32>());
-    func->SetParams({t});
-    b.Append(func->Block(), [&] {
-        auto* result = b.Call<vec2<u32>>(core::BuiltinFn::kTextureDimensions, t, 3_u);
-        b.Return(func, result);
-    });
-
-    auto* src = R"(
-%foo = func(%t:texture_2d<f32>):vec2<u32> {
-  $B1: {
-    %3:vec2<u32> = textureDimensions %t, 3u
-    ret %3
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-%foo = func(%t:texture_2d<f32>):vec2<u32> {
-  $B1: {
-    %3:i32 = bitcast 3u
-    %4:vec2<i32> = glsl.textureSize %t, %3
-    %5:vec2<u32> = bitcast %4
-    ret %5
-  }
-}
-)";
-
-    Run(BuiltinPolyfill);
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureDimensions_2dArray) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k2dArray, ty.f32()));
-    auto* func = b.Function("foo", ty.vec2<u32>());
-    func->SetParams({t});
-    b.Append(func->Block(), [&] {
-        auto* result = b.Call<vec2<u32>>(core::BuiltinFn::kTextureDimensions, t);
-        b.Return(func, result);
-    });
-
-    auto* src = R"(
-%foo = func(%t:texture_2d_array<f32>):vec2<u32> {
-  $B1: {
-    %3:vec2<u32> = textureDimensions %t
-    ret %3
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-%foo = func(%t:texture_2d_array<f32>):vec2<u32> {
-  $B1: {
-    %3:vec3<i32> = glsl.textureSize %t, 0i
-    %4:vec2<i32> = swizzle %3, xy
-    %5:vec2<u32> = bitcast %4
-    ret %5
-  }
-}
-)";
-
-    Run(BuiltinPolyfill);
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureDimensions_Storage2D) {
-    auto* t = b.FunctionParam(
-        "t",
-        ty.Get<core::type::StorageTexture>(
-            core::type::TextureDimension::k2d, core::TexelFormat::kRg32Float, core::Access::kRead,
-            core::type::StorageTexture::SubtypeFor(core::TexelFormat::kRg32Float, ty)));
-    auto* func = b.Function("foo", ty.vec2<u32>());
-    func->SetParams({t});
-    b.Append(func->Block(), [&] {
-        auto* result = b.Call<vec2<u32>>(core::BuiltinFn::kTextureDimensions, t);
-        b.Return(func, result);
-    });
-
-    auto* src = R"(
-%foo = func(%t:texture_storage_2d<rg32float, read>):vec2<u32> {
-  $B1: {
-    %3:vec2<u32> = textureDimensions %t
-    ret %3
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-%foo = func(%t:texture_storage_2d<rg32float, read>):vec2<u32> {
-  $B1: {
-    %3:vec2<i32> = glsl.imageSize %t
-    %4:vec2<u32> = bitcast %3
-    ret %4
-  }
-}
-)";
-
-    Run(BuiltinPolyfill);
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureDimensions_DepthMultisampled) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::DepthMultisampledTexture>(core::type::TextureDimension::k2d));
-    auto* func = b.Function("foo", ty.vec2<u32>());
-    func->SetParams({t});
-    b.Append(func->Block(), [&] {
-        auto* result = b.Call<vec2<u32>>(core::BuiltinFn::kTextureDimensions, t);
-        b.Return(func, result);
-    });
-
-    auto* src = R"(
-%foo = func(%t:texture_depth_multisampled_2d):vec2<u32> {
-  $B1: {
-    %3:vec2<u32> = textureDimensions %t
-    ret %3
-  }
-}
-)";
-    EXPECT_EQ(src, str());
-
-    auto* expect = R"(
-%foo = func(%t:texture_depth_multisampled_2d):vec2<u32> {
-  $B1: {
-    %3:vec2<i32> = glsl.textureSize %t
-    %4:vec2<u32> = bitcast %3
-    ret %4
   }
 }
 )";
@@ -721,48 +493,34 @@ TEST_F(GlslWriter_BuiltinPolyfillTest, InsertBits) {
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureNumLayers_2DArray) {
-    auto* var =
-        b.Var("v", handle,
-              ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k2dArray, ty.f32()),
-              core::Access::kReadWrite);
-    var->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(var);
-
+TEST_F(GlslWriter_BuiltinPolyfillTest, FMA_f32) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        b.Let("x", b.Call(ty.u32(), core::BuiltinFn::kTextureNumLayers, b.Load(var)));
+        auto* x = b.Splat(ty.vec3<f32>(), 1_f);
+        auto* y = b.Splat(ty.vec3<f32>(), 2_f);
+        auto* z = b.Splat(ty.vec3<f32>(), 3_f);
+
+        b.Let("x", b.Call(ty.vec3<f32>(), core::BuiltinFn::kFma, x, y, z));
         b.Return(func);
     });
 
     auto* src = R"(
-$B1: {  # root
-  %v:ptr<handle, texture_2d_array<f32>, read_write> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_2d_array<f32> = load %v
-    %4:u32 = textureNumLayers %3
-    %x:u32 = let %4
+  $B1: {
+    %2:vec3<f32> = fma vec3<f32>(1.0f), vec3<f32>(2.0f), vec3<f32>(3.0f)
+    %x:vec3<f32> = let %2
     ret
   }
 }
 )";
-    EXPECT_EQ(src, str());
+    ASSERT_EQ(src, str());
 
     auto* expect = R"(
-$B1: {  # root
-  %v:ptr<handle, texture_2d_array<f32>, read_write> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_2d_array<f32> = load %v
-    %4:vec3<i32> = glsl.textureSize %3, 0i
-    %5:i32 = swizzle %4, z
-    %6:u32 = bitcast %5
-    %x:u32 = let %6
+  $B1: {
+    %2:vec3<f32> = mul vec3<f32>(1.0f), vec3<f32>(2.0f)
+    %3:vec3<f32> = add %2, vec3<f32>(3.0f)
+    %x:vec3<f32> = let %3
     ret
   }
 }
@@ -772,47 +530,34 @@ $B1: {  # root
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureNumLayers_Depth2DArray) {
-    auto* var =
-        b.Var("v", handle, ty.Get<core::type::DepthTexture>(core::type::TextureDimension::k2dArray),
-              core::Access::kReadWrite);
-    var->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(var);
-
+TEST_F(GlslWriter_BuiltinPolyfillTest, FMA_f16) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        b.Let("x", b.Call(ty.u32(), core::BuiltinFn::kTextureNumLayers, b.Load(var)));
+        auto* x = b.Splat(ty.vec3<f16>(), 1_h);
+        auto* y = b.Splat(ty.vec3<f16>(), 2_h);
+        auto* z = b.Splat(ty.vec3<f16>(), 3_h);
+
+        b.Let("x", b.Call(ty.vec3<f16>(), core::BuiltinFn::kFma, x, y, z));
         b.Return(func);
     });
 
     auto* src = R"(
-$B1: {  # root
-  %v:ptr<handle, texture_depth_2d_array, read_write> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_depth_2d_array = load %v
-    %4:u32 = textureNumLayers %3
-    %x:u32 = let %4
+  $B1: {
+    %2:vec3<f16> = fma vec3<f16>(1.0h), vec3<f16>(2.0h), vec3<f16>(3.0h)
+    %x:vec3<f16> = let %2
     ret
   }
 }
 )";
-    EXPECT_EQ(src, str());
+    ASSERT_EQ(src, str());
 
     auto* expect = R"(
-$B1: {  # root
-  %v:ptr<handle, texture_depth_2d_array, read_write> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_depth_2d_array = load %v
-    %4:vec3<i32> = glsl.textureSize %3, 0i
-    %5:i32 = swizzle %4, z
-    %6:u32 = bitcast %5
-    %x:u32 = let %6
+  $B1: {
+    %2:vec3<f16> = mul vec3<f16>(1.0h), vec3<f16>(2.0h)
+    %3:vec3<f16> = add %2, vec3<f16>(3.0h)
+    %x:vec3<f16> = let %3
     ret
   }
 }
@@ -822,48 +567,57 @@ $B1: {  # root
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureNumLayers_CubeArray) {
-    auto* var = b.Var(
-        "v", handle,
-        ty.Get<core::type::SampledTexture>(core::type::TextureDimension::kCubeArray, ty.f32()),
-        core::Access::kReadWrite);
+TEST_F(GlslWriter_BuiltinPolyfillTest, ArrayLength) {
+    auto* sb = ty.Struct(mod.symbols.New("SB"), {
+                                                    {mod.symbols.New("b"), ty.array<u32>()},
+                                                });
+
+    auto* var = b.Var("v", storage, sb, core::Access::kReadWrite);
     var->SetBindingPoint(0, 0);
     b.ir.root_block->Append(var);
 
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        b.Let("x", b.Call(ty.u32(), core::BuiltinFn::kTextureNumLayers, b.Load(var)));
+        auto* ary = b.Access(ty.ptr<storage, array<u32>, read_write>(), var, 0_u);
+        b.Let("x", b.Call(ty.u32(), core::BuiltinFn::kArrayLength, ary));
         b.Return(func);
     });
 
     auto* src = R"(
+SB = struct @align(4) {
+  b:array<u32> @offset(0)
+}
+
 $B1: {  # root
-  %v:ptr<handle, texture_cube_array<f32>, read_write> = var @binding_point(0, 0)
+  %v:ptr<storage, SB, read_write> = var @binding_point(0, 0)
 }
 
 %foo = @fragment func():void {
   $B2: {
-    %3:texture_cube_array<f32> = load %v
-    %4:u32 = textureNumLayers %3
+    %3:ptr<storage, array<u32>, read_write> = access %v, 0u
+    %4:u32 = arrayLength %3
     %x:u32 = let %4
     ret
   }
 }
 )";
-    EXPECT_EQ(src, str());
+    ASSERT_EQ(src, str());
 
     auto* expect = R"(
+SB = struct @align(4) {
+  b:array<u32> @offset(0)
+}
+
 $B1: {  # root
-  %v:ptr<handle, texture_cube_array<f32>, read_write> = var @binding_point(0, 0)
+  %v:ptr<storage, SB, read_write> = var @binding_point(0, 0)
 }
 
 %foo = @fragment func():void {
   $B2: {
-    %3:texture_cube_array<f32> = load %v
-    %4:vec3<i32> = glsl.textureSize %3, 0i
-    %5:i32 = swizzle %4, z
-    %6:u32 = bitcast %5
-    %x:u32 = let %6
+    %3:ptr<storage, array<u32>, read_write> = access %v, 0u
+    %4:i32 = %3.length
+    %5:u32 = convert %4
+    %x:u32 = let %5
     ret
   }
 }
@@ -873,47 +627,28 @@ $B1: {  # root
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureNumLayers_DepthCubeArray) {
-    auto* var = b.Var("v", handle,
-                      ty.Get<core::type::DepthTexture>(core::type::TextureDimension::kCubeArray),
-                      core::Access::kReadWrite);
-    var->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(var);
-
+TEST_F(GlslWriter_BuiltinPolyfillTest, AnyScalar) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        b.Let("x", b.Call(ty.u32(), core::BuiltinFn::kTextureNumLayers, b.Load(var)));
+        b.Let("x", b.Call(ty.bool_(), core::BuiltinFn::kAny, true));
         b.Return(func);
     });
 
     auto* src = R"(
-$B1: {  # root
-  %v:ptr<handle, texture_depth_cube_array, read_write> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_depth_cube_array = load %v
-    %4:u32 = textureNumLayers %3
-    %x:u32 = let %4
+  $B1: {
+    %2:bool = any true
+    %x:bool = let %2
     ret
   }
 }
 )";
-    EXPECT_EQ(src, str());
+    ASSERT_EQ(src, str());
 
     auto* expect = R"(
-$B1: {  # root
-  %v:ptr<handle, texture_depth_cube_array, read_write> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_depth_cube_array = load %v
-    %4:vec3<i32> = glsl.textureSize %3, 0i
-    %5:i32 = swizzle %4, z
-    %6:u32 = bitcast %5
-    %x:u32 = let %6
+  $B1: {
+    %x:bool = let true
     ret
   }
 }
@@ -923,49 +658,28 @@ $B1: {  # root
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureNumLayers_Storage2DArray) {
-    auto* storage_ty = ty.Get<core::type::StorageTexture>(
-        core::type::TextureDimension::k2dArray, core::TexelFormat::kRg32Float, core::Access::kRead,
-        core::type::StorageTexture::SubtypeFor(core::TexelFormat::kRg32Float, ty));
-
-    auto* var = b.Var("v", handle, storage_ty, core::Access::kReadWrite);
-    var->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(var);
-
+TEST_F(GlslWriter_BuiltinPolyfillTest, AllScalar) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        b.Let("x", b.Call(ty.u32(), core::BuiltinFn::kTextureNumLayers, b.Load(var)));
+        b.Let("x", b.Call(ty.bool_(), core::BuiltinFn::kAll, false));
         b.Return(func);
     });
 
     auto* src = R"(
-$B1: {  # root
-  %v:ptr<handle, texture_storage_2d_array<rg32float, read>, read_write> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_storage_2d_array<rg32float, read> = load %v
-    %4:u32 = textureNumLayers %3
-    %x:u32 = let %4
+  $B1: {
+    %2:bool = all false
+    %x:bool = let %2
     ret
   }
 }
 )";
-    EXPECT_EQ(src, str());
+    ASSERT_EQ(src, str());
 
     auto* expect = R"(
-$B1: {  # root
-  %v:ptr<handle, texture_storage_2d_array<rg32float, read>, read_write> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_storage_2d_array<rg32float, read> = load %v
-    %4:vec3<i32> = glsl.imageSize %3
-    %5:i32 = swizzle %4, z
-    %6:u32 = bitcast %5
-    %x:u32 = let %6
+  $B1: {
+    %x:bool = let false
     ret
   }
 }
@@ -975,223 +689,429 @@ $B1: {  # root
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureLoad_1DF32) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k1d, ty.f32()));
+TEST_F(GlslWriter_BuiltinPolyfillTest, DotF32) {
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        auto* x = b.Let("x", b.Splat(ty.vec3<f32>(), 2_f));
+        auto* y = b.Let("y", b.Splat(ty.vec3<f32>(), 3_f));
+        b.Let("z", b.Call(ty.f32(), core::BuiltinFn::kDot, x, y));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %x:vec3<f32> = let vec3<f32>(2.0f)
+    %y:vec3<f32> = let vec3<f32>(3.0f)
+    %4:f32 = dot %x, %y
+    %z:f32 = let %4
+    ret
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expected = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %x:vec3<f32> = let vec3<f32>(2.0f)
+    %y:vec3<f32> = let vec3<f32>(3.0f)
+    %4:f32 = glsl.dot %x, %y
+    %z:f32 = let %4
+    ret
+  }
+}
+)";
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expected, str());
+}
+
+TEST_F(GlslWriter_BuiltinPolyfillTest, DotF16) {
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        auto* x = b.Let("x", b.Splat(ty.vec4<f16>(), 2_h));
+        auto* y = b.Let("y", b.Splat(ty.vec4<f16>(), 3_h));
+        b.Let("z", b.Call(ty.f16(), core::BuiltinFn::kDot, x, y));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %x:vec4<f16> = let vec4<f16>(2.0h)
+    %y:vec4<f16> = let vec4<f16>(3.0h)
+    %4:f16 = dot %x, %y
+    %z:f16 = let %4
+    ret
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expected = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %x:vec4<f16> = let vec4<f16>(2.0h)
+    %y:vec4<f16> = let vec4<f16>(3.0h)
+    %4:f16 = glsl.dot %x, %y
+    %z:f16 = let %4
+    ret
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expected, str());
+}
+
+TEST_F(GlslWriter_BuiltinPolyfillTest, DotI32) {
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        auto* x = b.Let("x", b.Splat(ty.vec4<i32>(), 2_i));
+        auto* y = b.Let("y", b.Splat(ty.vec4<i32>(), 3_i));
+        b.Let("z", b.Call(ty.i32(), core::BuiltinFn::kDot, x, y));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %x:vec4<i32> = let vec4<i32>(2i)
+    %y:vec4<i32> = let vec4<i32>(3i)
+    %4:i32 = dot %x, %y
+    %z:i32 = let %4
+    ret
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expected = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %x:vec4<i32> = let vec4<i32>(2i)
+    %y:vec4<i32> = let vec4<i32>(3i)
+    %4:i32 = call %tint_int_dot, %x, %y
+    %z:i32 = let %4
+    ret
+  }
+}
+%tint_int_dot = func(%x_1:vec4<i32>, %y_1:vec4<i32>):i32 {  # %x_1: 'x', %y_1: 'y'
+  $B2: {
+    %9:i32 = swizzle %x_1, x
+    %10:i32 = swizzle %y_1, x
+    %11:i32 = mul %9, %10
+    %12:i32 = swizzle %x_1, y
+    %13:i32 = swizzle %y_1, y
+    %14:i32 = mul %12, %13
+    %15:i32 = add %11, %14
+    %16:i32 = swizzle %x_1, z
+    %17:i32 = swizzle %y_1, z
+    %18:i32 = mul %16, %17
+    %19:i32 = add %15, %18
+    %20:i32 = swizzle %x_1, w
+    %21:i32 = swizzle %y_1, w
+    %22:i32 = mul %20, %21
+    %23:i32 = add %19, %22
+    ret %23
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expected, str());
+}
+
+TEST_F(GlslWriter_BuiltinPolyfillTest, DotU32) {
+    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    b.Append(func->Block(), [&] {
+        auto* x = b.Let("x", b.Splat(ty.vec2<u32>(), 2_u));
+        auto* y = b.Let("y", b.Splat(ty.vec2<u32>(), 3_u));
+        b.Let("z", b.Call(ty.u32(), core::BuiltinFn::kDot, x, y));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %x:vec2<u32> = let vec2<u32>(2u)
+    %y:vec2<u32> = let vec2<u32>(3u)
+    %4:u32 = dot %x, %y
+    %z:u32 = let %4
+    ret
+  }
+}
+)";
+    ASSERT_EQ(src, str());
+
+    auto* expected = R"(
+%foo = @fragment func():void {
+  $B1: {
+    %x:vec2<u32> = let vec2<u32>(2u)
+    %y:vec2<u32> = let vec2<u32>(3u)
+    %4:u32 = call %tint_int_dot, %x, %y
+    %z:u32 = let %4
+    ret
+  }
+}
+%tint_int_dot = func(%x_1:vec2<u32>, %y_1:vec2<u32>):u32 {  # %x_1: 'x', %y_1: 'y'
+  $B2: {
+    %9:u32 = swizzle %x_1, x
+    %10:u32 = swizzle %y_1, x
+    %11:u32 = mul %9, %10
+    %12:u32 = swizzle %x_1, y
+    %13:u32 = swizzle %y_1, y
+    %14:u32 = mul %12, %13
+    %15:u32 = add %11, %14
+    ret %15
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expected, str());
+}
+
+TEST_F(GlslWriter_BuiltinPolyfillTest, Modf_Scalar) {
+    auto* value = b.FunctionParam<f32>("value");
+    auto* func = b.Function("foo", ty.f32());
+    func->SetParams({value});
+    b.Append(func->Block(), [&] {
+        auto* result = b.Call(core::type::CreateModfResult(ty, mod.symbols, ty.f32()),
+                              core::BuiltinFn::kModf, value);
+        auto* fract = b.Access<f32>(result, 0_u);
+        auto* whole = b.Access<f32>(result, 1_u);
+        b.Return(func, b.Add<f32>(fract, whole));
+    });
+
+    auto* src = R"(
+__modf_result_f32 = struct @align(4) {
+  fract:f32 @offset(0)
+  whole:f32 @offset(4)
+}
+
+%foo = func(%value:f32):f32 {
+  $B1: {
+    %3:__modf_result_f32 = modf %value
+    %4:f32 = access %3, 0u
+    %5:f32 = access %3, 1u
+    %6:f32 = add %4, %5
+    ret %6
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+__modf_result_f32 = struct @align(4) {
+  fract:f32 @offset(0)
+  whole:f32 @offset(4)
+}
+
+%foo = func(%value:f32):f32 {
+  $B1: {
+    %3:ptr<function, __modf_result_f32, read_write> = var
+    %4:ptr<function, f32, read_write> = access %3, 1u
+    %5:f32 = glsl.modf %value, %4
+    %6:ptr<function, f32, read_write> = access %3, 0u
+    store %6, %5
+    %7:__modf_result_f32 = load %3
+    %8:f32 = access %7, 0u
+    %9:f32 = access %7, 1u
+    %10:f32 = add %8, %9
+    ret %10
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(GlslWriter_BuiltinPolyfillTest, Modf_Vector) {
+    auto* value = b.FunctionParam<vec4<f32>>("value");
     auto* func = b.Function("foo", ty.vec4<f32>());
-    func->SetParams({t});
+    func->SetParams({value});
     b.Append(func->Block(), [&] {
-        auto* coords = b.Zero<i32>();
-        auto* level = b.Zero<u32>();
-        auto* result = b.Call<vec4<f32>>(core::BuiltinFn::kTextureLoad, t, coords, level);
-        b.Return(func, result);
+        auto* result = b.Call(core::type::CreateModfResult(ty, mod.symbols, ty.vec4<f32>()),
+                              core::BuiltinFn::kModf, value);
+        auto* fract = b.Access<vec4<f32>>(result, 0_u);
+        auto* whole = b.Access<vec4<f32>>(result, 1_u);
+        b.Return(func, b.Add<vec4<f32>>(fract, whole));
     });
 
     auto* src = R"(
-%foo = func(%t:texture_1d<f32>):vec4<f32> {
+__modf_result_vec4_f32 = struct @align(16) {
+  fract:vec4<f32> @offset(0)
+  whole:vec4<f32> @offset(16)
+}
+
+%foo = func(%value:vec4<f32>):vec4<f32> {
   $B1: {
-    %3:vec4<f32> = textureLoad %t, 0i, 0u
-    ret %3
+    %3:__modf_result_vec4_f32 = modf %value
+    %4:vec4<f32> = access %3, 0u
+    %5:vec4<f32> = access %3, 1u
+    %6:vec4<f32> = add %4, %5
+    ret %6
   }
 }
 )";
-    ASSERT_EQ(src, str());
+    EXPECT_EQ(src, str());
 
     auto* expect = R"(
-%foo = func(%t:texture_1d<f32>):vec4<f32> {
+__modf_result_vec4_f32 = struct @align(16) {
+  fract:vec4<f32> @offset(0)
+  whole:vec4<f32> @offset(16)
+}
+
+%foo = func(%value:vec4<f32>):vec4<f32> {
   $B1: {
-    %3:i32 = convert 0i
-    %4:i32 = convert 0u
-    %5:vec4<f32> = glsl.texelFetch %t, %3, %4
-    ret %5
+    %3:ptr<function, __modf_result_vec4_f32, read_write> = var
+    %4:ptr<function, vec4<f32>, read_write> = access %3, 1u
+    %5:vec4<f32> = glsl.modf %value, %4
+    %6:ptr<function, vec4<f32>, read_write> = access %3, 0u
+    store %6, %5
+    %7:__modf_result_vec4_f32 = load %3
+    %8:vec4<f32> = access %7, 0u
+    %9:vec4<f32> = access %7, 1u
+    %10:vec4<f32> = add %8, %9
+    ret %10
   }
 }
 )";
 
     Run(BuiltinPolyfill);
-
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureLoad_2DLevelI32) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k2d, ty.i32()));
-    auto* func = b.Function("foo", ty.vec4<i32>());
-    func->SetParams({t});
+TEST_F(GlslWriter_BuiltinPolyfillTest, Frexp_Scalar) {
+    auto* value = b.FunctionParam<f32>("value");
+    auto* func = b.Function("foo", ty.f32());
+    func->SetParams({value});
     b.Append(func->Block(), [&] {
-        auto* coords = b.Zero<vec2<i32>>();
-        auto* level = b.Zero<i32>();
-        auto* result = b.Call<vec4<i32>>(core::BuiltinFn::kTextureLoad, t, coords, level);
-        b.Return(func, result);
+        auto* result = b.Call(core::type::CreateFrexpResult(ty, mod.symbols, ty.f32()),
+                              core::BuiltinFn::kFrexp, value);
+        auto* fract = b.Access<f32>(result, 0_u);
+        auto* exp = b.Access<i32>(result, 1_u);
+        b.Return(func, b.Add<f32>(fract, b.Convert<f32>(exp)));
     });
 
     auto* src = R"(
-%foo = func(%t:texture_2d<i32>):vec4<i32> {
+__frexp_result_f32 = struct @align(4) {
+  fract:f32 @offset(0)
+  exp:i32 @offset(4)
+}
+
+%foo = func(%value:f32):f32 {
   $B1: {
-    %3:vec4<i32> = textureLoad %t, vec2<i32>(0i), 0i
-    ret %3
+    %3:__frexp_result_f32 = frexp %value
+    %4:f32 = access %3, 0u
+    %5:i32 = access %3, 1u
+    %6:f32 = convert %5
+    %7:f32 = add %4, %6
+    ret %7
   }
 }
 )";
-    ASSERT_EQ(src, str());
+    EXPECT_EQ(src, str());
 
     auto* expect = R"(
-%foo = func(%t:texture_2d<i32>):vec4<i32> {
+__frexp_result_f32 = struct @align(4) {
+  fract:f32 @offset(0)
+  exp:i32 @offset(4)
+}
+
+%foo = func(%value:f32):f32 {
   $B1: {
-    %3:vec2<i32> = convert vec2<i32>(0i)
-    %4:i32 = convert 0i
-    %5:vec4<i32> = glsl.texelFetch %t, %3, %4
-    ret %5
+    %3:ptr<function, __frexp_result_f32, read_write> = var
+    %4:ptr<function, i32, read_write> = access %3, 1u
+    %5:f32 = glsl.frexp %value, %4
+    %6:ptr<function, f32, read_write> = access %3, 0u
+    store %6, %5
+    %7:__frexp_result_f32 = load %3
+    %8:f32 = access %7, 0u
+    %9:i32 = access %7, 1u
+    %10:f32 = convert %9
+    %11:f32 = add %8, %10
+    ret %11
   }
 }
 )";
 
     Run(BuiltinPolyfill);
-
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureLoad_3DLevelU32) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::SampledTexture>(core::type::TextureDimension::k3d, ty.f32()));
+TEST_F(GlslWriter_BuiltinPolyfillTest, Frexp_Vector) {
+    auto* value = b.FunctionParam<vec4<f32>>("value");
     auto* func = b.Function("foo", ty.vec4<f32>());
-    func->SetParams({t});
+    func->SetParams({value});
     b.Append(func->Block(), [&] {
-        auto* coords = b.Zero<vec3<i32>>();
-        auto* level = b.Zero<u32>();
-        auto* result = b.Call<vec4<f32>>(core::BuiltinFn::kTextureLoad, t, coords, level);
-        b.Return(func, result);
+        auto* result = b.Call(core::type::CreateFrexpResult(ty, mod.symbols, ty.vec4<f32>()),
+                              core::BuiltinFn::kFrexp, value);
+        auto* fract = b.Access<vec4<f32>>(result, 0_u);
+        auto* exp = b.Access<vec4<i32>>(result, 1_u);
+        b.Return(func, b.Add<vec4<f32>>(fract, b.Convert<vec4<f32>>(exp)));
     });
 
     auto* src = R"(
-%foo = func(%t:texture_3d<f32>):vec4<f32> {
+__frexp_result_vec4_f32 = struct @align(16) {
+  fract:vec4<f32> @offset(0)
+  exp:vec4<i32> @offset(16)
+}
+
+%foo = func(%value:vec4<f32>):vec4<f32> {
   $B1: {
-    %3:vec4<f32> = textureLoad %t, vec3<i32>(0i), 0u
-    ret %3
+    %3:__frexp_result_vec4_f32 = frexp %value
+    %4:vec4<f32> = access %3, 0u
+    %5:vec4<i32> = access %3, 1u
+    %6:vec4<f32> = convert %5
+    %7:vec4<f32> = add %4, %6
+    ret %7
   }
 }
 )";
-    ASSERT_EQ(src, str());
+    EXPECT_EQ(src, str());
 
     auto* expect = R"(
-%foo = func(%t:texture_3d<f32>):vec4<f32> {
+__frexp_result_vec4_f32 = struct @align(16) {
+  fract:vec4<f32> @offset(0)
+  exp:vec4<i32> @offset(16)
+}
+
+%foo = func(%value:vec4<f32>):vec4<f32> {
   $B1: {
-    %3:vec3<i32> = convert vec3<i32>(0i)
-    %4:i32 = convert 0u
-    %5:vec4<f32> = glsl.texelFetch %t, %3, %4
-    ret %5
+    %3:ptr<function, __frexp_result_vec4_f32, read_write> = var
+    %4:ptr<function, vec4<i32>, read_write> = access %3, 1u
+    %5:vec4<f32> = glsl.frexp %value, %4
+    %6:ptr<function, vec4<f32>, read_write> = access %3, 0u
+    store %6, %5
+    %7:__frexp_result_vec4_f32 = load %3
+    %8:vec4<f32> = access %7, 0u
+    %9:vec4<i32> = access %7, 1u
+    %10:vec4<f32> = convert %9
+    %11:vec4<f32> = add %8, %10
+    ret %11
   }
 }
 )";
 
     Run(BuiltinPolyfill);
-
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureLoad_Multisampled2DI32) {
-    auto* t = b.FunctionParam(
-        "t", ty.Get<core::type::MultisampledTexture>(core::type::TextureDimension::k2d, ty.i32()));
-    auto* func = b.Function("foo", ty.vec4<i32>());
-    func->SetParams({t});
-    b.Append(func->Block(), [&] {
-        auto* coords = b.Zero<vec2<i32>>();
-        auto* sample_idx = b.Zero<u32>();
-        auto* result = b.Call<vec4<i32>>(core::BuiltinFn::kTextureLoad, t, coords, sample_idx);
-        b.Return(func, result);
-    });
-
-    auto* src = R"(
-%foo = func(%t:texture_multisampled_2d<i32>):vec4<i32> {
-  $B1: {
-    %3:vec4<i32> = textureLoad %t, vec2<i32>(0i), 0u
-    ret %3
-  }
-}
-)";
-    ASSERT_EQ(src, str());
-
-    auto* expect = R"(
-%foo = func(%t:texture_multisampled_2d<i32>):vec4<i32> {
-  $B1: {
-    %3:vec2<i32> = convert vec2<i32>(0i)
-    %4:i32 = convert 0u
-    %5:vec4<i32> = glsl.texelFetch %t, %3, %4
-    ret %5
-  }
-}
-)";
-
-    Run(BuiltinPolyfill);
-
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureLoad_Storage2D) {
-    auto* t = b.FunctionParam(
-        "t",
-        ty.Get<core::type::StorageTexture>(
-            core::type::TextureDimension::k2d, core::TexelFormat::kRg32Float, core::Access::kRead,
-            core::type::StorageTexture::SubtypeFor(core::TexelFormat::kRg32Float, ty)));
-    auto* func = b.Function("foo", ty.vec4<f32>());
-    func->SetParams({t});
-    b.Append(func->Block(), [&] {
-        auto* coords = b.Zero<vec2<i32>>();
-        auto* result = b.Call<vec4<f32>>(core::BuiltinFn::kTextureLoad, t, coords);
-        b.Return(func, result);
-    });
-
-    auto* src = R"(
-%foo = func(%t:texture_storage_2d<rg32float, read>):vec4<f32> {
-  $B1: {
-    %3:vec4<f32> = textureLoad %t, vec2<i32>(0i)
-    ret %3
-  }
-}
-)";
-    ASSERT_EQ(src, str());
-
-    auto* expect = R"(
-%foo = func(%t:texture_storage_2d<rg32float, read>):vec4<f32> {
-  $B1: {
-    %3:vec2<i32> = convert vec2<i32>(0i)
-    %4:vec4<f32> = glsl.imageLoad %t, %3
-    ret %4
-  }
-}
-)";
-
-    Run(BuiltinPolyfill);
-
-    EXPECT_EQ(expect, str());
-}
-
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureStore1D) {
-    auto* t = b.Var(ty.ptr(
-        handle, ty.Get<core::type::StorageTexture>(
-                    core::type::TextureDimension::k1d, core::TexelFormat::kR32Float,
-                    core::Access::kReadWrite,
-                    core::type::StorageTexture::SubtypeFor(core::TexelFormat::kR32Float, ty))));
-    t->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(t);
-
+TEST_F(GlslWriter_BuiltinPolyfillTest, AbsScalar) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* coords = b.Value(1_i);
-        auto* value = b.Composite(ty.vec4<f32>(), .5_f, 0_f, 0_f, 1_f);
-        b.Call(ty.void_(), core::BuiltinFn::kTextureStore, b.Load(t), coords, value);
+        b.Let("x", b.Call(ty.u32(), core::BuiltinFn::kAbs, 2_u));
         b.Return(func);
     });
 
     auto* src = R"(
-$B1: {  # root
-  %1:ptr<handle, texture_storage_1d<r32float, read_write>, read> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_storage_1d<r32float, read_write> = load %1
-    %4:void = textureStore %3, 1i, vec4<f32>(0.5f, 0.0f, 0.0f, 1.0f)
+  $B1: {
+    %2:u32 = abs 2u
+    %x:u32 = let %2
     ret
   }
 }
@@ -1199,50 +1119,30 @@ $B1: {  # root
     ASSERT_EQ(src, str());
 
     auto* expect = R"(
-$B1: {  # root
-  %1:ptr<handle, texture_storage_1d<r32float, read_write>, read> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_storage_1d<r32float, read_write> = load %1
-    %4:void = glsl.imageStore %3, 1i, vec4<f32>(0.5f, 0.0f, 0.0f, 1.0f)
+  $B1: {
+    %x:u32 = let 2u
     ret
   }
 }
 )";
 
     Run(BuiltinPolyfill);
-
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureStore3D) {
-    auto* t = b.Var(ty.ptr(
-        handle, ty.Get<core::type::StorageTexture>(
-                    core::type::TextureDimension::k3d, core::TexelFormat::kR32Float,
-                    core::Access::kReadWrite,
-                    core::type::StorageTexture::SubtypeFor(core::TexelFormat::kR32Float, ty))));
-    t->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(t);
-
+TEST_F(GlslWriter_BuiltinPolyfillTest, AbsVector) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* coords = b.Composite(ty.vec3<i32>(), 1_i, 2_i, 3_i);
-        auto* value = b.Composite(ty.vec4<f32>(), .5_f, 0_f, 0_f, 1_f);
-        b.Call(ty.void_(), core::BuiltinFn::kTextureStore, b.Load(t), coords, value);
+        b.Let("x", b.Call(ty.vec2<u32>(), core::BuiltinFn::kAbs, b.Splat<vec2<u32>>(2_u)));
         b.Return(func);
     });
 
     auto* src = R"(
-$B1: {  # root
-  %1:ptr<handle, texture_storage_3d<r32float, read_write>, read> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_storage_3d<r32float, read_write> = load %1
-    %4:void = textureStore %3, vec3<i32>(1i, 2i, 3i), vec4<f32>(0.5f, 0.0f, 0.0f, 1.0f)
+  $B1: {
+    %2:vec2<u32> = abs vec2<u32>(2u)
+    %x:vec2<u32> = let %2
     ret
   }
 }
@@ -1250,50 +1150,33 @@ $B1: {  # root
     ASSERT_EQ(src, str());
 
     auto* expect = R"(
-$B1: {  # root
-  %1:ptr<handle, texture_storage_3d<r32float, read_write>, read> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_storage_3d<r32float, read_write> = load %1
-    %4:void = glsl.imageStore %3, vec3<i32>(1i, 2i, 3i), vec4<f32>(0.5f, 0.0f, 0.0f, 1.0f)
+  $B1: {
+    %x:vec2<u32> = let vec2<u32>(2u)
     ret
   }
 }
 )";
 
     Run(BuiltinPolyfill);
-
     EXPECT_EQ(expect, str());
 }
 
-TEST_F(GlslWriter_BuiltinPolyfillTest, TextureStoreArray) {
-    auto* t = b.Var(ty.ptr(
-        handle, ty.Get<core::type::StorageTexture>(
-                    core::type::TextureDimension::k2dArray, core::TexelFormat::kRgba32Float,
-                    core::Access::kReadWrite,
-                    core::type::StorageTexture::SubtypeFor(core::TexelFormat::kR32Float, ty))));
-    t->SetBindingPoint(0, 0);
-    b.ir.root_block->Append(t);
-
+TEST_F(GlslWriter_BuiltinPolyfillTest, QuantizeToF16) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
-        auto* coords = b.Composite(ty.vec2<i32>(), 1_i, 2_i);
-        auto* value = b.Composite(ty.vec4<f32>(), .5_f, .4_f, .3_f, 1_f);
-        b.Call(ty.void_(), core::BuiltinFn::kTextureStore, b.Load(t), coords, 3_u, value);
+        auto* v = b.Var("x", b.Zero(ty.vec2<f32>()));
+        b.Let("a", b.Call(ty.vec2<f32>(), core::BuiltinFn::kQuantizeToF16, b.Load(v)));
         b.Return(func);
     });
 
     auto* src = R"(
-$B1: {  # root
-  %1:ptr<handle, texture_storage_2d_array<rgba32float, read_write>, read> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_storage_2d_array<rgba32float, read_write> = load %1
-    %4:void = textureStore %3, vec2<i32>(1i, 2i), 3u, vec4<f32>(0.5f, 0.40000000596046447754f, 0.30000001192092895508f, 1.0f)
+  $B1: {
+    %x:ptr<function, vec2<f32>, read_write> = var, vec2<f32>(0.0f)
+    %3:vec2<f32> = load %x
+    %4:vec2<f32> = quantizeToF16 %3
+    %a:vec2<f32> = let %4
     ret
   }
 }
@@ -1301,23 +1184,24 @@ $B1: {  # root
     ASSERT_EQ(src, str());
 
     auto* expect = R"(
-$B1: {  # root
-  %1:ptr<handle, texture_storage_2d_array<rgba32float, read_write>, read> = var @binding_point(0, 0)
-}
-
 %foo = @fragment func():void {
-  $B2: {
-    %3:texture_storage_2d_array<rgba32float, read_write> = load %1
-    %4:i32 = convert 3u
-    %5:vec3<i32> = construct vec2<i32>(1i, 2i), %4
-    %6:void = glsl.imageStore %3, %5, vec4<f32>(0.5f, 0.40000000596046447754f, 0.30000001192092895508f, 1.0f)
+  $B1: {
+    %x:ptr<function, vec2<f32>, read_write> = var, vec2<f32>(0.0f)
+    %3:vec2<f32> = load %x
+    %4:vec2<f32> = call %tint_quantize_to_f16, %3
+    %a:vec2<f32> = let %4
     ret
   }
 }
+%tint_quantize_to_f16 = func(%val:vec2<f32>):vec2<f32> {
+  $B2: {
+    %8:u32 = pack2x16float %val
+    %9:vec2<f32> = unpack2x16float %8
+    ret %9
+  }
+}
 )";
-
     Run(BuiltinPolyfill);
-
     EXPECT_EQ(expect, str());
 }
 

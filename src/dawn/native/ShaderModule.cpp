@@ -1376,7 +1376,7 @@ ShaderModuleBase::ShaderModuleBase(DeviceBase* device,
     GetObjectTrackingList()->Track(this);
 }
 
-ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label)
+ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label)
     : Base(device, tag, label), mType(Type::Undefined) {}
 
 ShaderModuleBase::~ShaderModuleBase() = default;
@@ -1386,7 +1386,7 @@ void ShaderModuleBase::DestroyImpl() {
 }
 
 // static
-Ref<ShaderModuleBase> ShaderModuleBase::MakeError(DeviceBase* device, const char* label) {
+Ref<ShaderModuleBase> ShaderModuleBase::MakeError(DeviceBase* device, StringView label) {
     return AcquireRef(new ShaderModuleBase(device, ObjectBase::kError, label));
 }
 
@@ -1394,19 +1394,19 @@ ObjectType ShaderModuleBase::GetType() const {
     return ObjectType::ShaderModule;
 }
 
-bool ShaderModuleBase::HasEntryPoint(const std::string& entryPoint) const {
+bool ShaderModuleBase::HasEntryPoint(absl::string_view entryPoint) const {
     return mEntryPoints.contains(entryPoint);
 }
 
-ShaderModuleEntryPoint ShaderModuleBase::ReifyEntryPointName(const char* entryPointName,
+ShaderModuleEntryPoint ShaderModuleBase::ReifyEntryPointName(StringView entryPointName,
                                                              SingleShaderStage stage) const {
     ShaderModuleEntryPoint entryPoint;
-    if (entryPointName) {
-        entryPoint.defaulted = false;
-        entryPoint.name = entryPointName;
-    } else {
+    if (entryPointName.IsUndefined()) {
         entryPoint.defaulted = true;
         entryPoint.name = mDefaultEntryPointNames[stage];
+    } else {
+        entryPoint.defaulted = false;
+        entryPoint.name = entryPointName;
     }
     return entryPoint;
 }
@@ -1415,7 +1415,7 @@ std::optional<bool> ShaderModuleBase::GetStrictMath() const {
     return mStrictMath;
 }
 
-const EntryPointMetadata& ShaderModuleBase::GetEntryPoint(const std::string& entryPoint) const {
+const EntryPointMetadata& ShaderModuleBase::GetEntryPoint(absl::string_view entryPoint) const {
     DAWN_ASSERT(HasEntryPoint(entryPoint));
     return *mEntryPoints.at(entryPoint);
 }
@@ -1560,13 +1560,13 @@ Future ShaderModuleBase::APIGetCompilationInfo2(
         void Complete(EventCompletionType completionType) override {
             WGPUCompilationInfoRequestStatus status =
                 WGPUCompilationInfoRequestStatus_InstanceDropped;
-            const WGPUCompilationInfo* compilationInfo = nullptr;
+            const CompilationInfo* compilationInfo = nullptr;
             if (completionType == EventCompletionType::Ready) {
                 status = WGPUCompilationInfoRequestStatus_Success;
                 compilationInfo = mShaderModule->mCompilationMessages->GetCompilationInfo();
             }
 
-            mCallback(status, compilationInfo, mUserdata1.ExtractAsDangling(),
+            mCallback(status, ToAPI(compilationInfo), mUserdata1.ExtractAsDangling(),
                       mUserdata2.ExtractAsDangling());
         }
     };

@@ -24,7 +24,7 @@ matrix<float16_t, 4, 4> v_4(uint start_byte_offset) {
 
 typedef matrix<float16_t, 4, 4> ary_ret[4];
 ary_ret v_8(uint start_byte_offset) {
-  matrix<float16_t, 4, 4> a[4] = (matrix<float16_t, 4, 4>[4])0;
+  matrix<float16_t, 4, 4> a_1[4] = (matrix<float16_t, 4, 4>[4])0;
   {
     uint v_9 = 0u;
     v_9 = 0u;
@@ -33,23 +33,22 @@ ary_ret v_8(uint start_byte_offset) {
       if ((v_10 >= 4u)) {
         break;
       }
-      a[v_10] = v_4((start_byte_offset + (v_10 * 32u)));
+      a_1[v_10] = v_4((start_byte_offset + (v_10 * 32u)));
       {
         v_9 = (v_10 + 1u);
       }
       continue;
     }
   }
-  matrix<float16_t, 4, 4> v_11[4] = a;
+  matrix<float16_t, 4, 4> v_11[4] = a_1;
   return v_11;
 }
 
 [numthreads(1, 1, 1)]
 void f() {
-  matrix<float16_t, 4, 4> v_12[4] = v_8(0u);
+  matrix<float16_t, 4, 4> l_a[4] = v_8(0u);
   matrix<float16_t, 4, 4> l_a_i = v_4(64u);
   vector<float16_t, 4> l_a_i_i = tint_bitcast_to_f16(a[4u]);
-  matrix<float16_t, 4, 4> l_a[4] = v_12;
   s.Store<float16_t>(0u, (((float16_t(f16tof32(a[4u].z)) + l_a[int(0)][int(0)][0u]) + l_a_i[int(0)][0u]) + l_a_i_i[0u]));
 }
 

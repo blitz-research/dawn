@@ -105,6 +105,7 @@
 #include "src/tint/lang/wgsl/sem/value_conversion.h"
 #include "src/tint/lang/wgsl/sem/variable.h"
 #include "src/tint/lang/wgsl/sem/while_statement.h"
+#include "src/tint/utils/constants/internal_limits.h"
 #include "src/tint/utils/containers/reverse.h"
 #include "src/tint/utils/containers/transform.h"
 #include "src/tint/utils/containers/vector.h"
@@ -128,7 +129,6 @@ namespace {
 using CtorConvIntrinsic = wgsl::intrinsic::CtorConv;
 using OverloadFlag = core::intrinsic::OverloadFlag;
 
-constexpr int64_t kMaxArrayElementCount = 65536;
 constexpr uint32_t kMaxStatementDepth = 127;
 constexpr size_t kMaxNestDepthOfCompositeType = 255;
 
@@ -880,6 +880,7 @@ sem::Parameter* Resolver::Parameter(const ast::Parameter* param,
 core::Access Resolver::DefaultAccessForAddressSpace(core::AddressSpace address_space) {
     // https://gpuweb.github.io/gpuweb/wgsl/#storage-class
     switch (address_space) {
+        case core::AddressSpace::kPushConstant:
         case core::AddressSpace::kStorage:
         case core::AddressSpace::kUniform:
         case core::AddressSpace::kHandle:
@@ -4539,9 +4540,14 @@ sem::Struct* Resolver::Structure(const ast::Struct* str) {
                     return true;
                 },
                 [&](const ast::RowMajorAttribute* attr) {
-                    if (!type->Is<core::type::Matrix>()) {
+                    const auto* element_type = type;
+                    while (auto* arr = element_type->As<core::type::Array>()) {
+                        element_type = arr->ElemType();
+                    }
+                    if (!element_type->Is<core::type::Matrix>()) {
                         AddError(attr->source)
-                            << style::Attribute("@row_major") << " can only be applied to matrices";
+                            << style::Attribute("@row_major")
+                            << " can only be applied to matrices or arrays of matrices";
                         return false;
                     }
                     return true;
@@ -4969,9 +4975,9 @@ bool Resolver::ApplyAddressSpaceUsageToType(core::AddressSpace address_space,
             }
 
             auto count = arr->ConstantCount();
-            if (count.has_value() && count.value() >= kMaxArrayElementCount) {
+            if (count.has_value() && count.value() >= internal_limits::kMaxArrayElementCount) {
                 AddError(usage) << "array count (" << count.value() << ") must be less than "
-                                << kMaxArrayElementCount;
+                                << internal_limits::kMaxArrayElementCount;
                 return false;
             }
         }

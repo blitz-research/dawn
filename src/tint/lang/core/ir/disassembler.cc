@@ -328,8 +328,13 @@ void Disassembler::EmitFunction(const Function* func) {
     }
     if (func->WorkgroupSize()) {
         auto arr = func->WorkgroupSize().value();
-        out_ << " " << StyleAttribute("@workgroup_size") << "(" << StyleLiteral(arr[0]) << ", "
-             << StyleLiteral(arr[1]) << ", " << StyleLiteral(arr[2]) << ")";
+        out_ << " " << StyleAttribute("@workgroup_size") << "(";
+        EmitValue(arr[0]);
+        out_ << ", ";
+        EmitValue(arr[1]);
+        out_ << ", ";
+        EmitValue(arr[2]);
+        out_ << ")";
     }
 
     out_ << " " << StyleKeyword("func") << "(";
@@ -558,7 +563,11 @@ void Disassembler::EmitInstruction(const Instruction* inst) {
             EmitInstructionName(s);
             out_ << " ";
             EmitValue(s->Object());
-            out_ << ", ";
+
+            out_ << ",";
+            if (!s->Indices().IsEmpty()) {
+                out_ << " ";
+            }
             for (auto idx : s->Indices()) {
                 switch (idx) {
                     case 0:
@@ -913,6 +922,10 @@ void Disassembler::EmitStructDecl(const core::type::Struct* str) {
         if (member->Attributes().location.has_value()) {
             out_ << ", " << StyleAttribute("@location") << "("
                  << StyleLiteral(member->Attributes().location.value()) << ")";
+        }
+        if (member->Attributes().blend_src.has_value()) {
+            out_ << ", " << StyleAttribute("@blend_src") << "("
+                 << StyleLiteral(member->Attributes().blend_src.value()) << ")";
         }
         if (member->Attributes().color.has_value()) {
             out_ << ", " << StyleAttribute("@color") << "("

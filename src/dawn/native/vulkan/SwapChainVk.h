@@ -38,6 +38,7 @@
 namespace dawn::native::vulkan {
 
 class Device;
+class SwapChainTexture;
 class Texture;
 class PhysicalDevice;
 struct VulkanSurfaceInfo;
@@ -54,7 +55,6 @@ class SwapChain : public SwapChainBase {
   private:
     using SwapChainBase::SwapChainBase;
     MaybeError Initialize(SwapChainBase* previousSwapChain);
-    void DestroyImpl() override;
 
     struct Config {
         // Information that's passed to vulkan swapchain creation.

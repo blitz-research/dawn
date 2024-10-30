@@ -260,22 +260,46 @@ class Builder {
     /// Creates an unnamed function
     /// @param return_type the function return type
     /// @param stage the function stage
-    /// @param wg_size the workgroup_size
     /// @returns the function
     ir::Function* Function(const core::type::Type* return_type,
-                           Function::PipelineStage stage = Function::PipelineStage::kUndefined,
-                           std::optional<std::array<uint32_t, 3>> wg_size = {});
+                           Function::PipelineStage stage = Function::PipelineStage::kUndefined);
 
     /// Creates a function
     /// @param name the function name
     /// @param return_type the function return type
     /// @param stage the function stage
-    /// @param wg_size the workgroup_size
     /// @returns the function
     ir::Function* Function(std::string_view name,
                            const core::type::Type* return_type,
-                           Function::PipelineStage stage = Function::PipelineStage::kUndefined,
-                           std::optional<std::array<uint32_t, 3>> wg_size = {});
+                           Function::PipelineStage stage = Function::PipelineStage::kUndefined);
+
+    /// Creates a compute function
+    /// @param name the function name
+    /// @returns the function
+    ir::Function* ComputeFunction(std::string_view name) {
+        return ComputeFunction(name, u32(1), u32(1), u32(1));
+    }
+
+    /// Creates an unnamed compute function
+    /// @param name the function name
+    /// @param x the x dimension
+    /// @param y the y dimension
+    /// @param z the z dimension
+    template <typename X,
+              typename Y,
+              typename Z,
+              typename = std::enable_if_t<!std::is_integral_v<X> && !std::is_integral_v<Y> &&
+                                          !std::is_integral_v<Z>>>
+    ir::Function* ComputeFunction(std::string_view name, X&& x, Y&& y, Z&& z) {
+        CheckForNonDeterministicEvaluation<X, Y, Z>();
+        auto* x_val = Value(std::forward<X>(x));
+        auto* y_val = Value(std::forward<Y>(y));
+        auto* z_val = Value(std::forward<Z>(z));
+
+        auto* ir_func = Function(name, ir.Types().void_(), Function::PipelineStage::kCompute);
+        ir_func->SetWorkgroupSize({x_val, y_val, z_val});
+        return ir_func;
+    }
 
     /// Creates an if instruction
     /// @param condition the if condition
@@ -408,8 +432,8 @@ class Builder {
         return ir.constant_values.Get(v);
     }
 
-    /// Return a constant that has the same number of vector components as `match`, each with the
-    /// `value`. If `match` is scalar just return `value` as a constant.
+    /// Return a constant that has the same number of vector components as `match`, each with
+    /// the `value`. If `match` is scalar just return `value` as a constant.
     /// @param value the value
     /// @param match the type to match
     /// @returns the new constant
@@ -474,7 +498,8 @@ class Builder {
     /// @returns the new constant
     ir::Constant* Zero(const core::type::Type* ty) { return Constant(ir.constant_values.Zero(ty)); }
 
-    /// @param in the input value. One of: nullptr, ir::Value*, ir::Instruction* or a numeric value.
+    /// @param in the input value. One of: nullptr, ir::Value*, ir::Instruction* or a numeric
+    /// value.
     /// @returns an ir::Value* from the given argument.
     template <typename T>
     ir::Value* Value(T&& in) {
@@ -514,6 +539,13 @@ class Builder {
         return std::forward<VEC>(vec);
     }
 
+    template <typename T>
+    auto Values(tint::Slice<T>&&) {
+        static_assert(sizeof(T) != sizeof(T),  // Condition must be type-dependent
+                      "Cannot construct a Vector from a Slice as the size is not known at "
+                      "compile-time. Use ToVector<N>(Slice&&) instead.");
+    }
+
     /// Overload for Values() with tint::Empty argument
     /// @return tint::Empty
     tint::EmptyType Values(tint::EmptyType) { return tint::Empty; }
@@ -538,11 +570,25 @@ class Builder {
     /// @returns the operation
     template <typename LHS, typename RHS>
     ir::CoreBinary* Binary(BinaryOp op, const core::type::Type* type, LHS&& lhs, RHS&& rhs) {
+        return BinaryWithResult(InstructionResult(type), op, std::forward<LHS>(lhs),
+                                std::forward<RHS>(rhs));
+    }
+
+    /// Creates an op for `lhs kind rhs`
+    /// @param op the binary operator
+    /// @param result the result of the binary expression
+    /// @param lhs the left-hand-side of the operation
+    /// @param rhs the right-hand-side of the operation
+    /// @returns the operation
+    template <typename LHS, typename RHS>
+    ir::CoreBinary* BinaryWithResult(ir::InstructionResult* result,
+                                     BinaryOp op,
+                                     LHS&& lhs,
+                                     RHS&& rhs) {
         CheckForNonDeterministicEvaluation<LHS, RHS>();
         auto* lhs_val = Value(std::forward<LHS>(lhs));
         auto* rhs_val = Value(std::forward<RHS>(rhs));
-        return Append(
-            ir.CreateInstruction<ir::CoreBinary>(InstructionResult(type), op, lhs_val, rhs_val));
+        return Append(ir.CreateInstruction<ir::CoreBinary>(result, op, lhs_val, rhs_val));
     }
 
     /// Creates an op for `lhs kind rhs`
@@ -812,6 +858,17 @@ class Builder {
     ir::CoreBinary* Add(LHS&& lhs, RHS&& rhs) {
         auto* type = ir.Types().Get<TYPE>();
         return Add(type, std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+    }
+
+    /// Creates an Add operation
+    /// @param result the result
+    /// @param lhs the lhs of the add
+    /// @param rhs the rhs of the add
+    /// @returns the operation
+    template <typename LHS, typename RHS>
+    ir::CoreBinary* AddWithResult(ir::InstructionResult* result, LHS&& lhs, RHS&& rhs) {
+        return BinaryWithResult(result, BinaryOp::kAdd, std::forward<LHS>(lhs),
+                                std::forward<RHS>(rhs));
     }
 
     /// Creates an Subtract operation

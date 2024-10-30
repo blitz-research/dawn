@@ -41,14 +41,22 @@ if(TINT_BUILD_GLSL_WRITER)
 # Condition: TINT_BUILD_GLSL_WRITER
 ################################################################################
 tint_add_target(tint_lang_glsl_writer_raise lib
+  lang/glsl/writer/raise/binary_polyfill.cc
+  lang/glsl/writer/raise/binary_polyfill.h
   lang/glsl/writer/raise/bitcast_polyfill.cc
   lang/glsl/writer/raise/bitcast_polyfill.h
   lang/glsl/writer/raise/builtin_polyfill.cc
   lang/glsl/writer/raise/builtin_polyfill.h
+  lang/glsl/writer/raise/offset_first_index.cc
+  lang/glsl/writer/raise/offset_first_index.h
   lang/glsl/writer/raise/raise.cc
   lang/glsl/writer/raise/raise.h
   lang/glsl/writer/raise/shader_io.cc
   lang/glsl/writer/raise/shader_io.h
+  lang/glsl/writer/raise/texture_builtins_from_uniform.cc
+  lang/glsl/writer/raise/texture_builtins_from_uniform.h
+  lang/glsl/writer/raise/texture_polyfill.cc
+  lang/glsl/writer/raise/texture_polyfill.h
 )
 
 tint_target_add_dependencies(tint_lang_glsl_writer_raise lib
@@ -101,9 +109,13 @@ if(TINT_BUILD_GLSL_WRITER)
 # Condition: TINT_BUILD_GLSL_WRITER
 ################################################################################
 tint_add_target(tint_lang_glsl_writer_raise_test test
+  lang/glsl/writer/raise/binary_polyfill_test.cc
   lang/glsl/writer/raise/bitcast_polyfill_test.cc
   lang/glsl/writer/raise/builtin_polyfill_test.cc
+  lang/glsl/writer/raise/offset_first_index_test.cc
   lang/glsl/writer/raise/shader_io_test.cc
+  lang/glsl/writer/raise/texture_builtins_from_uniform_test.cc
+  lang/glsl/writer/raise/texture_polyfill_test.cc
 )
 
 tint_target_add_dependencies(tint_lang_glsl_writer_raise_test test
@@ -112,6 +124,7 @@ tint_target_add_dependencies(tint_lang_glsl_writer_raise_test test
   tint_lang_core_constant
   tint_lang_core_intrinsic
   tint_lang_core_ir
+  tint_lang_core_ir_transform
   tint_lang_core_ir_transform_test
   tint_lang_core_type
   tint_lang_wgsl

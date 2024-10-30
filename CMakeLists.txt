@@ -77,12 +77,14 @@ set(USE_WAYLAND OFF)
 set(USE_X11 OFF)
 set(USE_WINDOWS_UI OFF)
 set(BUILD_SAMPLES OFF)
+set(BUILD_TESTS OFF)
 set(TARGET_MACOS OFF)
 if (CMAKE_SYSTEM_NAME MATCHES "Emscripten")
   # Only the samples are supported for Emscripten at the moment.
   # TODO(crbug.com/42240181): Make dawn_end2end_tests work too.
   set(ENABLE_EMSCRIPTEN ON)
   set(BUILD_SAMPLES ON)
+  set(BUILD_TESTS ON)
   set(ENABLE_NULL OFF)
 elseif (WIN32)
   set(ENABLE_D3D11 ON)
@@ -174,6 +176,7 @@ option(DAWN_DXC_ENABLE_ASSERTS_IN_NDEBUG "Enable DXC asserts in non-debug builds
 option(DAWN_TARGET_MACOS "Manually link Apple core frameworks" ${TARGET_MACOS})
 
 option(DAWN_BUILD_SAMPLES "Enables building Dawn's samples" ${BUILD_SAMPLES})
+option(DAWN_BUILD_TESTS "Enables building Dawn's tests" ${BUILD_TESTS})
 option(DAWN_BUILD_NODE_BINDINGS "Enables building Dawn's NodeJS bindings" OFF)
 option(DAWN_ENABLE_SWIFTSHADER "Enables building Swiftshader as part of the build and Vulkan adapter discovery" OFF)
 option(DAWN_BUILD_BENCHMARKS "Build Dawn benchmarks" OFF)
@@ -245,14 +248,19 @@ option(TINT_BUILD_BENCHMARKS "Build Tint benchmarks" OFF)
 option(TINT_BUILD_TESTS "Build tests" ON)
 option(TINT_BUILD_AS_OTHER_OS "Override OS detection to force building of *_other.cc files" OFF)
 
+if (DAWN_ENABLE_EMSCRIPTEN)
+  # Skip tint tests in emscripten build
+  set(TINT_BUILD_TESTS OFF)
+  # Skip GLSL validation in Emscripten
+  set(TINT_BUILD_GLSL_VALIDATOR OFF)
+endif()
+
 option(TINT_BUILD_TINTD "Build the WGSL language server" OFF)
 
 option(TINT_ENABLE_BREAK_IN_DEBUGGER "Enable tint::debugger::Break()" OFF)
 option(TINT_CHECK_CHROMIUM_STYLE "Check for [chromium-style] issues during build" OFF)
 option(TINT_RANDOMIZE_HASHES "Randomize the hash seed value to detect non-deterministic output" OFF)
 
-# We don't build Tint when building with Emscripten so silence these messages.
-if (NOT ${DAWN_ENABLE_EMSCRIPTEN})
 message(STATUS "Tint build SPIR-V reader: ${TINT_BUILD_SPV_READER}")
 message(STATUS "Tint build WGSL reader: ${TINT_BUILD_WGSL_READER}")
 message(STATUS "Tint build GLSL writer: ${TINT_BUILD_GLSL_WRITER}")
@@ -276,7 +284,6 @@ message(STATUS "Tint enable break in debugger: ${TINT_ENABLE_BREAK_IN_DEBUGGER}"
 message(STATUS "Tint build checking [chromium-style]: ${TINT_CHECK_CHROMIUM_STYLE}")
 message(STATUS "Tint randomize hashes: ${TINT_RANDOMIZE_HASHES}")
 message(STATUS "")
-endif()
 
 set_if_not_defined(DAWN_THIRD_PARTY_DIR "${Dawn_SOURCE_DIR}/third_party" "Directory in which to find third-party dependencies.")
 
@@ -289,6 +296,7 @@ set_if_not_defined(DAWN_SWIFTSHADER_DIR "${DAWN_THIRD_PARTY_DIR}/swiftshader" "D
 set_if_not_defined(DAWN_PROTOBUF_DIR "${DAWN_THIRD_PARTY_DIR}/protobuf" "Directory in which to find protobuf")
 set_if_not_defined(DAWN_LPM_DIR "${DAWN_THIRD_PARTY_DIR}/libprotobuf-mutator/src" "Directory in which to find libprotobuf")
 set_if_not_defined(DAWN_EMDAWNWEBGPU_DIR "${DAWN_THIRD_PARTY_DIR}/emdawnwebgpu" "Directory in which to find Dawn specific Emscripten bindings")
+set_if_not_defined(DAWN_GOOGLETEST_DIR "${DAWN_THIRD_PARTY_DIR}/googletest" "Directory in which to find googletest")
 
 set_if_not_defined(DAWN_SPIRV_TOOLS_DIR "${DAWN_THIRD_PARTY_DIR}/spirv-tools/src" "Directory in which to find SPIRV-Tools")
 set_if_not_defined(DAWN_SPIRV_HEADERS_DIR "${DAWN_THIRD_PARTY_DIR}/spirv-headers/src" "Directory in which to find SPIRV-Headers")
@@ -466,11 +474,8 @@ set(BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
 set(BUILD_SHARED_LIBS 0)
 
 add_subdirectory(src/utils)
+add_subdirectory(src/tint)
 
-# Only build Tint when we are not building under Emscripten.
-if (NOT ${DAWN_ENABLE_EMSCRIPTEN})
-  add_subdirectory(src/tint)
-endif()
 set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_SAVED})
 
 if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12 OR DAWN_ENABLE_METAL OR DAWN_ENABLE_NULL OR DAWN_ENABLE_DESKTOP_GL OR DAWN_ENABLE_OPENGLES OR DAWN_ENABLE_VULKAN OR DAWN_ENABLE_EMSCRIPTEN)

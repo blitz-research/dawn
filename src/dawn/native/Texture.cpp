@@ -434,16 +434,31 @@ wgpu::TextureUsage GetTextureViewUsage(wgpu::TextureUsage sourceTextureUsage,
                                                             : sourceTextureUsage;
 }
 
+wgpu::TextureUsage RemoveInvalidViewUsages(wgpu::TextureUsage viewUsage, const Format* viewFormat) {
+    wgpu::TextureUsage adjustedUsage = viewUsage;
+    if (viewFormat->format == wgpu::TextureFormat::RGBA8UnormSrgb ||
+        viewFormat->format == wgpu::TextureFormat::BGRA8UnormSrgb) {
+        adjustedUsage = viewUsage & ~wgpu::TextureUsage::StorageBinding;
+    }
+
+    return adjustedUsage;
+}
+
 MaybeError ValidateTextureViewUsage(const DeviceBase* device,
                                     const TextureBase* texture,
                                     wgpu::TextureUsage usage,
                                     const Format* format) {
     wgpu::TextureUsage inheritedUsage = GetTextureViewUsage(texture->GetUsage(), usage);
+
     DAWN_INVALID_IF(!IsSubset(inheritedUsage, texture->GetUsage()),
                     "The texture view usage (%s) is not a subset of the texture usage (%s).",
                     inheritedUsage, texture->GetUsage());
 
-    DAWN_TRY(ValidateTextureUsage(device, texture->GetDimension(), inheritedUsage, format, {}));
+    // Validate the view usage only when it is explicitly requested for now because it is not yet
+    // possible to request view usage all the way from the WebGPU API.
+    if (usage != wgpu::TextureUsage::None) {
+        DAWN_TRY(ValidateTextureUsage(device, texture->GetDimension(), inheritedUsage, format, {}));
+    }
 
     return {};
 }
@@ -1342,7 +1357,8 @@ TextureViewBase::TextureViewBase(TextureBase* texture,
       mRange({ConvertViewAspect(*mFormat, descriptor->aspect),
               {descriptor->baseArrayLayer, descriptor->arrayLayerCount},
               {descriptor->baseMipLevel, descriptor->mipLevelCount}}),
-      mUsage(GetTextureViewUsage(texture->GetUsage(), descriptor->usage)),
+      mUsage(RemoveInvalidViewUsages(GetTextureViewUsage(texture->GetUsage(), descriptor->usage),
+                                     &mFormat.get())),
       mInternalUsage(
           AddInternalUsages(GetDevice(),
                             GetTextureViewUsage(texture->GetInternalUsage(), descriptor->usage),
@@ -1351,9 +1367,22 @@ TextureViewBase::TextureViewBase(TextureBase* texture,
                             texture->GetNumMipLevels(),
                             texture->GetArrayLayers())) {
     GetObjectTrackingList()->Track(this);
+
+    // Emit a warning if invalid usages were removed for this view.
+    // TODO(363903526): Remove this warning after deprecation period.
+    wgpu::TextureUsage inheritedUsage = GetTextureViewUsage(texture->GetUsage(), descriptor->usage);
+    if (mUsage != inheritedUsage) {
+        DAWN_ASSERT(descriptor->usage == wgpu::TextureUsage::None);
+        std::string warning = absl::StrFormat(
+            "%s with format (%s) and inherited usage (%s) is deprecated. Please request explicit "
+            "usages on texture views when the view format is not compatible with all inherited "
+            "texture usages.",
+            this, mFormat->format, inheritedUsage);
+        GetDevice()->EmitWarningOnce(warning.c_str());
+    }
 }
 
-TextureViewBase::TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label)
+TextureViewBase::TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label)
     : ApiObjectBase(device, tag, label), mFormat(kUnusedFormat) {}
 
 TextureViewBase::~TextureViewBase() = default;
@@ -1361,7 +1390,7 @@ TextureViewBase::~TextureViewBase() = default;
 void TextureViewBase::DestroyImpl() {}
 
 // static
-Ref<TextureViewBase> TextureViewBase::MakeError(DeviceBase* device, const char* label) {
+Ref<TextureViewBase> TextureViewBase::MakeError(DeviceBase* device, StringView label) {
     return AcquireRef(new TextureViewBase(device, ObjectBase::kError, label));
 }
 

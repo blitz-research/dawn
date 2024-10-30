@@ -120,11 +120,6 @@ ResultOrError<Ref<SwapChain>> SwapChain::Create(Device* device,
 
 SwapChain::~SwapChain() = default;
 
-void SwapChain::DestroyImpl() {
-    SwapChainBase::DestroyImpl();
-    DetachFromSurface();
-}
-
 // Note that when we need to re-create the swapchain because it is out of date,
 // previousSwapChain can be set to `this`.
 MaybeError SwapChain::Initialize(SwapChainBase* previousSwapChain) {
@@ -411,9 +406,9 @@ MaybeError SwapChain::PresentImpl() {
                                 static_cast<int32_t>(mTexture->GetHeight(Aspect::Color)), 1};
 
         device->fn.CmdBlitImage(recordingContext->commandBuffer, mBlitTexture->GetHandle(),
-                                mBlitTexture->GetCurrentLayoutForSwapChain(), mTexture->GetHandle(),
-                                mTexture->GetCurrentLayoutForSwapChain(), 1, &region,
-                                VK_FILTER_LINEAR);
+                                mBlitTexture->GetCurrentLayout(Aspect::Color),
+                                mTexture->GetHandle(), mTexture->GetCurrentLayout(Aspect::Color), 1,
+                                &region, VK_FILTER_LINEAR);
 
         // TODO(crbug.com/dawn/269): Find a way to reuse the blit texture between frames
         // instead of creating a new one every time. This will involve "un-destroying" the
@@ -554,7 +549,7 @@ ResultOrError<SwapChainTextureInfo> SwapChain::GetCurrentTextureInternal(bool is
     textureDesc.format = mConfig.wgpuFormat;
     textureDesc.usage = mConfig.wgpuUsage;
 
-    mTexture = Texture::CreateForSwapChain(device, Unpack(&textureDesc), lastImage.image);
+    mTexture = SwapChainTexture::Create(device, Unpack(&textureDesc), lastImage.image);
 
     // In the happy path we can use the swapchain image directly.
     if (!mConfig.needsBlit) {
@@ -565,8 +560,8 @@ ResultOrError<SwapChainTextureInfo> SwapChain::GetCurrentTextureInternal(bool is
     // The blit texture always perfectly matches what the user requested for the swapchain.
     // We need to add the Vulkan TRANSFER_SRC flag for the vkCmdBlitImage call.
     TextureDescriptor desc = GetSwapChainBaseTextureDescriptor(this);
-    DAWN_TRY_ASSIGN(mBlitTexture,
-                    Texture::Create(device, Unpack(&desc), VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
+    DAWN_TRY_ASSIGN(mBlitTexture, InternalTexture::Create(device, Unpack(&desc),
+                                                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT));
     swapChainTextureInfo.texture = mBlitTexture;
     return swapChainTextureInfo;
 }

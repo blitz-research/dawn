@@ -42,6 +42,8 @@ const char* str(BuiltinFn i) {
     switch (i) {
         case BuiltinFn::kNone:
             return "<none>";
+        case BuiltinFn::kLength:
+            return "length";
         case BuiltinFn::kBarrier:
             return "barrier";
         case BuiltinFn::kMemoryBarrierBuffer:
@@ -70,6 +72,40 @@ const char* str(BuiltinFn i) {
             return "packFloat2x16";
         case BuiltinFn::kUnpackFloat2X16:
             return "unpackFloat2x16";
+        case BuiltinFn::kAbs:
+            return "abs";
+        case BuiltinFn::kAny:
+            return "any";
+        case BuiltinFn::kAll:
+            return "all";
+        case BuiltinFn::kDot:
+            return "dot";
+        case BuiltinFn::kMix:
+            return "mix";
+        case BuiltinFn::kModf:
+            return "modf";
+        case BuiltinFn::kFrexp:
+            return "frexp";
+        case BuiltinFn::kTexture:
+            return "texture";
+        case BuiltinFn::kTextureOffset:
+            return "textureOffset";
+        case BuiltinFn::kTextureLod:
+            return "textureLod";
+        case BuiltinFn::kExtTextureLod:
+            return "extTextureLod";
+        case BuiltinFn::kTextureLodOffset:
+            return "textureLodOffset";
+        case BuiltinFn::kExtTextureLodOffset:
+            return "extTextureLodOffset";
+        case BuiltinFn::kTextureGrad:
+            return "textureGrad";
+        case BuiltinFn::kTextureGradOffset:
+            return "textureGradOffset";
+        case BuiltinFn::kTextureGather:
+            return "textureGather";
+        case BuiltinFn::kTextureGatherOffset:
+            return "textureGatherOffset";
         case BuiltinFn::kTextureSize:
             return "textureSize";
         case BuiltinFn::kImageSize:
@@ -80,6 +116,18 @@ const char* str(BuiltinFn i) {
             return "imageLoad";
         case BuiltinFn::kImageStore:
             return "imageStore";
+        case BuiltinFn::kLessThan:
+            return "lessThan";
+        case BuiltinFn::kLessThanEqual:
+            return "lessThanEqual";
+        case BuiltinFn::kGreaterThan:
+            return "greaterThan";
+        case BuiltinFn::kGreaterThanEqual:
+            return "greaterThanEqual";
+        case BuiltinFn::kEqual:
+            return "equal";
+        case BuiltinFn::kNotEqual:
+            return "notEqual";
     }
     return "<unknown>";
 }

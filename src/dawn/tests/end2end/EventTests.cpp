@@ -46,14 +46,14 @@ wgpu::Device CreateExtraDevice(wgpu::Instance instance) {
     // IMPORTANT: DawnTest overrides RequestAdapter and RequestDevice and mixes
     // up the two instances. We use these to bypass the override.
     auto* requestAdapter = reinterpret_cast<WGPUProcInstanceRequestAdapter>(
-        wgpu::GetProcAddress(nullptr, "wgpuInstanceRequestAdapter"));
+        wgpu::GetProcAddress("wgpuInstanceRequestAdapter"));
     auto* requestDevice = reinterpret_cast<WGPUProcAdapterRequestDevice>(
-        wgpu::GetProcAddress(nullptr, "wgpuAdapterRequestDevice"));
+        wgpu::GetProcAddress("wgpuAdapterRequestDevice"));
 
     wgpu::Adapter adapter2;
     requestAdapter(
         instance.Get(), nullptr,
-        [](WGPURequestAdapterStatus status, WGPUAdapter adapter, const char*, void* userdata) {
+        [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView, void* userdata) {
             ASSERT_EQ(status, WGPURequestAdapterStatus_Success);
             *reinterpret_cast<wgpu::Adapter*>(userdata) = wgpu::Adapter::Acquire(adapter);
         },
@@ -63,7 +63,7 @@ wgpu::Device CreateExtraDevice(wgpu::Instance instance) {
     wgpu::Device device2;
     requestDevice(
         adapter2.Get(), nullptr,
-        [](WGPURequestDeviceStatus status, WGPUDevice device, const char*, void* userdata) {
+        [](WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView, void* userdata) {
             ASSERT_EQ(status, WGPURequestDeviceStatus_Success);
             *reinterpret_cast<wgpu::Device*>(userdata) = wgpu::Device::Acquire(device);
         },
@@ -628,7 +628,7 @@ TEST_P(FutureTests, MixedSourcePolling) {
     // PopErrorScope is implemented via a signal.
     device.PushErrorScope(wgpu::ErrorFilter::Validation);
     device.PopErrorScope(wgpu::CallbackMode::AllowProcessEvents,
-                         [](wgpu::PopErrorScopeStatus, wgpu::ErrorType, const char*) {});
+                         [](wgpu::PopErrorScopeStatus, wgpu::ErrorType, wgpu::StringView) {});
 
     instance.ProcessEvents();
 }

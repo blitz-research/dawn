@@ -19,7 +19,7 @@ float textureSampleLevel_941a53() {
   float3 v = arg_2;
   uint v_1 = arg_4;
   float4 v_2 = float4(v, float(arg_3));
-  float res = arg_0.SampleLevel(arg_1, v_2, float(v_1));
+  float res = arg_0.SampleLevel(arg_1, v_2, float(v_1)).x;
   return res;
 }
 
@@ -42,9 +42,7 @@ VertexOutput vertex_main_inner() {
 
 vertex_main_outputs vertex_main() {
   VertexOutput v_4 = vertex_main_inner();
-  VertexOutput v_5 = v_4;
-  VertexOutput v_6 = v_4;
-  vertex_main_outputs v_7 = {v_6.prevent_dce, v_5.pos};
-  return v_7;
+  vertex_main_outputs v_5 = {v_4.prevent_dce, v_4.pos};
+  return v_5;
 }
 

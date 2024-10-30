@@ -1481,6 +1481,9 @@ bool Converter::Convert(wgpu::FeatureName& out, interop::GPUFeatureName in) {
         case interop::GPUFeatureName::kFloat32Filterable:
             out = wgpu::FeatureName::Float32Filterable;
             return true;
+        case interop::GPUFeatureName::kFloat32Blendable:
+            out = wgpu::FeatureName::Float32Blendable;
+            return true;
         case interop::GPUFeatureName::kSubgroups:
             out = wgpu::FeatureName::Subgroups;
             return true;
@@ -1499,8 +1502,14 @@ bool Converter::Convert(wgpu::FeatureName& out, interop::GPUFeatureName in) {
         case interop::GPUFeatureName::kChromiumExperimentalSubgroupUniformControlFlow:
             out = wgpu::FeatureName::ChromiumExperimentalSubgroupUniformControlFlow;
             return true;
-        case interop::GPUFeatureName::kTextureCompressionBcSliced3D:
+        case interop::GPUFeatureName::kChromiumExperimentalImmediateData:
+            out = wgpu::FeatureName::ChromiumExperimentalImmediateData;
+            return true;
         case interop::GPUFeatureName::kClipDistances:
+            out = wgpu::FeatureName::ClipDistances;
+            return true;
+        case interop::GPUFeatureName::kTextureCompressionAstcSliced3D:
+        case interop::GPUFeatureName::kTextureCompressionBcSliced3D:
             return false;
     }
     return false;
@@ -1520,6 +1529,7 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         CASE(Depth32FloatStencil8, kDepth32FloatStencil8);
         CASE(DepthClipControl, kDepthClipControl);
         CASE(Float32Filterable, kFloat32Filterable);
+        CASE(Float32Blendable, kFloat32Blendable);
         CASE(IndirectFirstInstance, kIndirectFirstInstance);
         CASE(RG11B10UfloatRenderable, kRg11B10UfloatRenderable);
         CASE(ShaderF16, kShaderF16);
@@ -1532,6 +1542,7 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         CASE(MultiDrawIndirect, kMultiDrawIndirect);
         CASE(DualSourceBlending, kDualSourceBlending);
         CASE(ClipDistances, kClipDistances);
+        CASE(ChromiumExperimentalImmediateData, kChromiumExperimentalImmediateData);
 
 #undef CASE
 
@@ -1582,7 +1593,6 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::SharedTextureMemoryVkDedicatedAllocation:
         case wgpu::FeatureName::SharedTextureMemoryZirconHandle:
         case wgpu::FeatureName::StaticSamplers:
-        case wgpu::FeatureName::SurfaceCapabilities:
         case wgpu::FeatureName::TransientAttachments:
         case wgpu::FeatureName::YCbCrVulkanSamplers:
         case wgpu::FeatureName::DawnLoadResolveTexture:
@@ -1758,6 +1768,14 @@ bool Converter::Throw(std::string&& message) {
 bool Converter::Throw(Napi::Error&& error) {
     error.ThrowAsJavaScriptException();
     return false;
+}
+
+std::string CopyLabel(StringView label) {
+    if (label.data == nullptr) {
+        return {};
+    }
+    size_t length = label.length == WGPU_STRLEN ? std::strlen(label.data) : label.length;
+    return {label.data, length};
 }
 
 }  // namespace wgpu::binding

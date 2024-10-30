@@ -42,6 +42,7 @@
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/glsl/builtin_fn.h"
 #include "src/tint/lang/glsl/ir/builtin_call.h"
+#include "src/tint/lang/glsl/ir/member_builtin_call.h"
 #include "src/tint/lang/glsl/ir/ternary.h"
 
 namespace tint::glsl::writer::raise {
@@ -61,25 +62,35 @@ struct State {
     /// The type manager.
     core::type::Manager& ty{ir.Types()};
 
+    /// Dot polyfills for non `f32`.
+    Hashmap<const core::type::Type*, core::ir::Function*, 4> dot_funcs_{};
+    /// Quantize polyfills
+    Hashmap<const core::type::Type*, core::ir::Function*, 4> quantize_to_f16_funcs_{};
+
     /// Process the module.
     void Process() {
         Vector<core::ir::CoreBuiltinCall*, 4> call_worklist;
         for (auto* inst : ir.Instructions()) {
             if (auto* call = inst->As<core::ir::CoreBuiltinCall>()) {
                 switch (call->Func()) {
+                    case core::BuiltinFn::kAbs:
+                    case core::BuiltinFn::kAll:
+                    case core::BuiltinFn::kAny:
+                    case core::BuiltinFn::kArrayLength:
                     case core::BuiltinFn::kAtomicCompareExchangeWeak:
                     case core::BuiltinFn::kAtomicSub:
                     case core::BuiltinFn::kAtomicLoad:
                     case core::BuiltinFn::kCountOneBits:
+                    case core::BuiltinFn::kDot:
                     case core::BuiltinFn::kExtractBits:
+                    case core::BuiltinFn::kFma:
+                    case core::BuiltinFn::kFrexp:
                     case core::BuiltinFn::kInsertBits:
+                    case core::BuiltinFn::kModf:
+                    case core::BuiltinFn::kQuantizeToF16:
                     case core::BuiltinFn::kSelect:
                     case core::BuiltinFn::kStorageBarrier:
                     case core::BuiltinFn::kTextureBarrier:
-                    case core::BuiltinFn::kTextureDimensions:
-                    case core::BuiltinFn::kTextureLoad:
-                    case core::BuiltinFn::kTextureNumLayers:
-                    case core::BuiltinFn::kTextureStore:
                     case core::BuiltinFn::kWorkgroupBarrier:
                         call_worklist.Push(call);
                         break;
@@ -93,6 +104,18 @@ struct State {
         // Replace the builtin calls that we found
         for (auto* call : call_worklist) {
             switch (call->Func()) {
+                case core::BuiltinFn::kAbs:
+                    Abs(call);
+                    break;
+                case core::BuiltinFn::kAll:
+                    All(call);
+                    break;
+                case core::BuiltinFn::kAny:
+                    Any(call);
+                    break;
+                case core::BuiltinFn::kArrayLength:
+                    ArrayLength(call);
+                    break;
                 case core::BuiltinFn::kAtomicCompareExchangeWeak:
                     AtomicCompareExchangeWeak(call);
                     break;
@@ -105,11 +128,26 @@ struct State {
                 case core::BuiltinFn::kCountOneBits:
                     CountOneBits(call);
                     break;
+                case core::BuiltinFn::kDot:
+                    Dot(call);
+                    break;
                 case core::BuiltinFn::kExtractBits:
                     ExtractBits(call);
                     break;
+                case core::BuiltinFn::kFma:
+                    FMA(call);
+                    break;
+                case core::BuiltinFn::kFrexp:
+                    Frexp(call);
+                    break;
                 case core::BuiltinFn::kInsertBits:
                     InsertBits(call);
+                    break;
+                case core::BuiltinFn::kModf:
+                    Modf(call);
+                    break;
+                case core::BuiltinFn::kQuantizeToF16:
+                    QuantizeToF16(call);
                     break;
                 case core::BuiltinFn::kSelect:
                     Select(call);
@@ -119,22 +157,154 @@ struct State {
                 case core::BuiltinFn::kWorkgroupBarrier:
                     Barrier(call);
                     break;
-                case core::BuiltinFn::kTextureDimensions:
-                    TextureDimensions(call);
-                    break;
-                case core::BuiltinFn::kTextureLoad:
-                    TextureLoad(call);
-                    break;
-                case core::BuiltinFn::kTextureNumLayers:
-                    TextureNumLayers(call);
-                    break;
-                case core::BuiltinFn::kTextureStore:
-                    TextureStore(call);
-                    break;
                 default:
                     TINT_UNREACHABLE();
             }
         }
+    }
+
+    void Abs(core::ir::BuiltinCall* call) {
+        auto args = call->Args();
+
+        if (args[0]->Type()->DeepestElement()->IsUnsignedIntegerScalarOrVector()) {
+            // GLSL does not support `abs` on unsigned arguments, replace it with the arg.
+            call->Result(0)->ReplaceAllUsesWith(args[0]);
+        } else {
+            b.InsertBefore(call, [&] {
+                b.CallWithResult<glsl::ir::BuiltinCall>(call->DetachResult(), glsl::BuiltinFn::kAbs,
+                                                        args[0]);
+            });
+        }
+        call->Destroy();
+    }
+
+    void Any(core::ir::BuiltinCall* call) {
+        auto args = call->Args();
+
+        if (args[0]->Type()->Is<core::type::Scalar>()) {
+            // GLSL has no scalar `any`, replace it with the arg.
+            call->Result(0)->ReplaceAllUsesWith(args[0]);
+        } else {
+            b.InsertBefore(call, [&] {
+                b.CallWithResult<glsl::ir::BuiltinCall>(call->DetachResult(), glsl::BuiltinFn::kAny,
+                                                        args[0]);
+            });
+        }
+        call->Destroy();
+    }
+
+    void All(core::ir::BuiltinCall* call) {
+        auto args = call->Args();
+
+        if (args[0]->Type()->Is<core::type::Scalar>()) {
+            // GLSL has no scalar `all`, replace it with the arg.
+            call->Result(0)->ReplaceAllUsesWith(args[0]);
+        } else {
+            b.InsertBefore(call, [&] {
+                b.CallWithResult<glsl::ir::BuiltinCall>(call->DetachResult(), glsl::BuiltinFn::kAll,
+                                                        args[0]);
+            });
+        }
+        call->Destroy();
+    }
+
+    void ArrayLength(core::ir::Call* call) {
+        b.InsertBefore(call, [&] {
+            auto* len = b.MemberCall<glsl::ir::MemberBuiltinCall>(ty.i32(), BuiltinFn::kLength,
+                                                                  call->Args()[0]);
+            b.ConvertWithResult(call->DetachResult(), len->Result(0));
+        });
+        call->Destroy();
+    }
+
+    core::ir::Function* CreateDotPolyfill(const core::type::Vector* type) {
+        auto* ret_ty = type->DeepestElement();
+
+        return dot_funcs_.GetOrAdd(type, [&]() -> core::ir::Function* {
+            auto* f = b.Function("tint_int_dot", ret_ty);
+            auto* x = b.FunctionParam("x", type);
+            auto* y = b.FunctionParam("y", type);
+            f->SetParams({x, y});
+
+            b.Append(f->Block(), [&] {
+                core::ir::Value* ret = nullptr;
+
+                for (uint32_t i = 0; i < type->Width(); ++i) {
+                    auto* lhs = b.Swizzle(ret_ty, x, {i});
+                    auto* rhs = b.Swizzle(ret_ty, y, {i});
+                    auto* v = b.Multiply(ret_ty, lhs, rhs);
+
+                    if (ret != nullptr) {
+                        ret = b.Add(ret_ty, ret, v)->Result(0);
+                    } else {
+                        ret = v->Result(0);
+                    }
+                }
+
+                b.Return(f, ret);
+            });
+            return f;
+        });
+    }
+
+    // GLSL does not have a builtin for `dot` with integer vector types. Generate the helper
+    // function if it hasn't been created already
+    void Dot(core::ir::BuiltinCall* call) {
+        auto args = call->Args();
+
+        auto* vec_ty = call->Args()[0]->Type()->As<core::type::Vector>();
+        TINT_ASSERT(vec_ty);
+
+        b.InsertBefore(call, [&] {
+            if (!vec_ty->DeepestElement()->IsIntegerScalar()) {
+                b.CallWithResult<glsl::ir::BuiltinCall>(call->DetachResult(), glsl::BuiltinFn::kDot,
+                                                        args[0], args[1]);
+            } else {
+                auto* func = CreateDotPolyfill(vec_ty);
+                b.CallWithResult(call->DetachResult(), func, args[0], args[1]);
+            }
+        });
+
+        call->Destroy();
+    }
+
+    void Frexp(core::ir::BuiltinCall* call) {
+        b.InsertBefore(call, [&] {
+            // GLSL's frexp returns `fract` and outputs `whole` as an output parameter.
+            // Polyfill it by declaring the result struct and then setting the values:
+            //   __frexp_result result = {};
+            //   result.fract = frexp(arg, result.exp);
+            auto* result_type = call->Result(0)->Type();
+            auto* float_type = result_type->Element(0);
+            auto* i32_type = result_type->Element(1);
+            auto* result = b.Var(ty.ptr(function, result_type));
+            auto* exp = b.Access(ty.ptr(function, i32_type), result, u32(1));
+            auto args = Vector<core::ir::Value*, 2>{call->Args()[0], exp->Result(0)};
+            auto* res =
+                b.Call<glsl::ir::BuiltinCall>(float_type, glsl::BuiltinFn::kFrexp, std::move(args));
+            b.Store(b.Access(ty.ptr(function, float_type), result, u32(0)), res);
+            b.LoadWithResult(call->DetachResult(), result);
+        });
+        call->Destroy();
+    }
+
+    void Modf(core::ir::BuiltinCall* call) {
+        b.InsertBefore(call, [&] {
+            // GLSL's modf returns `fract` and outputs `whole` as an output parameter.
+            // Polyfill it by declaring the result struct and then setting the values:
+            //   __modf_result result = {};
+            //   result.fract = modf(arg, result.whole);
+            auto* result_type = call->Result(0)->Type();
+            auto* element_type = result_type->Element(0);
+            auto* result = b.Var(ty.ptr(function, result_type));
+            auto* whole = b.Access(ty.ptr(function, element_type), result, u32(1));
+            auto args = Vector<core::ir::Value*, 2>{call->Args()[0], whole->Result(0)};
+            auto* res = b.Call<glsl::ir::BuiltinCall>(element_type, glsl::BuiltinFn::kModf,
+                                                      std::move(args));
+            b.Store(b.Access(ty.ptr(function, element_type), result, u32(0)), res);
+            b.LoadWithResult(call->DetachResult(), result);
+        });
+        call->Destroy();
     }
 
     void ExtractBits(core::ir::Call* call) {
@@ -162,6 +332,20 @@ struct State {
         call->Destroy();
     }
 
+    // There is no `fma` method in GLSL ES 3.10 so we emulate it. `fma` does exist in desktop after
+    // 4.00 but we use the emulated version to be consistent. We could use the real one on desktop
+    // if we decide too in the future.
+    void FMA(core::ir::Call* call) {
+        auto args = call->Args();
+
+        b.InsertBefore(call, [&] {
+            auto* res_ty = call->Result(0)->Type();
+            auto* mul = b.Multiply(res_ty, args[0], args[1]);
+            b.AddWithResult(call->DetachResult(), mul, args[2]);
+        });
+        call->Destroy();
+    }
+
     // GLSL `bitCount` always returns an `i32` so we need to convert it. Convert to a `bitCount`
     // call to make it clear this isn't `countOneBits`.
     void CountOneBits(core::ir::Call* call) {
@@ -171,192 +355,6 @@ struct State {
             auto* c = b.Call<glsl::ir::BuiltinCall>(ty.MatchWidth(ty.i32(), result_ty),
                                                     glsl::BuiltinFn::kBitCount, call->Args()[0]);
             b.ConvertWithResult(call->DetachResult(), c);
-        });
-        call->Destroy();
-    }
-
-    // `textureDimensions` returns an unsigned scalar / vector in WGSL. `textureSize` and
-    // `imageSize` return a signed scalar / vector in GLSL.  So, we  need to cast the result to
-    // the needed WGSL type.
-    void TextureDimensions(core::ir::BuiltinCall* call) {
-        auto args = call->Args();
-        auto* tex = args[0]->Type()->As<core::type::Texture>();
-
-        b.InsertBefore(call, [&] {
-            auto func = glsl::BuiltinFn::kTextureSize;
-            if (tex->Is<core::type::StorageTexture>()) {
-                func = glsl::BuiltinFn::kImageSize;
-            }
-
-            Vector<core::ir::Value*, 2> new_args;
-            new_args.Push(args[0]);
-
-            if (!(tex->Is<core::type::StorageTexture>() ||
-                  tex->Is<core::type::MultisampledTexture>() ||
-                  tex->Is<core::type::DepthMultisampledTexture>())) {
-                // Add a LOD to any texture other then storage, and multi-sampled textures which
-                // does not already have an LOD.
-                if (args.Length() == 1) {
-                    new_args.Push(b.Constant(0_i));
-                } else {
-                    // Make sure the LOD is a i32
-                    new_args.Push(b.Bitcast(ty.i32(), args[1])->Result(0));
-                }
-            }
-
-            auto ret_type = call->Result(0)->Type();
-
-            // In GLSL the array dimensions return a 3rd parameter.
-            if (tex->Dim() == core::type::TextureDimension::k2dArray ||
-                tex->Dim() == core::type::TextureDimension::kCubeArray) {
-                ret_type = ty.vec(ty.i32(), 3);
-            } else {
-                ret_type = ty.MatchWidth(ty.i32(), call->Result(0)->Type());
-            }
-
-            core::ir::Value* result =
-                b.Call<glsl::ir::BuiltinCall>(ret_type, func, new_args)->Result(0);
-
-            // `textureSize` on array samplers returns the array size in the final component, WGSL
-            // requires a 2 component response, so drop the array size
-            if (tex->Dim() == core::type::TextureDimension::k2dArray ||
-                tex->Dim() == core::type::TextureDimension::kCubeArray) {
-                ret_type = ty.MatchWidth(ty.i32(), call->Result(0)->Type());
-                result = b.Swizzle(ret_type, result, {0, 1})->Result(0);
-            }
-
-            b.BitcastWithResult(call->DetachResult(), result);
-        });
-        call->Destroy();
-    }
-
-    // `textureNumLayers` returns an unsigned scalar in WGSL. `textureSize` and `imageSize`
-    // return a signed scalar / vector in GLSL.
-    //
-    // For the `textureSize` and `imageSize` calls the valid WGSL values always produce a `vec3` in
-    // GLSL so we extract the `z` component for the number of layers.
-    void TextureNumLayers(core::ir::BuiltinCall* call) {
-        b.InsertBefore(call, [&] {
-            auto args = call->Args();
-            auto* tex = args[0]->Type()->As<core::type::Texture>();
-
-            auto func = glsl::BuiltinFn::kTextureSize;
-            if (tex->Is<core::type::StorageTexture>()) {
-                func = glsl::BuiltinFn::kImageSize;
-            }
-
-            Vector<core::ir::Value*, 2> new_args;
-            new_args.Push(args[0]);
-
-            // Non-storage textures require a LOD
-            if (!tex->Is<core::type::StorageTexture>()) {
-                new_args.Push(b.Constant(0_i));
-            }
-
-            auto* new_call = b.Call<glsl::ir::BuiltinCall>(ty.vec(ty.i32(), 3), func, new_args);
-
-            auto* swizzle = b.Swizzle(ty.i32(), new_call, {2});
-            b.BitcastWithResult(call->DetachResult(), swizzle->Result(0));
-        });
-        call->Destroy();
-    }
-
-    void TextureLoad(core::ir::CoreBuiltinCall* call) {
-        auto args = call->Args();
-        auto* tex = args[0];
-
-        // No loading from a depth texture in GLSL, so we should never have gotten here.
-        TINT_ASSERT(!tex->Type()->Is<core::type::DepthTexture>());
-
-        auto* tex_type = tex->Type()->As<core::type::Texture>();
-
-        glsl::BuiltinFn func = glsl::BuiltinFn::kNone;
-        if (tex_type->Is<core::type::StorageTexture>()) {
-            func = glsl::BuiltinFn::kImageLoad;
-        } else {
-            func = glsl::BuiltinFn::kTexelFetch;
-        }
-
-        bool is_ms = tex_type->Is<core::type::MultisampledTexture>();
-        bool is_storage = tex_type->Is<core::type::StorageTexture>();
-        b.InsertBefore(call, [&] {
-            Vector<core::ir::Value*, 3> call_args{tex};
-            switch (tex_type->Dim()) {
-                case core::type::TextureDimension::k1d: {
-                    call_args.Push(b.Convert(ty.i32(), args[1])->Result(0));
-                    if (!is_storage) {
-                        call_args.Push(b.Convert(ty.i32(), args[2])->Result(0));
-                    }
-                    break;
-                }
-                case core::type::TextureDimension::k2d: {
-                    call_args.Push(b.Convert(ty.vec2<i32>(), args[1])->Result(0));
-                    if (is_ms) {
-                        call_args.Push(b.Convert(ty.i32(), args[2])->Result(0));
-                    } else {
-                        if (!is_storage) {
-                            call_args.Push(b.Convert(ty.i32(), args[2])->Result(0));
-                        }
-                    }
-                    break;
-                }
-                case core::type::TextureDimension::k2dArray: {
-                    auto* coord = b.Convert(ty.vec2<i32>(), args[1]);
-                    auto* ary_idx = b.Convert(ty.i32(), args[2]);
-                    call_args.Push(b.Construct(ty.vec3<i32>(), coord, ary_idx)->Result(0));
-
-                    if (!is_storage) {
-                        call_args.Push(b.Convert(ty.i32(), args[3])->Result(0));
-                    }
-                    break;
-                }
-                case core::type::TextureDimension::k3d: {
-                    call_args.Push(b.Convert(ty.vec3<i32>(), args[1])->Result(0));
-
-                    if (!is_storage) {
-                        call_args.Push(b.Convert(ty.i32(), args[2])->Result(0));
-                    }
-                    break;
-                }
-                default:
-                    TINT_UNREACHABLE();
-            }
-
-            b.CallWithResult<glsl::ir::BuiltinCall>(call->DetachResult(), func,
-                                                    std::move(call_args));
-        });
-        call->Destroy();
-    }
-
-    void TextureStore(core::ir::BuiltinCall* call) {
-        auto args = call->Args();
-        auto* tex = args[0];
-        auto* tex_type = tex->Type()->As<core::type::StorageTexture>();
-        TINT_ASSERT(tex_type);
-
-        Vector<core::ir::Value*, 3> new_args;
-        new_args.Push(tex);
-
-        b.InsertBefore(call, [&] {
-            if (tex_type->Dim() == core::type::TextureDimension::k2dArray) {
-                auto* coords = args[1];
-                auto* array_idx = args[2];
-
-                auto* coords_ty = coords->Type()->As<core::type::Vector>();
-                TINT_ASSERT(coords_ty);
-
-                auto* new_coords = b.Construct(ty.vec3(coords_ty->Type()), coords,
-                                               b.Convert(coords_ty->Type(), array_idx));
-                new_args.Push(new_coords->Result(0));
-
-                new_args.Push(args[3]);
-            } else {
-                new_args.Push(args[1]);
-                new_args.Push(args[2]);
-            }
-
-            b.CallWithResult<glsl::ir::BuiltinCall>(
-                call->DetachResult(), glsl::BuiltinFn::kImageStore, std::move(new_args));
         });
         call->Destroy();
     }
@@ -420,8 +418,6 @@ struct State {
 
     void Barrier(core::ir::CoreBuiltinCall* call) {
         b.InsertBefore(call, [&] {
-            b.Call<glsl::ir::BuiltinCall>(ty.void_(), glsl::BuiltinFn::kBarrier);
-
             switch (call->Func()) {
                 case core::BuiltinFn::kStorageBarrier:
                     b.Call<glsl::ir::BuiltinCall>(ty.void_(),
@@ -433,42 +429,97 @@ struct State {
                 default:
                     break;
             }
+            b.Call<glsl::ir::BuiltinCall>(ty.void_(), glsl::BuiltinFn::kBarrier);
         });
 
         call->Destroy();
     }
 
     void Select(core::ir::CoreBuiltinCall* call) {
-        Vector<core::ir::Value*, 4> args = call->Args();
+        auto args = call->Args();
 
-        // GLSL does not support ternary expressions with a bool vector conditional,
-        // so polyfill by manually creating a vector with each of the
-        // individual scalar ternaries.
-        if (auto* vec = call->Result(0)->Type()->As<core::type::Vector>()) {
-            Vector<core::ir::Value*, 4> construct_args;
+        // Implement as `mix` in GLSL. The one caveat is that `mix` requires the number of
+        // parameters to match, so if we have a `vec2` for the results and a single `bool` value,
+        // we need to splat the `bool`.
+        auto bool_ty = args[2]->Type();
+        auto val_ty = args[0]->Type();
 
-            b.InsertBefore(call, [&] {
-                auto* elm_ty = vec->Type();
-                for (uint32_t i = 0; i < vec->Width(); i++) {
-                    auto* false_ = b.Swizzle(elm_ty, args[0], {i})->Result(0);
-                    auto* true_ = b.Swizzle(elm_ty, args[1], {i})->Result(0);
-                    auto* cond = b.Swizzle(elm_ty, args[2], {i})->Result(0);
+        b.InsertBefore(call, [&] {
+            core::ir::Value* cond = args[2];
+            if (val_ty->Is<core::type::Vector>() && !bool_ty->Is<core::type::Vector>()) {
+                cond = b.Construct(ty.MatchWidth(ty.bool_(), val_ty), cond)->Result(0);
+            }
 
-                    auto* ternary = b.ir.CreateInstruction<glsl::ir::Ternary>(
-                        b.InstructionResult(elm_ty),
-                        Vector<core::ir::Value*, 3>{false_, true_, cond});
-                    ternary->InsertBefore(call);
+            b.CallWithResult<glsl::ir::BuiltinCall>(call->DetachResult(), glsl::BuiltinFn::kMix,
+                                                    args[0], args[1], cond);
+        });
+        call->Destroy();
+    }
 
-                    construct_args.Push(ternary->Result(0));
+    core::ir::Function* CreateQuantizeToF16Polyfill(const core::type::Type* type) {
+        return quantize_to_f16_funcs_.GetOrAdd(type, [&]() -> core::ir::Function* {
+            auto* f = b.Function("tint_quantize_to_f16", type);
+            auto* val = b.FunctionParam("val", type);
+            f->SetParams({val});
+
+            b.Append(f->Block(), [&] {
+                core::ir::Value* ret = nullptr;
+
+                auto* inner_ty = type->DeepestElement();
+                auto* v2 = ty.vec2(inner_ty);
+
+                auto pack_unpack = [&](core::ir::Value* item) {
+                    auto* r = b.Call(ty.u32(), core::BuiltinFn::kPack2X16Float, item)->Result(0);
+                    return b.Call(v2, core::BuiltinFn::kUnpack2X16Float, r)->Result(0);
+                };
+
+                if (auto* vec = type->As<core::type::Vector>()) {
+                    switch (vec->Width()) {
+                        case 2: {
+                            ret = pack_unpack(val);
+                            break;
+                        }
+                        case 3: {
+                            core::ir::Value* lhs = b.Swizzle(v2, val, {0, 1})->Result(0);
+                            lhs = pack_unpack(lhs);
+
+                            core::ir::Value* rhs = b.Swizzle(v2, val, {2, 2})->Result(0);
+                            rhs = pack_unpack(rhs);
+                            rhs = b.Swizzle(inner_ty, rhs, {0})->Result(0);
+
+                            ret = b.Construct(type, lhs, rhs)->Result(0);
+                            break;
+                        }
+                        default: {
+                            core::ir::Value* lhs = b.Swizzle(v2, val, {0, 1})->Result(0);
+                            lhs = pack_unpack(lhs);
+
+                            core::ir::Value* rhs = b.Swizzle(v2, val, {2, 3})->Result(0);
+                            rhs = pack_unpack(rhs);
+
+                            ret = b.Construct(type, lhs, rhs)->Result(0);
+                            break;
+                        }
+                    }
+                } else {
+                    ret = b.Construct(v2, val)->Result(0);
+                    ret = pack_unpack(ret);
+                    ret = b.Swizzle(type, ret, {0})->Result(0);
                 }
-
-                b.ConstructWithResult(call->DetachResult(), construct_args);
+                b.Return(f, ret);
             });
+            return f;
+        });
+    }
 
-        } else {
-            auto* ternary = b.ir.CreateInstruction<glsl::ir::Ternary>(call->DetachResult(), args);
-            ternary->InsertBefore(call);
-        }
+    // Emulate by casting to f16 and back again.
+    void QuantizeToF16(core::ir::BuiltinCall* call) {
+        auto args = call->Args();
+
+        b.InsertBefore(call, [&] {
+            auto* func = CreateQuantizeToF16Polyfill(args[0]->Type());
+            b.CallWithResult(call->DetachResult(), func, args[0]);
+        });
         call->Destroy();
     }
 };
@@ -476,7 +527,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BuiltinPolyfill(core::ir::Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "BuiltinPolyfill transform");
+    auto result = ValidateAndDumpIfNeeded(ir, "glsl.BuiltinPolyfill");
     if (result != Success) {
         return result.Failure();
     }

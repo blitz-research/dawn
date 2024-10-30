@@ -140,9 +140,9 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::Depth32FloatStencil8);
     EnableFeature(Feature::DepthClipControl);
     EnableFeature(Feature::TextureCompressionBC);
-    EnableFeature(Feature::SurfaceCapabilities);
     EnableFeature(Feature::D3D11MultithreadProtected);
     EnableFeature(Feature::Float32Filterable);
+    EnableFeature(Feature::Float32Blendable);
     EnableFeature(Feature::DualSourceBlending);
     EnableFeature(Feature::ClipDistances);
     EnableFeature(Feature::Unorm16TextureFormats);

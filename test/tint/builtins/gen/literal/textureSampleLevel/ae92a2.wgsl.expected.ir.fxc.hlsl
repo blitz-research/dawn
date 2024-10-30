@@ -13,7 +13,7 @@ RWByteAddressBuffer prevent_dce : register(u0);
 TextureCube arg_0 : register(t0, space1);
 SamplerState arg_1 : register(s1, space1);
 float textureSampleLevel_ae92a2() {
-  float res = arg_0.SampleLevel(arg_1, (1.0f).xxx, float(1u));
+  float res = arg_0.SampleLevel(arg_1, (1.0f).xxx, float(1u)).x;
   return res;
 }
 
@@ -36,9 +36,7 @@ VertexOutput vertex_main_inner() {
 
 vertex_main_outputs vertex_main() {
   VertexOutput v_1 = vertex_main_inner();
-  VertexOutput v_2 = v_1;
-  VertexOutput v_3 = v_1;
-  vertex_main_outputs v_4 = {v_3.prevent_dce, v_2.pos};
-  return v_4;
+  vertex_main_outputs v_2 = {v_1.prevent_dce, v_1.pos};
+  return v_2;
 }
 

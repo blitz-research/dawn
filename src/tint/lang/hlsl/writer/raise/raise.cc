@@ -28,6 +28,7 @@
 #include "src/tint/lang/hlsl/writer/raise/raise.h"
 
 #include <unordered_set>
+#include <utility>
 
 #include "src/tint/lang/core/ir/transform/add_empty_entry_point.h"
 #include "src/tint/lang/core/ir/transform/array_length_from_uniform.h"
@@ -52,7 +53,10 @@
 #include "src/tint/lang/hlsl/writer/raise/decompose_storage_access.h"
 #include "src/tint/lang/hlsl/writer/raise/decompose_uniform_access.h"
 #include "src/tint/lang/hlsl/writer/raise/fxc_polyfill.h"
+#include "src/tint/lang/hlsl/writer/raise/localize_struct_array_assignment.h"
+#include "src/tint/lang/hlsl/writer/raise/pixel_local.h"
 #include "src/tint/lang/hlsl/writer/raise/promote_initializers.h"
+#include "src/tint/lang/hlsl/writer/raise/replace_non_indexable_mat_vec_stores.h"
 #include "src/tint/lang/hlsl/writer/raise/shader_io.h"
 #include "src/tint/utils/result/result.h"
 
@@ -72,17 +76,6 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     ArrayLengthFromUniformOptions array_length_from_uniform_options{};
     PopulateBindingRelatedOptions(options, remapper_data, multiplanar_map,
                                   array_length_from_uniform_options);
-
-    {
-        auto result = core::ir::transform::ArrayLengthFromUniform(
-            module,
-            BindingPoint{array_length_from_uniform_options.ubo_binding.group,
-                         array_length_from_uniform_options.ubo_binding.binding},
-            array_length_from_uniform_options.bindpoint_to_size_index);
-        if (result != Success) {
-            return result.Failure();
-        }
-    }
 
     RUN_TRANSFORM(core::ir::transform::BindingRemapper, module, remapper_data);
     RUN_TRANSFORM(core::ir::transform::MultiplanarExternalTexture, module, multiplanar_map);
@@ -136,6 +129,8 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     if (options.compiler == Options::Compiler::kFXC) {
         RUN_TRANSFORM(raise::FxcPolyfill, module);
+        RUN_TRANSFORM(raise::LocalizeStructArrayAssignment, module);
+        RUN_TRANSFORM(raise::ReplaceNonIndexableMatVecStores, module);
     }
 
     if (!options.disable_robustness) {
@@ -154,16 +149,33 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         RUN_TRANSFORM(core::ir::transform::Robustness, module, config);
     }
 
+    // ArrayLengthFromUniform must run after Robustness, which introduces arrayLength calls.
+    {
+        auto result = core::ir::transform::ArrayLengthFromUniform(
+            module,
+            BindingPoint{array_length_from_uniform_options.ubo_binding.group,
+                         array_length_from_uniform_options.ubo_binding.binding},
+            array_length_from_uniform_options.bindpoint_to_size_index);
+        if (result != Success) {
+            return result.Failure();
+        }
+    }
+
     if (!options.disable_workgroup_init) {
         // Must run before ShaderIO as it may introduce a builtin parameter (local_invocation_index)
         RUN_TRANSFORM(core::ir::transform::ZeroInitWorkgroupMemory, module);
     }
+
+    const bool pixel_local_enabled = !options.pixel_local.attachment_formats.empty();
 
     // ShaderIO must be run before DecomposeUniformAccess because it might
     // introduce a uniform buffer for kNumWorkgroups.
     {
         raise::ShaderIOConfig config;
         config.num_workgroups_binding = options.root_constant_binding_point;
+        config.add_input_position_member = pixel_local_enabled;
+        config.truncate_interstage_variables = options.truncate_interstage_variables;
+        config.interstage_locations = std::move(options.interstage_locations);
         RUN_TRANSFORM(raise::ShaderIO, module, config);
     }
 
@@ -174,10 +186,14 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     // Comes after DecomposeStorageAccess.
     RUN_TRANSFORM(raise::DecomposeUniformAccess, module);
 
-    // TODO(dsinclair): LocalizeStructArrayAssignment
-    // TODO(dsinclair): PixelLocal transform
+    // PixelLocal must run after DirectVariableAccess to avoid chasing pointer parameters.
+    if (pixel_local_enabled) {
+        raise::PixelLocalConfig config;
+        config.options = options.pixel_local;
+        RUN_TRANSFORM(raise::PixelLocal, module, config);
+    }
+
     // TODO(dsinclair): TruncateInterstageVariables
-    // TODO(dsinclair): CalculateArrayLength
 
     // DemoteToHelper must come before any transform that introduces non-core instructions.
     // Run after ShaderIO to ensure the discards are added to the entry point it introduces.
@@ -194,7 +210,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     // naming conflicts, and expressions that need to be explicitly not inlined.
     RUN_TRANSFORM(core::ir::transform::RemoveTerminatorArgs, module);
     RUN_TRANSFORM(core::ir::transform::RenameConflicts, module);
-    RUN_TRANSFORM(core::ir::transform::ValueToLet, module);
+    {
+        core::ir::transform::ValueToLetConfig cfg;
+        cfg.replace_pointer_lets = true;
+        RUN_TRANSFORM(core::ir::transform::ValueToLet, module, cfg);
+    }
 
     // Anything which runs after this needs to handle `Capabilities::kAllowModuleScopedLets`
     RUN_TRANSFORM(raise::PromoteInitializers, module);

@@ -29,7 +29,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
+#include "absl/strings/str_format.h"
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Enumerator.h"
 #include "dawn/common/ityp_array.h"
@@ -38,6 +40,7 @@
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/Device.h"
+#include "dawn/native/Instance.h"
 #include "dawn/native/InternalPipelineStore.h"
 #include "dawn/native/ObjectContentHasher.h"
 #include "dawn/native/ObjectType_autogen.h"
@@ -509,10 +512,17 @@ MaybeError ValidateColorTargetState(
     DAWN_INVALID_IF(!format->IsColor() || !format->isRenderable,
                     "Color format (%s) is not color renderable.", format->format);
 
-    DAWN_INVALID_IF(
-        descriptor.blend &&
+    if (descriptor.blend && !format->isBlendable) {
+        DAWN_INVALID_IF(
             !(format->GetAspectInfo(Aspect::Color).supportedSampleTypes & SampleTypeBit::Float),
-        "Blending is enabled but color format (%s) is not blendable.", format->format);
+            "Blending is enabled but color format (%s) is not blendable.", format->format);
+
+        std::string warning = absl::StrFormat(
+            "Blending for color format (%s) requires the %s feature. Enabling "
+            "blendability with %s was an implementation bug and is deprecated.",
+            format->format, ToAPI(Feature::Float32Blendable), ToAPI(Feature::Float32Filterable));
+        device->EmitWarningOnce(warning.c_str());
+    }
 
     if (!fragmentWritten) {
         DAWN_INVALID_IF(
@@ -1074,7 +1084,7 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
 
 RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
                                        ObjectBase::ErrorTag tag,
-                                       const char* label)
+                                       StringView label)
     : PipelineBase(device, tag, label) {}
 
 RenderPipelineBase::~RenderPipelineBase() = default;
@@ -1088,10 +1098,10 @@ void RenderPipelineBase::DestroyImpl() {
 }
 
 // static
-Ref<RenderPipelineBase> RenderPipelineBase::MakeError(DeviceBase* device, const char* label) {
+Ref<RenderPipelineBase> RenderPipelineBase::MakeError(DeviceBase* device, StringView label) {
     class ErrorRenderPipeline final : public RenderPipelineBase {
       public:
-        explicit ErrorRenderPipeline(DeviceBase* device, const char* label)
+        explicit ErrorRenderPipeline(DeviceBase* device, StringView label)
             : RenderPipelineBase(device, ObjectBase::kError, label) {}
 
         MaybeError InitializeImpl() override {

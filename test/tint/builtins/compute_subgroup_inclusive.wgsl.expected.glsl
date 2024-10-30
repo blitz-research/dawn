@@ -1,18 +1,11 @@
 SKIP: INVALID
 
+<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:1487 internal compiler error: TINT_UNREACHABLE unhandled core builtin: subgroupInclusiveAdd
+********************************************************************
+*  The tint shader compiler has encountered an unexpected error.   *
+*                                                                  *
+*  Please help us fix this issue by submitting a bug report at     *
+*  crbug.com/tint with the source program that triggered the bug.  *
+********************************************************************
 
-enable chromium_experimental_subgroups;
-
-@compute @workgroup_size(1)
-fn tint_symbol() {
-  let val : f32 = 2.0;
-  let subadd : f32 = subgroupInclusiveAdd(val);
-  let submul : f32 = subgroupInclusiveMul(val);
-}
-
-Failed to generate: <dawn>/test/tint/builtins/compute_subgroup_inclusive.wgsl:1:8 error: GLSL backend does not support extension 'chromium_experimental_subgroups'
-enable chromium_experimental_subgroups;
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-tint executable returned error: exit status 1
+tint executable returned error: signal: trace/BPT trap

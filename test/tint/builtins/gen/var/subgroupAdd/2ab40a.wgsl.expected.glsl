@@ -1,58 +1,11 @@
 SKIP: INVALID
 
+<dawn>/src/tint/lang/glsl/writer/printer/printer.cc:1487 internal compiler error: TINT_UNREACHABLE unhandled core builtin: subgroupAdd
+********************************************************************
+*  The tint shader compiler has encountered an unexpected error.   *
+*                                                                  *
+*  Please help us fix this issue by submitting a bug report at     *
+*  crbug.com/tint with the source program that triggered the bug.  *
+********************************************************************
 
-enable subgroups;
-enable subgroups_f16;
-enable f16;
-
-@group(0) @binding(0) var<storage, read_write> prevent_dce : vec4<f16>;
-
-fn subgroupAdd_2ab40a() -> vec4<f16> {
-  var arg_0 = vec4<f16>(1.0h);
-  var res : vec4<f16> = subgroupAdd(arg_0);
-  return res;
-}
-
-@fragment
-fn fragment_main() {
-  prevent_dce = subgroupAdd_2ab40a();
-}
-
-@compute @workgroup_size(1)
-fn compute_main() {
-  prevent_dce = subgroupAdd_2ab40a();
-}
-
-Failed to generate: <dawn>/test/tint/builtins/gen/var/subgroupAdd/2ab40a.wgsl:41:8 error: GLSL backend does not support extension 'subgroups'
-enable subgroups;
-       ^^^^^^^^^
-
-
-enable subgroups;
-enable subgroups_f16;
-enable f16;
-
-@group(0) @binding(0) var<storage, read_write> prevent_dce : vec4<f16>;
-
-fn subgroupAdd_2ab40a() -> vec4<f16> {
-  var arg_0 = vec4<f16>(1.0h);
-  var res : vec4<f16> = subgroupAdd(arg_0);
-  return res;
-}
-
-@fragment
-fn fragment_main() {
-  prevent_dce = subgroupAdd_2ab40a();
-}
-
-@compute @workgroup_size(1)
-fn compute_main() {
-  prevent_dce = subgroupAdd_2ab40a();
-}
-
-Failed to generate: <dawn>/test/tint/builtins/gen/var/subgroupAdd/2ab40a.wgsl:41:8 error: GLSL backend does not support extension 'subgroups'
-enable subgroups;
-       ^^^^^^^^^
-
-
-tint executable returned error: exit status 1
+tint executable returned error: signal: trace/BPT trap

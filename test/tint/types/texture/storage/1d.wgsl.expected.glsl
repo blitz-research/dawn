@@ -1,6 +1,4 @@
-SKIP: FAILED
-
-#version 310 es
+#version 460
 
 layout(binding = 0, rgba8) uniform highp writeonly image2D t_rgba8unorm;
 layout(binding = 1, rgba8_snorm) uniform highp writeonly image2D t_rgba8snorm;
@@ -18,7 +16,8 @@ layout(binding = 12, rg32f) uniform highp writeonly image2D t_rg32float;
 layout(binding = 13, rgba32ui) uniform highp writeonly uimage2D t_rgba32uint;
 layout(binding = 14, rgba32i) uniform highp writeonly iimage2D t_rgba32sint;
 layout(binding = 15, rgba32f) uniform highp writeonly image2D t_rgba32float;
-void tint_symbol() {
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main() {
   uint dim1 = uvec2(imageSize(t_rgba8unorm)).x;
   uint dim2 = uvec2(imageSize(t_rgba8snorm)).x;
   uint dim3 = uvec2(imageSize(t_rgba8uint)).x;
@@ -36,18 +35,3 @@ void tint_symbol() {
   uint dim15 = uvec2(imageSize(t_rgba32sint)).x;
   uint dim16 = uvec2(imageSize(t_rgba32float)).x;
 }
-
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
-void main() {
-  tint_symbol();
-  return;
-}
-error: Error parsing GLSL shader:
-ERROR: 0:13: 'image load-store format' : not supported with this profile: es
-ERROR: 0:13: '' : compilation terminated 
-ERROR: 2 compilation errors.  No code generated.
-
-
-
-
-tint executable returned error: exit status 1
