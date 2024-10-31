@@ -65,7 +65,7 @@ WGPUTexture CreateSwapchainWGPUTexture(WGPUDevice device,
                                        const WGPUTextureDescriptor* descriptor,
                                        VkImage image) {
     Device* backendDevice = ToBackend(FromAPI(device));
-    auto texture = Texture::CreateForSwapChain(backendDevice, ValidateAndUnpack(FromAPI(descriptor)).AcquireSuccess(),
+    auto texture = SwapChainTexture::Create(backendDevice, ValidateAndUnpack(FromAPI(descriptor)).AcquireSuccess(),
                                                VkImage::CreateFromHandle(image));
     return ToAPI(texture.Detach());
 }
